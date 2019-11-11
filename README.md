@@ -1,6 +1,6 @@
 # Bandit
 
-Bandit is a pure Elixir HTTP server for Plug apps, built on top of [Thousand Island](https://github.com/mtrudel/thousand_island).
+Bandit is a pure Elixir HTTP/1.1 server for Plug apps, built on top of [Thousand Island](https://github.com/mtrudel/thousand_island).
 
 ## Installation
 
