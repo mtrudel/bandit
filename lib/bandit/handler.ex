@@ -2,7 +2,7 @@ defmodule Bandit.Handler do
   @behaviour ThousandIsland.Handler
 
   @impl ThousandIsland.Handler
-  def handle_connection(%ThousandIsland.Connection{} = socket_conn, {plug, plug_opts}) do
+  def handle_connection(%ThousandIsland.Socket{} = socket_conn, {plug, plug_opts}) do
     socket_conn
     |> Bandit.ConnBuilder.build()
     |> plug.call(plug_opts)
