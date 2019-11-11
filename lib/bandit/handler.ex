@@ -4,7 +4,8 @@ defmodule Bandit.Handler do
   @impl ThousandIsland.Handler
   def handle_connection(%ThousandIsland.Socket{} = socket_conn, {plug, plug_opts}) do
     socket_conn
-    |> Bandit.ConnBuilder.build()
+    |> Bandit.HTTPRequest.request()
+    |> Bandit.ConnAdapter.conn()
     |> plug.call(plug_opts)
     |> commit_response()
 
