@@ -12,13 +12,14 @@ defmodule Bandit do
   `port`: The port to bind to. Defaults to 4000
   `num_acceptors`: The number of acceptor processes to run. This is mostly a performance
   tuning knob and can usually be left at the default value of 10
+  `transport_options`: A keyword list of options to be passed into the listener socket
   """
 
   def child_spec(arg) do
     {opts, illegal_opts} =
       arg
       |> Keyword.get(:opts, [])
-      |> Keyword.split(~w(port)a)
+      |> Keyword.split(~w(port num_acceptors transport_options)a)
 
     if illegal_opts != [] do
       raise "Unsupported option(s) in Bandit config: #{inspect(illegal_opts)}"
