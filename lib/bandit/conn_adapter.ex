@@ -5,26 +5,34 @@ defmodule Bandit.ConnAdapter do
   alias Plug.Conn
 
   def conn(%HTTPRequest{} = req) do
-    {{_, local_port}, {remote_ip, _}} = HTTPRequest.endpoints(req)
+    case HTTPRequest.read_headers(req) do
+      {:ok, headers, req} ->
+        {{_, local_port}, {remote_ip, _}} = HTTPRequest.endpoints(req)
 
-    # TODO read verb, path, headers
+        # TODO read verb, path, headers
 
-    %Conn{
-      adapter: {__MODULE__, req},
-      owner: self(),
-      remote_ip: remote_ip,
-      port: local_port
-    }
+        {:ok,
+         %Conn{
+           adapter: {__MODULE__, req},
+           owner: self(),
+           remote_ip: remote_ip,
+           port: local_port
+         }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   @impl true
   def send_resp(req, status, headers, body) do
-    req = HTTPRequest.send_resp(req, status, headers, body)
+    {:ok, req} = HTTPRequest.send_resp(req, status, headers, body)
     {:ok, nil, req}
   end
 
   @impl true
   def send_file(req, status, headers, path, offset, length) do
+    # TODO return values
     req = HTTPRequest.send_file(req, status, headers, path, offset, length)
     {:ok, nil, req}
   end

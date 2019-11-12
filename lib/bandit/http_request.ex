@@ -4,10 +4,13 @@ defmodule Bandit.HTTPRequest do
   defstruct state: :new,
             socket: nil,
             version: nil,
-            verb: nil,
+            method: nil,
             path: nil,
-            headers: nil,
-            read_buffer: []
+            read_buffer: nil
+
+  defmodule UnreadHeadersError do
+    defexception message: "Headers have not been read yet"
+  end
 
   defmodule AlreadyReadError do
     defexception message: "Body has already been read"
@@ -17,56 +20,59 @@ defmodule Bandit.HTTPRequest do
     defexception message: "Response has already been written (or is being chunked out)"
   end
 
-  alias Bandit.HTTPRequest.{AlreadyReadError, AlreadySentError}
   alias ThousandIsland.Socket
 
-  def request(%Socket{} = socket), do: %__MODULE__{socket: socket}
+  def request(%Socket{} = socket), do: {:ok, %__MODULE__{socket: socket}}
+
+  def read_headers(%__MODULE__{state: :new, socket: socket} = req) do
+    case Bandit.HTTPParser.parse_headers(socket) do
+      {:ok, version, method, path, headers, rest} ->
+        {:ok, headers, %{req | version: version, method: method, path: path, read_buffer: rest, state: :headers_read}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  def read_headers(%__MODULE__{}), do: raise(AlreadyReadError)
+
+  def read_body(%__MODULE__{state: :headers_read} = req, _opts) do
+    # TODO 
+    {:ok, <<>>, %{req | state: :body_read}}
+  end
+
+  def read_body(%__MODULE__{state: :new}, _opts), do: raise(UnreadHeadersError)
+  def read_body(%__MODULE__{}, _opts), do: raise(AlreadyReadError)
+
+  def send_resp(%__MODULE__{state: state}, _, _, _) when state in [:sent, :chunking_out], do: raise(AlreadySentError)
+
+  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
+    # TODO refactor and add error handling
+    resp = [version, " ", to_string(status), "\r\n", format_headers(headers, response), "\r\n", response]
+    Socket.send(socket, resp)
+
+    {:ok, %{req | state: :sent}}
+  end
+
+  def send_file(%__MODULE__{}, _status, _headers, _path, _offset, _length) do
+    # TODO
+  end
+
+  def send_chunked(%__MODULE__{}, _status, _headers) do
+    # TODO
+  end
+
+  def send_chunk(%__MODULE__{}, _chunk) do
+    # TODO
+  end
 
   def endpoints(%__MODULE__{socket: socket}), do: Socket.endpoints(socket)
 
+  def version(%__MODULE__{version: :new}), do: raise(UnreadHeadersError)
   def version(%__MODULE__{version: version}), do: version
 
-  def read_headers(%__MODULE__{state: :new, socket: socket, read_buffer: read_buffer}) do
-    # TODO
-  end
-
-  def read_headers(%__MODULE__{} = req), do: req
-
-  def read_body(%__MODULE__{state: :new} = req, opts) do
-    req |> read_headers() |> read_body(opts)
-  end
-
-  def read_body(%__MODULE__{state: :headers_read, socket: socket, read_buffer: read_buffer}, opts) do
-    # TODO 
-  end
-
-  def read_body(%__MODULE__{}, _opts), do: raise(AlreadyReadError)
-
-  def send_resp(%__MODULE__{state: state}, _, _, _) when state in [:sent, :chunking_out] do
-    raise(AlreadySentError)
-  end
-
-  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
-    resp = [version, " ", status, "\r\n", format_headers(headers, response), "\r\n", response]
-    Socket.send(socket, resp)
-
-    %{req | state: :sent}
-  end
-
-  def send_file(%__MODULE__{}, status, headers, path, offset, length) do
-  end
-
-  def send_chunked(%__MODULE__{} = req, status, headers) do
-    # TODO
-  end
-
-  def send_chunk(%__MODULE__{} = req, chunk) do
-    # TODO
-  end
-
   defp format_headers(headers, body) do
-    headers
-    |> Keyword.put("content-length", byte_size(body))
+    [{"content-length", body |> byte_size() |> to_string()} | headers]
     |> Enum.flat_map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
   end
 end
