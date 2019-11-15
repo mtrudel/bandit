@@ -38,7 +38,13 @@ defmodule Bandit.HTTP1Request do
         read_headers(%{req | buffer: rest, version: version(version)}, :httph, headers, method, path)
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
-        read_headers(%{req | buffer: rest}, :httph, [{header, value} | headers], method, path)
+        read_headers(
+          %{req | buffer: rest},
+          :httph,
+          [{header |> to_string() |> String.downcase(), to_string(value)} | headers],
+          to_string(method),
+          to_string(path)
+        )
 
       {:ok, :http_eoh, rest} ->
         {:ok, headers, to_string(method), to_string(path), %{req | state: :headers_read, buffer: rest}}

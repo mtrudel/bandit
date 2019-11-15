@@ -22,7 +22,6 @@ defmodule Bandit.ConnPipeline do
         %{address: remote_ip} = adapter_mod.get_peer_data(req)
         %{port: local_port, ssl_cert: ssl_cert} = adapter_mod.get_local_data(req)
 
-        headers = normalize_headers(headers)
         {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
         scheme = if is_binary(ssl_cert), do: :https, else: :http
 
@@ -46,11 +45,6 @@ defmodule Bandit.ConnPipeline do
       {:error, reason} ->
         {:error, reason}
     end
-  end
-
-  defp normalize_headers(headers) do
-    headers
-    |> Enum.map(fn {k, v} -> {k |> to_string() |> String.downcase(), v} end)
   end
 
   defp path_and_query_string(path) do
