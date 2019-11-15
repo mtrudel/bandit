@@ -3,9 +3,10 @@ defmodule Bandit.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(%ThousandIsland.Socket{} = socket, plug) do
-    with {:ok, req} <- Bandit.HTTP1Request.request(socket),
-         {:ok, req} <- Bandit.ConnPipeline.run(req, plug) do
-      if Bandit.HTTPRequest.keepalive?(req) do
+    # TODO define & use a parser module to create versioned adapter mods / reqs
+    with {:ok, adapter_mod, req} <- Bandit.HTTP1Request.request(socket),
+         {:ok, req} <- Bandit.ConnPipeline.run(adapter_mod, req, plug) do
+      if adapter_mod.keepalive?(req) do
         handle_connection(socket, plug)
       end
     else

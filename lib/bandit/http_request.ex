@@ -1,36 +1,16 @@
-defprotocol Bandit.HTTPRequest do
-  @behaviour Plug.Conn.Adapter
+defmodule Bandit.HTTPRequest do
+  @moduledoc """
+  Defines behaviour to be implemented by HTTP Request handlers in addition 
+  to those defined by `Plug.Conn.Adapter`. 
+  """
 
-  def read_headers(req)
+  @type payload :: term
 
-  @impl Plug.Conn.Adapter
-  def read_req_body(req, opts)
+  @callback request(ThousandIsland.Socket.t()) :: {:ok, module(), payload}
 
-  @impl Plug.Conn.Adapter
-  def send_resp(req, status, headers, response)
+  @callback read_headers(payload) :: {:ok, keyword()} | {:error, String.t()}
 
-  @impl Plug.Conn.Adapter
-  def send_file(req, status, headers, path, offset, length)
+  @callback get_local_data(payload) :: Plug.Conn.Adapter.peer_data()
 
-  @impl Plug.Conn.Adapter
-  def send_chunked(req, status, headers)
-
-  @impl Plug.Conn.Adapter
-  def chunk(req, chunk)
-
-  @impl Plug.Conn.Adapter
-  def inform(req, status, headers)
-
-  @impl Plug.Conn.Adapter
-  def push(req, path, headers)
-
-  def get_local_data(req)
-
-  @impl Plug.Conn.Adapter
-  def get_peer_data(req)
-
-  @impl Plug.Conn.Adapter
-  def get_http_protocol(req)
-
-  def keepalive?(req)
+  @callback keepalive?(payload) :: bool()
 end

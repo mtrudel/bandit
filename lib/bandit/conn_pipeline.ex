@@ -1,9 +1,8 @@
 defmodule Bandit.ConnPipeline do
-  alias Bandit.HTTPRequest
   alias Plug.Conn
 
-  def run(req, {plug, plug_opts}) do
-    case conn(req) do
+  def run(adapter_mod, req, {plug, plug_opts}) do
+    case conn(adapter_mod, req) do
       {:ok, conn} ->
         %Conn{adapter: {_, req}} =
           conn
@@ -17,17 +16,17 @@ defmodule Bandit.ConnPipeline do
     end
   end
 
-  defp conn(req) do
-    case HTTPRequest.read_headers(req) do
+  defp conn(adapter_mod, req) do
+    case adapter_mod.read_headers(req) do
       {:ok, headers, req} ->
-        %{address: remote_ip} = HTTPRequest.get_peer_data(req)
-        %{port: local_port} = HTTPRequest.get_local_data(req)
+        %{address: remote_ip} = adapter_mod.get_peer_data(req)
+        %{port: local_port} = adapter_mod.get_local_data(req)
 
         # TODO read method / path / querystring etc
 
         {:ok,
          %Conn{
-           adapter: {HTTPRequest, req},
+           adapter: {adapter_mod, req},
            owner: self(),
            remote_ip: remote_ip,
            port: local_port,
