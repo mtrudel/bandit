@@ -1,10 +1,11 @@
-defmodule Bandit.ConnAdapter do
+defmodule Bandit.ConnPipeline do
   alias Bandit.HTTPRequest
+  alias Plug.Conn
 
   def run(req, {plug, plug_opts}) do
     case conn(req) do
       {:ok, conn} ->
-        %Plug.Conn{adapter: {_, req}} =
+        %Conn{adapter: {_, req}} =
           conn
           |> plug.call(plug_opts)
           |> commit_response()
@@ -25,7 +26,7 @@ defmodule Bandit.ConnAdapter do
         # TODO read method / path / querystring etc
 
         {:ok,
-         %Plug.Conn{
+         %Conn{
            adapter: {HTTPRequest, req},
            owner: self(),
            remote_ip: remote_ip,
@@ -38,7 +39,7 @@ defmodule Bandit.ConnAdapter do
     end
   end
 
-  defp commit_response(%Plug.Conn{state: :unset}), do: raise(Plug.Conn.NotSentError)
-  defp commit_response(%Plug.Conn{state: :set} = conn), do: Plug.Conn.send_resp(conn)
-  defp commit_response(%Plug.Conn{} = conn), do: conn
+  defp commit_response(%Conn{state: :unset}), do: raise(Conn.NotSentError)
+  defp commit_response(%Conn{state: :set} = conn), do: Conn.send_resp(conn)
+  defp commit_response(%Conn{} = conn), do: conn
 end
