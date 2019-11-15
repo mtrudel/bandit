@@ -71,13 +71,11 @@ defmodule Bandit.HTTP1Request do
     end
 
     def get_local_data(%HTTP1Request{socket: socket}) do
-      {{ip, port}, _} = Socket.endpoints(socket)
-      %{address: ip, port: port, ssl_cert: nil}
+      Socket.local_info(socket)
     end
 
     def get_peer_data(%HTTP1Request{socket: socket}) do
-      {_, {ip, port}} = Socket.endpoints(socket)
-      %{address: ip, port: port, ssl_cert: nil}
+      Socket.peer_info(socket)
     end
 
     def get_http_protocol(%HTTP1Request{version: version}), do: version
