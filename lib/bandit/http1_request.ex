@@ -4,12 +4,7 @@ defmodule Bandit.HTTP1Request do
   @behaviour Plug.Conn.Adapter
   @behaviour Bandit.HTTPRequest
 
-  defstruct state: :new,
-            socket: nil,
-            version: nil,
-            method: nil,
-            path: nil,
-            read_buffer: <<>>
+  defstruct state: :new, socket: nil, buffer: <<>>, version: nil
 
   defmodule UnreadHeadersError do
     defexception message: "Headers have not been read yet"
@@ -29,31 +24,31 @@ defmodule Bandit.HTTP1Request do
   def request(%Socket{} = socket), do: {:ok, __MODULE__, %__MODULE__{socket: socket}}
 
   @impl Bandit.HTTPRequest
-  def read_headers(req, type \\ :http, headers \\ [])
+  def read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
 
-  def read_headers(%__MODULE__{state: :new, socket: socket, read_buffer: read_buffer} = req, type, headers) do
-    case :erlang.decode_packet(type, read_buffer, []) do
+  def read_headers(%__MODULE__{state: :new, socket: socket, buffer: buffer} = req, type, headers, method, path) do
+    case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
         case Socket.recv(socket) do
-          {:ok, more_data} -> read_headers(%{req | read_buffer: read_buffer <> more_data}, type, headers)
+          {:ok, more_data} -> read_headers(%{req | buffer: buffer <> more_data}, type, headers, method, path)
           {:error, reason} -> {:error, reason}
         end
 
       {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        read_headers(%{req | read_buffer: rest, version: version(version), method: method, path: path}, :httph, headers)
+        read_headers(%{req | buffer: rest, version: version(version)}, :httph, headers, method, path)
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
-        read_headers(%{req | read_buffer: rest}, :httph, [{header, value} | headers])
+        read_headers(%{req | buffer: rest}, :httph, [{header, value} | headers], method, path)
 
       {:ok, :http_eoh, rest} ->
-        {:ok, headers, %{req | state: :headers_read, read_buffer: rest}}
+        {:ok, headers, to_string(method), to_string(path), %{req | state: :headers_read, buffer: rest}}
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  def read_headers(%__MODULE__{}, _, _), do: raise(AlreadyReadError)
+  def read_headers(%__MODULE__{}, _, _, _, _), do: raise(AlreadyReadError)
 
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :headers_read} = req, _opts) do
@@ -70,7 +65,7 @@ defmodule Bandit.HTTP1Request do
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     # TODO refactor and add error handling
-    resp = [version, " ", to_string(status), "\r\n", format_headers(headers, response), "\r\n", response]
+    resp = [to_string(version), " ", to_string(status), "\r\n", format_headers(headers, response), "\r\n", response]
     Socket.send(socket, resp)
 
     {:ok, nil, %{req | state: :sent}}
@@ -125,6 +120,6 @@ defmodule Bandit.HTTP1Request do
     |> Enum.flat_map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
   end
 
-  defp version({1, 1}), do: "HTTP/1.1"
-  defp version({1, 0}), do: "HTTP/1.0"
+  defp version({1, 1}), do: :"HTTP/1.1"
+  defp version({1, 0}), do: :"HTTP/1.0"
 end

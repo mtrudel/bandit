@@ -8,7 +8,7 @@ defmodule Bandit.HTTPRequest do
 
   @callback request(ThousandIsland.Socket.t()) :: {:ok, module(), payload}
 
-  @callback read_headers(payload) :: {:ok, keyword()} | {:error, String.t()}
+  @callback read_headers(payload) :: {:ok, keyword(), String.t(), String.t(), payload} | {:error, String.t()}
 
   @callback get_local_data(payload) :: Plug.Conn.Adapter.peer_data()
 
