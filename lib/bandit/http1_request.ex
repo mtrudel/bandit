@@ -1,22 +1,10 @@
 defmodule Bandit.HTTP1Request do
-  @type state :: :new | :headers_read | :body_read | :sent | :chunking_out
+  @type state :: :new | :headers_read | :no_body | :body_read | :sent | :chunking_out
 
   @behaviour Plug.Conn.Adapter
   @behaviour Bandit.HTTPRequest
 
   defstruct state: :new, socket: nil, buffer: <<>>, body_size: nil, body_encoding: nil, connection: nil, version: nil
-
-  defmodule UnreadHeadersError do
-    defexception message: "Headers have not been read yet"
-  end
-
-  defmodule AlreadyReadError do
-    defexception message: "Body has already been read"
-  end
-
-  defmodule AlreadySentError do
-    defexception message: "Response has already been written (or is being chunked out)"
-  end
 
   alias ThousandIsland.Socket
 
@@ -27,17 +15,22 @@ defmodule Bandit.HTTP1Request do
   def read_headers(req) do
     case do_read_headers(req) do
       {:ok, headers, method, path, req} ->
-        body_size =
-          case get_header(headers, "content-length") do
-            nil -> nil
-            size -> String.to_integer(size)
-          end
-
+        body_size = get_header(headers, "content-length")
         body_encoding = get_header(headers, "content-encoding")
         connection = get_header(headers, "connection")
 
-        {:ok, headers, method, path,
-         %{req | body_size: body_size, body_encoding: body_encoding, connection: connection}}
+        case {body_size, body_encoding} do
+          {nil, nil} ->
+            {:ok, headers, method, path, %{req | state: :no_body, connection: connection}}
+
+          {body_size, nil} ->
+            {:ok, headers, method, path,
+             %{req | state: :headers_read, body_size: String.to_integer(body_size), connection: connection}}
+
+          {_, body_encoding} ->
+            {:ok, headers, method, path,
+             %{req | state: :headers_read, body_encoding: body_encoding, connection: connection}}
+        end
 
       {:error, reason} ->
         {:error, reason}
@@ -45,11 +38,8 @@ defmodule Bandit.HTTP1Request do
   end
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{state: :headers_read, body_size: nil, body_encoding: nil} = req, _opts) do
-    {:ok, nil, req}
-  end
-
-  # TODO handle chunked encoding as a thing
+  def read_req_body(%__MODULE__{state: :new}, _opts), do: raise(Bandit.HTTPRequest.UnreadHeadersError)
+  def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
 
   def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: body_size} = req, opts)
       when is_number(body_size) do
@@ -70,12 +60,12 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
-  def read_req_body(%__MODULE__{state: :new}, _opts), do: raise(UnreadHeadersError)
-  def read_req_body(%__MODULE__{}, _opts), do: raise(AlreadyReadError)
+
+  def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.HTTPRequest.AlreadyReadError)
 
   @impl Plug.Conn.Adapter
-  def send_resp(%__MODULE__{state: state}, _, _, _) when state in [:sent, :chunking_out],
-    do: raise(AlreadySentError)
+  def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
+  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     # TODO refactor and add error handling
@@ -131,7 +121,7 @@ defmodule Bandit.HTTP1Request do
 
   defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
 
-  defp do_read_headers(%__MODULE__{state: :new, socket: socket, buffer: buffer} = req, type, headers, method, path) do
+  defp do_read_headers(%__MODULE__{socket: socket, buffer: buffer} = req, type, headers, method, path) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
         case Socket.recv(socket) do
@@ -159,7 +149,7 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
-  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(AlreadyReadError)
+  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.HTTPRequest.AlreadyReadError)
 
   defp get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do

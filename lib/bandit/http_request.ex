@@ -13,4 +13,9 @@ defmodule Bandit.HTTPRequest do
   @callback get_local_data(payload) :: Plug.Conn.Adapter.peer_data()
 
   @callback keepalive?(payload) :: bool()
+
+  defmodule UnreadHeadersError, do: defexception(message: "Headers have not been read yet")
+  defmodule UnsupportedTransferEncodingError, do: defexception(message: "Unsupported Transfer-Encoding")
+  defmodule AlreadyReadError, do: defexception(message: "Body has already been read")
+  defmodule AlreadySentError, do: defexception(message: "Response has already been written (or is being chunked out)")
 end
