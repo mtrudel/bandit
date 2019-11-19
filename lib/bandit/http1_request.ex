@@ -81,10 +81,9 @@ defmodule Bandit.HTTP1Request do
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
-    # TODO refactor and add error handling
-    resp = [to_string(version), " ", to_string(status), "\r\n", format_headers(headers, response), "\r\n", response]
-    Socket.send(socket, resp)
-
+    headers = [{"content-length", response |> byte_size() |> to_string()} | headers]
+    header_io_data = response_header(version, status, headers)
+    Socket.send(socket, [header_io_data, response])
     {:ok, nil, %{req | state: :sent}}
   end
 
@@ -95,14 +94,16 @@ defmodule Bandit.HTTP1Request do
   end
 
   @impl Plug.Conn.Adapter
-  def send_chunked(%__MODULE__{} = req, _status, _headers) do
-    # TODO
+  def send_chunked(%__MODULE__{socket: socket, version: version} = req, status, headers) do
+    headers = [{"transfer-encoding", "chunked"} | headers]
+    Socket.send(socket, response_header(version, status, headers))
     {:ok, nil, %{req | state: :chunking_out}}
   end
 
   @impl Plug.Conn.Adapter
-  def chunk(%__MODULE__{} = req, _chunk) do
-    # TODO
+  def chunk(%__MODULE__{socket: socket} = req, chunk) do
+    byte_size = chunk |> byte_size() |> Integer.to_string(16)
+    Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
     {:ok, nil, req}
   end
 
@@ -201,9 +202,15 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
-  defp format_headers(headers, body) do
-    [{"content-length", body |> byte_size() |> to_string()} | headers]
-    |> Enum.flat_map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
+  def response_header(version, status, headers) do
+    [
+      to_string(version),
+      " ",
+      to_string(status),
+      "\r\n",
+      Enum.flat_map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
+      "\r\n"
+    ]
   end
 
   defp version({1, 1}), do: :"HTTP/1.1"

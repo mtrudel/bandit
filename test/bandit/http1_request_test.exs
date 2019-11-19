@@ -81,5 +81,18 @@ defmodule HTTP1RequestTest do
     def send_200(conn) do
       send_resp(conn, 200, "OK")
     end
+
+    test "writes out a chunked response", %{base: base} do
+      {:ok, response} = HTTPoison.get(base <> "/send_chunked_200")
+      assert response.status_code == 200
+      assert response.body == "OK"
+      assert List.first(response.headers) == {"transfer-encoding", "chunked"}
+    end
+
+    def send_chunked_200(conn) do
+      conn
+      |> send_chunked(200)
+      |> chunk("OK")
+    end
   end
 end
