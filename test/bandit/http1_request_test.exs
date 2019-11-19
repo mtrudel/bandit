@@ -20,6 +20,23 @@ defmodule HTTP1RequestTest do
   end
 
   describe "request handling" do
+    test "reads headers and requested metadata properly", %{base: base} do
+      {:ok, response} = HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [{"X-Fruit", "banana"}])
+
+      assert response.status_code == 200
+      assert response.body == "OK"
+    end
+
+    def expect_headers(conn) do
+      assert conn.request_path == "/expect_headers/a//b/c"
+      assert conn.path_info == ["expect_headers", "a", "b", "c"]
+      assert conn.query_string == "abc=def"
+      assert conn.method == "GET"
+      assert conn.remote_ip == "127.0.0.1"
+      assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana"]
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a content-length encoded body properly", %{base: base} do
       {:ok, response} = HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000))
       assert response.status_code == 200
@@ -54,10 +71,11 @@ defmodule HTTP1RequestTest do
   end
 
   describe "response handling" do
-    test "handles a basic hello world properly", %{base: base} do
+    test "writes out a response with a content-length header", %{base: base} do
       {:ok, response} = HTTPoison.get(base <> "/send_200")
       assert response.status_code == 200
       assert response.body == "OK"
+      assert List.first(response.headers) == {"content-length", "2"}
     end
 
     def send_200(conn) do
