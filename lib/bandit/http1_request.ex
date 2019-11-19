@@ -16,7 +16,7 @@ defmodule Bandit.HTTP1Request do
     case do_read_headers(req) do
       {:ok, headers, method, path, %__MODULE__{buffer: buffer} = req} ->
         body_size = get_header(headers, "content-length")
-        body_encoding = get_header(headers, "content-encoding")
+        body_encoding = get_header(headers, "transfer-encoding")
         connection = get_header(headers, "connection")
 
         case {body_size, body_encoding} do
@@ -65,38 +65,11 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_encoding: "chunked"} = req, opts) do
-    case do_read_chunk(req, opts) do
-      # TODO
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
+    do_read_chunk(req, <<>>, opts)
   end
 
-  defp do_read_chunk(%__MODULE__{socket: socket, buffer: buffer}, opts) do
-    case :binary.match(buffer, "\r\n") do
-      {offset, _} ->
-        # TODO handle chunk size of zero here
-        <<chunk_size_hex::binary-size(offset - 1), "\r\n", rest::binary>> = buffer
-        chunk_size = String.to_integer(chunk_size, 16)
-
-        case rest do
-          <<chunk::binary-size(chunk_size), rest::binary>> ->
-            {:more, chunk, %{req | buffer: rest}}
-
-          _ ->
-            nil
-            # TODO read more body & try again
-        end
-
-      :nomatch ->
-        nil
-        # TODO read more body & try again
-    end
-  end
-
-  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts)
+  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: body_encoding}, _opts)
       when not is_nil(body_encoding) do
     raise(Bandit.HTTPRequest.UnsupportedTransferEncodingError)
   end
@@ -190,6 +163,36 @@ defmodule Bandit.HTTP1Request do
   end
 
   defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.HTTPRequest.AlreadyReadError)
+
+  defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
+    case :binary.match(buffer, "\r\n") do
+      {offset, _} ->
+        <<chunk_size::binary-size(offset), ?\r, ?\n, rest::binary>> = buffer
+
+        case String.to_integer(chunk_size, 16) do
+          0 ->
+            {:ok, body, req}
+
+          chunk_size ->
+            case rest do
+              <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
+                do_read_chunk(%{req | buffer: rest}, body <> next_chunk, opts)
+
+              _ ->
+                case grow_buffer(req, :all_available, opts) do
+                  {:ok, req} -> do_read_chunk(req, body, opts)
+                  {:error, reason} -> {:error, reason}
+                end
+            end
+        end
+
+      :nomatch ->
+        case grow_buffer(req, :all_available, opts) do
+          {:ok, req} -> do_read_chunk(req, body, opts)
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
 
   defp get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do
