@@ -18,7 +18,8 @@ defmodule Bandit.MixProject do
   defp deps do
     [
       {:thousand_island, path: "../thousand_island"},
-      {:plug, "~> 1.8.1"}
+      {:plug, "~> 1.8.1"},
+      {:httpoison, "~> 1.6"}
     ]
   end
 end
