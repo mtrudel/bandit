@@ -90,9 +90,12 @@ defmodule HTTP1RequestTest do
     end
 
     def send_chunked_200(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(200)
+        |> chunk("OK")
+
       conn
-      |> send_chunked(200)
-      |> chunk("OK")
     end
   end
 end

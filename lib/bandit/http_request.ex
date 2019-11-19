@@ -14,8 +14,11 @@ defmodule Bandit.HTTPRequest do
 
   @callback keepalive?(payload) :: bool()
 
+  @callback close(payload) :: :ok
+
+  @callback send_fallback_resp(payload, code :: pos_integer()) :: :ok
+
   defmodule UnreadHeadersError, do: defexception(message: "Headers have not been read yet")
-  defmodule UnsupportedTransferEncodingError, do: defexception(message: "Unsupported Transfer-Encoding")
   defmodule AlreadyReadError, do: defexception(message: "Body has already been read")
   defmodule AlreadySentError, do: defexception(message: "Response has already been written (or is being chunked out)")
 end

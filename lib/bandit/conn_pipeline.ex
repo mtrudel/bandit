@@ -1,18 +1,16 @@
 defmodule Bandit.ConnPipeline do
-  alias Plug.Conn
-
   def run(adapter_mod, req, {plug, plug_opts}) do
     case conn(adapter_mod, req) do
       {:ok, conn} ->
-        %Conn{adapter: {_, req}} =
+        %Plug.Conn{adapter: {_, req}} =
           conn
           |> plug.call(plug_opts)
-          |> commit_response()
+          |> commit_response(plug)
 
         {:ok, req}
 
-      {:error, reason} ->
-        {:error, reason}
+      {:error, _status, _reason} = error ->
+        error
     end
   end
 
@@ -28,7 +26,7 @@ defmodule Bandit.ConnPipeline do
         {path, query_string} = path_and_query_string(path)
 
         {:ok,
-         %Conn{
+         %Plug.Conn{
            adapter: {adapter_mod, req},
            owner: self(),
            host: host,
@@ -42,8 +40,11 @@ defmodule Bandit.ConnPipeline do
            query_string: query_string
          }}
 
+      {:error, :timeout} ->
+        {:error, 408, "timeout"}
+
       {:error, reason} ->
-        {:error, reason}
+        {:error, 400, reason}
     end
   end
 
@@ -54,7 +55,12 @@ defmodule Bandit.ConnPipeline do
     end
   end
 
-  defp commit_response(%Conn{state: :unset}), do: raise(Conn.NotSentError)
-  defp commit_response(%Conn{state: :set} = conn), do: Conn.send_resp(conn)
-  defp commit_response(%Conn{} = conn), do: conn
+  defp commit_response(%Plug.Conn{state: :unset}, _), do: raise(Plug.Conn.NotSentError)
+  defp commit_response(%Plug.Conn{state: :set} = conn, _), do: Plug.Conn.send_resp(conn)
+  defp commit_response(%Plug.Conn{state: :chunked, adapter: {adapter_mod, req}}, _), do: adapter_mod.chunk(req, "")
+  defp commit_response(%Plug.Conn{} = conn, _), do: conn
+
+  defp commit_response(other, plug) do
+    raise "Expected #{plug}.call/2 to return Plug.Conn but got: #{inspect(other)}"
+  end
 end

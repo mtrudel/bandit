@@ -71,7 +71,7 @@ defmodule Bandit.HTTP1Request do
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: body_encoding}, _opts)
       when not is_nil(body_encoding) do
-    raise(Bandit.HTTPRequest.UnsupportedTransferEncodingError)
+    {:error, :unsupported_transfer_encoding}
   end
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.HTTPRequest.AlreadyReadError)
@@ -133,6 +133,21 @@ defmodule Bandit.HTTP1Request do
   @impl Bandit.HTTPRequest
   def keepalive?(%__MODULE__{version: version}), do: version == :"HTTP/1.1"
 
+  @impl Bandit.HTTPRequest
+  def close(%__MODULE__{socket: socket}) do
+    Socket.shutdown(socket, :write)
+    Socket.close(socket)
+  end
+
+  @impl Bandit.HTTPRequest
+  def send_fallback_resp(%__MODULE__{state: :sent} = req, _status), do: close(req)
+  def send_fallback_resp(%__MODULE__{state: :chunking_out} = req, _status), do: close(req)
+
+  def send_fallback_resp(%__MODULE__{socket: socket} = req, status) do
+    Socket.send(socket, "HTTP/1.0 #{to_string(status)}\r\n\r\n")
+    close(req)
+  end
+
   defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
 
   defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
@@ -157,6 +172,9 @@ defmodule Bandit.HTTP1Request do
 
       {:ok, :http_eoh, rest} ->
         {:ok, headers, method, path, %{req | state: :headers_read, buffer: rest}}
+
+      {:ok, {:http_error, _reason}, _rest} ->
+        {:error, :invalid_request}
 
       {:error, reason} ->
         {:error, reason}
