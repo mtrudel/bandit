@@ -14,7 +14,7 @@ defmodule Bandit.HTTP1Request do
   @impl Bandit.HTTPRequest
   def read_headers(req) do
     case do_read_headers(req) do
-      {:ok, headers, method, path, req} ->
+      {:ok, headers, method, path, %__MODULE__{buffer: buffer} = req} ->
         body_size = get_header(headers, "content-length")
         body_encoding = get_header(headers, "content-encoding")
         connection = get_header(headers, "connection")
@@ -25,7 +25,12 @@ defmodule Bandit.HTTP1Request do
 
           {body_size, nil} ->
             {:ok, headers, method, path,
-             %{req | state: :headers_read, body_size: String.to_integer(body_size), connection: connection}}
+             %{
+               req
+               | state: :headers_read,
+                 body_size: String.to_integer(body_size) - byte_size(buffer),
+                 connection: connection
+             }}
 
           {_, body_encoding} ->
             {:ok, headers, method, path,
@@ -41,11 +46,11 @@ defmodule Bandit.HTTP1Request do
   def read_req_body(%__MODULE__{state: :new}, _opts), do: raise(Bandit.HTTPRequest.UnreadHeadersError)
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
 
-  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: body_size} = req, opts)
+  def read_req_body(%__MODULE__{state: :headers_read, body_size: body_size} = req, opts)
       when is_number(body_size) do
-    to_read = min(body_size, Keyword.get(opts, :length, 8_000_000)) - byte_size(buffer)
+    to_read = min(body_size, Keyword.get(opts, :length, 8_000_000))
 
-    case do_read_req_body_by_size(req, to_read, opts) do
+    case grow_buffer(req, to_read, opts) do
       {:ok, %__MODULE__{buffer: buffer} = req} ->
         remaining_bytes = body_size - byte_size(buffer)
 
@@ -156,11 +161,11 @@ defmodule Bandit.HTTP1Request do
 
   defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
 
-  defp do_read_headers(%__MODULE__{socket: socket, buffer: buffer} = req, type, headers, method, path) do
+  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
-        case Socket.recv(socket) do
-          {:ok, more_data} -> do_read_headers(%{req | buffer: buffer <> more_data}, type, headers, method, path)
+        case grow_buffer(req, :all_available) do
+          {:ok, req} -> do_read_headers(req, type, headers, method, path)
           {:error, reason} -> {:error, reason}
         end
 
@@ -201,9 +206,11 @@ defmodule Bandit.HTTP1Request do
   defp version({1, 1}), do: :"HTTP/1.1"
   defp version({1, 0}), do: :"HTTP/1.0"
 
-  defp do_read_req_body_by_size(%__MODULE__{} = req, 0, _opts), do: {:ok, req}
+  defp grow_buffer(req, to_read, opts \\ [])
+  defp grow_buffer(%__MODULE__{} = req, 0, _opts), do: {:ok, req}
 
-  defp do_read_req_body_by_size(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts) do
+  defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts) do
+    to_read = if to_read == :all_available, do: 0, else: to_read
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout, 15_000)
 
@@ -212,7 +219,7 @@ defmodule Bandit.HTTP1Request do
         remaining_bytes = to_read - byte_size(chunk)
 
         if remaining_bytes > 0 do
-          do_read_req_body_by_size(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
+          grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
         else
           {:ok, %{req | buffer: buffer <> chunk}}
         end
