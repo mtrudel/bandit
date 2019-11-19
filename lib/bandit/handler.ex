@@ -8,9 +8,14 @@ defmodule Bandit.Handler do
          {:ok, req} <- Bandit.ConnPipeline.run(adapter_mod, req, plug) do
       if adapter_mod.keepalive?(req) do
         handle_connection(socket, plug)
+      else
+        ThousandIsland.shutdown(socket, :write)
+        ThousandIsland.close(socket)
       end
     else
-      {:error, _reason} -> ThousandIsland.Socket.close(socket)
+      {:error, _reason} ->
+        ThousandIsland.shutdown(socket, :write)
+        ThousandIsland.Socket.close(socket)
     end
   end
 end
