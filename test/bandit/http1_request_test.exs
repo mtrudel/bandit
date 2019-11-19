@@ -41,4 +41,21 @@ defmodule HTTP1RequestTest do
     assert body == String.duplicate("a", 8_000_000)
     send_resp(conn, 200, "OK")
   end
+
+  test "reads a chunked body properly", %{base: base} do
+    {:ok, response} =
+      HTTPoison.post(base <> "/expect_chunked_body", String.duplicate("a", 8_000_000), [
+        {"Transfer-Encoding", "chunked"}
+      ])
+
+    assert response.status_code == 200
+    assert response.body == "OK"
+  end
+
+  def expect_chunked_body(conn) do
+    assert Plug.Conn.get_req_header(conn, "transfer-encoding") == ["chunked"]
+    {:ok, body, conn} = Plug.Conn.read_body(conn)
+    assert body == String.duplicate("a", 8_000_000)
+    send_resp(conn, 200, "OK")
+  end
 end

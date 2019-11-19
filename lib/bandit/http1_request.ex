@@ -60,6 +60,41 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
+  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_encoding: "chunked"} = req, opts) do
+    case do_read_chunk(req, opts) do
+      # TODO
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp do_read_chunk(%__MODULE__{socket: socket, buffer: buffer}, opts) do
+    case :binary.match(buffer, "\r\n") do
+      {offset, _} ->
+        # TODO handle chunk size of zero here
+        <<chunk_size_hex::binary-size(offset - 1), "\r\n", rest::binary>> = buffer
+        chunk_size = String.to_integer(chunk_size, 16)
+
+        case rest do
+          <<chunk::binary-size(chunk_size), rest::binary>> ->
+            {:more, chunk, %{req | buffer: rest}}
+
+          _ ->
+            nil
+            # TODO read more body & try again
+        end
+
+      :nomatch ->
+        nil
+        # TODO read more body & try again
+    end
+  end
+
+  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts)
+      when not is_nil(body_encoding) do
+    raise(Bandit.HTTPRequest.UnsupportedTransferEncodingError)
+  end
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.HTTPRequest.AlreadyReadError)
 
