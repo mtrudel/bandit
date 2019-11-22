@@ -3,6 +3,8 @@ defmodule HTTP1RequestTest do
 
   import Plug.Conn
 
+  require Logger
+
   setup do
     opts = [port: 0, listener_options: [ip: :loopback]]
     {:ok, server_pid} = start_supervised(Bandit.child_spec(plug: __MODULE__, options: opts))
@@ -16,7 +18,14 @@ defmodule HTTP1RequestTest do
 
   def call(conn, []) do
     function = String.to_atom(List.first(conn.path_info))
-    apply(__MODULE__, function, [conn])
+
+    try do
+      apply(__MODULE__, function, [conn])
+    rescue
+      exception ->
+        Logger.error(Exception.format(:error, exception, __STACKTRACE__))
+        reraise(exception, __STACKTRACE__)
+    end
   end
 
   describe "request handling" do
