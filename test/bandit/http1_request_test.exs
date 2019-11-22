@@ -6,7 +6,7 @@ defmodule HTTP1RequestTest do
   require Logger
 
   setup do
-    opts = [port: 0, listener_options: [ip: :loopback]]
+    opts = [port: 0, transport_options: [ip: :loopback]]
     {:ok, server_pid} = start_supervised(Bandit.child_spec(plug: __MODULE__, options: opts))
     {:ok, port} = ThousandIsland.local_port(server_pid)
     {:ok, %{base: "http://localhost:#{port}"}}
