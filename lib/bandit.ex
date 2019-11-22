@@ -9,7 +9,8 @@ defmodule Bandit do
 
   Three options are supported:
 
-  * `scheme`: Currently only `:http` is supported
+  * `scheme`: One of `:http` or `:https`. If `:https` is supported, you will need
+     to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
   * `options`: Options to pass to `ThousandIsland.Server`. For an exhaustive list of options see the 
     `ThousandIsland.Server` documentation, however some common options are:
@@ -29,8 +30,15 @@ defmodule Bandit do
       raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
     end
 
+    transport_module =
+      case Keyword.get(arg, :scheme, :http) do
+        :http -> ThousandIsland.Transports.TCP
+        :https -> ThousandIsland.Transports.SSL
+      end
+
     options =
       options
+      |> Keyword.put(:transport_module, transport_module)
       |> Keyword.put(:handler_module, Bandit.Handler)
       |> Keyword.put(:handler_options, plug(arg))
 
