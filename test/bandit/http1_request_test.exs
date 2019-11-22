@@ -80,6 +80,16 @@ defmodule HTTP1RequestTest do
   end
 
   describe "response handling" do
+    test "writes out a response with no body", %{base: base} do
+      {:ok, response} = HTTPoison.get(base <> "/send_204")
+      assert response.status_code == 204
+      assert response.body == ""
+    end
+
+    def send_204(conn) do
+      send_resp(conn, 204, "")
+    end
+
     test "writes out a response with a content-length header", %{base: base} do
       {:ok, response} = HTTPoison.get(base <> "/send_200")
       assert response.status_code == 200
