@@ -12,8 +12,8 @@ defmodule Bandit do
   * `scheme`: One of `:http` or `:https`. If `:https` is supported, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
-  * `options`: Options to pass to `ThousandIsland.Server`. For an exhaustive list of options see the 
-    `ThousandIsland.Server` documentation, however some common options are:
+  * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the 
+    `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
       * `num_acceptors`: The number of acceptor processes to run. This is mostly a performance
       tuning knob and can usually be left at the default value of 10
@@ -44,7 +44,7 @@ defmodule Bandit do
 
     %{
       id: Bandit,
-      start: {ThousandIsland.Server, :start_link, [options]}
+      start: {ThousandIsland, :start_link, [options]}
     }
   end
 
