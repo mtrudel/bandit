@@ -116,5 +116,36 @@ defmodule HTTP1RequestTest do
 
       conn
     end
+
+    test "writes out a sent file for the entire file with content length", %{base: base} do
+      {:ok, response} = HTTPoison.get(base <> "/send_full_file")
+      assert response.status_code == 200
+      assert response.body == "ABCDEF"
+      assert List.first(response.headers) == {"content-length", "6"}
+    end
+
+    def send_full_file(conn) do
+      conn
+      |> send_file(200, Path.join([__DIR__, "../support/sendfile"]), 0, :all)
+    end
+
+    test "writes out a sent file for parts of a file with content length", %{base: base} do
+      {:ok, response} = HTTPoison.get(base <> "/send_file?offset=1&length=3")
+      assert response.status_code == 200
+      assert response.body == "BCD"
+      assert List.first(response.headers) == {"content-length", "3"}
+    end
+
+    def send_file(conn) do
+      conn = fetch_query_params(conn)
+
+      conn
+      |> send_file(
+        200,
+        Path.join([__DIR__, "../support/sendfile"]),
+        String.to_integer(conn.params["offset"]),
+        String.to_integer(conn.params["length"])
+      )
+    end
   end
 end

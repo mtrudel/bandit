@@ -88,9 +88,24 @@ defmodule Bandit.HTTP1Request do
   end
 
   @impl Plug.Conn.Adapter
-  def send_file(%__MODULE__{} = req, _status, _headers, _path, _offset, _length) do
-    # TODO
-    {:ok, nil, %{req | state: :sent}}
+  def send_file(%__MODULE__{socket: socket, version: version} = req, status, headers, path, offset, length) do
+    %File.Stat{type: :regular, size: size} = File.stat!(path)
+
+    length =
+      cond do
+        length == :all -> size - offset
+        is_integer(length) -> length
+      end
+
+    if offset + length <= size do
+      headers = [{"content-length", length |> to_string()} | headers]
+      Socket.send(socket, response_header(version, status, headers))
+      Socket.sendfile(socket, path, offset, length)
+
+      {:ok, nil, %{req | state: :sent}}
+    else
+      {:error, "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
+    end
   end
 
   @impl Plug.Conn.Adapter
@@ -226,7 +241,7 @@ defmodule Bandit.HTTP1Request do
       " ",
       to_string(status),
       "\r\n",
-      Enum.flat_map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
+      Enum.map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
       "\r\n"
     ]
   end
