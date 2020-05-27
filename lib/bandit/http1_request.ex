@@ -18,6 +18,10 @@ defmodule Bandit.HTTP1Request do
   @impl Bandit.HTTPRequest
   def request(%Socket{} = socket), do: {:ok, __MODULE__, %__MODULE__{socket: socket}}
 
+  ################
+  # Header Reading
+  ################
+
   @impl Bandit.HTTPRequest
   def read_headers(req) do
     case do_read_headers(req) do
@@ -51,9 +55,75 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
+  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
+
+  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
+    case :erlang.decode_packet(type, buffer, []) do
+      {:more, _len} ->
+        case grow_buffer(req, 0) do
+          {:ok, req} -> do_read_headers(req, type, headers, method, path)
+          {:error, reason} -> {:error, reason}
+        end
+
+      {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
+        version =
+          case version do
+            {1, 1} -> :"HTTP/1.1"
+            {1, 0} -> :"HTTP/1.0"
+          end
+
+        do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
+
+      {:ok, {:http_header, _, header, _, value}, rest} ->
+        do_read_headers(
+          %{req | buffer: rest},
+          :httph,
+          [{header |> to_string() |> String.downcase(), to_string(value)} | headers],
+          to_string(method),
+          to_string(path)
+        )
+
+      {:ok, :http_eoh, rest} ->
+        {:ok, headers, method, path, %{req | state: :headers_read, buffer: rest}}
+
+      {:ok, {:http_error, _reason}, _rest} ->
+        {:error, :invalid_request}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.HTTPRequest.AlreadyReadError)
+
+  defp should_keepalive?(version, headers) do
+    cond do
+      get_header(headers, "connection") |> is_nil -> version == :"HTTP/1.1"
+      get_header(headers, "connection") |> String.match?(~r/^keep-alive$/i) -> true
+      get_header(headers, "connection") |> String.match?(~r/^close$/i) -> false
+      version == :"HTTP/1.1" -> true
+      true -> false
+    end
+  end
+
+  defp get_header(headers, header, default \\ nil) do
+    case List.keyfind(headers, header, 0) do
+      {_, value} -> value
+      nil -> default
+    end
+  end
+
+  ##############
+  # Body Reading
+  ##############
+
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :new}, _opts), do: raise(Bandit.HTTPRequest.UnreadHeadersError)
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
+
+  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
+    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+  end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_size: body_size} = req, opts)
       when is_number(body_size) do
@@ -75,7 +145,10 @@ defmodule Bandit.HTTP1Request do
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
-    do_read_chunk(req, <<>>, opts)
+    case do_read_chunk(req, <<>>, opts) do
+      {:ok, body, req} -> {:ok, IO.iodata_to_binary(body), req}
+      other -> other
+    end
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: body_encoding}, _opts)
@@ -84,6 +157,63 @@ defmodule Bandit.HTTP1Request do
   end
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.HTTPRequest.AlreadyReadError)
+
+  defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
+    case :binary.match(buffer, "\r\n") do
+      {offset, _} ->
+        <<chunk_size::binary-size(offset), ?\r, ?\n, rest::binary>> = buffer
+
+        case String.to_integer(chunk_size, 16) do
+          0 ->
+            {:ok, body, req}
+
+          chunk_size ->
+            case rest do
+              <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
+                do_read_chunk(%{req | buffer: rest}, [body | next_chunk], opts)
+
+              _ ->
+                case grow_buffer(req, 0, opts) do
+                  {:ok, req} -> do_read_chunk(req, body, opts)
+                  {:error, reason} -> {:error, reason}
+                end
+            end
+        end
+
+      :nomatch ->
+        case grow_buffer(req, 0, opts) do
+          {:ok, req} -> do_read_chunk(req, body, opts)
+          {:error, reason} -> {:error, reason}
+        end
+    end
+  end
+
+  ##################
+  # Internal Reading
+  ##################
+
+  defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts \\ []) do
+    read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
+    read_timeout = Keyword.get(opts, :read_timeout, 15_000)
+
+    case Socket.recv(socket, read_size, read_timeout) do
+      {:ok, chunk} ->
+        remaining_bytes = to_read - byte_size(chunk)
+
+        if remaining_bytes > 0 do
+          grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
+        else
+          {:ok, %{req | buffer: buffer <> chunk}}
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  ##################
+  # Response Sending
+  ##################
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
@@ -131,129 +261,7 @@ defmodule Bandit.HTTP1Request do
     {:ok, nil, req}
   end
 
-  @impl Plug.Conn.Adapter
-  def inform(_req, _status, _headers) do
-    {:error, :not_supported}
-  end
-
-  @impl Plug.Conn.Adapter
-  def push(_req, _path, _headers) do
-    {:error, :not_supported}
-  end
-
-  @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{socket: socket}) do
-    Socket.peer_info(socket)
-  end
-
-  @impl Bandit.HTTPRequest
-  def get_local_data(%__MODULE__{socket: socket}) do
-    Socket.local_info(socket)
-  end
-
-  @impl Plug.Conn.Adapter
-  def get_http_protocol(%__MODULE__{version: version}), do: version
-
-  @impl Bandit.HTTPRequest
-  def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
-
-  @impl Bandit.HTTPRequest
-  def close(%__MODULE__{socket: socket}) do
-    Socket.shutdown(socket, :write)
-    Socket.close(socket)
-  end
-
-  @impl Bandit.HTTPRequest
-  def send_fallback_resp(%__MODULE__{state: :sent} = req, _status), do: close(req)
-  def send_fallback_resp(%__MODULE__{state: :chunking_out} = req, _status), do: close(req)
-
-  def send_fallback_resp(%__MODULE__{socket: socket} = req, status) do
-    Socket.send(socket, "HTTP/1.0 #{to_string(status)}\r\n\r\n")
-    close(req)
-  end
-
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
-
-  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
-    case :erlang.decode_packet(type, buffer, []) do
-      {:more, _len} ->
-        case grow_buffer(req, :all_available) do
-          {:ok, req} -> do_read_headers(req, type, headers, method, path)
-          {:error, reason} -> {:error, reason}
-        end
-
-      {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        do_read_headers(%{req | buffer: rest, version: version(version)}, :httph, headers, method, path)
-
-      {:ok, {:http_header, _, header, _, value}, rest} ->
-        do_read_headers(
-          %{req | buffer: rest},
-          :httph,
-          [{header |> to_string() |> String.downcase(), to_string(value)} | headers],
-          to_string(method),
-          to_string(path)
-        )
-
-      {:ok, :http_eoh, rest} ->
-        {:ok, headers, method, path, %{req | state: :headers_read, buffer: rest}}
-
-      {:ok, {:http_error, _reason}, _rest} ->
-        {:error, :invalid_request}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.HTTPRequest.AlreadyReadError)
-
-  defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
-    case :binary.match(buffer, "\r\n") do
-      {offset, _} ->
-        <<chunk_size::binary-size(offset), ?\r, ?\n, rest::binary>> = buffer
-
-        case String.to_integer(chunk_size, 16) do
-          0 ->
-            {:ok, body, req}
-
-          chunk_size ->
-            case rest do
-              <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-                do_read_chunk(%{req | buffer: rest}, body <> next_chunk, opts)
-
-              _ ->
-                case grow_buffer(req, :all_available, opts) do
-                  {:ok, req} -> do_read_chunk(req, body, opts)
-                  {:error, reason} -> {:error, reason}
-                end
-            end
-        end
-
-      :nomatch ->
-        case grow_buffer(req, :all_available, opts) do
-          {:ok, req} -> do_read_chunk(req, body, opts)
-          {:error, reason} -> {:error, reason}
-        end
-    end
-  end
-
-  defp get_header(headers, header, default \\ nil) do
-    case List.keyfind(headers, header, 0) do
-      {_, value} -> value
-      nil -> default
-    end
-  end
-
-  defp should_keepalive?(version, headers) do
-    cond do
-      get_header(headers, "connection") |> String.match?(~r/^keep-alive$/i) -> true
-      get_header(headers, "connection") |> String.match?(~r/^close$/i) -> false
-      version == :"HTTP/1.1" -> true
-      true -> false
-    end
-  end
-
-  def response_header(version, status, headers) do
+  defp response_header(version, status, headers) do
     [
       to_string(version),
       " ",
@@ -264,29 +272,40 @@ defmodule Bandit.HTTP1Request do
     ]
   end
 
-  defp version({1, 1}), do: :"HTTP/1.1"
-  defp version({1, 0}), do: :"HTTP/1.0"
+  ######
+  # Misc
+  ######
 
-  defp grow_buffer(req, to_read, opts \\ [])
-  defp grow_buffer(%__MODULE__{} = req, 0, _opts), do: {:ok, req}
+  @impl Bandit.HTTPRequest
+  def send_fallback_resp(%__MODULE__{state: :sent} = req, _status), do: close(req)
+  def send_fallback_resp(%__MODULE__{state: :chunking_out} = req, _status), do: close(req)
 
-  defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts) do
-    to_read = if to_read == :all_available, do: 0, else: to_read
-    read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
-    read_timeout = Keyword.get(opts, :read_timeout, 15_000)
-
-    case Socket.recv(socket, read_size, read_timeout) do
-      {:ok, chunk} ->
-        remaining_bytes = to_read - byte_size(chunk)
-
-        if remaining_bytes > 0 do
-          grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
-        else
-          {:ok, %{req | buffer: buffer <> chunk}}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
-    end
+  def send_fallback_resp(%__MODULE__{socket: socket} = req, status) do
+    Socket.send(socket, "HTTP/1.0 #{to_string(status)}\r\n\r\n")
+    close(req)
   end
+
+  @impl Bandit.HTTPRequest
+  def close(%__MODULE__{socket: socket}) do
+    Socket.shutdown(socket, :write)
+    Socket.close(socket)
+  end
+
+  @impl Plug.Conn.Adapter
+  def inform(_req, _status, _headers), do: {:error, :not_supported}
+
+  @impl Plug.Conn.Adapter
+  def push(_req, _path, _headers), do: {:error, :not_supported}
+
+  @impl Plug.Conn.Adapter
+  def get_peer_data(%__MODULE__{socket: socket}), do: Socket.peer_info(socket)
+
+  @impl Bandit.HTTPRequest
+  def get_local_data(%__MODULE__{socket: socket}), do: Socket.local_info(socket)
+
+  @impl Plug.Conn.Adapter
+  def get_http_protocol(%__MODULE__{version: version}), do: version
+
+  @impl Bandit.HTTPRequest
+  def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 end
