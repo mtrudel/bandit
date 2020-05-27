@@ -1,20 +1,13 @@
 defmodule Bandit.ConnPipeline do
   def run(adapter_mod, req, {plug, plug_opts}) do
-    case conn(adapter_mod, req) do
-      {:ok, conn} ->
-        %Plug.Conn{adapter: {_, req}} =
-          conn
-          |> plug.call(plug_opts)
-          |> commit_response(plug)
-
-        {:ok, req}
-
-      {:error, _status, _reason} = error ->
-        error
+    with {:ok, conn} <- build_conn(adapter_mod, req),
+         conn <- plug.call(conn, plug_opts),
+         %Plug.Conn{adapter: {_, req}} <- commit_response(conn, plug) do
+      {:ok, req}
     end
   end
 
-  defp conn(adapter_mod, req) do
+  defp build_conn(adapter_mod, req) do
     case adapter_mod.read_headers(req) do
       {:ok, headers, method, path, req} ->
         %{address: remote_ip} = adapter_mod.get_peer_data(req)
@@ -48,19 +41,20 @@ defmodule Bandit.ConnPipeline do
     end
   end
 
+  defp commit_response(conn, plug) do
+    case conn do
+      %Plug.Conn{state: :unset} -> raise(Plug.Conn.NotSentError)
+      %Plug.Conn{state: :set} -> Plug.Conn.send_resp(conn)
+      %Plug.Conn{state: :chunked, adapter: {adapter_mod, req}} -> adapter_mod.chunk(req, "")
+      %Plug.Conn{} -> conn
+      _ -> raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(conn)}")
+    end
+  end
+
   defp path_and_query_string(path) do
     case String.split(path, "?") do
       [path] -> {path, ""}
       [path, query_string] -> {path, query_string}
     end
-  end
-
-  defp commit_response(%Plug.Conn{state: :unset}, _), do: raise(Plug.Conn.NotSentError)
-  defp commit_response(%Plug.Conn{state: :set} = conn, _), do: Plug.Conn.send_resp(conn)
-  defp commit_response(%Plug.Conn{state: :chunked, adapter: {adapter_mod, req}}, _), do: adapter_mod.chunk(req, "")
-  defp commit_response(%Plug.Conn{} = conn, _), do: conn
-
-  defp commit_response(other, plug) do
-    raise "Expected #{plug}.call/2 to return Plug.Conn but got: #{inspect(other)}"
   end
 end
