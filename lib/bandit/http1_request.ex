@@ -4,7 +4,14 @@ defmodule Bandit.HTTP1Request do
   @behaviour Plug.Conn.Adapter
   @behaviour Bandit.HTTPRequest
 
-  defstruct state: :new, socket: nil, buffer: <<>>, body_size: nil, body_encoding: nil, connection: nil, version: nil
+  defstruct state: :new,
+            socket: nil,
+            buffer: <<>>,
+            body_size: nil,
+            body_encoding: nil,
+            connection: nil,
+            version: nil,
+            keepalive: false
 
   alias ThousandIsland.Socket
 
@@ -14,14 +21,15 @@ defmodule Bandit.HTTP1Request do
   @impl Bandit.HTTPRequest
   def read_headers(req) do
     case do_read_headers(req) do
-      {:ok, headers, method, path, %__MODULE__{buffer: buffer} = req} ->
+      {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} ->
         body_size = get_header(headers, "content-length")
         body_encoding = get_header(headers, "transfer-encoding")
         connection = get_header(headers, "connection")
+        keepalive = should_keepalive?(version, headers)
 
         case {body_size, body_encoding} do
           {nil, nil} ->
-            {:ok, headers, method, path, %{req | state: :no_body, connection: connection}}
+            {:ok, headers, method, path, %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
           {body_size, nil} ->
             {:ok, headers, method, path,
@@ -29,12 +37,13 @@ defmodule Bandit.HTTP1Request do
                req
                | state: :headers_read,
                  body_size: String.to_integer(body_size) - byte_size(buffer),
-                 connection: connection
+                 connection: connection,
+                 keepalive: keepalive
              }}
 
           {_, body_encoding} ->
             {:ok, headers, method, path,
-             %{req | state: :headers_read, body_encoding: body_encoding, connection: connection}}
+             %{req | state: :headers_read, body_encoding: body_encoding, connection: connection, keepalive: keepalive}}
         end
 
       {:error, reason} ->
@@ -146,7 +155,7 @@ defmodule Bandit.HTTP1Request do
   def get_http_protocol(%__MODULE__{version: version}), do: version
 
   @impl Bandit.HTTPRequest
-  def keepalive?(%__MODULE__{version: version}), do: version == :"HTTP/1.1"
+  def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 
   @impl Bandit.HTTPRequest
   def close(%__MODULE__{socket: socket}) do
@@ -232,6 +241,15 @@ defmodule Bandit.HTTP1Request do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> default
+    end
+  end
+
+  defp should_keepalive?(version, headers) do
+    cond do
+      get_header(headers, "connection") |> String.match?(~r/^keep-alive$/i) -> true
+      get_header(headers, "connection") |> String.match?(~r/^close$/i) -> false
+      version == :"HTTP/1.1" -> true
+      true -> false
     end
   end
 

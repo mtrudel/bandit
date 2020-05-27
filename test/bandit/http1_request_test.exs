@@ -30,7 +30,8 @@ defmodule HTTP1RequestTest do
 
   describe "request handling" do
     test "reads headers and requested metadata properly", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [{"X-Fruit", "banana"}])
+      {:ok, response} =
+        HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [{"X-Fruit", "banana"}, {"connection", "close"}])
 
       assert response.status_code == 200
       assert response.body == "OK"
@@ -47,7 +48,9 @@ defmodule HTTP1RequestTest do
     end
 
     test "reads a content-length encoded body properly", %{base: base} do
-      {:ok, response} = HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000))
+      {:ok, response} =
+        HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000), [{"connection", "close"}])
+
       assert response.status_code == 200
       assert response.body == "OK"
     end
@@ -64,7 +67,8 @@ defmodule HTTP1RequestTest do
 
       {:ok, response} =
         HTTPoison.post(base <> "/expect_chunked_body", {:stream, stream}, [
-          {"transfer-encoding", "chunked"}
+          {"transfer-encoding", "chunked"},
+          {"connection", "close"}
         ])
 
       assert response.status_code == 200
@@ -81,7 +85,7 @@ defmodule HTTP1RequestTest do
 
   describe "response handling" do
     test "writes out a response with no body", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_204")
+      {:ok, response} = HTTPoison.get(base <> "/send_204", [{"connection", "close"}])
       assert response.status_code == 204
       assert response.body == ""
     end
@@ -91,7 +95,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with a content-length header", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_200")
+      {:ok, response} = HTTPoison.get(base <> "/send_200", [{"connection", "close"}])
       assert response.status_code == 200
       assert response.body == "OK"
       assert List.first(response.headers) == {"content-length", "2"}
@@ -102,7 +106,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a chunked response", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_chunked_200")
+      {:ok, response} = HTTPoison.get(base <> "/send_chunked_200", [{"connection", "close"}])
       assert response.status_code == 200
       assert response.body == "OK"
       assert List.first(response.headers) == {"transfer-encoding", "chunked"}
@@ -118,7 +122,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a sent file for the entire file with content length", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_full_file")
+      {:ok, response} = HTTPoison.get(base <> "/send_full_file", [{"connection", "close"}])
       assert response.status_code == 200
       assert response.body == "ABCDEF"
       assert List.first(response.headers) == {"content-length", "6"}
@@ -130,7 +134,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a sent file for parts of a file with content length", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_file?offset=1&length=3")
+      {:ok, response} = HTTPoison.get(base <> "/send_file?offset=1&length=3", [{"connection", "close"}])
       assert response.status_code == 200
       assert response.body == "BCD"
       assert List.first(response.headers) == {"content-length", "3"}
