@@ -16,7 +16,7 @@ defmodule Bandit.HTTP1Request do
   alias ThousandIsland.Socket
 
   @impl Bandit.HTTPRequest
-  def request(%Socket{} = socket), do: {:ok, __MODULE__, %__MODULE__{socket: socket}}
+  def request(%Socket{} = socket, data), do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
 
   ################
   # Header Reading

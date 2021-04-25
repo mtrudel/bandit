@@ -6,7 +6,7 @@ defmodule Bandit.HTTPRequest do
 
   @type payload :: term
 
-  @callback request(ThousandIsland.Socket.t()) :: {:ok, module(), payload}
+  @callback request(ThousandIsland.Socket.t(), binary() | list()) :: {:ok, module(), payload}
 
   @callback read_headers(payload) :: {:ok, keyword(), String.t(), String.t(), payload} | {:error, String.t()}
 
