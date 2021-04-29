@@ -20,7 +20,6 @@ defmodule Bandit.HTTP1Request do
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
   # credo:disable-for-this-file Credo.Check.Refactor.Nesting
-  @dialyzer {:nowarn_function, chunk: 2}
 
   @impl Bandit.HTTPRequest
   def request(%Socket{} = socket, data), do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
@@ -262,10 +261,10 @@ defmodule Bandit.HTTP1Request do
   end
 
   @impl Plug.Conn.Adapter
-  def chunk(%__MODULE__{socket: socket} = req, chunk) do
+  def chunk(%__MODULE__{socket: socket}, chunk) do
     byte_size = chunk |> byte_size() |> Integer.to_string(16)
     Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
-    {:ok, nil, req}
+    :ok
   end
 
   defp response_header(version, status, headers) do
