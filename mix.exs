@@ -26,10 +26,10 @@ defmodule Bandit.MixProject do
 
   defp deps do
     [
-      {:thousand_island, "~> 0.3.0"},
-      {:plug, "~> 1.8"},
-      {:httpoison, "~> 1.6", only: :test},
-      {:ex_doc, "~> 0.21", only: :dev, runtime: false}
+      {:thousand_island, "~> 0.4.0"},
+      {:plug, "~> 1.11"},
+      {:httpoison, "~> 1.8", only: :test},
+      {:ex_doc, "~> 0.24", only: :dev, runtime: false}
     ]
   end
 end
