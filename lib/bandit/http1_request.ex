@@ -179,7 +179,7 @@ defmodule Bandit.HTTP1Request do
           chunk_size ->
             case rest do
               <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-                do_read_chunk(%{req | buffer: rest}, [body | next_chunk], opts)
+                do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
               _ ->
                 case grow_buffer(req, 0, opts) do
