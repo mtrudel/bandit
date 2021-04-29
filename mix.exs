@@ -8,6 +8,7 @@ defmodule Bandit.MixProject do
       elixir: "~> 1.9",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
+      dialyzer: dialyzer(),
       name: "Bandit",
       description: "A pure-Elixir HTTP server built for Plug apps",
       source_url: "https://github.com/mtrudel/bandit",
@@ -28,8 +29,14 @@ defmodule Bandit.MixProject do
     [
       {:thousand_island, "~> 0.4.0"},
       {:plug, "~> 1.11"},
-      {:httpoison, "~> 1.8", only: :test},
-      {:ex_doc, "~> 0.24", only: :dev, runtime: false}
+      {:httpoison, "~> 1.8", only: [:dev, :test]},
+      {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
+      {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:credo, "~> 1.1.0", only: [:dev, :test], runtime: false}
     ]
+  end
+
+  defp dialyzer do
+    [plt_core_path: "priv/plts", plt_file: {:no_warn, "priv/plts/dialyzer.plt"}]
   end
 end

@@ -1,4 +1,6 @@
 defmodule Bandit.ConnPipeline do
+  @moduledoc false
+
   def run(adapter_mod, req, {plug, plug_opts}) do
     with {:ok, conn} <- build_conn(adapter_mod, req),
          conn <- plug.call(conn, plug_opts),

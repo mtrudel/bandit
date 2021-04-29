@@ -1,4 +1,6 @@
 defmodule Bandit.HTTP1Request do
+  @moduledoc false
+
   @type state :: :new | :headers_read | :no_body | :body_read | :sent | :chunking_out
 
   @behaviour Plug.Conn.Adapter
@@ -14,6 +16,13 @@ defmodule Bandit.HTTP1Request do
             keepalive: false
 
   alias ThousandIsland.Socket
+
+  # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
+  # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
+  # credo:disable-for-this-file Credo.Check.Refactor.Nesting
+  @dialyzer {:nowarn_function, chunk: 2}
+  @dialyzer {:nowarn_function, get_local_data: 1}
+  @dialyzer {:nowarn_function, get_peer_data: 1}
 
   @impl Bandit.HTTPRequest
   def request(%Socket{} = socket, data), do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}

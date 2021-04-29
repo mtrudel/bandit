@@ -1,4 +1,6 @@
 defmodule Bandit.Handler do
+  @moduledoc false
+
   use ThousandIsland.Handler
 
   @impl ThousandIsland.Handler
