@@ -23,7 +23,7 @@ defmodule Bandit.Handler do
     rescue
       exception ->
         adapter_mod.send_fallback_resp(req, 500)
-        {:error, exception, plug}
+        reraise(exception, __STACKTRACE__)
     end
   end
 
