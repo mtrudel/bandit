@@ -12,7 +12,7 @@ defmodule Bandit.HTTPRequest do
 
   @callback get_local_data(payload) :: Plug.Conn.Adapter.peer_data()
 
-  @callback keepalive?(payload) :: bool()
+  @callback keepalive?(payload) :: boolean()
 
   @callback close(payload) :: :ok
 
