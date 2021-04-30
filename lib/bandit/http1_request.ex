@@ -179,7 +179,7 @@ defmodule Bandit.HTTP1Request do
                 do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
               _ ->
-                case grow_buffer(req, 0, opts) do
+                case grow_buffer(req, chunk_size - byte_size(rest), opts) do
                   {:ok, req} -> do_read_chunk(req, body, opts)
                   {:error, reason} -> {:error, reason}
                 end
