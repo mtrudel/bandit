@@ -42,8 +42,8 @@ defmodule Bandit do
     options =
       options
       |> Keyword.put_new(:transport_module, transport_module)
-      |> Keyword.put(:handler_module, Bandit.Handler)
-      |> Keyword.put(:handler_options, plug(arg))
+      |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
+      |> Keyword.put(:handler_options, %{plug: plug(arg), handler_module: Bandit.InitialHandler})
 
     %{
       id: Bandit,

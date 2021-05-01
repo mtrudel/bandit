@@ -23,6 +23,6 @@
   "plug_crypto": {:hex, :plug_crypto, "1.2.2", "05654514ac717ff3a1843204b424477d9e60c143406aa94daf2274fdd280794d", [:mix], [], "hexpm", "87631c7ad914a5a445f0a3809f99b079113ae4ed4b867348dd9eec288cecb6db"},
   "ssl_verify_fun": {:hex, :ssl_verify_fun, "1.1.6", "cf344f5692c82d2cd7554f5ec8fd961548d4fd09e7d22f5b62482e5aeaebd4b0", [:make, :mix, :rebar3], [], "hexpm", "bdb0d2471f453c88ff3908e7686f86f9be327d065cc1ec16fa4540197ea04680"},
   "telemetry": {:hex, :telemetry, "0.4.3", "a06428a514bdbc63293cd9a6263aad00ddeb66f608163bdec7c8995784080818", [:rebar3], [], "hexpm", "eb72b8365ffda5bed68a620d1da88525e326cb82a75ee61354fc24b844768041"},
-  "thousand_island": {:hex, :thousand_island, "0.4.1", "90f015b5583c3d7878aeb2f825b5ee097542c4ef38625b9ec5031d4eb2693077", [:mix], [{:telemetry, "~> 0.4.1", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "ef0ddfc6c9872e3a2d020d20ccc7ce2de7525855947a332e75ca336d7b10b66d"},
+  "thousand_island": {:hex, :thousand_island, "0.4.2", "9d3d05a5dfd4c93835118146f492b097577fe6774981f912a0f7c59ac58d7730", [:mix], [{:telemetry, "~> 0.4.1", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "3ec3a08a77e59af5e8e10381be82aee28c9ef1c90b3f4d23ce8de08aa21529f8"},
   "unicode_util_compat": {:hex, :unicode_util_compat, "0.7.0", "bc84380c9ab48177092f43ac89e4dfa2c6d62b40b8bd132b1059ecc7232f9a78", [:rebar3], [], "hexpm", "25eee6d67df61960cf6a794239566599b09e17e668d3700247bc498638152521"},
 }

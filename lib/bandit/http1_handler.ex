@@ -1,24 +1,26 @@
-defmodule Bandit.Handler do
-  @moduledoc false
+defmodule Bandit.HTTP1Handler do
+  @moduledoc """
+  An HTTP 1.0 & 1.1 Thousand Island Handler
+  """
 
   use ThousandIsland.Handler
 
   @impl ThousandIsland.Handler
-  def handle_data(data, socket, plug) do
+  def handle_data(data, socket, %{plug: plug} = state) do
     {:ok, adapter_mod, req} = Bandit.HTTP1Request.request(socket, data)
 
     try do
       case Bandit.ConnPipeline.run(adapter_mod, req, plug) do
         {:ok, req} ->
           if adapter_mod.keepalive?(req) do
-            {:ok, :continue, plug}
+            {:ok, :continue, state}
           else
-            {:ok, :close, plug}
+            {:ok, :close, state}
           end
 
         {:error, code, reason} ->
           adapter_mod.send_fallback_resp(req, code)
-          {:error, reason, plug}
+          {:error, reason, state}
       end
     rescue
       exception ->
