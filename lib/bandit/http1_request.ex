@@ -22,7 +22,8 @@ defmodule Bandit.HTTP1Request do
   # credo:disable-for-this-file Credo.Check.Refactor.Nesting
 
   @impl Bandit.HTTPRequest
-  def request(%Socket{} = socket, data), do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
+  def request(%Socket{} = socket, data),
+    do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
 
   ################
   # Header Reading
@@ -39,7 +40,8 @@ defmodule Bandit.HTTP1Request do
 
         case {body_size, body_encoding} do
           {nil, nil} ->
-            {:ok, headers, method, path, %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+            {:ok, headers, method, path,
+             %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
           {body_size, nil} ->
             {:ok, headers, method, path,
@@ -53,7 +55,13 @@ defmodule Bandit.HTTP1Request do
 
           {_, body_encoding} ->
             {:ok, headers, method, path,
-             %{req | state: :headers_read, body_encoding: body_encoding, connection: connection, keepalive: keepalive}}
+             %{
+               req
+               | state: :headers_read,
+                 body_encoding: body_encoding,
+                 connection: connection,
+                 keepalive: keepalive
+             }}
         end
 
       {:error, reason} ->
@@ -124,7 +132,9 @@ defmodule Bandit.HTTP1Request do
   ##############
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{state: :new}, _opts), do: raise(Bandit.HTTPRequest.UnreadHeadersError)
+  def read_req_body(%__MODULE__{state: :new}, _opts),
+    do: raise(Bandit.HTTPRequest.UnreadHeadersError)
+
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
 
   def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
@@ -222,8 +232,11 @@ defmodule Bandit.HTTP1Request do
   ##################
 
   @impl Plug.Conn.Adapter
-  def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
-  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Bandit.HTTPRequest.AlreadySentError)
+  def send_resp(%__MODULE__{state: :sent}, _, _, _),
+    do: raise(Bandit.HTTPRequest.AlreadySentError)
+
+  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _),
+    do: raise(Bandit.HTTPRequest.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     headers = [{"content-length", response |> byte_size() |> to_string()} | headers]
@@ -233,7 +246,14 @@ defmodule Bandit.HTTP1Request do
   end
 
   @impl Plug.Conn.Adapter
-  def send_file(%__MODULE__{socket: socket, version: version} = req, status, headers, path, offset, length) do
+  def send_file(
+        %__MODULE__{socket: socket, version: version} = req,
+        status,
+        headers,
+        path,
+        offset,
+        length
+      ) do
     %File.Stat{type: :regular, size: size} = File.stat!(path)
 
     length =
@@ -249,7 +269,8 @@ defmodule Bandit.HTTP1Request do
 
       {:ok, nil, %{req | state: :sent}}
     else
-      {:error, "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
+      {:error,
+       "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
     end
   end
 

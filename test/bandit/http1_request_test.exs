@@ -31,7 +31,10 @@ defmodule HTTP1RequestTest do
   describe "request handling" do
     test "reads headers and requested metadata properly", %{base: base} do
       {:ok, response} =
-        HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [{"X-Fruit", "banana"}, {"connection", "close"}])
+        HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [
+          {"X-Fruit", "banana"},
+          {"connection", "close"}
+        ])
 
       assert response.status_code == 200
       assert response.body == "OK"
@@ -49,7 +52,9 @@ defmodule HTTP1RequestTest do
 
     test "reads a content-length encoded body properly", %{base: base} do
       {:ok, response} =
-        HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000), [{"connection", "close"}])
+        HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000), [
+          {"connection", "close"}
+        ])
 
       assert response.status_code == 200
       assert response.body == "OK"
@@ -134,7 +139,9 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a sent file for parts of a file with content length", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_file?offset=1&length=3", [{"connection", "close"}])
+      {:ok, response} =
+        HTTPoison.get(base <> "/send_file?offset=1&length=3", [{"connection", "close"}])
+
       assert response.status_code == 200
       assert response.body == "BCD"
       assert List.first(response.headers) == {"content-length", "3"}
