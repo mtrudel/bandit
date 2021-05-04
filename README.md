@@ -9,19 +9,22 @@
 
 [Documentation](https://hexdocs.pm/bandit/)
 
-Bandit is a pure Elixir HTTP server for Plug apps. It is currently very much a WiP.
+Bandit is a pure Elixir HTTP server for Plug apps. It is currently very much a WiP but is maturing quickly.
 
-Bandit is being built out in between [Thousand Island](https://github.com/mtrudel/thousand_island) and
-[HAP](https://github.com/mtrudel/hap) in order to facilitate socket-level encryption as required by the latter. Once HAP
-is functional, the intent is to turn attention back to Bandit in order to build it out as a compelling alternative to
-Cowboy. In the meantime however, what's here is largely provisional and should be taken with a grain of salt.
+Bandit is built atop [Thousand Island](https://github.com/mtrudel/thousand_island) and as a result can provide scalable
+and performant HTTP services out of the box. By being the simplest thing that can get from HTTP requests to a Plug
+interface it is also simple and easy to understand. Bandit is written entirely in Elixir and has no runtime
+dependencies other than Thousand Island and Plug.
 
 ## Project Goals
 
-* Implement robust yet minimal support for HTTP/1.0 through HTTP/2.0 (and eventually beyond)
-* Support Websockets via a public API in the same vein as Plug to allow for Phoenix to support servers other than Cowboy
-* Aim for simplicity by focusing solely on supporting the Plug interface and not being a general purpose HTTP server
-* Eventual goal of a pure-Elixir stack from Phoenix all the way down to TCP sockets
+* Implement comprehensive support for HTTP/1.0 through HTTP/2.0 (and eventually beyond) backed by obsessive RFC
+  literacy and automated conformance testing
+* Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug as much as possible, and only 
+interpret requests to the extent necessary to safely manage a connection & fulfill the requirements of supporting Plug
+* Define & provide a public API for WebSockets in the same vein as Plug to allow for Phoenix to support servers other than Cowboy
+* Prioritize (in order): correctness, clarity, performance. Seek to remove the mystery of infrastructure code by being
+approachable and easy to understand
 
 ## Installation
 
