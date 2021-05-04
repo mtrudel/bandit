@@ -33,15 +33,20 @@ defmodule Bandit do
       raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
     end
 
-    transport_module =
+    {transport_module, extra_transport_options} =
       case Keyword.get(arg, :scheme, :http) do
-        :http -> ThousandIsland.Transports.TCP
-        :https -> ThousandIsland.Transports.SSL
+        :http -> {ThousandIsland.Transports.TCP, []}
+        :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["http/1.1"]}
       end
 
     options =
       options
       |> Keyword.put_new(:transport_module, transport_module)
+      |> Keyword.update(
+        :transport_options,
+        extra_transport_options,
+        &Keyword.merge(&1, extra_transport_options)
+      )
       |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
       |> Keyword.put(:handler_options, %{plug: plug(arg), handler_module: Bandit.InitialHandler})
 
