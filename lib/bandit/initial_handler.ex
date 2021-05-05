@@ -15,6 +15,6 @@ defmodule Bandit.InitialHandler do
     # 4. Set up state as if this was an initial call on a dedicated handler_module
     # 4. Write handler_module into state (include data in buffer)
 
-    {:ok, :continue, state |> Map.put(:handler_module, Bandit.HTTP1Handler)}
+    {:ok, :continue, state |> Map.put(:handler_module, Bandit.HTTP1.Handler)}
   end
 end

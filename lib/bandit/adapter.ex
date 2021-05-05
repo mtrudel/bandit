@@ -1,6 +1,6 @@
-defmodule Bandit.HTTPRequest do
+defmodule Bandit.Adapter do
   @moduledoc """
-  Defines behaviour to be implemented by HTTP Request handlers in addition 
+  Defines behaviour to be implemented by HTTP Adapters in addition 
   to those defined by `Plug.Conn.Adapter`. 
   """
 

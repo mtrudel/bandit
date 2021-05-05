@@ -1,10 +1,10 @@
-defmodule Bandit.HTTP1Request do
+defmodule Bandit.HTTP1.Adapter do
   @moduledoc false
 
   @type state :: :new | :headers_read | :no_body | :body_read | :sent | :chunking_out
 
   @behaviour Plug.Conn.Adapter
-  @behaviour Bandit.HTTPRequest
+  @behaviour Bandit.Adapter
 
   defstruct state: :new,
             socket: nil,
@@ -21,7 +21,7 @@ defmodule Bandit.HTTP1Request do
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
   # credo:disable-for-this-file Credo.Check.Refactor.Nesting
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def request(%Socket{} = socket, data),
     do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
 
@@ -29,7 +29,7 @@ defmodule Bandit.HTTP1Request do
   # Header Reading
   ################
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def read_headers(req) do
     case do_read_headers(req) do
       {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} ->
@@ -108,7 +108,7 @@ defmodule Bandit.HTTP1Request do
     end
   end
 
-  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.HTTPRequest.AlreadyReadError)
+  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.Adapter.AlreadyReadError)
 
   defp should_keepalive?(version, headers) do
     cond do
@@ -133,7 +133,7 @@ defmodule Bandit.HTTP1Request do
 
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :new}, _opts),
-    do: raise(Bandit.HTTPRequest.UnreadHeadersError)
+    do: raise(Bandit.Adapter.UnreadHeadersError)
 
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
 
@@ -172,7 +172,7 @@ defmodule Bandit.HTTP1Request do
     {:error, :unsupported_transfer_encoding}
   end
 
-  def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.HTTPRequest.AlreadyReadError)
+  def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.Adapter.AlreadyReadError)
 
   defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
     case :binary.match(buffer, "\r\n") do
@@ -233,10 +233,10 @@ defmodule Bandit.HTTP1Request do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{state: :sent}, _, _, _),
-    do: raise(Bandit.HTTPRequest.AlreadySentError)
+    do: raise(Bandit.Adapter.AlreadySentError)
 
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _),
-    do: raise(Bandit.HTTPRequest.AlreadySentError)
+    do: raise(Bandit.Adapter.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     headers = [{"content-length", response |> byte_size() |> to_string()} | headers]
@@ -303,7 +303,7 @@ defmodule Bandit.HTTP1Request do
   # Misc
   ######
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def send_fallback_resp(%__MODULE__{state: :sent} = req, _status), do: close(req)
   def send_fallback_resp(%__MODULE__{state: :chunking_out} = req, _status), do: close(req)
 
@@ -312,7 +312,7 @@ defmodule Bandit.HTTP1Request do
     close(req)
   end
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def close(%__MODULE__{socket: socket}) do
     Socket.shutdown(socket, :write)
     Socket.close(socket)
@@ -327,12 +327,12 @@ defmodule Bandit.HTTP1Request do
   @impl Plug.Conn.Adapter
   def get_peer_data(%__MODULE__{socket: socket}), do: Socket.peer_info(socket)
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def get_local_data(%__MODULE__{socket: socket}), do: Socket.local_info(socket)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
 
-  @impl Bandit.HTTPRequest
+  @impl Bandit.Adapter
   def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 end

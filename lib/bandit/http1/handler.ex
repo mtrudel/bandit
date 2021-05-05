@@ -1,4 +1,4 @@
-defmodule Bandit.HTTP1Handler do
+defmodule Bandit.HTTP1.Handler do
   @moduledoc """
   An HTTP 1.0 & 1.1 Thousand Island Handler
   """
@@ -7,7 +7,7 @@ defmodule Bandit.HTTP1Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, %{plug: plug} = state) do
-    {:ok, adapter_mod, req} = Bandit.HTTP1Request.request(socket, data)
+    {:ok, adapter_mod, req} = Bandit.HTTP1.Adapter.request(socket, data)
 
     try do
       case Bandit.ConnPipeline.run(adapter_mod, req, plug) do
