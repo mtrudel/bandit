@@ -21,10 +21,6 @@ defmodule Bandit.HTTP1.Adapter do
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
   # credo:disable-for-this-file Credo.Check.Refactor.Nesting
 
-  @impl Bandit.Adapter
-  def request(%Socket{} = socket, data),
-    do: {:ok, __MODULE__, %__MODULE__{socket: socket, buffer: data}}
-
   ################
   # Header Reading
   ################
@@ -239,7 +235,14 @@ defmodule Bandit.HTTP1.Adapter do
     do: raise(Bandit.Adapter.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
-    headers = [{"content-length", response |> byte_size() |> to_string()} | headers]
+    headers =
+      response
+      |> byte_size()
+      |> case do
+        0 -> headers
+        content_length -> [{"content-length", content_length |> to_string()} | headers]
+      end
+
     header_io_data = response_header(version, status, headers)
     Socket.send(socket, [header_io_data, response])
     {:ok, nil, %{req | state: :sent}}
@@ -288,6 +291,8 @@ defmodule Bandit.HTTP1.Adapter do
     :ok
   end
 
+  defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
+
   defp response_header(version, status, headers) do
     [
       to_string(version),
@@ -297,25 +302,6 @@ defmodule Bandit.HTTP1.Adapter do
       Enum.map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
       "\r\n"
     ]
-  end
-
-  ######
-  # Misc
-  ######
-
-  @impl Bandit.Adapter
-  def send_fallback_resp(%__MODULE__{state: :sent} = req, _status), do: close(req)
-  def send_fallback_resp(%__MODULE__{state: :chunking_out} = req, _status), do: close(req)
-
-  def send_fallback_resp(%__MODULE__{socket: socket} = req, status) do
-    Socket.send(socket, "HTTP/1.0 #{to_string(status)}\r\n\r\n")
-    close(req)
-  end
-
-  @impl Bandit.Adapter
-  def close(%__MODULE__{socket: socket}) do
-    Socket.shutdown(socket, :write)
-    Socket.close(socket)
   end
 
   @impl Plug.Conn.Adapter
@@ -333,6 +319,5 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
 
-  @impl Bandit.Adapter
   def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 end

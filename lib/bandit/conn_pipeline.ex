@@ -1,9 +1,9 @@
 defmodule Bandit.ConnPipeline do
   @moduledoc false
 
-  def run(adapter_mod, req, {plug, plug_opts}) do
+  def run(adapter_mod, req, plug) do
     with {:ok, conn} <- build_conn(adapter_mod, req),
-         conn <- plug.call(conn, plug_opts),
+         conn <- call_plug(conn, plug),
          %Plug.Conn{adapter: {_, req}} <- commit_response(conn, plug) do
       {:ok, req}
     end
@@ -36,11 +36,21 @@ defmodule Bandit.ConnPipeline do
          }}
 
       {:error, :timeout} ->
-        {:error, 408, "timeout"}
+        attempt_to_send_fallback({adapter_mod, req}, 408)
+        {:error, "timeout reading request"}
 
       {:error, reason} ->
-        {:error, 400, reason}
+        attempt_to_send_fallback({adapter_mod, req}, 400)
+        {:error, reason}
     end
+  end
+
+  defp call_plug(%Plug.Conn{adapter: adapter} = conn, {plug, plug_opts}) do
+    plug.call(conn, plug_opts)
+  rescue
+    exception ->
+      attempt_to_send_fallback(adapter, 500)
+      reraise(exception, __STACKTRACE__)
   end
 
   defp commit_response(conn, plug) do
@@ -57,5 +67,11 @@ defmodule Bandit.ConnPipeline do
       [path] -> {path, ""}
       [path, query_string] -> {path, query_string}
     end
+  end
+
+  defp attempt_to_send_fallback({adapter_mod, req}, code) do
+    adapter_mod.send_resp(req, code, [], <<>>)
+  rescue
+    _ -> :ok
   end
 end
