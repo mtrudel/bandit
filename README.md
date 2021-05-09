@@ -9,7 +9,8 @@
 
 [Documentation](https://hexdocs.pm/bandit/)
 
-Bandit is a pure Elixir HTTP server for Plug apps. It is currently very much a WiP but is maturing quickly.
+Bandit is a pure Elixir HTTP server for Plug apps. It is currently very much a WiP but is maturing quickly (see below 
+for more information on current and future development plans).
 
 Bandit is built atop [Thousand Island](https://github.com/mtrudel/thousand_island) and as a result can provide scalable
 and performant HTTP services out of the box. By being the simplest thing that can get from HTTP requests to a Plug
@@ -26,6 +27,15 @@ interpret requests to the extent necessary to safely manage a connection & fulfi
 * Prioritize (in order): correctness, clarity, performance. Seek to remove the mystery of infrastructure code by being
 approachable and easy to understand
 
+## Development Plan
+
+* [x] `0.1.x` series: Proof of concept (along with [Thousand Island](/mtrudel/thousand_island)) sufficient to support [HAP](/mtrudel/hap)
+* [x] `0.2.x` series: Revise process model to accommodate forthcoming HTTP/2 and WebSocket adapters
+* [ ] `0.3.x` series: Implement HTTP/2 adapter
+* [ ] `0.4.x` series: Re-implement HTTP/1.x adapter
+* [ ] `0.5.x` series: Implement WebSocket extension
+* [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
+
 ## Installation
 
 Bandit is [available in Hex](https://hex.pm/docs/publish). The package can be installed
@@ -34,7 +44,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, "~> 0.1.0"}
+    {:bandit, "~> 0.2.0"}
   ]
 end
 ```
