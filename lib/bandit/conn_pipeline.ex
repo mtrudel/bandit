@@ -55,10 +55,21 @@ defmodule Bandit.ConnPipeline do
 
   defp commit_response(conn, plug) do
     case conn do
-      %Plug.Conn{state: :unset} -> raise(Plug.Conn.NotSentError)
-      %Plug.Conn{state: :set} -> Plug.Conn.send_resp(conn)
-      %Plug.Conn{} -> conn
-      _ -> raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(conn)}")
+      %Plug.Conn{state: :unset} ->
+        raise(Plug.Conn.NotSentError)
+
+      %Plug.Conn{state: :set} ->
+        Plug.Conn.send_resp(conn)
+
+      %Plug.Conn{state: :chunked, adapter: {adapter_mod, req}} ->
+        adapter_mod.chunk(req, "")
+        conn
+
+      %Plug.Conn{} ->
+        conn
+
+      _ ->
+        raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(conn)}")
     end
   end
 
