@@ -40,13 +40,4 @@ defmodule Bandit.Adapter do
     Raised by bandit adapters if they are commanded to read a body which already been read.
     """
   end
-
-  defmodule AlreadySentError do
-    defexception(message: "Response has already been written (or is being chunked out)")
-
-    @moduledoc """
-    Raised by bandit adapters if they are commanded to send a response when one has already 
-    been sent.
-    """
-  end
 end

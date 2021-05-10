@@ -228,11 +228,8 @@ defmodule Bandit.HTTP1.Adapter do
   ##################
 
   @impl Plug.Conn.Adapter
-  def send_resp(%__MODULE__{state: :sent}, _, _, _),
-    do: raise(Bandit.Adapter.AlreadySentError)
-
-  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _),
-    do: raise(Bandit.Adapter.AlreadySentError)
+  def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
+  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     headers =
