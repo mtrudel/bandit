@@ -1,41 +1,23 @@
 defmodule HTTP1RequestTest do
-  use ExUnit.Case, async: true
+  use ConnectionHelpers, async: true
 
   import Plug.Conn
 
-  require Logger
-
-  setup do
-    opts = [port: 0, transport_options: [ip: :loopback]]
-    {:ok, server_pid} = start_supervised(Bandit.child_spec(plug: __MODULE__, options: opts))
-    {:ok, port} = ThousandIsland.local_port(server_pid)
-    {:ok, %{base: "http://localhost:#{port}"}}
-  end
-
-  def init(opts) do
-    opts
-  end
-
-  def call(conn, []) do
-    function = String.to_atom(List.first(conn.path_info))
-
-    try do
-      apply(__MODULE__, function, [conn])
-    rescue
-      exception ->
-        Logger.error(Exception.format(:error, exception, __STACKTRACE__))
-        reraise(exception, __STACKTRACE__)
-    end
-  end
+  setup :http_server
+  setup :http1_client
 
   describe "request handling" do
-    test "reads a content-length encoded body properly", %{base: base} do
+    test "reads a content-length encoded body properly", context do
       {:ok, response} =
-        HTTPoison.post(base <> "/expect_body", String.duplicate("a", 8_000_000), [
-          {"connection", "close"}
-        ])
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_body",
+          [{"connection", "close"}],
+          String.duplicate("a", 8_000_000)
+        )
+        |> Finch.request(context[:finch_name])
 
-      assert response.status_code == 200
+      assert response.status == 200
       assert response.body == "OK"
     end
 
@@ -46,16 +28,19 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
-    test "reads a chunked body properly", %{base: base} do
+    test "reads a chunked body properly", context do
       stream = Stream.repeatedly(fn -> String.duplicate("a", 1_000_000) end) |> Stream.take(8)
 
       {:ok, response} =
-        HTTPoison.post(base <> "/expect_chunked_body", {:stream, stream}, [
-          {"transfer-encoding", "chunked"},
-          {"connection", "close"}
-        ])
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_chunked_body",
+          [{"connection", "close"}],
+          {:stream, stream}
+        )
+        |> Finch.request(context[:finch_name])
 
-      assert response.status_code == 200
+      assert response.status == 200
       assert response.body == "OK"
     end
 
@@ -68,9 +53,12 @@ defmodule HTTP1RequestTest do
   end
 
   describe "response handling" do
-    test "writes out a response with no body", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_204", [{"connection", "close"}])
-      assert response.status_code == 204
+    test "writes out a response with no body", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 204
       assert response.body == ""
       assert is_nil(List.keyfind(response.headers, "content-length", 0))
     end
@@ -79,9 +67,12 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 204, "")
     end
 
-    test "writes out a response with a content-length header", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_200", [{"connection", "close"}])
-      assert response.status_code == 200
+    test "writes out a response with a content-length header", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_200", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
       assert response.body == "OK"
       assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "2"}
     end
@@ -90,9 +81,12 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
-    test "writes out a chunked response", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_chunked_200", [{"connection", "close"}])
-      assert response.status_code == 200
+    test "writes out a chunked response", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_chunked_200", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
       assert response.body == "OK"
 
       assert List.keyfind(response.headers, "transfer-encoding", 0) ==
@@ -108,9 +102,12 @@ defmodule HTTP1RequestTest do
       conn
     end
 
-    test "writes out a sent file for the entire file with content length", %{base: base} do
-      {:ok, response} = HTTPoison.get(base <> "/send_full_file", [{"connection", "close"}])
-      assert response.status_code == 200
+    test "writes out a sent file for the entire file with content length", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_full_file", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
       assert response.body == "ABCDEF"
       assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "6"}
     end
@@ -120,11 +117,14 @@ defmodule HTTP1RequestTest do
       |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
-    test "writes out a sent file for parts of a file with content length", %{base: base} do
+    test "writes out a sent file for parts of a file with content length", context do
       {:ok, response} =
-        HTTPoison.get(base <> "/send_file?offset=1&length=3", [{"connection", "close"}])
+        Finch.build(:get, context[:base] <> "/send_file?offset=1&length=3", [
+          {"connection", "close"}
+        ])
+        |> Finch.request(context[:finch_name])
 
-      assert response.status_code == 200
+      assert response.status == 200
       assert response.body == "BCD"
       assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "3"}
     end

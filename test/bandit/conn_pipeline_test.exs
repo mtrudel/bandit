@@ -1,43 +1,22 @@
 defmodule ConnPipelineTest do
-  use ExUnit.Case, async: true
+  use ConnectionHelpers, async: true
 
   import ExUnit.CaptureLog
   import Plug.Conn
 
-  require Logger
-
-  setup do
-    opts = [port: 0, transport_options: [ip: :loopback]]
-    {:ok, server_pid} = start_supervised(Bandit.child_spec(plug: __MODULE__, options: opts))
-    {:ok, port} = ThousandIsland.local_port(server_pid)
-    {:ok, %{base: "http://localhost:#{port}", port: port}}
-  end
-
-  def init(opts) do
-    opts
-  end
-
-  def call(conn, []) do
-    function = String.to_atom(List.first(conn.path_info))
-
-    try do
-      apply(__MODULE__, function, [conn])
-    rescue
-      exception ->
-        Logger.error(Exception.format(:error, exception, __STACKTRACE__))
-        reraise(exception, __STACKTRACE__)
-    end
-  end
-
   describe "request handling" do
-    test "creates a conn with correct headers and requested metadata", %{base: base} do
+    setup :http_server
+    setup :http1_client
+
+    test "creates a conn with correct headers and requested metadata", context do
       {:ok, response} =
-        HTTPoison.get(base <> "/expect_headers/a//b/c?abc=def", [
+        Finch.build(:get, context[:base] <> "/expect_headers/a//b/c?abc=def", [
           {"X-Fruit", "banana"},
           {"connection", "close"}
         ])
+        |> Finch.request(context[:finch_name])
 
-      assert response.status_code == 200
+      assert response.status == 200
       assert response.body == "OK"
     end
 
@@ -51,14 +30,16 @@ defmodule ConnPipelineTest do
       send_resp(conn, 200, "OK")
     end
 
-    test "returns a 500 if the plug raises an exception", %{base: base} do
+    test "returns a 500 if the plug raises an exception", context do
       capture_log(fn ->
-        {:ok, response} = HTTPoison.get(base <> "/raise_error", [])
+        {:ok, response} =
+          Finch.build(:get, context[:base] <> "/raise_error")
+          |> Finch.request(context[:finch_name])
 
         # Let the server shut down so we don't log the error
         Process.sleep(100)
 
-        assert response.status_code == 500
+        assert response.status == 500
       end)
     end
 
@@ -66,9 +47,9 @@ defmodule ConnPipelineTest do
       raise "boom"
     end
 
-    test "returns a 400 if the request cannot be parsed", %{port: port} do
+    test "returns a 400 if the request cannot be parsed", context do
       capture_log(fn ->
-        {:ok, client} = :gen_tcp.connect(:localhost, port, active: false)
+        {:ok, client} = :gen_tcp.connect(:localhost, context[:port], active: false)
         :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
         {:ok, response} = :gen_tcp.recv(client, 0)
 
