@@ -36,7 +36,7 @@ defmodule Bandit do
     {transport_module, extra_transport_options} =
       case Keyword.get(arg, :scheme, :http) do
         :http -> {ThousandIsland.Transports.TCP, []}
-        :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["http/1.1"]}
+        :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
     options =

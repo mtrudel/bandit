@@ -8,13 +8,16 @@ defmodule Bandit.InitialHandler do
   use ThousandIsland.Handler
 
   @impl ThousandIsland.Handler
-  def handle_connection(_socket, state) do
-    # 1. If we have a protocol from TLS, set up a protocol for it.
-    # 2. Else, Consume enough to ensure that we can validate the protocol in use. Limits here for safety.
-    # 3. Ensure that this is a protocol we are configured to run.
-    # 4. Set up state as if this was an initial call on a dedicated handler_module
-    # 4. Write handler_module into state (include data in buffer)
+  def handle_connection(socket, state) do
+    # TODO: If we don't have a negotiated protocol, try consuming enough to see if we can 
+    # figure out what protocol is in use
 
-    {:ok, :continue, state |> Map.put(:handler_module, Bandit.HTTP1.Handler)}
+    next_module =
+      case ThousandIsland.Socket.negotiated_protocol(socket) do
+        {:ok, "h2"} -> Bandit.HTTP2.Handler
+        _ -> Bandit.HTTP1.Handler
+      end
+
+    Bandit.DelegatingHandler.handle_connection(socket, %{state | handler_module: next_module})
   end
 end

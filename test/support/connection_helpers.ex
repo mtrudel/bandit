@@ -2,24 +2,64 @@ defmodule ConnectionHelpers do
   use ExUnit.CaseTemplate
 
   using do
-    quote do
+    quote location: :keep do
       require Logger
 
       def http_server(_context) do
-        opts = [port: 0, transport_options: [ip: :loopback]]
-        {:ok, server_pid} = start_supervised(Bandit.child_spec(plug: __MODULE__, options: opts))
+        {:ok, server_pid} =
+          [plug: __MODULE__, options: [port: 0, transport_options: [ip: :loopback]]]
+          |> Bandit.child_spec()
+          |> start_supervised()
+
         {:ok, port} = ThousandIsland.local_port(server_pid)
         [base: "http://localhost:#{port}", port: port]
       end
 
-      def http1_client(_context) do
+      def https_server(_context) do
+        {:ok, server_pid} =
+          [
+            plug: __MODULE__,
+            scheme: :https,
+            options: [
+              port: 0,
+              transport_options: [
+                ip: :loopback,
+                certfile: Path.join(__DIR__, "../support/cert.pem"),
+                keyfile: Path.join(__DIR__, "../support/key.pem")
+              ]
+            ]
+          ]
+          |> Bandit.child_spec()
+          |> start_supervised()
+
+        {:ok, port} = ThousandIsland.local_port(server_pid)
+        [base: "https://localhost:#{port}", port: port]
+      end
+
+      def http1_client(_context), do: finch_for(:http1)
+      def http2_client(_context), do: finch_for(:http2)
+
+      defp finch_for(protocol) do
         finch_name = self() |> inspect() |> String.to_atom()
 
-        {:ok, _} =
-          start_supervised(
-            {Finch, name: finch_name, pools: %{default: [size: 50, count: 1, protocol: :http1]}}
-          )
+        opts = [
+          name: finch_name,
+          pools: %{
+            default: [
+              size: 50,
+              count: 1,
+              protocol: protocol,
+              conn_opts: [
+                transport_opts: [
+                  verify: :verify_none,
+                  cacertfile: Path.join(__DIR__, "../support/cert.pem")
+                ]
+              ]
+            ]
+          }
+        ]
 
+        {:ok, _} = start_supervised({Finch, opts})
         [finch_name: finch_name]
       end
 
