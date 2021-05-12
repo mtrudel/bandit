@@ -5,13 +5,13 @@ defmodule Bandit.HTTP2.Frame do
 
   require Logger
 
-  def parse(
+  def deserialize(
         <<length::24, type::8, flags::binary-size(1), _reserved::1, stream::31,
           payload::binary-size(length), rest::binary>>
       ) do
     type
     |> case do
-      0x04 -> Frame.Setting.build(flags, stream, payload)
+      0x04 -> Frame.Settings.deserialize(flags, stream, payload)
       unknown -> handle_unknown_frame(unknown, flags, stream, payload)
     end
     |> case do
@@ -20,7 +20,7 @@ defmodule Bandit.HTTP2.Frame do
     end
   end
 
-  def parse(msg) do
+  def deserialize(msg) do
     {:more, msg}
   end
 

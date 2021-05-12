@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, _socket, %{buffer: buffer} = state) do
     (buffer <> data)
-    |> Frame.parse()
+    |> Frame.deserialize()
     |> case do
       {:ok, nil, rest} ->
         {:ok, :continue, %{state | buffer: rest}}
