@@ -11,6 +11,13 @@ defmodule HTTP2RequestTest do
       # TODO - write out a request one byte at a time and ensure that it returns as expected
       # We can't test for this until we get a complete end to end request working
     end
+
+    @tag :pending
+    test "it should handle cases where multiple frames arrive in the same packet" do
+      # TODO - write out a request with several small frames in the same packet and ensure that it
+      # returns as expected
+      # We can't test for this until we get a complete end to end request working
+    end
   end
 
   describe "malformed requests" do

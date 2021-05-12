@@ -15,13 +15,17 @@ defmodule Bandit.HTTP2.Frame do
       unknown -> handle_unknown_frame(unknown, flags, stream, payload)
     end
     |> case do
-      {:ok, frame} -> {:ok, frame, rest}
-      {:error, stream, code, reason} -> {:error, stream, code, reason}
+      {:ok, frame} -> {{:ok, frame}, rest}
+      {:error, stream, code, reason} -> {{:error, stream, code, reason}, rest}
     end
   end
 
+  def deserialize(<<>>) do
+    nil
+  end
+
   def deserialize(msg) do
-    {:more, msg}
+    {{:more, msg}, <<>>}
   end
 
   defp handle_unknown_frame(type, flags, stream, payload) do
