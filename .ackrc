@@ -1,0 +1,5 @@
+--ignore-dir=is:_build
+--ignore-dir=is:deps
+--ignore-dir=is:doc
+--ignore-dir=is:priv/plts
+--ignore-dir=is:.elixir_ls
