@@ -43,7 +43,7 @@ defmodule HTTP2RequestTest do
 
     @tag :pending
     test "it should shut down the connection gracefully when encountering a connection error" do
-      # TODO - write out an invalid SETTINGS frame and ensure that we see a GOAWAY frame with an 
+      # TODO - write out an invalid SETTINGS frame and ensure that we see a GOAWAY frame with an
       # appropriate error code
       # We can't test for this until we get a complete end to end request working
     end

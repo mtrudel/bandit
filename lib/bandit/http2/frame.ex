@@ -1,4 +1,6 @@
 defmodule Bandit.HTTP2.Frame do
+  @moduledoc false
+
   alias Bandit.HTTP2.Frame
 
   require Logger

@@ -1,4 +1,6 @@
 defmodule Bandit.HTTP2.Frame.Setting do
+  @moduledoc false
+
   defstruct ack: false, settings: %{}
 
   def build(<<_flags::7, 0x0::1>>, 0, payload) do

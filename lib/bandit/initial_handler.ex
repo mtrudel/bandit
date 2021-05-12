@@ -9,7 +9,7 @@ defmodule Bandit.InitialHandler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    # TODO: If we don't have a negotiated protocol, try consuming enough to see if we can 
+    # TODO: If we don't have a negotiated protocol, try consuming enough to see if we can
     # figure out what protocol is in use
 
     next_module =

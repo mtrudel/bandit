@@ -19,7 +19,7 @@ defmodule Bandit do
       tuning knob and can usually be left at the default value of 10
       * `transport_module`: The name of the module which provides basic socket functions.
       This overrides any value set for `scheme` and is intended for cases where control
-      over the socket at a fundamental is needed.
+      over the socket at a fundamental level is needed.
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
   """
 
@@ -50,10 +50,7 @@ defmodule Bandit do
       |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
       |> Keyword.put(:handler_options, %{plug: plug(arg), handler_module: Bandit.InitialHandler})
 
-    %{
-      id: Bandit,
-      start: {ThousandIsland, :start_link, [options]}
-    }
+    %{id: Bandit, start: {ThousandIsland, :start_link, [options]}}
   end
 
   defp plug(arg) do
