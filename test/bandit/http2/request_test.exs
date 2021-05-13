@@ -7,6 +7,7 @@ defmodule HTTP2RequestTest do
   setup :http2_client
 
   describe "request handling" do
+    @tag :skip
     test "it should run hello world", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/hello_world") |> Finch.request(context[:finch_name])
