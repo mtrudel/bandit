@@ -33,6 +33,15 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, :continue, %{connection | remote_settings: settings}}
   end
 
+  def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
+    {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Ping{ack: false, payload: payload}, socket, connection) do
+    %Frame.Ping{ack: true, payload: payload} |> send_frame(socket)
+    {:ok, :continue, connection}
+  end
+
   defp send_frame(frame, socket) do
     ThousandIsland.Socket.send(socket, Frame.serialize(frame))
   end

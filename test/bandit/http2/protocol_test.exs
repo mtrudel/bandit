@@ -66,6 +66,14 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "PING frames" do
+    test "the server should acknowledge a client's PING frames", context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+    end
+  end
+
   def tls_client(context) do
     {:ok, socket} =
       :ssl.connect(:localhost, context[:port],
