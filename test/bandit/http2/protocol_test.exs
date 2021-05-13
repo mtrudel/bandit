@@ -39,9 +39,9 @@ defmodule HTTP2ProtocolTest do
     test "closes with an error if the HTTP/2 connection preface is not present", context do
       errors =
         capture_log(fn ->
-          tls_client = tls_client(context)
-          :ssl.send(tls_client, "PRI * NOPE/2.0\r\n\r\nSM\r\n\r\n")
-          {:error, :closed} = :ssl.recv(tls_client, 0)
+          socket = tls_client(context)
+          :ssl.send(socket, "PRI * NOPE/2.0\r\n\r\nSM\r\n\r\n")
+          {:error, :closed} = :ssl.recv(socket, 0)
 
           # Let the server shut down so we don't log the error
           Process.sleep(100)
@@ -51,24 +51,23 @@ defmodule HTTP2ProtocolTest do
     end
 
     test "the server should send a SETTINGS frame at start of the connection", context do
-      tls_client = tls_client(context)
-      send_connection_preface(tls_client)
-      assert :ssl.recv(tls_client, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      socket = tls_client(context)
+      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
     end
   end
 
   describe "SETTINGS frames" do
     test "the server should acknowledge a client's SETTINGS frames", context do
-      tls_client = tls_client(context)
-      send_connection_preface(tls_client)
-      send_settings(tls_client)
-      receive_server_settings(tls_client)
-      assert :ssl.recv(tls_client, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+      socket = tls_client(context)
+      exchange_prefaces(socket)
+      :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
     end
   end
 
   def tls_client(context) do
-    {:ok, tls_client} =
+    {:ok, socket} =
       :ssl.connect(:localhost, context[:port],
         active: false,
         mode: :binary,
@@ -77,18 +76,24 @@ defmodule HTTP2ProtocolTest do
         alpn_advertised_protocols: ["h2"]
       )
 
-    tls_client
+    socket
   end
 
-  def send_connection_preface(socket) do
+  def setup_connection(context) do
+    socket = tls_client(context)
+    exchange_prefaces(socket)
+    exchange_client_settings(socket)
+    socket
+  end
+
+  def exchange_prefaces(socket) do
     :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-  end
-
-  def receive_server_settings(socket) do
     {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
+    :ssl.send(socket, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
   end
 
-  def send_settings(socket) do
+  def exchange_client_settings(socket) do
     :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
+    {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
   end
 end
