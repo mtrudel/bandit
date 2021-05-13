@@ -38,13 +38,13 @@ defmodule HTTP2FrameDeserializationTest do
   end
 
   describe "SETTINGS frames" do
-    test "builds non-ack frames when there are no contained settings" do
+    test "deserializes non-ack frames when there are no contained settings" do
       frame = <<0, 0, 0, 4, 0, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{ack: false, settings: %{}}}, <<>>}
     end
 
-    test "builds non-ack frames when there are contained settings" do
+    test "deserializes non-ack frames when there are contained settings" do
       frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 255>>
 
       assert Frame.deserialize(frame) ==
@@ -65,7 +65,7 @@ defmodule HTTP2FrameDeserializationTest do
                {{:error, 0, :PROTOCOL_ERROR, "Invalid SETTINGS frame (RFC7540§6.5)"}, <<>>}
     end
 
-    test "builds ack frames" do
+    test "deserializes ack frames" do
       frame = <<0, 0, 0, 4, 1, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{ack: true, settings: %{}}}, <<>>}
@@ -81,14 +81,14 @@ defmodule HTTP2FrameDeserializationTest do
   end
 
   describe "PING frames" do
-    test "builds non-ack frames" do
+    test "deserializes non-ack frames" do
       frame = <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Ping{ack: false, payload: <<1, 2, 3, 4, 5, 6, 7, 8>>}}, <<>>}
     end
 
-    test "builds ack frames" do
+    test "deserializes ack frames" do
       frame = <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
 
       assert Frame.deserialize(frame) ==
