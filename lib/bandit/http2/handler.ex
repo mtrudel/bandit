@@ -23,16 +23,24 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   @impl ThousandIsland.Handler
-  def handle_data(data, _socket, %{buffer: buffer} = state) do
+  def handle_data(data, socket, %{buffer: buffer} = state) do
     (buffer <> data)
     |> Stream.unfold(&Frame.deserialize/1)
     |> Enum.reduce_while({:ok, :continue, state}, fn
       {:ok, nil}, {:ok, :continue, state} ->
         {:cont, {:ok, :continue, state}}
 
-      {:ok, _frame}, {:ok, :continue, state} ->
-        # TODO - implement HTTP/2
-        {:cont, {:ok, :continue, state}}
+      {:ok, frame}, {:ok, :continue, state} ->
+        case Connection.handle_frame(frame, socket, state[:connection]) do
+          {:ok, :continue, connection} ->
+            {:cont, {:ok, :continue, %{state | connection: connection}}}
+
+          {:ok, :close, connection} ->
+            {:halt, {:ok, :close, %{state | connection: connection}}}
+
+          {:error, reason} ->
+            {:halt, {:error, reason, state}}
+        end
 
       {:more, rest}, {:ok, :continue, state} ->
         {:halt, {:ok, :continue, %{state | buffer: rest}}}

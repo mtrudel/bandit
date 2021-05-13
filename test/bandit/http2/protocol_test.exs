@@ -57,6 +57,16 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "SETTINGS frames" do
+    test "the server should acknowledge a client's SETTINGS frames", context do
+      tls_client = tls_client(context)
+      send_connection_preface(tls_client)
+      send_settings(tls_client)
+      receive_server_settings(tls_client)
+      assert :ssl.recv(tls_client, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+    end
+  end
+
   def tls_client(context) do
     {:ok, tls_client} =
       :ssl.connect(:localhost, context[:port],
@@ -72,5 +82,13 @@ defmodule HTTP2ProtocolTest do
 
   def send_connection_preface(socket) do
     :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+  end
+
+  def receive_server_settings(socket) do
+    {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
+  end
+
+  def send_settings(socket) do
+    :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
   end
 end

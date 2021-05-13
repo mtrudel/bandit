@@ -24,6 +24,15 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def handle_frame(%Frame.Settings{ack: true}, _socket, connection) do
+    {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Settings{ack: false, settings: settings}, socket, connection) do
+    %Frame.Settings{ack: true} |> send_frame(socket)
+    {:ok, :continue, %{connection | remote_settings: settings}}
+  end
+
   defp send_frame(frame, socket) do
     ThousandIsland.Socket.send(socket, Frame.serialize(frame))
   end
