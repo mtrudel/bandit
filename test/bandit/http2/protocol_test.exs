@@ -6,25 +6,53 @@ defmodule HTTP2ProtocolTest do
   setup :https_server
 
   describe "frame splitting / merging" do
-    @tag :pending
-    test "it should handle cases where the request arrives in small chunks" do
-      # TODO - write out a request one byte at a time and ensure that it returns as expected
-      # We can't test for this until we get a complete end to end request working
+    test "it should handle cases where the request arrives in small chunks", context do
+      socket = tls_client(context)
+
+      # Send connection preface, client settings & ping frame one byte at a time
+      ("PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" <>
+         <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+      |> Stream.unfold(fn
+        <<>> -> nil
+        <<byte::binary-size(2), rest::binary>> -> {byte, rest}
+      end)
+      |> Enum.each(fn byte -> :ssl.send(socket, byte) end)
+
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
     end
 
-    @tag :pending
-    test "it should handle cases where multiple frames arrive in the same packet" do
-      # TODO - write out a request with several small frames in the same packet and ensure that it
-      # returns as expected
-      # We can't test for this until we get a complete end to end request working
+    test "it should handle cases where multiple frames arrive in the same packet", context do
+      socket = tls_client(context)
+
+      # Send connection preface, client settings & ping frame all in one
+      :ssl.send(
+        socket,
+        "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" <>
+          <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
+      )
+
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
     end
   end
 
   describe "errors and unexpected frames" do
-    @tag :pending
-    test "it should ignore unknown frame types" do
-      # TODO - write out an invalid frame type and ensure that we continue to work thereafter
-      # We can't test for this until we get a complete end to end request working
+    test "it should ignore unknown frame types", context do
+      socket = setup_connection(context)
+
+      errors =
+        capture_log(fn ->
+          :ssl.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
+
+          # Let the server shut down so we don't log the error
+          Process.sleep(100)
+        end)
+
+      assert connection_alive?(socket)
+      assert errors =~ "Unknown frame"
     end
 
     @tag :pending
@@ -103,5 +131,10 @@ defmodule HTTP2ProtocolTest do
   def exchange_client_settings(socket) do
     :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
     {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
+  end
+
+  def connection_alive?(socket) do
+    :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+    :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
   end
 end
