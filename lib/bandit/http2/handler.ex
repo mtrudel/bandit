@@ -9,14 +9,16 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
-  alias Bandit.HTTP2.Frame
+  alias Bandit.HTTP2.{Connection, Frame}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    with :ok <- read_preface(socket) do
-      {:ok, :continue, state |> Map.merge(%{buffer: <<>>})}
-    else
-      {:error, reason} -> {:error, reason, state}
+    case Connection.init(socket) do
+      {:ok, connection} ->
+        {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
+
+      {:error, reason} ->
+        {:error, reason, state}
     end
   end
 
@@ -39,14 +41,5 @@ defmodule Bandit.HTTP2.Handler do
         # TODO - improve error handling here
         {:halt, {:error, reason, state}}
     end)
-  end
-
-  defp read_preface(socket) do
-    socket
-    |> ThousandIsland.Socket.recv(24)
-    |> case do
-      {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} -> :ok
-      _ -> {:error, "Did not receive expected HTTP/2 connection preface (RFC7540§3.5)"}
-    end
   end
 end

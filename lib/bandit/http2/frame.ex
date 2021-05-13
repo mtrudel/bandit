@@ -11,7 +11,7 @@ defmodule Bandit.HTTP2.Frame do
       ) do
     type
     |> case do
-      0x04 -> Frame.Settings.deserialize(flags, stream, payload)
+      0x4 -> Frame.Settings.deserialize(flags, stream, payload)
       unknown -> handle_unknown_frame(unknown, flags, stream, payload)
     end
     |> case do
@@ -26,6 +26,11 @@ defmodule Bandit.HTTP2.Frame do
 
   def deserialize(msg) do
     {{:more, msg}, <<>>}
+  end
+
+  def serialize(frame) do
+    {type, flags, stream, payload} = Serializable.serialize(frame)
+    <<byte_size(payload)::24, type::8, flags::binary-size(1), 0::1, stream::31, payload::binary>>
   end
 
   defp handle_unknown_frame(type, flags, stream, payload) do

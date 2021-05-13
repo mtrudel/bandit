@@ -31,4 +31,18 @@ defmodule Bandit.HTTP2.Frame.Settings do
   def deserialize(_flags, _stream_id, _payload) do
     {:error, 0, :PROTOCOL_ERROR, "Invalid SETTINGS frame (RFC7540§6.5)"}
   end
+
+  defimpl Serializable do
+    alias Bandit.HTTP2.Frame.Settings
+
+    def serialize(%Settings{ack: true}), do: {0x4, <<0x1>>, 0, <<>>}
+
+    def serialize(%Settings{ack: false, settings: settings}) do
+      payload =
+        settings
+        |> Enum.reduce(<<>>, fn {setting, value}, acc -> acc <> <<setting::16, value::32>> end)
+
+      {0x4, <<0x0>>, 0, payload}
+    end
+  end
 end
