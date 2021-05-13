@@ -79,4 +79,36 @@ defmodule HTTP2FrameDeserializationTest do
                  "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}, <<>>}
     end
   end
+
+  describe "PING frames" do
+    test "builds non-ack frames" do
+      frame = <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Ping{ack: false, payload: <<1, 2, 3, 4, 5, 6, 7, 8>>}}, <<>>}
+    end
+
+    test "builds ack frames" do
+      frame = <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Ping{ack: true, payload: <<1, 2, 3, 4, 5, 6, 7, 8>>}}, <<>>}
+    end
+
+    test "rejects frames when there is a malformed payload" do
+      frame = <<0, 0, 7, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, :FRAME_SIZE_ERROR,
+                 "PING frame with invalid payload size (RFC7540§6.7)"}, <<>>}
+    end
+
+    test "rejects frames when there is stream identifier" do
+      frame = <<0, 0, 8, 6, 1, 0, 0, 0, 1, 1, 2, 3, 4, 5, 6, 7, 8>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, :PROTOCOL_ERROR, "Invalid stream ID in PING frame (RFC7540§6.7)"},
+                <<>>}
+    end
+  end
 end
