@@ -78,6 +78,13 @@ defmodule HTTP2FrameDeserializationTest do
                {{:error, 0, :FRAME_SIZE_ERROR,
                  "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}, <<>>}
     end
+
+    test "rejects ack frames when there is stream identifier" do
+      frame = <<0, 0, 0, 4, 1, 0, 0, 0, 1>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, :PROTOCOL_ERROR, "Invalid SETTINGS frame (RFC7540§6.5)"}, <<>>}
+    end
   end
 
   describe "PING frames" do

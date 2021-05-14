@@ -24,7 +24,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
     {:ok, %__MODULE__{ack: true}}
   end
 
-  def deserialize(<<_flags::7, 0x1::1>>, _stream_id, _payload) do
+  def deserialize(<<_flags::7, 0x1::1>>, 0, _payload) do
     {:error, 0, :FRAME_SIZE_ERROR, "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}
   end
 
