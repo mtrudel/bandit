@@ -1,7 +1,6 @@
 defmodule ConnPipelineTest do
   use ConnectionHelpers, async: true
 
-  import ExUnit.CaptureLog
   import Plug.Conn
 
   describe "request handling" do
@@ -30,34 +29,26 @@ defmodule ConnPipelineTest do
       send_resp(conn, 200, "OK")
     end
 
+    @tag capture_log: true
     test "returns a 500 if the plug raises an exception", context do
-      capture_log(fn ->
-        {:ok, response} =
-          Finch.build(:get, context[:base] <> "/raise_error")
-          |> Finch.request(context[:finch_name])
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/raise_error")
+        |> Finch.request(context[:finch_name])
 
-        # Let the server shut down so we don't log the error
-        Process.sleep(100)
-
-        assert response.status == 500
-      end)
+      assert response.status == 500
     end
 
     def raise_error(_conn) do
       raise "boom"
     end
 
+    @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
-      capture_log(fn ->
-        {:ok, client} = :gen_tcp.connect(:localhost, context[:port], active: false)
-        :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
-        {:ok, response} = :gen_tcp.recv(client, 0)
+      {:ok, client} = :gen_tcp.connect(:localhost, context[:port], active: false)
+      :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
 
-        # Let the server shut down so we don't log the error
-        Process.sleep(100)
-
-        assert response == 'HTTP/1.0 400\r\n\r\n'
-      end)
+      assert response == 'HTTP/1.0 400\r\n\r\n'
     end
   end
 end

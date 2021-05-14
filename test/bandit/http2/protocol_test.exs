@@ -1,8 +1,6 @@
 defmodule HTTP2ProtocolTest do
   use ConnectionHelpers, async: true
 
-  import ExUnit.CaptureLog
-
   setup :https_server
 
   describe "frame splitting / merging" do
@@ -40,19 +38,11 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "errors and unexpected frames" do
+    @tag capture_log: true
     test "it should ignore unknown frame types", context do
       socket = setup_connection(context)
-
-      errors =
-        capture_log(fn ->
-          :ssl.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
-
-          # Let the server shut down so we don't log the error
-          Process.sleep(100)
-        end)
-
+      :ssl.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
       assert connection_alive?(socket)
-      assert errors =~ "Unknown frame"
     end
 
     @tag :pending
@@ -64,18 +54,11 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "connection preface handling" do
+    @tag capture_log: true
     test "closes with an error if the HTTP/2 connection preface is not present", context do
-      errors =
-        capture_log(fn ->
-          socket = tls_client(context)
-          :ssl.send(socket, "PRI * NOPE/2.0\r\n\r\nSM\r\n\r\n")
-          {:error, :closed} = :ssl.recv(socket, 0)
-
-          # Let the server shut down so we don't log the error
-          Process.sleep(100)
-        end)
-
-      assert errors =~ "Did not receive expected HTTP/2 connection preface"
+      socket = tls_client(context)
+      :ssl.send(socket, "PRI * NOPE/2.0\r\n\r\nSM\r\n\r\n")
+      assert :ssl.recv(socket, 0) == {:error, :closed}
     end
 
     test "the server should send a SETTINGS frame at start of the connection", context do

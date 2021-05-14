@@ -1,8 +1,6 @@
 defmodule HTTP2FrameDeserializationTest do
   use ExUnit.Case, async: true
 
-  import ExUnit.CaptureLog
-
   alias Bandit.HTTP2.Frame
 
   describe "insufficient data" do
@@ -28,12 +26,11 @@ defmodule HTTP2FrameDeserializationTest do
   end
 
   describe "unknown frame types" do
+    @tag capture_log: true
     test "returns a nil frame" do
       frame = <<0, 0, 3, 254, 0, 0, 0, 0, 0, 1, 2, 3>>
 
-      capture_log(fn ->
-        assert Frame.deserialize(frame) == {{:ok, nil}, <<>>}
-      end)
+      assert Frame.deserialize(frame) == {{:ok, nil}, <<>>}
     end
   end
 
