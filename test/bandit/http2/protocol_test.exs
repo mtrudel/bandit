@@ -102,6 +102,15 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "GOAWAY frames" do
+    test "the server should close the connection upon receipt of a GOAWAY frame", context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+  end
+
   def tls_client(context) do
     {:ok, socket} =
       :ssl.connect(:localhost, context[:port],

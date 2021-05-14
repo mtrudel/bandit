@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Connection do
   Represents the state of an HTTP/2 connection
   """
 
-  defstruct local_settings: %{}, remote_settings: %{}
+  defstruct local_settings: %{}, remote_settings: %{}, last_stream_id: 0
 
   alias Bandit.HTTP2.Frame
 
@@ -40,6 +40,11 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Ping{ack: false, payload: payload}, socket, connection) do
     %Frame.Ping{ack: true, payload: payload} |> send_frame(socket)
     {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Goaway{}, socket, %{last_stream_id: last_stream_id} = connection) do
+    %Frame.Goaway{last_stream_id: last_stream_id} |> send_frame(socket)
+    {:ok, :close, connection}
   end
 
   defp send_frame(frame, socket) do
