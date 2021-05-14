@@ -47,6 +47,11 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, :close, connection}
   end
 
+  def handle_error(0, error_code, _reason, socket, %{last_stream_id: last_stream_id} = connection) do
+    %Frame.Goaway{last_stream_id: last_stream_id, error_code: error_code} |> send_frame(socket)
+    {:ok, :close, connection}
+  end
+
   defp send_frame(frame, socket) do
     ThousandIsland.Socket.send(socket, Frame.serialize(frame))
   end

@@ -45,9 +45,11 @@ defmodule Bandit.HTTP2.Handler do
       {:more, rest}, {:ok, :continue, state} ->
         {:halt, {:ok, :continue, %{state | buffer: rest}}}
 
-      {:error, _stream, _code, reason}, {:ok, :continue, state} ->
-        # TODO - improve error handling here
-        {:halt, {:error, reason, state}}
+      {:error, stream_id, code, reason}, {:ok, :continue, state} ->
+        case Connection.handle_error(stream_id, code, reason, socket, state[:connection]) do
+          {:ok, :close, connection} ->
+            {:halt, {:error, reason, %{state | connection: connection}}}
+        end
     end)
   end
 end

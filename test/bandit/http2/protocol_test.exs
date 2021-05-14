@@ -45,11 +45,14 @@ defmodule HTTP2ProtocolTest do
       assert connection_alive?(socket)
     end
 
-    @tag :pending
-    test "it should shut down the connection gracefully when encountering a connection error" do
-      # TODO - write out an invalid SETTINGS frame and ensure that we see a GOAWAY frame with an
-      # appropriate error code
-      # We can't test for this until we get a complete end to end request working
+    @tag capture_log: true
+    test "it should shut down the connection gracefully when encountering a connection error",
+         context do
+      socket = tls_client(context)
+      exchange_prefaces(socket)
+      # Send a bogus SETTINGS frame
+      :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
     end
   end
 
