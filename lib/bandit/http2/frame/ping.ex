@@ -3,6 +3,8 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   defstruct ack: false, payload: nil
 
+  alias Bandit.HTTP2.Constants
+
   def deserialize(<<_flags::7, 0x1::1>>, 0, <<payload::binary-size(8)>>) do
     {:ok, %__MODULE__{ack: true, payload: payload}}
   end
@@ -12,11 +14,12 @@ defmodule Bandit.HTTP2.Frame.Ping do
   end
 
   def deserialize(_flags, stream_id, _payload) when stream_id != 0 do
-    {:error, 0, :PROTOCOL_ERROR, "Invalid stream ID in PING frame (RFC7540§6.7)"}
+    {:error, 0, Constants.protocol_error(), "Invalid stream ID in PING frame (RFC7540§6.7)"}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
-    {:error, 0, :FRAME_SIZE_ERROR, "PING frame with invalid payload size (RFC7540§6.7)"}
+    {:error, 0, Constants.frame_size_error(),
+     "PING frame with invalid payload size (RFC7540§6.7)"}
   end
 
   defimpl Serializable do
