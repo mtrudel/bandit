@@ -111,4 +111,37 @@ defmodule HTTP2FrameDeserializationTest do
                 <<>>}
     end
   end
+
+  describe "GOAWAY frames" do
+    test "deserializes frames without debug data" do
+      frame = <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Goaway{last_stream_id: 1, error_code: 2, debug_data: <<>>}}, <<>>}
+    end
+
+    test "deserializes frames with debug data" do
+      frame = <<0, 0, 10, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 3, 4>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Goaway{last_stream_id: 1, error_code: 2, debug_data: <<3, 4>>}},
+                <<>>}
+    end
+
+    test "rejects frames when there is a malformed payload" do
+      frame = <<0, 0, 7, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, :FRAME_SIZE_ERROR,
+                 "GOAWAY frame with invalid payload size (RFC7540§6.8)"}, <<>>}
+    end
+
+    test "rejects frames when there is stream identifier" do
+      frame = <<0, 0, 7, 7, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, :PROTOCOL_ERROR, "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"},
+                <<>>}
+    end
+  end
 end

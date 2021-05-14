@@ -37,4 +37,19 @@ defmodule HTTP2FrameSerializationTest do
       assert Frame.serialize(frame) == <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
     end
   end
+
+  describe "GOAWAY frames" do
+    test "serializes frames without debug data" do
+      frame = %Frame.Goaway{last_stream_id: 1, error_code: 2}
+
+      assert Frame.serialize(frame) == <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2>>
+    end
+
+    test "serializes frames with debug data" do
+      frame = %Frame.Goaway{last_stream_id: 1, error_code: 2, debug_data: <<3, 4>>}
+
+      assert Frame.serialize(frame) ==
+               <<0, 0, 10, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 2, 3, 4>>
+    end
+  end
 end
