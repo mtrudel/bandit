@@ -111,7 +111,7 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
-  def tls_client(context) do
+  defp tls_client(context) do
     {:ok, socket} =
       :ssl.connect(:localhost, context[:port],
         active: false,
@@ -124,25 +124,25 @@ defmodule HTTP2ProtocolTest do
     socket
   end
 
-  def setup_connection(context) do
+  defp setup_connection(context) do
     socket = tls_client(context)
     exchange_prefaces(socket)
     exchange_client_settings(socket)
     socket
   end
 
-  def exchange_prefaces(socket) do
+  defp exchange_prefaces(socket) do
     :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
     {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
     :ssl.send(socket, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
   end
 
-  def exchange_client_settings(socket) do
+  defp exchange_client_settings(socket) do
     :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
     {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
   end
 
-  def connection_alive?(socket) do
+  defp connection_alive?(socket) do
     :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
     :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
   end
