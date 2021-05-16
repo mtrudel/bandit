@@ -33,8 +33,7 @@ defmodule Bandit.HTTP2.Frame do
   def serialize(frame) do
     {type, flags, stream_id, payload} = Serializable.serialize(frame)
 
-    <<byte_size(payload)::24, type::8, flags::binary-size(1), 0::1, stream_id::31,
-      payload::binary>>
+    [<<byte_size(payload)::24, type::8, flags::binary-size(1), 0::1, stream_id::31>>, payload]
   end
 
   defp handle_unknown_frame(type, flags, stream_id, payload) do
