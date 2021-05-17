@@ -3,13 +3,15 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   defstruct ack: false, payload: nil
 
+  import Bitwise
+
   alias Bandit.HTTP2.Constants
 
-  def deserialize(<<_flags::7, 0x1::1>>, 0, <<payload::binary-size(8)>>) do
+  def deserialize(flags, 0, <<payload::binary-size(8)>>) when (flags &&& 0x1) == 0x1 do
     {:ok, %__MODULE__{ack: true, payload: payload}}
   end
 
-  def deserialize(<<_flags::7, 0x0::1>>, 0, <<payload::binary-size(8)>>) do
+  def deserialize(flags, 0, <<payload::binary-size(8)>>) when (flags &&& 0x1) == 0x0 do
     {:ok, %__MODULE__{ack: false, payload: payload}}
   end
 
@@ -25,7 +27,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
   defimpl Serializable do
     alias Bandit.HTTP2.Frame.Ping
 
-    def serialize(%Ping{ack: true, payload: payload}), do: {0x6, <<0x1>>, 0, payload}
-    def serialize(%Ping{ack: false, payload: payload}), do: {0x6, <<0x0>>, 0, payload}
+    def serialize(%Ping{ack: true, payload: payload}), do: {0x6, 0x1, 0, payload}
+    def serialize(%Ping{ack: false, payload: payload}), do: {0x6, 0x0, 0, payload}
   end
 end

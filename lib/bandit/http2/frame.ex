@@ -6,7 +6,7 @@ defmodule Bandit.HTTP2.Frame do
   require Logger
 
   def deserialize(
-        <<length::24, type::8, flags::binary-size(1), _reserved::1, stream_id::31,
+        <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
           payload::binary-size(length), rest::binary>>
       ) do
     type
@@ -33,12 +33,11 @@ defmodule Bandit.HTTP2.Frame do
   def serialize(frame) do
     {type, flags, stream_id, payload} = Serializable.serialize(frame)
 
-    [<<byte_size(payload)::24, type::8, flags::binary-size(1), 0::1, stream_id::31>>, payload]
+    [<<byte_size(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
   end
 
   defp handle_unknown_frame(type, flags, stream_id, payload) do
-    "Unknown frame (t: #{type} f: #{inspect(flags)} s: #{stream_id} p: #{inspect(payload)})"
-    |> Logger.warn()
+    Logger.warn("Unknown frame (t: #{type} f: #{flags} s: #{stream_id} p: #{inspect(payload)})")
 
     {:ok, nil}
   end

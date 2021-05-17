@@ -3,9 +3,11 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   defstruct ack: false, settings: %{}
 
+  import Bitwise
+
   alias Bandit.HTTP2.Constants
 
-  def deserialize(<<_flags::7, 0x0::1>>, 0, payload) do
+  def deserialize(flags, 0, payload) when (flags &&& 0x1) == 0x0 do
     payload
     |> Stream.unfold(fn
       <<>> -> nil
@@ -25,11 +27,11 @@ defmodule Bandit.HTTP2.Frame.Settings do
     end
   end
 
-  def deserialize(<<_flags::7, 0x1::1>>, 0, <<>>) do
+  def deserialize(flags, 0, <<>>) when (flags &&& 0x1) == 0x1 do
     {:ok, %__MODULE__{ack: true}}
   end
 
-  def deserialize(<<_flags::7, 0x1::1>>, 0, _payload) do
+  def deserialize(flags, 0, _payload) when (flags &&& 0x1) == 0x1 do
     {:error, 0, Constants.frame_size_error(),
      "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}
   end
@@ -41,14 +43,14 @@ defmodule Bandit.HTTP2.Frame.Settings do
   defimpl Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
-    def serialize(%Settings{ack: true}), do: {0x4, <<0x1>>, 0, <<>>}
+    def serialize(%Settings{ack: true}), do: {0x4, 0x1, 0, <<>>}
 
     def serialize(%Settings{ack: false, settings: settings}) do
       payload =
         settings
         |> Enum.reduce(<<>>, fn {setting, value}, acc -> acc <> <<setting::16, value::32>> end)
 
-      {0x4, <<0x0>>, 0, payload}
+      {0x4, 0x0, 0, payload}
     end
   end
 end

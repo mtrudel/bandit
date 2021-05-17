@@ -31,7 +31,7 @@ defmodule Bandit.HTTP2.Frame.Goaway do
           error_code: error_code,
           debug_data: debug_data
         }) do
-      {0x7, <<0x0>>, 0, <<0x0::1, last_stream_id::31, error_code::32, debug_data::binary>>}
+      {0x7, 0x0, 0, <<0x0::1, last_stream_id::31, error_code::32, debug_data::binary>>}
     end
   end
 end
