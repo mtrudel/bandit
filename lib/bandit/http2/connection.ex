@@ -28,27 +28,32 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, :continue, connection}
   end
 
-  def handle_frame(%Frame.Settings{ack: false, settings: settings}, socket, connection) do
+  def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
     %Frame.Settings{ack: true} |> send_frame(socket)
-    {:ok, :continue, %{connection | remote_settings: settings}}
+    {:ok, :continue, %{connection | remote_settings: frame.settings}}
   end
 
   def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
     {:ok, :continue, connection}
   end
 
-  def handle_frame(%Frame.Ping{ack: false, payload: payload}, socket, connection) do
-    %Frame.Ping{ack: true, payload: payload} |> send_frame(socket)
+  def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
+    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket)
     {:ok, :continue, connection}
   end
 
-  def handle_frame(%Frame.Goaway{}, socket, %{last_stream_id: last_stream_id} = connection) do
-    %Frame.Goaway{last_stream_id: last_stream_id} |> send_frame(socket)
-    {:ok, :close, connection}
+  def handle_frame(%Frame.Goaway{}, socket, connection) do
+    close(Constants.no_error(), socket, connection)
   end
 
-  def handle_error(0, error_code, _reason, socket, %{last_stream_id: last_stream_id} = connection) do
-    %Frame.Goaway{last_stream_id: last_stream_id, error_code: error_code} |> send_frame(socket)
+  def handle_error(0, error_code, _reason, socket, connection) do
+    close(error_code, socket, connection)
+  end
+
+  defp close(error_code, socket, connection) do
+    %Frame.Goaway{last_stream_id: connection.last_stream_id, error_code: error_code}
+    |> send_frame(socket)
+
     {:ok, :close, connection}
   end
 
