@@ -23,15 +23,15 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   @impl ThousandIsland.Handler
-  def handle_data(data, socket, %{buffer: buffer} = state) do
-    (buffer <> data)
+  def handle_data(data, socket, state) do
+    (state.buffer <> data)
     |> Stream.unfold(&Frame.deserialize/1)
     |> Enum.reduce_while({:ok, :continue, state}, fn
       {:ok, nil}, {:ok, :continue, state} ->
         {:cont, {:ok, :continue, state}}
 
       {:ok, frame}, {:ok, :continue, state} ->
-        case Connection.handle_frame(frame, socket, state[:connection]) do
+        case Connection.handle_frame(frame, socket, state.connection) do
           {:ok, :continue, connection} ->
             {:cont, {:ok, :continue, %{state | connection: connection}}}
 
@@ -46,7 +46,7 @@ defmodule Bandit.HTTP2.Handler do
         {:halt, {:ok, :continue, %{state | buffer: rest}}}
 
       {:error, stream_id, code, reason}, {:ok, :continue, state} ->
-        case Connection.handle_error(stream_id, code, reason, socket, state[:connection]) do
+        case Connection.handle_error(stream_id, code, reason, socket, state.connection) do
           {:ok, :close, connection} ->
             {:halt, {:error, reason, %{state | connection: connection}}}
         end
