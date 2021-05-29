@@ -71,6 +71,43 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "HEADERS frames" do
+    # TODO -- demonstrate a parse of unadorned header
+    # TODO -- demonstrate a parse of priority headers
+    # TODO -- demonstrate a parse of padding headers
+    # TODO -- demonstrate a parse of both priority & padding headers
+
+    test "closes with an error when receiving an even stream ID",
+         context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 98, 64, 129, 31, 129, 31>>)
+
+      assert :ssl.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
+    test "closes with an error when receiving a stream ID we've already seen",
+         context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
+      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
+
+      assert :ssl.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 1>>}
+
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
+    test "closes with an error on a header frame with undecompressable header block", context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9>>}
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+  end
+
   describe "SETTINGS frames" do
     test "the server should acknowledge a client's SETTINGS frames", context do
       socket = tls_client(context)
@@ -93,6 +130,17 @@ defmodule HTTP2ProtocolTest do
       socket = setup_connection(context)
       :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
       assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
+    test "the server should return the last received stream id in the GOAWAY frame", context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
+      :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
+
+      assert :ssl.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 0>>}
+
       assert :ssl.recv(socket, 0) == {:error, :closed}
     end
   end

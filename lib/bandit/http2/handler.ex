@@ -2,9 +2,9 @@ defmodule Bandit.HTTP2.Handler do
   @moduledoc """
   An HTTP/2 handler. Responsible for:
 
-  * Verifying the connection preface (RFC7540§3.5) upon initial connection
   * Coordinating the parsing of frames & attendant error handling
   * Tracking connection state as represented by `Bandit.HTTP2.Connection` structs
+  * Marshalling send requests from child streams into the parent connection for processing
   """
 
   use ThousandIsland.Handler
@@ -13,7 +13,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    case Connection.init(socket) do
+    case Connection.init(socket, state.plug) do
       {:ok, connection} ->
         {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
 
@@ -51,5 +51,11 @@ defmodule Bandit.HTTP2.Handler do
             {:halt, {:error, reason, %{state | connection: connection}}}
         end
     end)
+  end
+
+  def handle_info({:EXIT, pid, reason}, {socket, state}) do
+    {:ok, connection} = Connection.stream_terminated(pid, reason, socket, state.connection)
+
+    {:noreply, {socket, %{state | connection: connection}}}
   end
 end
