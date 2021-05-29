@@ -3,6 +3,28 @@ defmodule HTTP2FrameSerializationTest do
 
   alias Bandit.HTTP2.Frame
 
+  describe "DATA frames" do
+    test "serializes frames" do
+      frame = %Frame.Data{
+        stream_id: 123,
+        end_stream: false,
+        data: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 0, 0, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+
+    test "serializes frames with end_stream set" do
+      frame = %Frame.Data{
+        stream_id: 123,
+        end_stream: true,
+        data: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 0, 1, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+  end
+
   describe "HEADERS frames" do
     test "serializes frames" do
       frame = %Frame.Headers{

@@ -34,6 +34,43 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "DATA frames" do
+    test "deserializes frames with padding" do
+      frame = <<0, 0, 6, 0, 0x08, 0, 0, 0, 1, 2, 1, 2, 3, 4, 5>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Data{stream_id: 1, end_stream: false, data: <<1, 2, 3>>}}, <<>>}
+    end
+
+    test "deserializes frames without padding" do
+      frame = <<0, 0, 3, 0, 0, 0, 0, 0, 1, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Data{stream_id: 1, end_stream: false, data: <<1, 2, 3>>}}, <<>>}
+    end
+
+    test "sets end_stream" do
+      frame = <<0, 0, 3, 0, 0x01, 0, 0, 0, 1, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Data{stream_id: 1, end_stream: true, data: <<1, 2, 3>>}}, <<>>}
+    end
+
+    test "rejects frames with 0 stream_id" do
+      frame = <<0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, 1, "DATA frame with zero stream_id (RFC7540§6.1)"}, <<>>}
+    end
+
+    test "rejects frames with invalid padding" do
+      frame = <<0, 0, 6, 0, 0x08, 0, 0, 0, 1, 6, 1, 2, 3, 4, 5>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, 1, "DATA frame with invalid padding length (RFC7540§6.1)"}, <<>>}
+    end
+  end
+
   describe "HEADERS frames" do
     test "deserializes frames with padding and priority" do
       frame = <<0, 0, 11, 1, 0x28, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>
