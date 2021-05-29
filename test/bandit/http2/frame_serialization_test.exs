@@ -3,6 +3,52 @@ defmodule HTTP2FrameSerializationTest do
 
   alias Bandit.HTTP2.Frame
 
+  describe "HEADERS frames" do
+    test "serializes frames" do
+      frame = %Frame.Headers{
+        stream_id: 123,
+        end_stream: false,
+        end_headers: false,
+        header_block_fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 1, 0, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+
+    test "serializes frames with end_headers set" do
+      frame = %Frame.Headers{
+        stream_id: 123,
+        end_stream: false,
+        end_headers: true,
+        header_block_fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 1, 4, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+
+    test "serializes frames with end_stream set" do
+      frame = %Frame.Headers{
+        stream_id: 123,
+        end_stream: true,
+        end_headers: false,
+        header_block_fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 1, 1, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+
+    test "serializes frames with both end_headers and end_stream set" do
+      frame = %Frame.Headers{
+        stream_id: 123,
+        end_stream: true,
+        end_headers: true,
+        header_block_fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 1, 5, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+  end
+
   describe "SETTINGS frames" do
     test "serializes non-ack frames when there are no contained settings" do
       frame = %Frame.Settings{ack: false, settings: %{}}

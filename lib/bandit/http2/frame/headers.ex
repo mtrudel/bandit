@@ -101,6 +101,14 @@ defmodule Bandit.HTTP2.Frame.Headers do
   defimpl Serializable do
     alias Bandit.HTTP2.Frame.Headers
 
-    def serialize(%Headers{}), do: {0x1, 0x0, 0, <<>>}
+    def serialize(
+          %Headers{exclusive_dependency: false, stream_dependency: nil, weight: nil} = frame
+        ) do
+      flags = 0
+      flags = if frame.end_stream, do: flags ||| 0x01, else: flags
+      flags = if frame.end_headers, do: flags ||| 0x04, else: flags
+
+      {0x1, flags, frame.stream_id, frame.header_block_fragment}
+    end
   end
 end
