@@ -84,6 +84,52 @@ defmodule Bandit.HTTP2.Connection do
     close(error_code, socket, connection)
   end
 
+  def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
+    with {:stream, {stream_state, ^pid}} <- {:stream, Map.get(connection.streams, stream_id)},
+         {:stream_state, true} <- {:stream_state, stream_state in [:open, :remote_closed]},
+         {:ok, send_header_state, header_block} <-
+           HPack.encode(headers, connection.send_header_state) do
+      %Frame.Headers{
+        stream_id: stream_id,
+        end_headers: true,
+        end_stream: end_stream,
+        header_block_fragment: header_block
+      }
+      |> send_frame(socket)
+
+      connection =
+        connection
+        |> Map.put(:send_header_state, send_header_state)
+        |> Map.update!(:streams, fn streams ->
+          if end_stream do
+            # State management per RFC7540§5.1
+            case stream_state do
+              :open -> Map.put(streams, stream_id, {:local_closed, pid})
+              :remote_closed -> Map.delete(streams, stream_id)
+            end
+          else
+            streams
+          end
+        end)
+
+      {:ok, connection}
+    else
+      {:stream, nil} ->
+        {:error, :invalid_stream}
+
+      {:stream, _} ->
+        {:error, :not_owner}
+
+      {:stream_state, false} ->
+        {:error, :local_end_closed}
+
+      {:error, :encode_error} ->
+        # Not explcitily documented in RFC7540
+        close(Constants.compression_error(), socket, connection)
+        {:close, :encode_error}
+    end
+  end
+
   def stream_terminated(pid, _reason, _socket, connection) do
     connection.streams
     |> Enum.find(fn {_stream_id, {_stream_state, stream_pid}} -> stream_pid == pid end)

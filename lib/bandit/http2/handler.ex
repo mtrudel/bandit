@@ -53,6 +53,14 @@ defmodule Bandit.HTTP2.Handler do
     end)
   end
 
+  def handle_call({:send_headers, stream_id, headers, end_stream}, {from, _tag}, {socket, state}) do
+    case Connection.send_headers(stream_id, from, headers, end_stream, socket, state.connection) do
+      {:ok, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
+      {:error, reason} -> {:reply, {:error, reason}, {socket, state}}
+      {:close, reason} -> {:stop, reason, {:error, reason}, {socket, state}}
+    end
+  end
+
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
     {:ok, connection} = Connection.stream_terminated(pid, reason, socket, state.connection)
 
