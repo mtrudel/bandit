@@ -85,9 +85,8 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{}) do
-    # TODO ask connection
-    nil
+  def get_peer_data(%__MODULE__{} = adapter) do
+    GenServer.call(adapter.connection, {:get_peer_data})
   end
 
   @impl Plug.Conn.Adapter
