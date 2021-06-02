@@ -23,7 +23,6 @@ defmodule InitialHandlerTest do
     setup :https_server
     setup :http2_client
 
-    @tag :skip
     test "sets up the HTTP/2 handler", %{base: base, finch_name: finch_name} do
       {:ok, response} = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
 

@@ -1,6 +1,9 @@
 defmodule HTTP2ProtocolTest do
   use ConnectionHelpers, async: true
 
+  import Bitwise
+  import Plug.Conn
+
   setup :https_server
 
   describe "frame splitting / merging" do
@@ -72,10 +75,135 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "HEADERS frames" do
-    # TODO -- demonstrate a parse of unadorned header
-    # TODO -- demonstrate a parse of priority headers
-    # TODO -- demonstrate a parse of padding headers
-    # TODO -- demonstrate a parse of both priority & padding headers
+    test "sends end of stream headers when there is no body", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, [
+        {":method", "GET"},
+        {":path", "/no_body_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, true,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+    end
+
+    def no_body_response(conn) do
+      conn |> send_resp(200, <<>>)
+    end
+
+    test "sends non-end of stream headers when there is a body", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, [
+        {":method", "GET"},
+        {":path", "/body_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert simple_read_body(socket) == {:ok, 1, "OK"}
+    end
+
+    def body_response(conn) do
+      conn |> send_resp(200, "OK")
+    end
+
+    test "accepts well-formed headers without padding or priority", context do
+      socket = setup_connection(context)
+      headers = headers_for_header_read_test(context)
+
+      # Send unadorned headers
+      :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x04, 0, 0, 0, 1>>, headers])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert simple_read_body(socket) == {:ok, 1, "OK"}
+    end
+
+    test "accepts well-formed headers with priority", context do
+      socket = setup_connection(context)
+      headers = headers_for_header_read_test(context)
+
+      # Send headers with priority
+      :ssl.send(socket, [
+        <<0, 0, byte_size(headers) + 5, 1, 0x24, 0, 0, 0, 1>>,
+        <<0, 0, 0, 1, 5>>,
+        headers
+      ])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert simple_read_body(socket) == {:ok, 1, "OK"}
+    end
+
+    test "accepts well-formed headers with padding", context do
+      socket = setup_connection(context)
+      headers = headers_for_header_read_test(context)
+
+      # Send headers with padding
+      :ssl.send(socket, [
+        <<0, 0, byte_size(headers) + 5, 1, 0x0C, 0, 0, 0, 1>>,
+        <<4>>,
+        headers,
+        <<1, 2, 3, 4>>
+      ])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert simple_read_body(socket) == {:ok, 1, "OK"}
+    end
+
+    test "accepts well-formed headers with padding and priority", context do
+      socket = setup_connection(context)
+      headers = headers_for_header_read_test(context)
+
+      # Send headers with padding and priority
+      :ssl.send(socket, [
+        <<0, 0, byte_size(headers) + 10, 1, 0x2C, 0, 0, 0, 1>>,
+        <<4, 0, 0, 0, 0, 1>>,
+        headers,
+        <<1, 2, 3, 4>>
+      ])
+
+      assert simple_read_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert simple_read_body(socket) == {:ok, 1, "OK"}
+    end
+
+    def headers_for_header_read_test(context) do
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/header_read_test"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"x-request-header", "Request"}
+      ]
+
+      ctx = HPack.Table.new(4096)
+      {:ok, _, headers} = HPack.encode(headers, ctx)
+      headers
+    end
+
+    def header_read_test(conn) do
+      assert get_req_header(conn, "x-request-header") == ["Request"]
+
+      conn |> send_resp(200, "OK")
+    end
 
     test "closes with an error when receiving an even stream ID",
          context do
@@ -179,5 +307,30 @@ defmodule HTTP2ProtocolTest do
   defp connection_alive?(socket) do
     :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
     :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+  end
+
+  defp simple_send_headers(socket, stream_id, headers) do
+    ctx = HPack.Table.new(4096)
+    {:ok, _, headers} = HPack.encode(headers, ctx)
+    :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x04, 0::1, stream_id::31>>, headers])
+  end
+
+  defp simple_read_headers(socket) do
+    {:ok, <<length::24, 1::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
+    {:ok, header_block} = :ssl.recv(socket, length)
+    ctx = HPack.Table.new(4096)
+    {:ok, _, headers} = HPack.decode(header_block, ctx)
+    {:ok, stream_id, (flags &&& 0x01) == 0x01, headers}
+  end
+
+  defp simple_read_body(socket) do
+    {:ok, <<body_length::24, 0::8, 0x1::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
+
+    if body_length == 0 do
+      {:ok, stream_id, <<>>}
+    else
+      {:ok, body} = :ssl.recv(socket, body_length)
+      {:ok, stream_id, body}
+    end
   end
 end
