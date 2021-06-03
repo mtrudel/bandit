@@ -37,9 +37,6 @@ defmodule Bandit.HTTP2.Handler do
 
           {:ok, :close, connection} ->
             {:halt, {:ok, :close, %{state | connection: connection}}}
-
-          {:error, reason} ->
-            {:halt, {:error, reason, state}}
         end
 
       {:more, rest}, {:ok, :continue, state} ->
