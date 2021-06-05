@@ -33,6 +33,36 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  #
+  # Connection-level receiving
+  #
+
+  def handle_frame(%Frame.Settings{ack: true}, _socket, connection) do
+    {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
+    %Frame.Settings{ack: true} |> send_frame(socket)
+    {:ok, :continue, %{connection | remote_settings: frame.settings}}
+  end
+
+  def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
+    {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
+    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket)
+    {:ok, :continue, connection}
+  end
+
+  def handle_frame(%Frame.Goaway{}, socket, connection) do
+    close(Constants.no_error(), socket, connection)
+  end
+
+  #
+  # Stream-level receiving
+  #
+
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with {:ok, recv_header_state, headers} <-
            HPack.decode(frame.header_block_fragment, connection.recv_header_state),
@@ -58,31 +88,9 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  def handle_frame(%Frame.Settings{ack: true}, _socket, connection) do
-    {:ok, :continue, connection}
-  end
-
-  def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
-    %Frame.Settings{ack: true} |> send_frame(socket)
-    {:ok, :continue, %{connection | remote_settings: frame.settings}}
-  end
-
-  def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
-    {:ok, :continue, connection}
-  end
-
-  def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
-    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket)
-    {:ok, :continue, connection}
-  end
-
-  def handle_frame(%Frame.Goaway{}, socket, connection) do
-    close(Constants.no_error(), socket, connection)
-  end
-
-  def handle_error(0, error_code, _reason, socket, connection) do
-    close(error_code, socket, connection)
-  end
+  #
+  # Stream-level sending
+  #
 
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
     with :ok <- ok_to_send?(connection.streams, stream_id, pid),
@@ -131,7 +139,6 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   # State management per RFC7540§5.1
-
   defp ok_to_send?(streams, stream_id, pid) do
     case Map.get(streams, stream_id) do
       {stream_state, ^pid} when stream_state not in [:local_closed, :closed] -> :ok
@@ -149,6 +156,25 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  #
+  # Connection-level error handling
+  #
+
+  def handle_error(0, error_code, _reason, socket, connection) do
+    close(error_code, socket, connection)
+  end
+
+  defp close(error_code, socket, connection) do
+    %Frame.Goaway{last_stream_id: connection.last_remote_stream_id, error_code: error_code}
+    |> send_frame(socket)
+
+    {:ok, :close, connection}
+  end
+
+  #
+  # Stream-level error handling
+  #
+
   def stream_terminated(pid, _reason, _socket, connection) do
     connection.streams
     |> Enum.find(fn {_stream_id, {_stream_state, stream_pid}} -> stream_pid == pid end)
@@ -161,12 +187,9 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  defp close(error_code, socket, connection) do
-    %Frame.Goaway{last_stream_id: connection.last_remote_stream_id, error_code: error_code}
-    |> send_frame(socket)
-
-    {:ok, :close, connection}
-  end
+  #
+  # Utility functions
+  #
 
   defp send_frame(frame, socket) do
     ThousandIsland.Socket.send(socket, Frame.serialize(frame))
