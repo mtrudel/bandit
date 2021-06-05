@@ -85,8 +85,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
-    with {:stream, {stream_state, ^pid}} <- {:stream, Map.get(connection.streams, stream_id)},
-         {:stream_state, true} <- {:stream_state, stream_state in [:open, :remote_closed]},
+    with :ok <- ok_to_send?(connection.streams, stream_id, pid),
          {:ok, send_header_state, header_block} <-
            HPack.encode(headers, connection.send_header_state) do
       %Frame.Headers{
@@ -100,53 +99,53 @@ defmodule Bandit.HTTP2.Connection do
       connection =
         connection
         |> Map.put(:send_header_state, send_header_state)
-        |> Map.update!(:streams, &update_stream(&1, stream_id, stream_state, pid, end_stream))
+        |> Map.update!(:streams, &update_stream_on_send(&1, stream_id, end_stream))
 
       {:ok, connection}
     else
-      {:stream, nil} ->
-        {:error, :invalid_stream}
-
-      {:stream, _} ->
-        {:error, :not_owner}
-
-      {:stream_state, false} ->
-        {:error, :local_end_closed}
-
       {:error, :encode_error} ->
         # Not explcitily documented in RFC7540
         close(Constants.compression_error(), socket, connection)
         {:close, :encode_error}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   def send_data(stream_id, pid, data, end_stream, socket, connection) do
-    with {:stream, {stream_state, ^pid}} <- {:stream, Map.get(connection.streams, stream_id)},
-         {:stream_state, true} <- {:stream_state, stream_state in [:open, :remote_closed]} do
-      %Frame.Data{stream_id: stream_id, end_stream: end_stream, data: data}
-      |> send_frame(socket)
+    case ok_to_send?(connection.streams, stream_id, pid) do
+      :ok ->
+        %Frame.Data{stream_id: stream_id, end_stream: end_stream, data: data}
+        |> send_frame(socket)
 
-      connection =
-        connection
-        |> Map.update!(:streams, &update_stream(&1, stream_id, stream_state, pid, end_stream))
+        connection =
+          connection
+          |> Map.update!(:streams, &update_stream_on_send(&1, stream_id, end_stream))
 
-      {:ok, connection}
-    else
-      {:stream, nil} -> {:error, :invalid_stream}
-      {:stream, _} -> {:error, :not_owner}
-      {:stream_state, false} -> {:error, :local_end_closed}
+        {:ok, connection}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 
   # State management per RFC7540§5.1
-  defp update_stream(streams, stream_id, stream_state, pid, end_stream) do
-    if end_stream do
-      case stream_state do
-        :open -> Map.put(streams, stream_id, {:local_closed, pid})
-        :remote_closed -> Map.delete(streams, stream_id)
-      end
-    else
-      streams
+
+  defp ok_to_send?(streams, stream_id, pid) do
+    case Map.get(streams, stream_id) do
+      {stream_state, ^pid} when stream_state not in [:local_closed, :closed] -> :ok
+      {_stream_state, ^pid} -> {:error, :local_end_closed}
+      {_stream_state, _pid} -> {:error, :not_owner}
+      nil -> {:error, :invalid_stream}
+    end
+  end
+
+  defp update_stream_on_send(streams, stream_id, end_stream) do
+    case {Map.get(streams, stream_id), end_stream} do
+      {{:remote_closed, _pid}, true} -> Map.delete(streams, stream_id)
+      {{:open, pid}, true} -> Map.put(streams, stream_id, {:local_closed, pid})
+      _ -> streams
     end
   end
 
