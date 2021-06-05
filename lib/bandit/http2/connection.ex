@@ -66,25 +66,39 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with {:ok, recv_header_state, headers} <-
            HPack.decode(frame.header_block_fragment, connection.recv_header_state),
-         {:odd_stream_id, true} <- {:odd_stream_id, Integer.is_odd(frame.stream_id)},
-         {:new_stream_id, true} <-
-           {:new_stream_id, frame.stream_id > connection.last_remote_stream_id},
-         stream_state <- if(frame.end_stream, do: :remote_closed, else: :open),
+         :ok <- ok_to_init_stream?(frame.stream_id, connection.last_remote_stream_id),
          %{address: peer} <- ThousandIsland.Socket.peer_info(socket),
          {:ok, pid} <- Stream.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
       connection =
         connection
         |> Map.put(:recv_header_state, recv_header_state)
         |> Map.put(:last_remote_stream_id, frame.stream_id)
-        |> Map.update!(:streams, &Map.put(&1, frame.stream_id, {stream_state, pid}))
+        |> Map.update!(:streams, &Map.put(&1, frame.stream_id, {:open, pid}))
+        |> Map.update!(:streams, &update_stream_on_recv(&1, frame.stream_id, frame.end_stream))
 
       {:ok, :continue, connection}
     else
       {:error, :decode_error} -> close(Constants.compression_error(), socket, connection)
       # https://github.com/OleMchls/elixir-hpack/issues/16
       other when is_binary(other) -> close(Constants.compression_error(), socket, connection)
-      {:odd_stream_id, false} -> close(Constants.protocol_error(), socket, connection)
-      {:new_stream_id, false} -> close(Constants.protocol_error(), socket, connection)
+      {:error, :even_stream_id} -> close(Constants.protocol_error(), socket, connection)
+      {:error, :old_stream_id} -> close(Constants.protocol_error(), socket, connection)
+    end
+  end
+
+  defp ok_to_init_stream?(stream_id, last_stream_id) do
+    cond do
+      Integer.is_even(stream_id) -> {:error, :even_stream_id}
+      stream_id <= last_stream_id -> {:error, :old_stream_id}
+      true -> :ok
+    end
+  end
+
+  defp update_stream_on_recv(streams, stream_id, end_stream) do
+    case {Map.get(streams, stream_id), end_stream} do
+      {{:local_closed, _pid}, true} -> Map.delete(streams, stream_id)
+      {{:open, pid}, true} -> Map.put(streams, stream_id, {:remote_closed, pid})
+      _ -> streams
     end
   end
 
