@@ -74,6 +74,51 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "DATA frames" do
+    test "sends end of stream when there is a single data frame", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, [
+        {":method", "GET"},
+        {":path", "/body_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_read_headers(socket)
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def body_response(conn) do
+      conn |> send_resp(200, "OK")
+    end
+
+    test "sends multiple DATA frames with last one end of stream when chunking", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_read_headers(socket)
+      assert simple_read_body(socket) == {:ok, 1, false, "OK"}
+      assert simple_read_body(socket) == {:ok, 1, false, "DOKEE"}
+      assert simple_read_body(socket) == {:ok, 1, true, ""}
+    end
+
+    def chunk_response(conn) do
+      conn
+      |> send_chunked(200)
+      |> chunk("OK")
+      |> elem(1)
+      |> chunk("DOKEE")
+      |> elem(1)
+    end
+  end
+
   describe "HEADERS frames" do
     test "sends end of stream headers when there is no body", context do
       socket = setup_connection(context)
@@ -108,11 +153,7 @@ defmodule HTTP2ProtocolTest do
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert simple_read_body(socket) == {:ok, 1, "OK"}
-    end
-
-    def body_response(conn) do
-      conn |> send_resp(200, "OK")
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers without padding or priority", context do
@@ -126,7 +167,7 @@ defmodule HTTP2ProtocolTest do
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert simple_read_body(socket) == {:ok, 1, "OK"}
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with priority", context do
@@ -144,7 +185,7 @@ defmodule HTTP2ProtocolTest do
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert simple_read_body(socket) == {:ok, 1, "OK"}
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with padding", context do
@@ -163,7 +204,7 @@ defmodule HTTP2ProtocolTest do
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert simple_read_body(socket) == {:ok, 1, "OK"}
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with padding and priority", context do
@@ -182,7 +223,7 @@ defmodule HTTP2ProtocolTest do
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert simple_read_body(socket) == {:ok, 1, "OK"}
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
     def headers_for_header_read_test(context) do
@@ -324,13 +365,13 @@ defmodule HTTP2ProtocolTest do
   end
 
   defp simple_read_body(socket) do
-    {:ok, <<body_length::24, 0::8, 0x1::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
+    {:ok, <<body_length::24, 0::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
 
     if body_length == 0 do
-      {:ok, stream_id, <<>>}
+      {:ok, stream_id, (flags &&& 0x01) == 0x01, <<>>}
     else
       {:ok, body} = :ssl.recv(socket, body_length)
-      {:ok, stream_id, body}
+      {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
     end
   end
 end
