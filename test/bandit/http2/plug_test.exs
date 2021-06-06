@@ -20,9 +20,100 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, <<>>)
   end
 
-  @tag :skip
-  test "reading request body", _context do
-    # TODO land body reading in 0.3.1
+  test "reading request body when there is no body sent", context do
+    {:ok, response} =
+      Finch.build(:head, context[:base] <> "/empty_body_read")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+  end
+
+  def empty_body_read(conn) do
+    {:ok, body, conn} = read_body(conn)
+    assert body == ""
+    conn |> send_resp(200, body)
+  end
+
+  test "reading request body when there is a simple body sent", context do
+    {:ok, response} =
+      Finch.build(:post, context[:base] <> "/simple_body_read", [], "OK")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+  end
+
+  def simple_body_read(conn) do
+    {:ok, body, conn} = read_body(conn)
+    assert body == "OK"
+    conn |> send_resp(200, body)
+  end
+
+  test "reading request body multiple times works as expected", context do
+    {:ok, response} =
+      Finch.build(:post, context[:base] <> "/multiple_body_read", [], "OK")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+  end
+
+  def multiple_body_read(conn) do
+    {:ok, body, conn} = read_body(conn)
+    assert body == "OK"
+    {:ok, body, conn} = read_body(conn)
+    assert body == ""
+    conn |> send_resp(200, body)
+  end
+
+  test "reading request body respects length option", context do
+    socket = setup_connection(context)
+
+    simple_send_headers(socket, 1, false, [
+      {":method", "POST"},
+      {":path", "/length_body_read"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"}
+    ])
+
+    simple_send_body(socket, 1, false, "A")
+    simple_send_body(socket, 1, false, "B")
+    simple_send_body(socket, 1, false, "C")
+    simple_send_body(socket, 1, false, "D")
+    simple_send_body(socket, 1, true, "E")
+
+    assert successful_response?(socket, 1, true)
+  end
+
+  def length_body_read(conn) do
+    {:more, body, conn} = read_body(conn, length: 2)
+    assert body == "ABC"
+    {:ok, body, conn} = read_body(conn)
+    assert body == "DE"
+    conn |> send_resp(200, <<>>)
+  end
+
+  test "reading request body respects timeout option", context do
+    socket = setup_connection(context)
+
+    simple_send_headers(socket, 1, false, [
+      {":method", "POST"},
+      {":path", "/timeout_body_read"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"}
+    ])
+
+    simple_send_body(socket, 1, false, "A")
+    Process.sleep(100)
+    simple_send_body(socket, 1, true, "BC")
+
+    assert successful_response?(socket, 1, true)
+  end
+
+  def timeout_body_read(conn) do
+    {:more, body, conn} = read_body(conn, read_timeout: 10)
+    assert body == "A"
+    {:ok, body, conn} = read_body(conn)
+    assert body == "BC"
+    conn |> send_resp(200, <<>>)
   end
 
   test "writing response headers", context do

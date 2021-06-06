@@ -1,14 +1,42 @@
 defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
 
-  defstruct connection: nil, stream_id: nil
+  defstruct connection: nil, stream_id: nil, end_stream: false
 
   @behaviour Plug.Conn.Adapter
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{}, _opts) do
-    # TODO receive as needed
-    {:error, :not_supported}
+  def read_req_body(%__MODULE__{end_stream: true} = adapter, _opts), do: {:ok, <<>>, adapter}
+
+  def read_req_body(%__MODULE__{} = adapter, opts) do
+    timeout = Keyword.get(opts, :read_timeout, 15_000)
+    length = Keyword.get(opts, :length, 8_000_000)
+
+    Stream.repeatedly(fn ->
+      receive do
+        msg -> msg
+      after
+        timeout -> :timeout
+      end
+    end)
+    |> Enum.reduce_while([], fn
+      {:data, data}, acc ->
+        if byte_size(data) + IO.iodata_length(acc) <= length do
+          {:cont, [data | acc]}
+        else
+          {:halt, {:more, [data | acc], adapter}}
+        end
+
+      :end_stream, acc ->
+        {:halt, {:ok, acc, %{adapter | end_stream: true}}}
+
+      :timeout, acc ->
+        {:halt, {:more, acc, adapter}}
+    end)
+    |> case do
+      {:ok, body, adapter} -> {:ok, body |> Enum.reverse() |> IO.iodata_to_binary(), adapter}
+      {:more, body, adapter} -> {:more, body |> Enum.reverse() |> IO.iodata_to_binary(), adapter}
+    end
   end
 
   @impl Plug.Conn.Adapter

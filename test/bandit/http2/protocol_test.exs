@@ -1,7 +1,6 @@
 defmodule HTTP2ProtocolTest do
   use ConnectionHelpers, async: true
 
-  import Bitwise
   import Plug.Conn
 
   setup :https_server
@@ -78,14 +77,14 @@ defmodule HTTP2ProtocolTest do
     test "sends end of stream when there is a single data frame", context do
       socket = setup_connection(context)
 
-      simple_send_headers(socket, 1, [
+      simple_send_headers(socket, 1, true, [
         {":method", "GET"},
         {":path", "/body_response"},
         {":scheme", "https"},
         {":authority", "localhost:#{context.port}"}
       ])
 
-      simple_read_headers(socket)
+      assert successful_response?(socket, 1, false)
       assert simple_read_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -96,14 +95,14 @@ defmodule HTTP2ProtocolTest do
     test "sends multiple DATA frames with last one end of stream when chunking", context do
       socket = setup_connection(context)
 
-      simple_send_headers(socket, 1, [
+      simple_send_headers(socket, 1, true, [
         {":method", "GET"},
         {":path", "/chunk_response"},
         {":scheme", "https"},
         {":authority", "localhost:#{context.port}"}
       ])
 
-      simple_read_headers(socket)
+      assert successful_response?(socket, 1, false)
       assert simple_read_body(socket) == {:ok, 1, false, "OK"}
       assert simple_read_body(socket) == {:ok, 1, false, "DOKEE"}
       assert simple_read_body(socket) == {:ok, 1, true, ""}
@@ -117,13 +116,86 @@ defmodule HTTP2ProtocolTest do
       |> chunk("DOKEE")
       |> elem(1)
     end
+
+    test "reads a zero byte body if none is sent", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, true, [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      # A zero byte body being written will cause end_stream to be set on the header frame
+      assert successful_response?(socket, 1, true)
+    end
+
+    def echo(conn) do
+      {:ok, body, conn} = read_body(conn)
+      conn |> send_resp(200, body)
+    end
+
+    test "reads a one frame body if one frame is sent", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, false, [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_send_body(socket, 1, true, "OK")
+
+      assert successful_response?(socket, 1, false)
+      assert simple_read_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    test "reads a multi frame body if many frames are sent", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, false, [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_send_body(socket, 1, false, "OK")
+      simple_send_body(socket, 1, true, "OK")
+
+      assert successful_response?(socket, 1, false)
+      assert simple_read_body(socket) == {:ok, 1, true, "OKOK"}
+    end
+
+    @tag :skip
+    test "rejects DATA frames received on a closed stream", _context do
+      # TODO - wait for RST support in 0.3.2
+    end
+
+    @tag capture_log: true
+    test "rejects DATA frames received on a zero stream id", context do
+      socket = setup_connection(context)
+
+      simple_send_body(socket, 0, true, "OK")
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+    end
+
+    @tag capture_log: true
+    test "rejects DATA frames received on an invalid stream id", context do
+      socket = setup_connection(context)
+
+      simple_send_body(socket, 2, true, "OK")
+      assert connection_alive?(socket) == true
+    end
   end
 
   describe "HEADERS frames" do
     test "sends end of stream headers when there is no body", context do
       socket = setup_connection(context)
 
-      simple_send_headers(socket, 1, [
+      simple_send_headers(socket, 1, true, [
         {":method", "GET"},
         {":path", "/no_body_response"},
         {":scheme", "https"},
@@ -142,7 +214,7 @@ defmodule HTTP2ProtocolTest do
     test "sends non-end of stream headers when there is a body", context do
       socket = setup_connection(context)
 
-      simple_send_headers(socket, 1, [
+      simple_send_headers(socket, 1, true, [
         {":method", "GET"},
         {":path", "/body_response"},
         {":scheme", "https"},
@@ -323,67 +395,6 @@ defmodule HTTP2ProtocolTest do
                {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 0>>}
 
       assert :ssl.recv(socket, 0) == {:error, :closed}
-    end
-  end
-
-  defp tls_client(context) do
-    {:ok, socket} =
-      :ssl.connect('localhost', context[:port],
-        active: false,
-        mode: :binary,
-        verify: :verify_peer,
-        cacertfile: Path.join(__DIR__, "../../support/ca.pem"),
-        alpn_advertised_protocols: ["h2"]
-      )
-
-    socket
-  end
-
-  defp setup_connection(context) do
-    socket = tls_client(context)
-    exchange_prefaces(socket)
-    exchange_client_settings(socket)
-    socket
-  end
-
-  defp exchange_prefaces(socket) do
-    :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-    {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
-    :ssl.send(socket, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
-  end
-
-  defp exchange_client_settings(socket) do
-    :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
-    {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
-  end
-
-  defp connection_alive?(socket) do
-    :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
-    :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
-  end
-
-  defp simple_send_headers(socket, stream_id, headers) do
-    ctx = HPack.Table.new(4096)
-    {:ok, _, headers} = HPack.encode(headers, ctx)
-    :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x04, 0::1, stream_id::31>>, headers])
-  end
-
-  defp simple_read_headers(socket) do
-    {:ok, <<length::24, 1::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
-    {:ok, header_block} = :ssl.recv(socket, length)
-    ctx = HPack.Table.new(4096)
-    {:ok, _, headers} = HPack.decode(header_block, ctx)
-    {:ok, stream_id, (flags &&& 0x01) == 0x01, headers}
-  end
-
-  defp simple_read_body(socket) do
-    {:ok, <<body_length::24, 0::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
-
-    if body_length == 0 do
-      {:ok, stream_id, (flags &&& 0x01) == 0x01, <<>>}
-    else
-      {:ok, body} = :ssl.recv(socket, body_length)
-      {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
     end
   end
 end

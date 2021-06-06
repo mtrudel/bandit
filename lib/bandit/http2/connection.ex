@@ -13,6 +13,7 @@ defmodule Bandit.HTTP2.Connection do
             plug: nil
 
   require Integer
+  require Logger
 
   alias Bandit.HTTP2.{Constants, Frame, Stream}
 
@@ -69,6 +70,8 @@ defmodule Bandit.HTTP2.Connection do
          :ok <- ok_to_init_stream?(frame.stream_id, connection.last_remote_stream_id),
          %{address: peer} <- ThousandIsland.Socket.peer_info(socket),
          {:ok, pid} <- Stream.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
+      if frame.end_stream, do: Process.send(pid, :end_stream, [])
+
       connection =
         connection
         |> Map.put(:recv_header_state, recv_header_state)
@@ -86,11 +89,37 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def handle_frame(%Frame.Data{} = frame, _socket, connection) do
+    case pid_for_recv(connection.streams, frame.stream_id) do
+      {:ok, pid} ->
+        connection =
+          connection
+          |> Map.update!(:streams, &update_stream_on_recv(&1, frame.stream_id, frame.end_stream))
+
+        Process.send(pid, {:data, frame.data}, [])
+        if frame.end_stream, do: Process.send(pid, :end_stream, [])
+
+        {:ok, :continue, connection}
+
+      {:error, reason} ->
+        Logger.warn("Encountered error while receiving DATA frame: #{reason}. Ignoring")
+        {:ok, :continue, connection}
+    end
+  end
+
   defp ok_to_init_stream?(stream_id, last_stream_id) do
     cond do
       Integer.is_even(stream_id) -> {:error, :even_stream_id}
       stream_id <= last_stream_id -> {:error, :old_stream_id}
       true -> :ok
+    end
+  end
+
+  defp pid_for_recv(streams, stream_id) do
+    case Map.get(streams, stream_id) do
+      {stream_state, pid} when stream_state not in [:remote_closed, :closed] -> {:ok, pid}
+      {_stream_state, _pid} -> {:error, :remote_end_closed}
+      nil -> {:error, :invalid_stream}
     end
   end
 
