@@ -328,11 +328,11 @@ defmodule HTTP2ProtocolTest do
 
   defp tls_client(context) do
     {:ok, socket} =
-      :ssl.connect(:localhost, context[:port],
+      :ssl.connect('localhost', context[:port],
         active: false,
         mode: :binary,
-        verify: :verify_none,
-        cacertfile: Path.join(__DIR__, "../../support/cert.pem"),
+        verify: :verify_peer,
+        cacertfile: Path.join(__DIR__, "../../support/ca.pem"),
         alpn_advertised_protocols: ["h2"]
       )
 

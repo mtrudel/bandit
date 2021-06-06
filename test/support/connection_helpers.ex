@@ -53,8 +53,8 @@ defmodule ConnectionHelpers do
               protocol: protocol,
               conn_opts: [
                 transport_opts: [
-                  verify: :verify_none,
-                  cacertfile: Path.join(__DIR__, "../support/cert.pem")
+                  verify: :verify_peer,
+                  cacertfile: Path.join(__DIR__, "../support/ca.pem")
                 ]
               ]
             ]
