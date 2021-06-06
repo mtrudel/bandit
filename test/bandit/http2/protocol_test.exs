@@ -246,6 +246,18 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, "OK")
     end
 
+    @tag capture_log: true
+    test "closes with an error when receiving a zero stream ID",
+         context do
+      socket = setup_connection(context)
+      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 0, 64, 129, 31, 129, 31>>)
+
+      assert :ssl.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
     test "closes with an error when receiving an even stream ID",
          context do
       socket = setup_connection(context)
