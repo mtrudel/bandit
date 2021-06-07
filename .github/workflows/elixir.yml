@@ -16,8 +16,8 @@ jobs:
 
     strategy:
       matrix:
-        elixir: [1.9.4, 1.10.4, 1.11.4, master]
-        otp: [21.3.8, 22.3.4, 23.3.1]
+        elixir: [1.9.4, 1.10.4, 1.11.4, 1.12.1]
+        otp: [22.3.4, 23.3.1, 24.0.2]
 
     steps:
     - uses: actions/checkout@v2
@@ -48,9 +48,6 @@ jobs:
     - name: Run Credo
       run: mix credo --strict
 
-    - name: Run Tests
-      run: mix test
-
     - name: Retrieve PLT Cache
       uses: actions/cache@v1
       id: plt-cache
@@ -67,3 +64,5 @@ jobs:
     - name: Run dialyzer
       run: mix dialyzer --no-check
 
+    - name: Run Tests
+      run: mix test
