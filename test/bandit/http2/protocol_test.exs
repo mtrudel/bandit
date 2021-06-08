@@ -330,6 +330,7 @@ defmodule HTTP2ProtocolTest do
       assert :ssl.recv(socket, 0) == {:error, :closed}
     end
 
+    @tag capture_log: true
     test "closes with an error when receiving an even stream ID",
          context do
       socket = setup_connection(context)
@@ -341,6 +342,7 @@ defmodule HTTP2ProtocolTest do
       assert :ssl.recv(socket, 0) == {:error, :closed}
     end
 
+    @tag capture_log: true
     test "closes with an error when receiving a stream ID we've already seen",
          context do
       socket = setup_connection(context)
@@ -353,6 +355,7 @@ defmodule HTTP2ProtocolTest do
       assert :ssl.recv(socket, 0) == {:error, :closed}
     end
 
+    @tag capture_log: true
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = setup_connection(context)
       :ssl.send(socket, <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)

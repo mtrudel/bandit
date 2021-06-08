@@ -57,7 +57,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Goaway{}, socket, connection) do
-    close(Constants.no_error(), socket, connection)
+    close(Constants.no_error(), "Received GOAWAY", socket, connection)
   end
 
   #
@@ -81,11 +81,18 @@ defmodule Bandit.HTTP2.Connection do
 
       {:ok, :continue, connection}
     else
-      {:error, :decode_error} -> close(Constants.compression_error(), socket, connection)
+      {:error, :decode_error} ->
+        close(Constants.compression_error(), "Header decode error", socket, connection)
+
       # https://github.com/OleMchls/elixir-hpack/issues/16
-      other when is_binary(other) -> close(Constants.compression_error(), socket, connection)
-      {:error, :even_stream_id} -> close(Constants.protocol_error(), socket, connection)
-      {:error, :old_stream_id} -> close(Constants.protocol_error(), socket, connection)
+      other when is_binary(other) ->
+        close(Constants.compression_error(), "Header decode error", socket, connection)
+
+      {:error, :even_stream_id} ->
+        close(Constants.protocol_error(), "Received even stream ID", socket, connection)
+
+      {:error, :old_stream_id} ->
+        close(Constants.protocol_error(), "Received reused stream ID", socket, connection)
     end
   end
 
@@ -156,7 +163,7 @@ defmodule Bandit.HTTP2.Connection do
     else
       {:error, :encode_error} ->
         # Not explcitily documented in RFC7540
-        close(Constants.compression_error(), socket, connection)
+        close(Constants.compression_error(), "Header encode error", socket, connection)
         {:close, :encode_error}
 
       {:error, reason} ->
@@ -203,15 +210,15 @@ defmodule Bandit.HTTP2.Connection do
   # Connection-level error handling
   #
 
-  def handle_error(0, error_code, _reason, socket, connection) do
-    close(error_code, socket, connection)
+  def handle_error(0, error_code, reason, socket, connection) do
+    close(error_code, reason, socket, connection)
   end
 
-  defp close(error_code, socket, connection) do
+  defp close(error_code, reason, socket, connection) do
     %Frame.Goaway{last_stream_id: connection.last_remote_stream_id, error_code: error_code}
     |> send_frame(socket)
 
-    {:ok, :close, connection}
+    if error_code == 0, do: {:ok, :close, connection}, else: {:error, reason, connection}
   end
 
   #
