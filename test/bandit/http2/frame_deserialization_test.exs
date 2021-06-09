@@ -84,7 +84,7 @@ defmodule HTTP2FrameDeserializationTest do
                    exclusive_dependency: true,
                    stream_dependency: 12,
                    weight: 34,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 
@@ -97,7 +97,7 @@ defmodule HTTP2FrameDeserializationTest do
                    stream_id: 1,
                    end_stream: false,
                    end_headers: false,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 
@@ -113,7 +113,7 @@ defmodule HTTP2FrameDeserializationTest do
                    exclusive_dependency: false,
                    stream_dependency: 12,
                    weight: 34,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 
@@ -126,7 +126,7 @@ defmodule HTTP2FrameDeserializationTest do
                    stream_id: 1,
                    end_stream: false,
                    end_headers: false,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 
@@ -139,7 +139,7 @@ defmodule HTTP2FrameDeserializationTest do
                    stream_id: 1,
                    end_stream: true,
                    end_headers: false,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 
@@ -152,7 +152,7 @@ defmodule HTTP2FrameDeserializationTest do
                    stream_id: 1,
                    end_stream: false,
                    end_headers: true,
-                   header_block_fragment: <<1, 2, 3>>
+                   fragment: <<1, 2, 3>>
                  }}, <<>>}
     end
 

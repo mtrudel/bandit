@@ -31,7 +31,7 @@ defmodule HTTP2FrameSerializationTest do
         stream_id: 123,
         end_stream: false,
         end_headers: false,
-        header_block_fragment: <<1, 2, 3>>
+        fragment: <<1, 2, 3>>
       }
 
       assert Frame.serialize(frame) == [<<0, 0, 3, 1, 0, 0, 0, 0, 123>>, <<1, 2, 3>>]
@@ -42,7 +42,7 @@ defmodule HTTP2FrameSerializationTest do
         stream_id: 123,
         end_stream: false,
         end_headers: true,
-        header_block_fragment: <<1, 2, 3>>
+        fragment: <<1, 2, 3>>
       }
 
       assert Frame.serialize(frame) == [<<0, 0, 3, 1, 4, 0, 0, 0, 123>>, <<1, 2, 3>>]
@@ -53,7 +53,7 @@ defmodule HTTP2FrameSerializationTest do
         stream_id: 123,
         end_stream: true,
         end_headers: false,
-        header_block_fragment: <<1, 2, 3>>
+        fragment: <<1, 2, 3>>
       }
 
       assert Frame.serialize(frame) == [<<0, 0, 3, 1, 1, 0, 0, 0, 123>>, <<1, 2, 3>>]
@@ -64,7 +64,7 @@ defmodule HTTP2FrameSerializationTest do
         stream_id: 123,
         end_stream: true,
         end_headers: true,
-        header_block_fragment: <<1, 2, 3>>
+        fragment: <<1, 2, 3>>
       }
 
       assert Frame.serialize(frame) == [<<0, 0, 3, 1, 5, 0, 0, 0, 123>>, <<1, 2, 3>>]

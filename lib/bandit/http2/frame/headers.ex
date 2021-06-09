@@ -7,7 +7,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
             exclusive_dependency: false,
             stream_dependency: nil,
             weight: nil,
-            header_block_fragment: nil
+            fragment: nil
 
   import Bitwise
 
@@ -33,7 +33,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
        exclusive_dependency: exclusive_dependency == 0x01,
        stream_dependency: stream_dependency,
        weight: weight,
-       header_block_fragment: binary_part(rest, 0, byte_size(rest) - padding_length)
+       fragment: binary_part(rest, 0, byte_size(rest) - padding_length)
      }}
   end
 
@@ -45,7 +45,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
        stream_id: stream_id,
        end_stream: (flags &&& 0x01) == 0x01,
        end_headers: (flags &&& 0x04) == 0x04,
-       header_block_fragment: binary_part(rest, 0, byte_size(rest) - padding_length)
+       fragment: binary_part(rest, 0, byte_size(rest) - padding_length)
      }}
   end
 
@@ -53,8 +53,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
   def deserialize(
         flags,
         stream_id,
-        <<exclusive_dependency::1, stream_dependency::31, weight::8,
-          header_block_fragment::binary>>
+        <<exclusive_dependency::1, stream_dependency::31, weight::8, fragment::binary>>
       )
       when (flags &&& 0x28) == 0x20 do
     {:ok,
@@ -65,19 +64,19 @@ defmodule Bandit.HTTP2.Frame.Headers do
        exclusive_dependency: exclusive_dependency == 0x01,
        stream_dependency: stream_dependency,
        weight: weight,
-       header_block_fragment: header_block_fragment
+       fragment: fragment
      }}
   end
 
   # Neither padding nor priority
-  def deserialize(flags, stream_id, <<header_block_fragment::binary>>)
+  def deserialize(flags, stream_id, <<fragment::binary>>)
       when (flags &&& 0x28) == 0x00 do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
        end_stream: (flags &&& 0x01) == 0x01,
        end_headers: (flags &&& 0x04) == 0x04,
-       header_block_fragment: header_block_fragment
+       fragment: fragment
      }}
   end
 
@@ -108,7 +107,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
       flags = if frame.end_stream, do: flags ||| 0x01, else: flags
       flags = if frame.end_headers, do: flags ||| 0x04, else: flags
 
-      {0x1, flags, frame.stream_id, frame.header_block_fragment}
+      {0x1, flags, frame.stream_id, frame.fragment}
     end
   end
 end

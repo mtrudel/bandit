@@ -5,8 +5,8 @@ defmodule Bandit.HTTP2.Connection do
 
   defstruct local_settings: %{},
             remote_settings: %{},
-            send_header_state: HPack.Table.new(4096),
-            recv_header_state: HPack.Table.new(4096),
+            send_hpack_state: HPack.Table.new(4096),
+            recv_hpack_state: HPack.Table.new(4096),
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
             streams: %{},
@@ -65,8 +65,8 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
-    with {:ok, recv_header_state, headers} <-
-           HPack.decode(frame.header_block_fragment, connection.recv_header_state),
+    with {:ok, recv_hpack_state, headers} <-
+           HPack.decode(frame.fragment, connection.recv_hpack_state),
          :ok <- ok_to_init_stream?(frame.stream_id, connection.last_remote_stream_id),
          %{address: peer} <- ThousandIsland.Socket.peer_info(socket),
          {:ok, pid} <- Stream.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
@@ -74,7 +74,7 @@ defmodule Bandit.HTTP2.Connection do
 
       connection =
         connection
-        |> Map.put(:recv_header_state, recv_header_state)
+        |> Map.put(:recv_hpack_state, recv_hpack_state)
         |> Map.put(:last_remote_stream_id, frame.stream_id)
         |> Map.update!(:streams, &Map.put(&1, frame.stream_id, {:open, pid}))
         |> Map.update!(:streams, &update_stream_on_recv(&1, frame.stream_id, frame.end_stream))
@@ -144,19 +144,19 @@ defmodule Bandit.HTTP2.Connection do
 
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
     with :ok <- ok_to_send?(connection.streams, stream_id, pid),
-         {:ok, send_header_state, header_block} <-
-           HPack.encode(headers, connection.send_header_state) do
+         {:ok, send_hpack_state, header_block} <-
+           HPack.encode(headers, connection.send_hpack_state) do
       %Frame.Headers{
         stream_id: stream_id,
         end_headers: true,
         end_stream: end_stream,
-        header_block_fragment: header_block
+        fragment: header_block
       }
       |> send_frame(socket)
 
       connection =
         connection
-        |> Map.put(:send_header_state, send_header_state)
+        |> Map.put(:send_hpack_state, send_hpack_state)
         |> Map.update!(:streams, &update_stream_on_send(&1, stream_id, end_stream))
 
       {:ok, connection}
