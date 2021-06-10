@@ -178,6 +178,29 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "RST_STREAM frames" do
+    test "deserializes frames" do
+      frame = <<0, 0, 4, 3, 0, 0, 0, 0, 1, 0, 0, 0, 123>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.RstStream{stream_id: 1, error_code: 123}}, <<>>}
+    end
+
+    test "rejects frames with 0 stream_id" do
+      frame = <<0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 123>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, 1, "RST_STREAM frame with zero stream_id (RFC7540§6.4)"}, <<>>}
+    end
+
+    test "rejects frames with invalid size" do
+      frame = <<0, 0, 5, 3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 123>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, 0, 6, "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}, <<>>}
+    end
+  end
+
   describe "SETTINGS frames" do
     test "deserializes non-ack frames when there are no contained settings" do
       frame = <<0, 0, 0, 4, 0, 0, 0, 0, 0>>

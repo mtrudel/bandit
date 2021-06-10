@@ -71,6 +71,17 @@ defmodule HTTP2FrameSerializationTest do
     end
   end
 
+  describe "RST_STREAM frames" do
+    test "serializes frames" do
+      frame = %Frame.RstStream{
+        stream_id: 123,
+        error_code: 456
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 4, 3, 0, 0, 0, 0, 123>>, <<456::32>>]
+    end
+  end
+
   describe "SETTINGS frames" do
     test "serializes non-ack frames when there are no contained settings" do
       frame = %Frame.Settings{ack: false, settings: %{}}
