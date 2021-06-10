@@ -1,4 +1,4 @@
-defmodule Bandit.HTTP2.Stream do
+defmodule Bandit.HTTP2.StreamTask do
   @moduledoc false
 
   use Task

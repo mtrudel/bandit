@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.Connection do
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Constants, Frame, Stream}
+  alias Bandit.HTTP2.{Constants, Frame, StreamTask}
 
   def init(socket, plug) do
     socket
@@ -69,7 +69,8 @@ defmodule Bandit.HTTP2.Connection do
            HPack.decode(frame.fragment, connection.recv_hpack_state),
          :ok <- ok_to_init_stream?(frame.stream_id, connection.last_remote_stream_id),
          %{address: peer} <- ThousandIsland.Socket.peer_info(socket),
-         {:ok, pid} <- Stream.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
+         {:ok, pid} <-
+           StreamTask.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
       if frame.end_stream, do: Process.send(pid, :end_stream, [])
 
       connection =
