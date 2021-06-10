@@ -187,7 +187,7 @@ defmodule HTTP2ProtocolTest do
       socket = setup_connection(context)
 
       simple_send_body(socket, 2, true, "OK")
-      assert connection_alive?(socket) == true
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
     end
   end
 
