@@ -7,6 +7,9 @@ defmodule Bandit.HTTP2.StreamTask do
     Task.start_link(__MODULE__, :run, [connection, stream_id, peer, headers, plug])
   end
 
+  def recv_data(pid, data), do: Process.send(pid, {:data, data}, [])
+  def recv_end_of_stream(pid), do: Process.send(pid, :end_stream, [])
+
   def run(connection, stream_id, peer, headers, {plug, plug_opts}) do
     {Bandit.HTTP2.Adapter, %Bandit.HTTP2.Adapter{connection: connection, stream_id: stream_id}}
     |> conn(method(headers), uri(headers), peer, headers)

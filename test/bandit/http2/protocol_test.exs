@@ -136,6 +136,15 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, body)
     end
 
+    @tag capture_log: true
+    test "rejects DATA frames received on an idle stream", context do
+      socket = setup_connection(context)
+
+      simple_send_body(socket, 1, true, "OK")
+
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+    end
+
     test "reads a one frame body if one frame is sent", context do
       socket = setup_connection(context)
 
@@ -169,9 +178,20 @@ defmodule HTTP2ProtocolTest do
       assert simple_read_body(socket) == {:ok, 1, true, "OKOK"}
     end
 
-    @tag :skip
-    test "rejects DATA frames received on a closed stream", _context do
-      # TODO - wait for RST support in 0.3.2
+    @tag capture_log: true
+    test "rejects DATA frames received on a remote closed stream", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, true, [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_send_body(socket, 1, true, "OK")
+
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1>>}
     end
 
     @tag capture_log: true
@@ -233,7 +253,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send unadorned headers
-      :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x04, 0, 0, 0, 1>>, headers])
+      :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
       assert simple_read_headers(socket) ==
                {:ok, 1, false,
@@ -248,7 +268,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with priority
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 5, 1, 0x24, 0, 0, 0, 1>>,
+        <<0, 0, byte_size(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
         <<0, 0, 0, 1, 5>>,
         headers
       ])
@@ -266,7 +286,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with padding
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 5, 1, 0x0C, 0, 0, 0, 1>>,
+        <<0, 0, byte_size(headers) + 5, 1, 0x0D, 0, 0, 0, 1>>,
         <<4>>,
         headers,
         <<1, 2, 3, 4>>
@@ -285,7 +305,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with padding and priority
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 10, 1, 0x2C, 0, 0, 0, 1>>,
+        <<0, 0, byte_size(headers) + 10, 1, 0x2D, 0, 0, 0, 1>>,
         <<4, 0, 0, 0, 0, 1>>,
         headers,
         <<1, 2, 3, 4>>

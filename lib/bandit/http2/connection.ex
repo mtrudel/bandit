@@ -7,22 +7,19 @@ defmodule Bandit.HTTP2.Connection do
             remote_settings: %{},
             send_hpack_state: HPack.Table.new(4096),
             recv_hpack_state: HPack.Table.new(4096),
-            last_local_stream_id: 0,
-            last_remote_stream_id: 0,
-            streams: %{},
+            streams: %Bandit.HTTP2.StreamCollection{},
+            peer: nil,
             plug: nil
 
-  require Integer
-  require Logger
-
-  alias Bandit.HTTP2.{Constants, Frame, StreamTask}
+  alias Bandit.HTTP2.{Constants, Frame, Stream, StreamCollection}
 
   def init(socket, plug) do
     socket
     |> ThousandIsland.Socket.recv(24)
     |> case do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} ->
-        connection = %__MODULE__{plug: plug}
+        %{address: peer} = ThousandIsland.Socket.peer_info(socket)
+        connection = %__MODULE__{plug: plug, peer: peer}
         # Send SETTINGS frame per RFC7540§3.5
         %Frame.Settings{ack: false, settings: connection.local_settings}
         |> send_frame(socket)
@@ -57,7 +54,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Goaway{}, socket, connection) do
-    close(Constants.no_error(), "Received GOAWAY", socket, connection)
+    handle_error(Constants.no_error(), "Received GOAWAY", socket, connection)
   end
 
   #
@@ -65,77 +62,55 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
-    with {:ok, recv_hpack_state, headers} <-
-           HPack.decode(frame.fragment, connection.recv_hpack_state),
-         :ok <- ok_to_init_stream?(frame.stream_id, connection.last_remote_stream_id),
-         %{address: peer} <- ThousandIsland.Socket.peer_info(socket),
-         {:ok, pid} <-
-           StreamTask.start_link(self(), frame.stream_id, peer, headers, connection.plug) do
-      if frame.end_stream, do: Process.send(pid, :end_stream, [])
-
-      connection =
-        connection
-        |> Map.put(:recv_hpack_state, recv_hpack_state)
-        |> Map.put(:last_remote_stream_id, frame.stream_id)
-        |> Map.update!(:streams, &Map.put(&1, frame.stream_id, {:open, pid}))
-        |> Map.update!(:streams, &update_stream_on_recv(&1, frame.stream_id, frame.end_stream))
-
-      {:ok, :continue, connection}
+    with block <- frame.fragment,
+         {:ok, recv_hpack_state, headers} <- HPack.decode(block, connection.recv_hpack_state),
+         {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         {:ok, stream} <- Stream.recv_headers(stream, headers, connection.peer, connection.plug),
+         {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else
       {:error, :decode_error} ->
-        close(Constants.compression_error(), "Header decode error", socket, connection)
+        handle_error(Constants.compression_error(), "Header decode error", socket, connection)
 
       # https://github.com/OleMchls/elixir-hpack/issues/16
       other when is_binary(other) ->
-        close(Constants.compression_error(), "Header decode error", socket, connection)
+        handle_error(Constants.compression_error(), "Header decode error", socket, connection)
 
-      {:error, :even_stream_id} ->
-        close(Constants.protocol_error(), "Received even stream ID", socket, connection)
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
 
-      {:error, :old_stream_id} ->
-        close(Constants.protocol_error(), "Received reused stream ID", socket, connection)
+      {:error, error} ->
+        handle_error(Constants.internal_error(), error, socket, connection)
     end
   end
 
-  def handle_frame(%Frame.Data{} = frame, _socket, connection) do
-    case pid_for_recv(connection.streams, frame.stream_id) do
-      {:ok, pid} ->
-        connection =
-          connection
-          |> Map.update!(:streams, &update_stream_on_recv(&1, frame.stream_id, frame.end_stream))
+  def handle_frame(%Frame.Data{} = frame, socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         {:ok, stream} <- Stream.recv_data(stream, frame.data),
+         {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, :continue, %{connection | streams: streams}}
+    else
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
 
-        Process.send(pid, {:data, frame.data}, [])
-        if frame.end_stream, do: Process.send(pid, :end_stream, [])
-
-        {:ok, :continue, connection}
-
-      {:error, reason} ->
-        Logger.warn("Encountered error while receiving DATA frame: #{reason}. Ignoring")
-        {:ok, :continue, connection}
+      {:error, error} ->
+        handle_error(Constants.internal_error(), error, socket, connection)
     end
   end
 
-  defp ok_to_init_stream?(stream_id, last_stream_id) do
-    cond do
-      Integer.is_even(stream_id) -> {:error, :even_stream_id}
-      stream_id <= last_stream_id -> {:error, :old_stream_id}
-      true -> :ok
-    end
-  end
+  def handle_frame(%Frame.RstStream{} = frame, socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         {:ok, stream} <- Stream.recv_rst_stream(stream, frame.error_code),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, :continue, %{connection | streams: streams}}
+    else
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
 
-  defp pid_for_recv(streams, stream_id) do
-    case Map.get(streams, stream_id) do
-      {stream_state, pid} when stream_state not in [:remote_closed, :closed] -> {:ok, pid}
-      {_stream_state, _pid} -> {:error, :remote_end_closed}
-      nil -> {:error, :invalid_stream}
-    end
-  end
-
-  defp update_stream_on_recv(streams, stream_id, end_stream) do
-    case {Map.get(streams, stream_id), end_stream} do
-      {{:local_closed, _pid}, true} -> Map.delete(streams, stream_id)
-      {{:open, pid}, true} -> Map.put(streams, stream_id, {:remote_closed, pid})
-      _ -> streams
+      {:error, error} ->
+        handle_error(Constants.internal_error(), error, socket, connection)
     end
   end
 
@@ -144,66 +119,50 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
-    with :ok <- ok_to_send?(connection.streams, stream_id, pid),
-         {:ok, send_hpack_state, header_block} <-
-           HPack.encode(headers, connection.send_hpack_state) do
+    with {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
+         {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
+         :ok <- Stream.owner?(stream, pid),
+         {:ok, stream} <- Stream.send_headers(stream),
+         {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       %Frame.Headers{
         stream_id: stream_id,
         end_headers: true,
         end_stream: end_stream,
-        fragment: header_block
+        fragment: block
       }
       |> send_frame(socket)
 
-      connection =
-        connection
-        |> Map.put(:send_hpack_state, send_hpack_state)
-        |> Map.update!(:streams, &update_stream_on_send(&1, stream_id, end_stream))
-
-      {:ok, connection}
+      {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
     else
       {:error, :encode_error} ->
         # Not explcitily documented in RFC7540
-        close(Constants.compression_error(), "Header encode error", socket, connection)
-        {:close, :encode_error}
+        handle_error(Constants.compression_error(), "Header encode error", socket, connection)
 
-      {:error, reason} ->
-        {:error, reason}
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
+
+      {:error, error} ->
+        {:error, error}
     end
   end
 
   def send_data(stream_id, pid, data, end_stream, socket, connection) do
-    case ok_to_send?(connection.streams, stream_id, pid) do
-      :ok ->
-        %Frame.Data{stream_id: stream_id, end_stream: end_stream, data: data}
-        |> send_frame(socket)
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
+         :ok <- Stream.owner?(stream, pid),
+         {:ok, stream} <- Stream.send_data(stream),
+         {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      %Frame.Data{stream_id: stream_id, end_stream: end_stream, data: data}
+      |> send_frame(socket)
 
-        connection =
-          connection
-          |> Map.update!(:streams, &update_stream_on_send(&1, stream_id, end_stream))
+      {:ok, %{connection | streams: streams}}
+    else
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
 
-        {:ok, connection}
-
-      {:error, reason} ->
-        {:error, reason}
-    end
-  end
-
-  # State management per RFC7540§5.1
-  defp ok_to_send?(streams, stream_id, pid) do
-    case Map.get(streams, stream_id) do
-      {stream_state, ^pid} when stream_state not in [:local_closed, :closed] -> :ok
-      {_stream_state, ^pid} -> {:error, :local_end_closed}
-      {_stream_state, _pid} -> {:error, :not_owner}
-      nil -> {:error, :invalid_stream}
-    end
-  end
-
-  defp update_stream_on_send(streams, stream_id, end_stream) do
-    case {Map.get(streams, stream_id), end_stream} do
-      {{:remote_closed, _pid}, true} -> Map.delete(streams, stream_id)
-      {{:open, pid}, true} -> Map.put(streams, stream_id, {:local_closed, pid})
-      _ -> streams
+      {:error, error} ->
+        {:error, error}
     end
   end
 
@@ -211,30 +170,28 @@ defmodule Bandit.HTTP2.Connection do
   # Connection-level error handling
   #
 
-  def handle_error(0, error_code, reason, socket, connection) do
-    close(error_code, reason, socket, connection)
-  end
+  def handle_error(error_code, reason, socket, connection) do
+    last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
-  defp close(error_code, reason, socket, connection) do
-    %Frame.Goaway{last_stream_id: connection.last_remote_stream_id, error_code: error_code}
+    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
     |> send_frame(socket)
 
-    if error_code == 0, do: {:ok, :close, connection}, else: {:error, reason, connection}
+    if error_code == Constants.no_error() do
+      {:ok, :close, connection}
+    else
+      {:error, reason, connection}
+    end
   end
 
   #
   # Stream-level error handling
   #
 
-  def stream_terminated(pid, _reason, _socket, connection) do
-    connection.streams
-    |> Enum.find(fn {_stream_id, {_stream_state, stream_pid}} -> stream_pid == pid end)
-    |> case do
-      {stream_id, _} ->
-        {:ok, connection |> Map.update!(:streams, &Map.delete(&1, stream_id))}
-
-      nil ->
-        {:ok, connection}
+  def stream_terminated(pid, reason, _socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
+         {:ok, stream} <- Stream.close(stream, reason),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, %{connection | streams: streams}}
     end
   end
 

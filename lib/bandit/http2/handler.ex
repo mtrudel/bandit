@@ -45,10 +45,10 @@ defmodule Bandit.HTTP2.Handler do
       {:more, rest}, {:ok, :continue, state} ->
         {:halt, {:ok, :continue, %{state | buffer: rest}}}
 
-      {:error, stream_id, code, reason}, {:ok, :continue, state} ->
+      {:error, _stream_id, code, reason}, {:ok, :continue, state} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
-        case Connection.handle_error(stream_id, code, reason, socket, state.connection) do
+        case Connection.handle_error(code, reason, socket, state.connection) do
           {:ok, :close, connection} ->
             {:halt, {:ok, :close, %{state | connection: connection}}}
 
@@ -60,9 +60,14 @@ defmodule Bandit.HTTP2.Handler do
 
   def handle_call({:send_headers, stream_id, headers, end_stream}, {from, _tag}, {socket, state}) do
     case Connection.send_headers(stream_id, from, headers, end_stream, socket, state.connection) do
-      {:ok, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
-      {:error, reason} -> {:reply, {:error, reason}, {socket, state}}
-      {:close, reason} -> {:stop, reason, {:error, reason}, {socket, state}}
+      {:ok, connection} ->
+        {:reply, :ok, {socket, %{state | connection: connection}}}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, {socket, state}}
+
+      {:error, reason, connection} ->
+        {:stop, reason, {:error, reason}, {socket, %{state | connection: connection}}}
     end
   end
 
@@ -78,8 +83,9 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
-    {:ok, connection} = Connection.stream_terminated(pid, reason, socket, state.connection)
-
-    {:noreply, {socket, %{state | connection: connection}}}
+    case Connection.stream_terminated(pid, reason, socket, state.connection) do
+      {:ok, connection} -> {:noreply, {socket, %{state | connection: connection}}}
+      {:error, _error} -> {:noreply, {socket, state}}
+    end
   end
 end
