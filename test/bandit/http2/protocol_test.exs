@@ -384,6 +384,51 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "RST_STREAM frames" do
+    @tag capture_log: true
+    test "rejects RST_STREAM frames received on an idle stream", context do
+      socket = setup_connection(context)
+
+      send_rst_stream(socket, 1, 0)
+
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+    end
+
+    # @tag capture_log: true
+    test "shuts down the stream task on receipt of an RST_STREAM frame", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, true, [
+        {":method", "GET"},
+        {":path", "/sleeper"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_read_headers(socket)
+      {:ok, 1, false, "OK"} = simple_read_body(socket)
+
+      assert Process.whereis(:sleeper) |> Process.alive?()
+
+      send_rst_stream(socket, 1, 0)
+
+      Process.sleep(100)
+
+      assert Process.whereis(:sleeper) == nil
+      assert connection_alive?(socket)
+    end
+
+    def sleeper(conn) do
+      Process.register(self(), :sleeper)
+
+      conn
+      |> send_chunked(200)
+      |> chunk("OK")
+
+      Process.sleep(:infinity)
+    end
+  end
+
   describe "SETTINGS frames" do
     test "the server should acknowledge a client's SETTINGS frames", context do
       socket = tls_client(context)

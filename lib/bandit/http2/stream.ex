@@ -46,8 +46,12 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Constants.protocol_error(), "Received DATA when in #{stream.state}"}}
   end
 
-  def recv_rst_stream(%__MODULE__{} = stream, _error_code) do
-    # TODO -- should we do more here, maybe shut down the pid or look at error code?
+  def recv_rst_stream(%__MODULE__{state: :idle}, _error_code) do
+    {:error, {:connection, Constants.protocol_error(), "Received RST_STREAM when in idle"}}
+  end
+
+  def recv_rst_stream(%__MODULE__{} = stream, error_code) do
+    if is_pid(stream.pid), do: StreamTask.recv_rst_stream(stream.pid, error_code)
     {:ok, %{stream | state: :closed, pid: nil}}
   end
 

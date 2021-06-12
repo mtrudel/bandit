@@ -142,6 +142,10 @@ defmodule ConnectionHelpers do
         end
       end
 
+      def send_rst_stream(socket, stream_id, error_code) do
+        :ssl.send(socket, [<<0, 0, 4, 3, 0, 0::1, stream_id::31>>, <<error_code::32>>])
+      end
+
       def init(opts) do
         opts
       end
