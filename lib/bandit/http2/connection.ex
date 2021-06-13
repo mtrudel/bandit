@@ -183,6 +183,15 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def connection_terminated(socket, connection) do
+    last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
+
+    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Constants.no_error()}
+    |> send_frame(socket)
+
+    :ok
+  end
+
   #
   # Stream-level error handling
   #

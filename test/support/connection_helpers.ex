@@ -17,7 +17,7 @@ defmodule ConnectionHelpers do
           |> start_supervised()
 
         {:ok, port} = ThousandIsland.local_port(server_pid)
-        [base: "http://localhost:#{port}", port: port]
+        [base: "http://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
       def https_server(_context) do
@@ -38,7 +38,7 @@ defmodule ConnectionHelpers do
           |> start_supervised()
 
         {:ok, port} = ThousandIsland.local_port(server_pid)
-        [base: "https://localhost:#{port}", port: port]
+        [base: "https://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
       def http1_client(_context), do: finch_for(:http1)

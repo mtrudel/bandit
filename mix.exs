@@ -27,7 +27,7 @@ defmodule Bandit.MixProject do
 
   defp deps do
     [
-      {:thousand_island, "~> 0.4.0"},
+      {:thousand_island, "~> 0.4.3"},
       {:plug, "~> 1.11"},
       {:hpack, "~> 3.0.0"},
       {:finch, "~> 0.7", only: [:dev, :test]},

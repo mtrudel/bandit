@@ -19,6 +19,11 @@ defmodule Bandit.DelegatingHandler do
   end
 
   @impl ThousandIsland.Handler
+  def handle_shutdown(socket, %{handler_module: handler_module} = state) do
+    handler_module.handle_shutdown(socket, state)
+  end
+
+  @impl ThousandIsland.Handler
   def handle_close(socket, %{handler_module: handler_module} = state) do
     handler_module.handle_close(socket, state)
   end

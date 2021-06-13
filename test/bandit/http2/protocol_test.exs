@@ -491,6 +491,19 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "GOAWAY frames" do
+    test "the server should send a GOAWAY frame when shutting down", context do
+      socket = setup_connection(context)
+
+      assert connection_alive?(socket)
+
+      Process.sleep(100)
+
+      ThousandIsland.stop(context.server_pid)
+
+      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>}
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
     test "the server should close the connection upon receipt of a GOAWAY frame", context do
       socket = setup_connection(context)
       :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
