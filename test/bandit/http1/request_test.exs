@@ -1,10 +1,10 @@
 defmodule HTTP1RequestTest do
-  use ConnectionHelpers, async: true
-
-  import Plug.Conn
+  use ExUnit.Case, async: true
+  use ServerHelpers
+  use FinchHelpers
 
   setup :http_server
-  setup :http1_client
+  setup :finch_http1_client
 
   describe "request handling" do
     test "reads a content-length encoded body properly", context do

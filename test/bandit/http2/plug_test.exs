@@ -1,10 +1,10 @@
 defmodule HTTP2PlugTest do
-  use ConnectionHelpers, async: true
-
-  import Plug.Conn
+  use ExUnit.Case, async: true
+  use ServerHelpers
+  use FinchHelpers
 
   setup :https_server
-  setup :http2_client
+  setup :finch_h2_client
 
   test "reading request headers", context do
     {:ok, response} =
@@ -65,22 +65,22 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading request body respects length option", context do
-    socket = setup_connection(context)
+    socket = SimpleH2Client.setup_connection(context)
 
-    simple_send_headers(socket, 1, false, [
+    SimpleH2Client.send_headers(socket, 1, false, [
       {":method", "POST"},
       {":path", "/length_body_read"},
       {":scheme", "https"},
       {":authority", "localhost:#{context.port}"}
     ])
 
-    simple_send_body(socket, 1, false, "A")
-    simple_send_body(socket, 1, false, "B")
-    simple_send_body(socket, 1, false, "C")
-    simple_send_body(socket, 1, false, "D")
-    simple_send_body(socket, 1, true, "E")
+    SimpleH2Client.send_body(socket, 1, false, "A")
+    SimpleH2Client.send_body(socket, 1, false, "B")
+    SimpleH2Client.send_body(socket, 1, false, "C")
+    SimpleH2Client.send_body(socket, 1, false, "D")
+    SimpleH2Client.send_body(socket, 1, true, "E")
 
-    assert successful_response?(socket, 1, true)
+    assert SimpleH2Client.successful_response?(socket, 1, true)
   end
 
   def length_body_read(conn) do
@@ -92,20 +92,20 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading request body respects timeout option", context do
-    socket = setup_connection(context)
+    socket = SimpleH2Client.setup_connection(context)
 
-    simple_send_headers(socket, 1, false, [
+    SimpleH2Client.send_headers(socket, 1, false, [
       {":method", "POST"},
       {":path", "/timeout_body_read"},
       {":scheme", "https"},
       {":authority", "localhost:#{context.port}"}
     ])
 
-    simple_send_body(socket, 1, false, "A")
+    SimpleH2Client.send_body(socket, 1, false, "A")
     Process.sleep(100)
-    simple_send_body(socket, 1, true, "BC")
+    SimpleH2Client.send_body(socket, 1, true, "BC")
 
-    assert successful_response?(socket, 1, true)
+    assert SimpleH2Client.successful_response?(socket, 1, true)
   end
 
   def timeout_body_read(conn) do
@@ -236,6 +236,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading peer data", context do
+    # TODO use simple client here to get local port
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/peer_data")
       |> Finch.request(context[:finch_name])

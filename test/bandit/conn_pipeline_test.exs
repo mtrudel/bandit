@@ -1,11 +1,11 @@
 defmodule ConnPipelineTest do
-  use ConnectionHelpers, async: true
-
-  import Plug.Conn
+  use ExUnit.Case, async: true
+  use ServerHelpers
+  use FinchHelpers
 
   describe "request handling" do
     setup :http_server
-    setup :http1_client
+    setup :finch_http1_client
 
     test "creates a conn with correct headers and requested metadata", context do
       {:ok, response} =

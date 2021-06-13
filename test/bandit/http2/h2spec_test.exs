@@ -1,10 +1,9 @@
 defmodule H2SpecTest do
-  use ConnectionHelpers, async: true
+  use ExUnit.Case, async: true
+  use ServerHelpers
 
   @moduletag :external_conformance
   @moduletag timeout: 600_000
-
-  import Plug.Conn
 
   setup :https_server
 
