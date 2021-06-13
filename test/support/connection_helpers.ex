@@ -6,6 +6,7 @@ defmodule ConnectionHelpers do
   import Bitwise
 
   using do
+    # credo:disable-for-next-line Credo.Check.Refactor.LongQuoteBlocks
     quote location: :keep do
       require Logger
 
@@ -144,6 +145,11 @@ defmodule ConnectionHelpers do
 
       def send_rst_stream(socket, stream_id, error_code) do
         :ssl.send(socket, [<<0, 0, 4, 3, 0, 0::1, stream_id::31>>, <<error_code::32>>])
+      end
+
+      def read_rst_stream(socket) do
+        {:ok, <<0, 0, 4, 3, 0, 0::1, stream_id::31, error_code::32>>} = :ssl.recv(socket, 13)
+        {:ok, stream_id, error_code}
       end
 
       def init(opts) do

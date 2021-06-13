@@ -386,6 +386,51 @@ defmodule HTTP2ProtocolTest do
 
   describe "RST_STREAM frames" do
     @tag capture_log: true
+    test "sends RST_FRAME with no error if stream task ends without closed stream", context do
+      socket = setup_connection(context)
+
+      # Send headers with end_stream bit cleared
+      simple_send_headers(socket, 1, false, [
+        {":method", "GET"},
+        {":path", "/body_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_read_headers(socket)
+      simple_read_body(socket)
+
+      assert read_rst_stream(socket) == {:ok, 1, 0}
+      assert connection_alive?(socket)
+    end
+
+    @tag capture_log: true
+    test "sends RST_FRAME with error if stream task crashes", context do
+      socket = setup_connection(context)
+
+      simple_send_headers(socket, 1, true, [
+        {":method", "GET"},
+        {":path", "/crasher"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ])
+
+      simple_read_headers(socket)
+      simple_read_body(socket)
+
+      assert read_rst_stream(socket) == {:ok, 1, 2}
+      assert connection_alive?(socket)
+    end
+
+    def crasher(conn) do
+      conn
+      |> send_chunked(200)
+      |> chunk("OK")
+
+      raise "boom"
+    end
+
+    @tag capture_log: true
     test "rejects RST_STREAM frames received on an idle stream", context do
       socket = setup_connection(context)
 
@@ -394,7 +439,6 @@ defmodule HTTP2ProtocolTest do
       assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
     end
 
-    # @tag capture_log: true
     test "shuts down the stream task on receipt of an RST_STREAM frame", context do
       socket = setup_connection(context)
 

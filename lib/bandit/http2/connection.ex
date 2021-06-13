@@ -187,10 +187,15 @@ defmodule Bandit.HTTP2.Connection do
   # Stream-level error handling
   #
 
-  def stream_terminated(pid, reason, _socket, connection) do
+  def stream_terminated(pid, reason, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
-         {:ok, stream} <- Stream.close(stream, reason),
+         {:ok, stream, error_code} <- Stream.stream_terminated(stream, reason),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      if !is_nil(error_code) do
+        %Frame.RstStream{stream_id: stream.stream_id, error_code: error_code}
+        |> send_frame(socket)
+      end
+
       {:ok, %{connection | streams: streams}}
     end
   end

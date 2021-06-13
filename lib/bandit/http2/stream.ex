@@ -12,6 +12,7 @@ defmodule Bandit.HTTP2.Stream do
   defstruct stream_id: nil, state: nil, pid: nil
 
   require Integer
+  require Logger
 
   alias Bandit.HTTP2.{Constants, StreamTask}
 
@@ -108,7 +109,19 @@ defmodule Bandit.HTTP2.Stream do
     {:ok, stream}
   end
 
-  def close(%__MODULE__{} = stream, _reason) do
-    {:ok, %{stream | state: :closed, pid: nil}}
+  def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
+    {:ok, %{stream | state: :closed, pid: nil}, nil}
+  end
+
+  def stream_terminated(%__MODULE__{} = stream, :normal) do
+    Logger.warn("Stream #{stream.stream_id} completed in unepxected state #{stream.state}")
+
+    {:ok, %{stream | state: :closed, pid: nil}, Constants.no_error()}
+  end
+
+  def stream_terminated(%__MODULE__{} = stream, reason) do
+    Logger.error("Task for stream #{stream.stream_id} crashed with #{inspect(reason)}")
+
+    {:ok, %{stream | state: :closed, pid: nil}, Constants.internal_error()}
   end
 end
