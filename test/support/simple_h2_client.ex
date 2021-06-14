@@ -39,6 +39,19 @@ defmodule SimpleH2Client do
     :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
   end
 
+  def recv_goaway_and_close(socket) do
+    {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, last_stream_id::32, error_code::32>>} =
+      :ssl.recv(socket, 17)
+
+    {:error, :closed} = :ssl.recv(socket, 0)
+
+    {:ok, last_stream_id, error_code}
+  end
+
+  def send_goaway(socket, last_stream_id, error_code) do
+    :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, last_stream_id::32, error_code::32>>)
+  end
+
   def send_simple_headers(socket, stream_id, verb, path, port) do
     {verb, end_stream} =
       case verb do
@@ -67,10 +80,10 @@ defmodule SimpleH2Client do
   end
 
   def successful_response?(socket, stream_id, end_stream) do
-    {:ok, ^stream_id, ^end_stream, [{":status", "200"} | _]} = read_headers(socket)
+    {:ok, ^stream_id, ^end_stream, [{":status", "200"} | _]} = recv_headers(socket)
   end
 
-  def read_headers(socket) do
+  def recv_headers(socket) do
     {:ok, <<length::24, 1::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
     {:ok, header_block} = :ssl.recv(socket, length)
     ctx = HPack.Table.new(4096)
@@ -83,7 +96,7 @@ defmodule SimpleH2Client do
     :ssl.send(socket, [<<byte_size(body)::24, 0::8, flags::8, 0::1, stream_id::31>>, body])
   end
 
-  def read_body(socket) do
+  def recv_body(socket) do
     {:ok, <<body_length::24, 0::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
 
     if body_length == 0 do
@@ -98,7 +111,7 @@ defmodule SimpleH2Client do
     :ssl.send(socket, [<<0, 0, 4, 3, 0, 0::1, stream_id::31>>, <<error_code::32>>])
   end
 
-  def read_rst_stream(socket) do
+  def recv_rst_stream(socket) do
     {:ok, <<0, 0, 4, 3, 0, 0::1, stream_id::31, error_code::32>>} = :ssl.recv(socket, 13)
     {:ok, stream_id, error_code}
   end

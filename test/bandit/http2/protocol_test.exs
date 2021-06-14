@@ -53,7 +53,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.exchange_prefaces(socket)
       # Send a bogus SETTINGS frame
       :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
   end
 
@@ -79,7 +79,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     def body_response(conn) do
@@ -92,9 +92,9 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/chunk_response", context.port)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, false, "OK"}
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, false, "DOKEE"}
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, ""}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "DOKEE"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
     end
 
     def chunk_response(conn) do
@@ -126,7 +126,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
     test "reads a one frame body if one frame is sent", context do
@@ -136,7 +136,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "reads a multi frame body if many frames are sent", context do
@@ -147,7 +147,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OKOK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OKOK"}
     end
 
     @tag capture_log: true
@@ -157,7 +157,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1>>}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
     end
 
     @tag capture_log: true
@@ -166,7 +166,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_body(socket, 0, true, "OK")
 
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
     @tag capture_log: true
@@ -174,7 +174,8 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_body(socket, 2, true, "OK")
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
   end
 
@@ -184,7 +185,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, true,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
     end
@@ -198,11 +199,11 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert(SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"})
+      assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"})
     end
 
     test "accepts well-formed headers without padding or priority", context do
@@ -212,11 +213,11 @@ defmodule HTTP2ProtocolTest do
       # Send unadorned headers
       :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with priority", context do
@@ -230,11 +231,11 @@ defmodule HTTP2ProtocolTest do
         headers
       ])
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with padding", context do
@@ -249,11 +250,11 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     test "accepts well-formed headers with padding and priority", context do
@@ -268,11 +269,11 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert SimpleH2Client.read_headers(socket) ==
+      assert SimpleH2Client.recv_headers(socket) ==
                {:ok, 1, false,
                 [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
 
-      assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
     def headers_for_header_read_test(context) do
@@ -299,45 +300,40 @@ defmodule HTTP2ProtocolTest do
     test "closes with an error when receiving a zero stream ID",
          context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 0, 64, 129, 31, 129, 31>>)
 
-      assert :ssl.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      SimpleH2Client.send_simple_headers(socket, 0, :get, "/echo", context.port)
 
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
     @tag capture_log: true
     test "closes with an error when receiving an even stream ID",
          context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 98, 64, 129, 31, 129, 31>>)
 
-      assert :ssl.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      SimpleH2Client.send_simple_headers(socket, 2, :get, "/echo", context.port)
 
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
     @tag capture_log: true
     test "closes with an error when receiving a stream ID we've already seen",
          context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
-      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
 
-      assert :ssl.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 1>>}
+      SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
+      SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
 
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 1}
     end
 
     @tag capture_log: true
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
+
       :ssl.send(socket, <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 9>>}
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
     end
   end
 
@@ -348,10 +344,10 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with end_stream bit cleared
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/body_response", context.port)
-      SimpleH2Client.read_headers(socket)
-      SimpleH2Client.read_body(socket)
+      SimpleH2Client.recv_headers(socket)
+      SimpleH2Client.recv_body(socket)
 
-      assert SimpleH2Client.read_rst_stream(socket) == {:ok, 1, 0}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
       assert SimpleH2Client.connection_alive?(socket)
     end
 
@@ -360,10 +356,10 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/crasher", context.port)
-      SimpleH2Client.read_headers(socket)
-      SimpleH2Client.read_body(socket)
+      SimpleH2Client.recv_headers(socket)
+      SimpleH2Client.recv_body(socket)
 
-      assert SimpleH2Client.read_rst_stream(socket) == {:ok, 1, 2}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
       assert SimpleH2Client.connection_alive?(socket)
     end
 
@@ -381,15 +377,15 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_rst_stream(socket, 1, 0)
 
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
     test "shuts down the stream task on receipt of an RST_STREAM frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleeper", context.port)
-      SimpleH2Client.read_headers(socket)
-      {:ok, 1, false, "OK"} = SimpleH2Client.read_body(socket)
+      SimpleH2Client.recv_headers(socket)
+      {:ok, 1, false, "OK"} = SimpleH2Client.recv_body(socket)
 
       assert Process.whereis(:sleeper) |> Process.alive?()
 
@@ -439,26 +435,24 @@ defmodule HTTP2ProtocolTest do
 
       ThousandIsland.stop(context.server_pid)
 
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
 
     test "the server should close the connection upon receipt of a GOAWAY frame", context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+
+      SimpleH2Client.send_goaway(socket, 0, 0)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
 
     test "the server should return the last received stream id in the GOAWAY frame", context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 5, 1, 0x04, 0, 0, 0, 99, 64, 129, 31, 129, 31>>)
-      :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0>>)
 
-      assert :ssl.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 99, 0, 0, 0, 0>>}
+      SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
+      SimpleH2Client.send_goaway(socket, 0, 0)
 
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 0}
     end
   end
 end
