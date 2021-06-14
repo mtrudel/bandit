@@ -236,17 +236,23 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading peer data", context do
-    # TODO use simple client here to get local port
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/peer_data")
-      |> Finch.request(context[:finch_name])
+    socket = SimpleH2Client.setup_connection(context)
 
-    assert response.status == 200
-    assert response.body == inspect(%{address: {127, 0, 0, 1}, ssl_cert: nil})
+    SimpleH2Client.send_headers(socket, 1, true, [
+      {":method", "POST"},
+      {":path", "/peer_data"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"}
+    ])
+
+    SimpleH2Client.read_headers(socket)
+    {:ok, 1, true, body} = SimpleH2Client.read_body(socket)
+    {:ok, {ip, port}} = :ssl.sockname(socket)
+
+    assert body == inspect(%{address: ip, port: port, ssl_cert: nil})
   end
 
   def peer_data(conn) do
-    # Drop port as we have no way of asking Finch for our local port
-    send_resp(conn, 200, conn |> get_peer_data() |> Map.take([:address, :ssl_cert]) |> inspect())
+    send_resp(conn, 200, conn |> get_peer_data() |> inspect())
   end
 end
