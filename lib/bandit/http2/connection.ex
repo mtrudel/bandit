@@ -18,7 +18,7 @@ defmodule Bandit.HTTP2.Connection do
     |> ThousandIsland.Socket.recv(24)
     |> case do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} ->
-        %{address: peer} = ThousandIsland.Socket.peer_info(socket)
+        peer = ThousandIsland.Socket.peer_info(socket)
         connection = %__MODULE__{plug: plug, peer: peer}
         # Send SETTINGS frame per RFC7540§3.5
         %Frame.Settings{ack: false, settings: connection.local_settings}

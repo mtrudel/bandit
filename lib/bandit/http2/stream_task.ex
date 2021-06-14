@@ -3,6 +3,8 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
+  alias Bandit.HTTP2.Adapter
+
   def start_link(connection, stream_id, peer, headers, plug) do
     Task.start_link(__MODULE__, :run, [connection, stream_id, peer, headers, plug])
   end
@@ -12,8 +14,8 @@ defmodule Bandit.HTTP2.StreamTask do
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   def run(connection, stream_id, peer, headers, {plug, plug_opts}) do
-    {Bandit.HTTP2.Adapter, %Bandit.HTTP2.Adapter{connection: connection, stream_id: stream_id}}
-    |> conn(method(headers), uri(headers), peer, headers)
+    {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id}}
+    |> conn(method(headers), uri(headers), peer.address, headers)
     |> plug.call(plug_opts)
     |> case do
       %Plug.Conn{state: :unset} ->

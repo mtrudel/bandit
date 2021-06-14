@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
 
-  defstruct connection: nil, stream_id: nil, end_stream: false
+  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false
 
   @behaviour Plug.Conn.Adapter
 
@@ -113,9 +113,7 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{} = adapter) do
-    GenServer.call(adapter.connection, {:get_peer_data})
-  end
+  def get_peer_data(%__MODULE__{peer: peer}), do: peer
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"

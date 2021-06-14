@@ -83,10 +83,6 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_call({:get_peer_data}, _from, {socket, state}) do
-    {:reply, ThousandIsland.Socket.peer_info(socket), {socket, state}}
-  end
-
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
     case Connection.stream_terminated(pid, reason, socket, state.connection) do
       {:ok, connection} -> {:noreply, {socket, %{state | connection: connection}}}
