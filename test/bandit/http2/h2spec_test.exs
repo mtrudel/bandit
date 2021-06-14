@@ -8,7 +8,7 @@ defmodule H2SpecTest do
   setup :https_server
 
   def hello_world(conn) do
-    conn |> send_resp(200, "")
+    conn |> send_resp(200, "OK")
   end
 
   test "passes h2spec", context do
