@@ -76,12 +76,7 @@ defmodule HTTP2ProtocolTest do
     test "sends end of stream when there is a single data frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/body_response"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.read_body(socket) == {:ok, 1, true, "OK"}
@@ -94,12 +89,7 @@ defmodule HTTP2ProtocolTest do
     test "sends multiple DATA frames with last one end of stream when chunking", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/chunk_response"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/chunk_response", context.port)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.read_body(socket) == {:ok, 1, false, "OK"}
@@ -119,12 +109,7 @@ defmodule HTTP2ProtocolTest do
     test "reads a zero byte body if none is sent", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "POST"},
-        {":path", "/echo"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
 
       # A zero byte body being written will cause end_stream to be set on the header frame
       assert SimpleH2Client.successful_response?(socket, 1, true)
@@ -147,13 +132,7 @@ defmodule HTTP2ProtocolTest do
     test "reads a one frame body if one frame is sent", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, false, [
-        {":method", "POST"},
-        {":path", "/echo"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
@@ -163,13 +142,7 @@ defmodule HTTP2ProtocolTest do
     test "reads a multi frame body if many frames are sent", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, false, [
-        {":method", "POST"},
-        {":path", "/echo"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, false, "OK")
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
@@ -181,13 +154,7 @@ defmodule HTTP2ProtocolTest do
     test "rejects DATA frames received on a remote closed stream", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "POST"},
-        {":path", "/echo"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 1>>}
@@ -198,6 +165,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_body(socket, 0, true, "OK")
+
       assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 7, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1>>}
     end
 
@@ -214,12 +182,7 @@ defmodule HTTP2ProtocolTest do
     test "sends end of stream headers when there is no body", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/no_body_response"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
 
       assert SimpleH2Client.read_headers(socket) ==
                {:ok, 1, true,
@@ -233,12 +196,7 @@ defmodule HTTP2ProtocolTest do
     test "sends non-end of stream headers when there is a body", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/body_response"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
       assert SimpleH2Client.read_headers(socket) ==
                {:ok, 1, false,
@@ -389,13 +347,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       # Send headers with end_stream bit cleared
-      SimpleH2Client.send_headers(socket, 1, false, [
-        {":method", "GET"},
-        {":path", "/body_response"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/body_response", context.port)
       SimpleH2Client.read_headers(socket)
       SimpleH2Client.read_body(socket)
 
@@ -407,13 +359,7 @@ defmodule HTTP2ProtocolTest do
     test "sends RST_FRAME with error if stream task crashes", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/crasher"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/crasher", context.port)
       SimpleH2Client.read_headers(socket)
       SimpleH2Client.read_body(socket)
 
@@ -441,13 +387,7 @@ defmodule HTTP2ProtocolTest do
     test "shuts down the stream task on receipt of an RST_STREAM frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_headers(socket, 1, true, [
-        {":method", "GET"},
-        {":path", "/sleeper"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"}
-      ])
-
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleeper", context.port)
       SimpleH2Client.read_headers(socket)
       {:ok, 1, false, "OK"} = SimpleH2Client.read_body(socket)
 

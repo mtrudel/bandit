@@ -67,13 +67,7 @@ defmodule HTTP2PlugTest do
   test "reading request body respects length option", context do
     socket = SimpleH2Client.setup_connection(context)
 
-    SimpleH2Client.send_headers(socket, 1, false, [
-      {":method", "POST"},
-      {":path", "/length_body_read"},
-      {":scheme", "https"},
-      {":authority", "localhost:#{context.port}"}
-    ])
-
+    SimpleH2Client.send_simple_headers(socket, 1, :post, "/length_body_read", context.port)
     SimpleH2Client.send_body(socket, 1, false, "A")
     SimpleH2Client.send_body(socket, 1, false, "B")
     SimpleH2Client.send_body(socket, 1, false, "C")
@@ -94,13 +88,7 @@ defmodule HTTP2PlugTest do
   test "reading request body respects timeout option", context do
     socket = SimpleH2Client.setup_connection(context)
 
-    SimpleH2Client.send_headers(socket, 1, false, [
-      {":method", "POST"},
-      {":path", "/timeout_body_read"},
-      {":scheme", "https"},
-      {":authority", "localhost:#{context.port}"}
-    ])
-
+    SimpleH2Client.send_simple_headers(socket, 1, :post, "/timeout_body_read", context.port)
     SimpleH2Client.send_body(socket, 1, false, "A")
     Process.sleep(100)
     SimpleH2Client.send_body(socket, 1, true, "BC")
@@ -238,13 +226,7 @@ defmodule HTTP2PlugTest do
   test "reading peer data", context do
     socket = SimpleH2Client.setup_connection(context)
 
-    SimpleH2Client.send_headers(socket, 1, true, [
-      {":method", "POST"},
-      {":path", "/peer_data"},
-      {":scheme", "https"},
-      {":authority", "localhost:#{context.port}"}
-    ])
-
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/peer_data", context.port)
     SimpleH2Client.read_headers(socket)
     {:ok, 1, true, body} = SimpleH2Client.read_body(socket)
     {:ok, {ip, port}} = :ssl.sockname(socket)

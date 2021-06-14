@@ -39,6 +39,22 @@ defmodule SimpleH2Client do
     :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
   end
 
+  def send_simple_headers(socket, stream_id, verb, path, port) do
+    {verb, end_stream} =
+      case verb do
+        :get -> {"GET", true}
+        :head -> {"HEAD", true}
+        :post -> {"POST", false}
+      end
+
+    send_headers(socket, stream_id, end_stream, [
+      {":method", verb},
+      {":path", path},
+      {":scheme", "https"},
+      {":authority", "localhost:#{port}"}
+    ])
+  end
+
   def send_headers(socket, stream_id, end_stream, headers) do
     ctx = HPack.Table.new(4096)
     {:ok, _, headers} = HPack.encode(headers, ctx)
