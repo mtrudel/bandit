@@ -25,17 +25,117 @@ defmodule Bandit.HTTP2.Stream do
   @typedoc "A single HTTP/2 stream"
   @type t :: %__MODULE__{stream_id: stream_id(), state: state(), pid: pid() | nil}
 
-  def recv_headers(%__MODULE__{state: :idle} = stream, headers, peer, plug) do
-    if Integer.is_odd(stream.stream_id) do
+  def recv_headers(%__MODULE__{} = stream, headers, peer, plug) do
+    with :ok <- stream_is_idle(stream),
+         :ok <- stream_id_is_valid(stream.stream_id),
+         :ok <- headers_all_lowercase(headers),
+         :ok <- pseudo_headers_all_request(headers),
+         :ok <- pseudo_headers_first(headers),
+         :ok <- no_connection_headers(headers),
+         :ok <- valid_te_header(headers),
+         :ok <- exactly_one_instance_of(headers, ":scheme"),
+         :ok <- exactly_one_instance_of(headers, ":method"),
+         :ok <- exactly_one_instance_of(headers, ":path"),
+         :ok <- non_empty_path(headers) do
       {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, peer, headers, plug)
       {:ok, %{stream | state: :open, pid: pid}}
+    end
+  end
+
+  defp stream_is_idle(stream) do
+    if stream.state == :idle do
+      :ok
+    else
+      {:error, {:connection, Constants.protocol_error(), "Received HEADERS when not in idle"}}
+    end
+  end
+
+  # RFC7540§5.1.1 - client initiated streams must be odd
+  defp stream_id_is_valid(stream_id) do
+    if Integer.is_odd(stream_id) do
+      :ok
     else
       {:error, {:connection, Constants.protocol_error(), "Received HEADERS with even stream_id"}}
     end
   end
 
-  def recv_headers(%__MODULE__{}, _headers, _peer, _plug) do
-    {:error, {:connection, Constants.protocol_error(), "Received HEADERS when not in idle"}}
+  # RFC7540§8.1.2 - all headers name fields must be lowercsae
+  defp headers_all_lowercase(headers) do
+    headers
+    |> Enum.all?(fn {key, _value} -> String.downcase(key) == key end)
+    |> if do
+      :ok
+    else
+      {:error, {:stream, Constants.protocol_error(), "Received uppercase header"}}
+    end
+  end
+
+  # RFC7540§8.1.2.1 - only request pseudo headers may appear
+  defp pseudo_headers_all_request(headers) do
+    headers
+    |> Enum.all?(fn
+      {":" <> key, _value} -> key in ~w[method scheme authority path]
+      {_key, _value} -> true
+    end)
+    |> if do
+      :ok
+    else
+      {:error, {:stream, Constants.protocol_error(), "Received invalid pseudo header"}}
+    end
+  end
+
+  # RFC7540§8.1.2.2 - pseudo headers must appear first
+  defp pseudo_headers_first(headers) do
+    headers
+    |> Enum.drop_while(fn {key, _value} -> String.starts_with?(key, ":") end)
+    |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
+    |> if do
+      {:error, {:stream, Constants.protocol_error(), "Received pseudo headers after regular one"}}
+    else
+      :ok
+    end
+  end
+
+  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
+  # Note that we do not filter out the TE header here, since it is allowed in
+  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
+  defp no_connection_headers(headers) do
+    headers
+    |> Enum.any?(fn {key, _value} ->
+      key in ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
+    end)
+    |> if do
+      {:error, {:stream, Constants.protocol_error(), "Received connection-specific header"}}
+    else
+      :ok
+    end
+  end
+
+  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
+  defp valid_te_header(headers) do
+    case List.keyfind(headers, "te", 0) do
+      nil -> :ok
+      {_, "trailers"} -> :ok
+      _ -> {:error, {:stream, Constants.protocol_error(), "Received invalid TE header"}}
+    end
+  end
+
+  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
+  defp exactly_one_instance_of(headers, header) do
+    headers
+    |> Enum.count(fn {key, _value} -> key == header end)
+    |> case do
+      1 -> :ok
+      _ -> {:error, {:stream, Constants.protocol_error(), "Did not receive 1 #{header} headers"}}
+    end
+  end
+
+  # RFC7540§8.1.2.3 :path must not be empty
+  defp non_empty_path(headers) do
+    case List.keyfind(headers, ":path", 0) do
+      {_, ""} -> {:error, {:stream, Constants.protocol_error(), "Received empty :path"}}
+      _ -> :ok
+    end
   end
 
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
