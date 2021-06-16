@@ -335,6 +335,220 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
     end
+
+    test "returns a stream error if sent headers with uppercase names", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # HPack won't encode capitalized headers so take example from H2Spec
+      headers =
+        <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
+          129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
+
+      :ssl.send(socket, [<<byte_size(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if sent headers with invalid pseudo headers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":bogus", "bogus"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if sent headers with response pseudo headers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":status", "200"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if pseudo headers appear after regular ones", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {"regular-header", "boring"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns an error if (almost) any hop-by-hop headers are present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"connection", "close"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "accepts TE header with a value of trailer", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/no_body_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"te", "trailers"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, true)
+    end
+
+    test "returns an error if TE header is present with a value other than trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"te", "trailers, deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if :method pseudo header is missing", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if multiple :method pseudo headers are received", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if :scheme pseudo header is missing", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if multiple :scheme pseudo headers are received", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if :path pseudo header is missing", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if multiple :path pseudo headers are received", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "returns a stream error if :path pseudo headers is empty", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", ""},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
   end
 
   describe "RST_STREAM frames" do

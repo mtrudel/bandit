@@ -80,6 +80,9 @@ defmodule Bandit.HTTP2.Connection do
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
 
+      {:error, {:stream, error_code, error_message}} ->
+        handle_stream_error(frame.stream_id, error_code, error_message, socket, connection)
+
       {:error, error} ->
         handle_error(Constants.internal_error(), error, socket, connection)
     end
@@ -195,6 +198,13 @@ defmodule Bandit.HTTP2.Connection do
   #
   # Stream-level error handling
   #
+
+  def handle_stream_error(stream_id, error_code, _reason, socket, connection) do
+    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+    |> send_frame(socket)
+
+    {:ok, :continue, connection}
+  end
 
   def stream_terminated(pid, reason, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
