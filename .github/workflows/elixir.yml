@@ -46,12 +46,7 @@ jobs:
     - name: Check Formatting
       run: mix format --check-formatted
 
-    - name: Run Credo
-      if: ${{ github.ref == 'refs/heads/master' }}
-      run: mix credo --strict
-
     - name: Run Credo (allowing TODOs)
-      if: ${{ github.ref != 'refs/heads/master' }}
       run: mix credo --strict --ignore Credo.Check.Design.TagTODO
 
     - name: Retrieve PLT Cache
