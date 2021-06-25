@@ -18,7 +18,7 @@ interface it is also simple and easy to understand.
 
 ## Project Goals
 
-* Implement comprehensive support for HTTP/1.0 through HTTP/2.0 (and eventually beyond) backed by obsessive RFC
+* Implement comprehensive support for HTTP/1.0 through HTTP/2 (and eventually beyond) backed by obsessive RFC
   literacy and automated conformance testing
 * Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug as much as possible, and only 
 interpret requests to the extent necessary to safely manage a connection & fulfill the requirements of supporting Plug
@@ -28,12 +28,15 @@ approachable and easy to understand
 
 ## Development Plan
 
-* [x] `0.1.x` series: Proof of concept (along with [Thousand Island](/mtrudel/thousand_island)) sufficient to support [HAP](/mtrudel/hap)
+The roadmap to 1.0 looks more or less like the following:
+
+* [x] `0.1.x` series: Proof of concept (along with [Thousand Island](https://github.com/mtrudel/thousand_island)) sufficient to support [HAP](https://github.com/mtrudel/hap)
 * [x] `0.2.x` series: Revise process model to accommodate forthcoming HTTP/2 and WebSocket adapters
 * [ ] `0.3.x` series: Implement HTTP/2 adapter
 * [ ] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [ ] `0.5.x` series: Implement WebSocket extension
 * [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
+* [ ] `0.7.x` series: Integrate with Phoenix
 
 ## Installation
 
