@@ -5,13 +5,14 @@ defmodule Bandit.HTTP2.Connection do
 
   defstruct local_settings: %{},
             remote_settings: %{},
+            fragment_frame: nil,
             send_hpack_state: HPack.Table.new(4096),
             recv_hpack_state: HPack.Table.new(4096),
             streams: %Bandit.HTTP2.StreamCollection{},
             peer: nil,
             plug: nil
 
-  alias Bandit.HTTP2.{Constants, Frame, Stream, StreamCollection}
+  alias Bandit.HTTP2.{Connection, Constants, Frame, Stream, StreamCollection}
 
   def init(socket, plug) do
     socket
@@ -29,6 +30,39 @@ defmodule Bandit.HTTP2.Connection do
       _ ->
         {:error, "Did not receive expected HTTP/2 connection preface (RFC7540§3.5)"}
     end
+  end
+
+  #
+  # Receiving while expecting CONTINUATION frames is a special case (RFC7540§6.10); handle it first
+  #
+
+  def handle_frame(
+        %Frame.Continuation{end_headers: true, stream_id: stream_id} = frame,
+        socket,
+        %Connection{fragment_frame: %Frame.Headers{stream_id: stream_id}} = connection
+      ) do
+    header_block = connection.fragment_frame.fragment <> frame.fragment
+    header_frame = %{connection.fragment_frame | end_headers: true, fragment: header_block}
+    handle_frame(header_frame, socket, %{connection | fragment_frame: nil})
+  end
+
+  def handle_frame(
+        %Frame.Continuation{end_headers: false, stream_id: stream_id} = frame,
+        _socket,
+        %Connection{fragment_frame: %Frame.Headers{stream_id: stream_id}} = connection
+      ) do
+    header_block = connection.fragment_frame.fragment <> frame.fragment
+    header_frame = %{connection.fragment_frame | fragment: header_block}
+    {:ok, :continue, %{connection | fragment_frame: header_frame}}
+  end
+
+  def handle_frame(_frame, socket, %Connection{fragment_frame: %Frame.Headers{}} = connection) do
+    handle_error(
+      Constants.protocol_error(),
+      "Expected CONTINUATION frame (RFC7540§6.10)",
+      socket,
+      connection
+    )
   end
 
   #
@@ -86,6 +120,19 @@ defmodule Bandit.HTTP2.Connection do
       {:error, error} ->
         handle_error(Constants.internal_error(), error, socket, connection)
     end
+  end
+
+  def handle_frame(%Frame.Headers{end_headers: false} = frame, _socket, connection) do
+    {:ok, :continue, %{connection | fragment_frame: frame}}
+  end
+
+  def handle_frame(%Frame.Continuation{}, socket, connection) do
+    handle_error(
+      Constants.protocol_error(),
+      "Received unexpected CONTINUATION frame (RFC7540§6.10)",
+      socket,
+      connection
+    )
   end
 
   def handle_frame(%Frame.Data{} = frame, socket, connection) do

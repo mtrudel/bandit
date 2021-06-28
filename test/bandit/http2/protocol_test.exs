@@ -669,4 +669,61 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 0}
     end
   end
+
+  describe "CONTINUATION frames" do
+    test "accumulates header fragments over multiple CONTINUATION frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
+        headers_for_header_read_test(context)
+
+      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
+      :ssl.send(socket, [<<0, 0, byte_size(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
+
+      assert SimpleH2Client.recv_headers(socket) ==
+               {:ok, 1, false,
+                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag capture_log: true
+    test "rejects non-CONTINUATION frames received when end_headers is false", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
+        headers_for_header_read_test(context)
+
+      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+    end
+
+    @tag capture_log: true
+    test "rejects non-CONTINUATION frames received when from other streams", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
+        headers_for_header_read_test(context)
+
+      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+    end
+
+    @tag capture_log: true
+    test "rejects CONTINUATION frames received when not expected", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = headers_for_header_read_test(context)
+
+      :ssl.send(socket, [<<0, 0, byte_size(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+    end
+  end
 end
