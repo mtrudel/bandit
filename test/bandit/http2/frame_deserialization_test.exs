@@ -318,4 +318,30 @@ defmodule HTTP2FrameDeserializationTest do
                  "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}, <<>>}
     end
   end
+
+  describe "CONTINUATION frames" do
+    test "deserializes frames" do
+      frame = <<0, 0, 3, 9, 0x00, 0, 0, 0, 1, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.Continuation{
+                   stream_id: 1,
+                   end_headers: false,
+                   fragment: <<1, 2, 3>>
+                 }}, <<>>}
+    end
+
+    test "sets end_headers" do
+      frame = <<0, 0, 3, 9, 0x04, 0, 0, 0, 1, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.Continuation{
+                   stream_id: 1,
+                   end_headers: true,
+                   fragment: <<1, 2, 3>>
+                 }}, <<>>}
+    end
+  end
 end

@@ -131,4 +131,26 @@ defmodule HTTP2FrameSerializationTest do
                [<<0, 0, 10, 7, 0, 0, 0, 0, 0>>, <<0, 0, 0, 1, 0, 0, 0, 2, 3, 4>>]
     end
   end
+
+  describe "CONTINUATION frames" do
+    test "serializes frames" do
+      frame = %Frame.Continuation{
+        stream_id: 123,
+        end_headers: false,
+        fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 9, 0, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+
+    test "serializes frames with end_headers set" do
+      frame = %Frame.Continuation{
+        stream_id: 123,
+        end_headers: true,
+        fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 3, 9, 4, 0, 0, 0, 123>>, <<1, 2, 3>>]
+    end
+  end
 end
