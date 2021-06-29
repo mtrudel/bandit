@@ -26,11 +26,13 @@ defmodule HTTP2FrameDeserializationTest do
   end
 
   describe "unknown frame types" do
-    @tag capture_log: true
-    test "returns a nil frame" do
-      frame = <<0, 0, 3, 254, 0, 0, 0, 0, 0, 1, 2, 3>>
+    test "returns an Unknown frame" do
+      frame = <<0, 0, 3, 254, 123, 0, 0, 0, 234, 1, 2, 3>>
 
-      assert Frame.deserialize(frame) == {{:ok, nil}, <<>>}
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.Unknown{type: 254, flags: 123, stream_id: 234, payload: <<1, 2, 3>>}},
+                <<>>}
     end
   end
 

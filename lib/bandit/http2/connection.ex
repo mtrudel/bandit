@@ -12,6 +12,8 @@ defmodule Bandit.HTTP2.Connection do
             peer: nil,
             plug: nil
 
+  require Logger
+
   alias Bandit.HTTP2.{Connection, Constants, Frame, Stream, StreamCollection}
 
   def init(socket, plug) do
@@ -162,6 +164,14 @@ defmodule Bandit.HTTP2.Connection do
       {:error, error} ->
         handle_error(Constants.internal_error(), error, socket, connection)
     end
+  end
+
+  # Catch-all handler for unknown frame types
+
+  def handle_frame(%Frame.Unknown{} = frame, _socket, connection) do
+    Logger.warn("Unknown frame (#{inspect(Map.from_struct(frame))})")
+
+    {:ok, :continue, connection}
   end
 
   #

@@ -3,8 +3,6 @@ defmodule Bandit.HTTP2.Frame do
 
   alias Bandit.HTTP2.Frame
 
-  require Logger
-
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
@@ -19,7 +17,7 @@ defmodule Bandit.HTTP2.Frame do
       0x6 -> Frame.Ping.deserialize(flags, stream_id, payload)
       0x7 -> Frame.Goaway.deserialize(flags, stream_id, payload)
       0x9 -> Frame.Continuation.deserialize(flags, stream_id, payload)
-      unknown -> handle_unknown_frame(unknown, flags, stream_id, payload)
+      unknown -> Frame.Unknown.deserialize(unknown, flags, stream_id, payload)
     end
     |> case do
       {:ok, frame} -> {{:ok, frame}, rest}
@@ -39,11 +37,5 @@ defmodule Bandit.HTTP2.Frame do
     {type, flags, stream_id, payload} = Serializable.serialize(frame)
 
     [<<byte_size(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
-  end
-
-  defp handle_unknown_frame(type, flags, stream_id, payload) do
-    Logger.warn("Unknown frame (t: #{type} f: #{flags} s: #{stream_id} p: #{inspect(payload)})")
-
-    {:ok, nil}
   end
 end

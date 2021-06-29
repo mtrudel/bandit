@@ -27,9 +27,6 @@ defmodule Bandit.HTTP2.Handler do
     (state.buffer <> data)
     |> Stream.unfold(&Frame.deserialize/1)
     |> Enum.reduce_while({:ok, :continue, state}, fn
-      {:ok, nil}, {:ok, :continue, state} ->
-        {:cont, {:ok, :continue, state}}
-
       {:ok, frame}, {:ok, :continue, state} ->
         case Connection.handle_frame(frame, socket, state.connection) do
           {:ok, :continue, connection} ->
