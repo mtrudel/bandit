@@ -549,6 +549,31 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
+
+    test "combines Cookie headers per RFC7540§8.1.2.5", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/cookie_check"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"cookie", "a=b"},
+        {"cookie", "c=d"},
+        {"cookie", "e=f"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def cookie_check(conn) do
+      assert get_req_header(conn, "cookie") == ["a=b; c=d; e=f"]
+
+      conn |> send_resp(200, "OK")
+    end
   end
 
   describe "RST_STREAM frames" do

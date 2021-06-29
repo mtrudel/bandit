@@ -14,6 +14,8 @@ defmodule Bandit.HTTP2.StreamTask do
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   def run(connection, stream_id, peer, headers, {plug, plug_opts}) do
+    headers = combine_cookie_crumbs(headers)
+
     {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id}}
     |> conn(method(headers), uri(headers), peer.address, headers)
     |> plug.call(plug_opts)
@@ -58,6 +60,15 @@ defmodule Bandit.HTTP2.StreamTask do
   defp split_path(path) do
     segments = :binary.split(path, "/", [:global])
     for segment <- segments, segment != "", do: segment
+  end
+
+  # Per RFC7540§8.1.2.5
+  defp combine_cookie_crumbs(headers) do
+    {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
+
+    combined_cookie = crumbs |> Enum.map(fn {"cookie", crumb} -> crumb end) |> Enum.join("; ")
+
+    other_headers ++ [{"cookie", combined_cookie}]
   end
 
   defp method(headers), do: get_header(headers, ":method")
