@@ -119,6 +119,7 @@ defmodule Bandit.HTTP2.Adapter do
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
 
   defp send_headers(adapter, status, headers, end_stream) do
+    headers = split_cookies(headers)
     headers = [{":status", to_string(status)} | headers]
 
     GenServer.call(adapter.connection, {:send_headers, adapter.stream_id, headers, end_stream})
@@ -126,5 +127,16 @@ defmodule Bandit.HTTP2.Adapter do
 
   defp send_data(adapter, data, end_stream) do
     GenServer.call(adapter.connection, {:send_data, adapter.stream_id, data, end_stream})
+  end
+
+  defp split_cookies(headers) do
+    headers
+    |> Enum.flat_map(fn
+      {"cookie", cookie} ->
+        cookie |> String.split("; ") |> Enum.map(fn crumb -> {"cookie", crumb} end)
+
+      {header, value} ->
+        [{header, value}]
+    end)
   end
 end

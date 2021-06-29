@@ -574,6 +574,35 @@ defmodule HTTP2ProtocolTest do
 
       conn |> send_resp(200, "OK")
     end
+
+    test "breaks Cookie headers up per RFC7540§8.1.2.5", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/cookie_write_check"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_headers(socket) ==
+               {:ok, 1, false,
+                [
+                  {":status", "200"},
+                  {"cache-control", "max-age=0, private, must-revalidate"},
+                  {"cookie", "a=b"},
+                  {"cookie", "c=d"},
+                  {"cookie", "e=f"}
+                ]}
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def cookie_write_check(conn) do
+      conn |> put_resp_header("cookie", "a=b; c=d; e=f") |> send_resp(200, "OK")
+    end
   end
 
   describe "RST_STREAM frames" do
