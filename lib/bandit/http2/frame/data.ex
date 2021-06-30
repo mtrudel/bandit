@@ -10,7 +10,8 @@ defmodule Bandit.HTTP2.Frame.Data do
   alias Bandit.HTTP2.Constants
 
   def deserialize(_flags, 0, _payload) do
-    {:error, 0, Constants.protocol_error(), "DATA frame with zero stream_id (RFC7540§6.1)"}
+    {:error,
+     {:connection, Constants.protocol_error(), "DATA frame with zero stream_id (RFC7540§6.1)"}}
   end
 
   def deserialize(flags, stream_id, <<padding_length::8, rest::binary>>)
@@ -35,8 +36,9 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
       when (flags &&& 0x08) == 0x08 do
-    {:error, 0, Constants.protocol_error(),
-     "DATA frame with invalid padding length (RFC7540§6.1)"}
+    {:error,
+     {:connection, Constants.protocol_error(),
+      "DATA frame with invalid padding length (RFC7540§6.1)"}}
   end
 
   defimpl Serializable do

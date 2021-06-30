@@ -23,7 +23,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
         {:ok, %__MODULE__{ack: false, settings: settings}}
 
       :error ->
-        {:error, 0, Constants.frame_size_error(), "Invalid SETTINGS payload (RFC7540§6.5)"}
+        {:error,
+         {:connection, Constants.frame_size_error(), "Invalid SETTINGS payload (RFC7540§6.5)"}}
     end
   end
 
@@ -32,12 +33,13 @@ defmodule Bandit.HTTP2.Frame.Settings do
   end
 
   def deserialize(flags, 0, _payload) when (flags &&& 0x1) == 0x1 do
-    {:error, 0, Constants.frame_size_error(),
-     "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}
+    {:error,
+     {:connection, Constants.frame_size_error(),
+      "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
-    {:error, 0, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}
+    {:error, {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}}
   end
 
   defimpl Serializable do

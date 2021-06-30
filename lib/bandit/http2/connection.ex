@@ -116,8 +116,8 @@ defmodule Bandit.HTTP2.Connection do
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
 
-      {:error, {:stream, error_code, error_message}} ->
-        handle_stream_error(frame.stream_id, error_code, error_message, socket, connection)
+      {:error, {:stream, stream_id, error_code, error_message}} ->
+        handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
         handle_error(Constants.internal_error(), error, socket, connection)

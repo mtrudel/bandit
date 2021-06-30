@@ -62,14 +62,15 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 3, 0, 0, 0, 0, 0, 0, 1, 2, 3>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "DATA frame with zero stream_id (RFC7540§6.1)"}, <<>>}
+               {{:error, {:connection, 1, "DATA frame with zero stream_id (RFC7540§6.1)"}}, <<>>}
     end
 
     test "rejects frames with invalid padding" do
       frame = <<0, 0, 6, 0, 0x08, 0, 0, 0, 1, 6, 1, 2, 3, 4, 5>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "DATA frame with invalid padding length (RFC7540§6.1)"}, <<>>}
+               {{:error,
+                 {:connection, 1, "DATA frame with invalid padding length (RFC7540§6.1)"}}, <<>>}
     end
   end
 
@@ -162,21 +163,26 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 3, 1, 0x04, 0, 0, 0, 0, 1, 2, 3>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "HEADERS frame with zero stream_id (RFC7540§6.2)"}, <<>>}
+               {{:error, {:connection, 1, "HEADERS frame with zero stream_id (RFC7540§6.2)"}},
+                <<>>}
     end
 
     test "rejects frames with invalid padding and priority" do
       frame = <<0, 0, 11, 1, 0x28, 0, 0, 0, 1, 6, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "HEADERS frame with invalid padding length (RFC7540§6.2)"}, <<>>}
+               {{:error,
+                 {:connection, 1, "HEADERS frame with invalid padding length (RFC7540§6.2)"}},
+                <<>>}
     end
 
     test "rejects frames with invalid padding and not priority" do
       frame = <<0, 0, 6, 1, 0x08, 0, 0, 0, 1, 6, 1, 2, 3, 4, 5>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "HEADERS frame with invalid padding length (RFC7540§6.2)"}, <<>>}
+               {{:error,
+                 {:connection, 1, "HEADERS frame with invalid padding length (RFC7540§6.2)"}},
+                <<>>}
     end
   end
 
@@ -192,14 +198,17 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 4, 3, 0, 0, 0, 0, 0, 0, 0, 0, 123>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 1, "RST_STREAM frame with zero stream_id (RFC7540§6.4)"}, <<>>}
+               {{:error, {:connection, 1, "RST_STREAM frame with zero stream_id (RFC7540§6.4)"}},
+                <<>>}
     end
 
     test "rejects frames with invalid size" do
       frame = <<0, 0, 5, 3, 0, 0, 0, 0, 1, 0, 0, 0, 0, 123>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, 6, "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}, <<>>}
+               {{:error,
+                 {:connection, 6, "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}},
+                <<>>}
     end
   end
 
@@ -221,15 +230,17 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 1, 4, 0, 0, 0, 0, 0, 1>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.frame_size_error(),
-                 "Invalid SETTINGS payload (RFC7540§6.5)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "Invalid SETTINGS payload (RFC7540§6.5)"}}, <<>>}
     end
 
     test "rejects non-ack frames when there is stream identifier" do
       frame = <<0, 0, 0, 4, 0, 0, 0, 0, 1>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"},
+               {{:error,
+                 {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
                 <<>>}
     end
 
@@ -243,15 +254,17 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 1, 4, 1, 0, 0, 0, 0, 1>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.frame_size_error(),
-                 "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}}, <<>>}
     end
 
     test "rejects ack frames when there is stream identifier" do
       frame = <<0, 0, 0, 4, 1, 0, 0, 0, 1>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"},
+               {{:error,
+                 {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
                 <<>>}
     end
   end
@@ -275,16 +288,18 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 7, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.frame_size_error(),
-                 "PING frame with invalid payload size (RFC7540§6.7)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "PING frame with invalid payload size (RFC7540§6.7)"}}, <<>>}
     end
 
     test "rejects frames when there is stream identifier" do
       frame = <<0, 0, 8, 6, 1, 0, 0, 0, 1, 1, 2, 3, 4, 5, 6, 7, 8>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.protocol_error(),
-                 "Invalid stream ID in PING frame (RFC7540§6.7)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.protocol_error(),
+                  "Invalid stream ID in PING frame (RFC7540§6.7)"}}, <<>>}
     end
   end
 
@@ -308,16 +323,18 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 7, 7, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.frame_size_error(),
-                 "GOAWAY frame with invalid payload size (RFC7540§6.8)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "GOAWAY frame with invalid payload size (RFC7540§6.8)"}}, <<>>}
     end
 
     test "rejects frames when there is stream identifier" do
       frame = <<0, 0, 7, 7, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0>>
 
       assert Frame.deserialize(frame) ==
-               {{:error, 0, Constants.protocol_error(),
-                 "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}, <<>>}
+               {{:error,
+                 {:connection, Constants.protocol_error(),
+                  "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}}, <<>>}
     end
   end
 

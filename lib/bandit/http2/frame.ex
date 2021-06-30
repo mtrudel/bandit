@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.Frame do
     end
     |> case do
       {:ok, frame} -> {{:ok, frame}, rest}
-      {:error, stream_id, code, reason} -> {{:error, stream_id, code, reason}, rest}
+      {:error, reason} -> {{:error, reason}, rest}
     end
   end
 
