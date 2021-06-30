@@ -93,6 +93,11 @@ defmodule Bandit.HTTP2.Connection do
     handle_error(Constants.no_error(), "Received GOAWAY", socket, connection)
   end
 
+  def handle_frame(%Frame.WindowUpdate{} = frame, _socket, connection) do
+    Logger.info("Got window update for stream #{frame.stream_id}: #{frame.size_increment}")
+    {:ok, :continue, connection}
+  end
+
   #
   # Stream-level receiving
   #

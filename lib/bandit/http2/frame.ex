@@ -16,6 +16,7 @@ defmodule Bandit.HTTP2.Frame do
       0x4 -> Frame.Settings.deserialize(flags, stream_id, payload)
       0x6 -> Frame.Ping.deserialize(flags, stream_id, payload)
       0x7 -> Frame.Goaway.deserialize(flags, stream_id, payload)
+      0x8 -> Frame.WindowUpdate.deserialize(flags, stream_id, payload)
       0x9 -> Frame.Continuation.deserialize(flags, stream_id, payload)
       unknown -> Frame.Unknown.deserialize(unknown, flags, stream_id, payload)
     end

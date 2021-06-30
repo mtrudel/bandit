@@ -132,6 +132,17 @@ defmodule HTTP2FrameSerializationTest do
     end
   end
 
+  describe "WINDOW_UPDATE frames" do
+    test "serializes frames" do
+      frame = %Frame.WindowUpdate{
+        stream_id: 123,
+        size_increment: 234
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 4, 8, 0, 0, 0, 0, 123>>, <<0, 0, 0, 234>>]
+    end
+  end
+
   describe "CONTINUATION frames" do
     test "serializes frames" do
       frame = %Frame.Continuation{

@@ -338,6 +338,42 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "WINDOW_UPDATE frames" do
+    test "deserializes frames" do
+      frame = <<0, 0, 4, 8, 0, 0, 0, 0, 123, 0, 0, 0, 234>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.WindowUpdate{stream_id: 123, size_increment: 234}}, <<>>}
+    end
+
+    test "rejects frames when there is a 0 size increment" do
+      frame = <<0, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:connection, Constants.flow_control_error(),
+                  "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}, <<>>}
+    end
+
+    test "rejects frames when there is a 0 size increment on a stream" do
+      frame = <<0, 0, 4, 8, 0, 0, 0, 0, 123, 0, 0, 0, 0>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:stream, 123, Constants.flow_control_error(),
+                  "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}, <<>>}
+    end
+
+    test "rejects frames when there is a malformed payload" do
+      frame = <<0, 0, 3, 8, 0, 0, 0, 0, 123, 0, 0, 234>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "Invalid WINDOW_UPDATE frame (RFC7540§6.9)"}}, <<>>}
+    end
+  end
+
   describe "CONTINUATION frames" do
     test "deserializes frames" do
       frame = <<0, 0, 3, 9, 0x00, 0, 0, 0, 1, 1, 2, 3>>
