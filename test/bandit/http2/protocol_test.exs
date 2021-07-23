@@ -185,9 +185,9 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, true,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, true,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
     end
 
     def no_body_response(conn) do
@@ -199,9 +199,9 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"})
     end
@@ -213,9 +213,9 @@ defmodule HTTP2ProtocolTest do
       # Send unadorned headers
       :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -231,9 +231,9 @@ defmodule HTTP2ProtocolTest do
         headers
       ])
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -250,9 +250,9 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -269,9 +269,9 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -587,15 +587,14 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [
-                  {":status", "200"},
-                  {"cache-control", "max-age=0, private, must-revalidate"},
-                  {"cookie", "a=b"},
-                  {"cookie", "c=d"},
-                  {"cookie", "e=f"}
-                ]}
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"cookie", "a=b"},
+                {"cookie", "c=d"},
+                {"cookie", "e=f"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -735,9 +734,9 @@ defmodule HTTP2ProtocolTest do
       :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
       :ssl.send(socket, [<<0, 0, byte_size(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
 
-      assert SimpleH2Client.recv_headers(socket) ==
-               {:ok, 1, false,
-                [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}]}
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
       assert SimpleH2Client.connection_alive?(socket)
