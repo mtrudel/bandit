@@ -30,13 +30,13 @@ defmodule Bandit.HTTP2.Handler do
       {:ok, frame}, {:ok, :continue, state} ->
         case Connection.handle_frame(frame, socket, state.connection) do
           {:ok, :continue, connection} ->
-            {:cont, {:ok, :continue, %{state | connection: connection}}}
+            {:cont, {:ok, :continue, %{state | connection: connection, buffer: <<>>}}}
 
           {:ok, :close, connection} ->
-            {:halt, {:ok, :close, %{state | connection: connection}}}
+            {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
 
           {:error, reason, connection} ->
-            {:halt, {:error, reason, %{state | connection: connection}}}
+            {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
 
       {:more, rest}, {:ok, :continue, state} ->
@@ -47,10 +47,10 @@ defmodule Bandit.HTTP2.Handler do
         # how to respond to it
         case Connection.handle_error(code, reason, socket, state.connection) do
           {:ok, :close, connection} ->
-            {:halt, {:ok, :close, %{state | connection: connection}}}
+            {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
 
           {:error, reason, connection} ->
-            {:halt, {:error, reason, %{state | connection: connection}}}
+            {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
 
       {:error, {:stream, stream_id, code, reason}}, {:ok, :continue, state} ->
@@ -58,7 +58,7 @@ defmodule Bandit.HTTP2.Handler do
         # how to respond to it
         case Connection.handle_stream_error(stream_id, code, reason, socket, state.connection) do
           {:ok, :continue, connection} ->
-            {:cont, {:ok, :continue, %{state | connection: connection}}}
+            {:cont, {:ok, :continue, %{state | connection: connection, buffer: <<>>}}}
         end
     end)
   end
