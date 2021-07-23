@@ -8,13 +8,14 @@ defmodule Bandit.HTTP2.Connection do
             fragment_frame: nil,
             send_hpack_state: HPack.Table.new(4096),
             recv_hpack_state: HPack.Table.new(4096),
+            recv_window_size: 65_535,
             streams: %Bandit.HTTP2.StreamCollection{},
             peer: nil,
             plug: nil
 
   require Logger
 
-  alias Bandit.HTTP2.{Connection, Constants, Frame, Stream, StreamCollection}
+  alias Bandit.HTTP2.{Connection, Constants, FlowControl, Frame, Stream, StreamCollection}
 
   def init(socket, plug) do
     socket
@@ -143,11 +144,24 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Data{} = frame, socket, connection) do
-    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         {:ok, stream} <- Stream.recv_data(stream, frame.data),
+    with {connection_recv_window_size, connection_window_increment} <-
+           FlowControl.compute_recv_window(connection.recv_window_size, byte_size(frame.data)),
+         {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         {:ok, stream, stream_window_increment} <- Stream.recv_data(stream, frame.data),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      {:ok, :continue, %{connection | streams: streams}}
+      if connection_window_increment > 0 do
+        %Frame.WindowUpdate{stream_id: 0, size_increment: connection_window_increment}
+        |> send_frame(socket)
+      end
+
+      if stream_window_increment > 0 do
+        %Frame.WindowUpdate{stream_id: frame.stream_id, size_increment: stream_window_increment}
+        |> send_frame(socket)
+      end
+
+      {:ok, :continue,
+       %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)

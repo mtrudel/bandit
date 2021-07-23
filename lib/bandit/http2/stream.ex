@@ -9,12 +9,12 @@ defmodule Bandit.HTTP2.Stream do
   flow control at a connection level
   """
 
-  defstruct stream_id: nil, state: nil, pid: nil
+  defstruct stream_id: nil, state: nil, pid: nil, recv_window_size: 65_535
 
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Constants, StreamTask}
+  alias Bandit.HTTP2.{Constants, FlowControl, StreamTask}
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
@@ -154,7 +154,11 @@ defmodule Bandit.HTTP2.Stream do
 
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
     StreamTask.recv_data(stream.pid, data)
-    {:ok, stream}
+
+    {new_window, increment} =
+      FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
+
+    {:ok, %{stream | recv_window_size: new_window}, increment}
   end
 
   def recv_data(%__MODULE__{} = stream, _data) do

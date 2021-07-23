@@ -95,6 +95,11 @@ defmodule SimpleH2Client do
     :ssl.send(socket, [<<byte_size(body)::24, 0::8, flags::8, 0::1, stream_id::31>>, body])
   end
 
+  def recv_window_update(socket) do
+    {:ok, <<4::24, 8::8, 0::8, 0::1, stream_id::31, 0::1, update::31>>} = :ssl.recv(socket, 13)
+    {:ok, stream_id, update}
+  end
+
   def recv_body(socket) do
     {:ok, <<body_length::24, 0::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
 

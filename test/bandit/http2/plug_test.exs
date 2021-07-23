@@ -74,6 +74,9 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_body(socket, 1, false, "D")
     SimpleH2Client.send_body(socket, 1, true, "E")
 
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
     assert SimpleH2Client.successful_response?(socket, 1, true)
   end
 
@@ -92,6 +95,9 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_body(socket, 1, false, "A")
     Process.sleep(100)
     SimpleH2Client.send_body(socket, 1, true, "BC")
+
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
     assert SimpleH2Client.successful_response?(socket, 1, true)
   end
