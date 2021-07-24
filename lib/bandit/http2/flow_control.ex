@@ -3,9 +3,11 @@ defmodule Bandit.HTTP2.FlowControl do
   Helpers for working with flow control window calculations
   """
 
-  @max_window_increment Integer.pow(2, 31) - 1
-  @max_window_size Integer.pow(2, 31) - 1
-  @min_window_size Integer.pow(2, 30)
+  use Bitwise
+
+  @max_window_increment (1 <<< 31) - 1
+  @max_window_size (1 <<< 31) - 1
+  @min_window_size 1 <<< 30
 
   def compute_recv_window(recv_window_size, data_size) do
     # This is what our window size will be after receiving data_size bytes

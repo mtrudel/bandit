@@ -1,5 +1,7 @@
 defmodule HTTP2ProtocolTest do
   use ExUnit.Case, async: true
+
+  use Bitwise
   use ServerHelpers
 
   setup :https_server
@@ -736,7 +738,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      expected_adjustment = Integer.pow(2, 31) - 1 - 65_535 + 2
+      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
@@ -751,7 +753,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      expected_adjustment = Integer.pow(2, 31) - 1 - 65_535 + 2
+      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
@@ -762,7 +764,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 3, true, "OK")
 
-      expected_adjustment = Integer.pow(2, 31) - 1 - 65_535 + 2
+      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
       # We should only see a stream update here
       {:ok, 3, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
@@ -786,12 +788,12 @@ defmodule HTTP2ProtocolTest do
       {:ok, 1, ^adjustment} = SimpleH2Client.recv_window_update(socket)
 
       window = window + adjustment
-      assert window == Integer.pow(2, 31) - 1
+      assert window == (1 <<< 31) - 1
 
       # Send 2^15 - 1 chunks of 2^15 bytes to end up just shy of expecting a
       # window update (we expect one when our window goes below 2^30).
-      iters = Integer.pow(2, 15) - 1
-      chunk = String.duplicate("a", Integer.pow(2, 15))
+      iters = (1 <<< 15) - 1
+      chunk = String.duplicate("a", 1 <<< 15)
 
       for _n <- 1..iters do
         SimpleH2Client.send_body(socket, 1, false, chunk)
@@ -800,7 +802,7 @@ defmodule HTTP2ProtocolTest do
       # Adjust our window down for the frames we just sent
       window = window - iters * byte_size(chunk)
 
-      assert window >= Integer.pow(2, 30)
+      assert window >= 1 <<< 30
 
       # Ensure we have not received a window update by pinging
       assert SimpleH2Client.connection_alive?(socket)
@@ -810,11 +812,11 @@ defmodule HTTP2ProtocolTest do
       window = window - byte_size(chunk)
 
       # We should now be below 2^30 and so we expect an update
-      assert window < Integer.pow(2, 30)
+      assert window < 1 <<< 30
       {:ok, 0, adjustment} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, ^adjustment} = SimpleH2Client.recv_window_update(socket)
       window = window + adjustment
-      assert window == Integer.pow(2, 31) - 1
+      assert window == (1 <<< 31) - 1
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
@@ -842,7 +844,7 @@ defmodule HTTP2ProtocolTest do
       body = String.duplicate("a", 100_000)
       SimpleH2Client.send_body(socket, 1, true, body)
 
-      expected_adjustment = Integer.pow(2, 31) - 1
+      expected_adjustment = (1 <<< 31) - 1
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
