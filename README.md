@@ -3,10 +3,6 @@
 [![Build Status](https://github.com/mtrudel/bandit/workflows/Elixir%20CI/badge.svg)](https://github.com/mtrudel/bandit/actions)
 [![Hex.pm](https://img.shields.io/hexpm/v/bandit.svg?style=flat-square)](https://hex.pm/packages/bandit)
 
-![Under Construction](http://textfiles.com/underconstruction/CoColosseumField5989Construction.gif)
-![Under Construction](http://textfiles.com/underconstruction/MoMotorCity6508imagesconstruction.gif)
-![Under Construction](http://textfiles.com/underconstruction/CoColosseumField5989Construction.gif)
-
 [Documentation](https://hexdocs.pm/bandit/)
 
 Bandit is a pure Elixir HTTP server for Plug apps. It is currently very much a WiP but is maturing quickly (see below 
