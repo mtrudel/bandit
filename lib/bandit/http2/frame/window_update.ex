@@ -6,15 +6,9 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
 
   alias Bandit.HTTP2.Constants
 
-  def deserialize(_flags, 0, <<_reserved::1, 0::31>>) do
+  def deserialize(_flags, _stream_id, <<_reserved::1, 0::31>>) do
     {:error,
      {:connection, Constants.flow_control_error(),
-      "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}
-  end
-
-  def deserialize(_flags, stream_id, <<_reserved::1, 0::31>>) do
-    {:error,
-     {:stream, stream_id, Constants.flow_control_error(),
       "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}
   end
 

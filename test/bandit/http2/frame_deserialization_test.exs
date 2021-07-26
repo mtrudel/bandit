@@ -360,7 +360,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame) ==
                {{:error,
-                 {:stream, 123, Constants.flow_control_error(),
+                 {:connection, Constants.flow_control_error(),
                   "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}, <<>>}
     end
 
