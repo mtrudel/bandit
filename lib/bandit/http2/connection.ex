@@ -8,6 +8,7 @@ defmodule Bandit.HTTP2.Connection do
             fragment_frame: nil,
             send_hpack_state: HPack.Table.new(4096),
             recv_hpack_state: HPack.Table.new(4096),
+            send_window_size: 65_535,
             recv_window_size: 65_535,
             streams: %Bandit.HTTP2.StreamCollection{},
             peer: nil,
@@ -94,9 +95,25 @@ defmodule Bandit.HTTP2.Connection do
     handle_error(Constants.no_error(), "Received GOAWAY", socket, connection)
   end
 
-  def handle_frame(%Frame.WindowUpdate{} = frame, _socket, connection) do
-    Logger.info("Got window update for stream #{frame.stream_id}: #{frame.size_increment}")
-    {:ok, :continue, connection}
+  def handle_frame(%Frame.WindowUpdate{stream_id: 0} = frame, socket, connection) do
+    case FlowControl.update_send_window(connection.send_window_size, frame.size_increment) do
+      {:ok, new_window} -> {:ok, :continue, %{connection | send_window_size: new_window}}
+      {:error, error} -> handle_error(Constants.flow_control_error(), error, socket, connection)
+    end
+  end
+
+  def handle_frame(%Frame.WindowUpdate{} = frame, socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         {:ok, stream} <- Stream.recv_window_update(stream, frame.size_increment),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, :continue, %{connection | streams: streams}}
+    else
+      {:error, {:connection, error_code, error_message}} ->
+        handle_error(error_code, error_message, socket, connection)
+
+      {:error, {:stream, stream_id, error_code, error_message}} ->
+        handle_stream_error(stream_id, error_code, error_message, socket, connection)
+    end
   end
 
   #
@@ -275,11 +292,14 @@ defmodule Bandit.HTTP2.Connection do
   # Stream-level error handling
   #
 
-  def handle_stream_error(stream_id, error_code, _reason, socket, connection) do
-    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
-    |> send_frame(socket)
+  def handle_stream_error(stream_id, error_code, reason, socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
+         _ <- Stream.terminate_stream(stream, reason) do
+      %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+      |> send_frame(socket)
 
-    {:ok, :continue, connection}
+      {:ok, :continue, connection}
+    end
   end
 
   def stream_terminated(pid, reason, socket, connection) do

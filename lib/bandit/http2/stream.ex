@@ -9,7 +9,11 @@ defmodule Bandit.HTTP2.Stream do
   flow control at a connection level
   """
 
-  defstruct stream_id: nil, state: nil, pid: nil, recv_window_size: 65_535
+  defstruct stream_id: nil,
+            state: nil,
+            pid: nil,
+            recv_window_size: 65_535,
+            send_window_size: 65_535
 
   require Integer
   require Logger
@@ -165,6 +169,20 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Constants.protocol_error(), "Received DATA when in #{stream.state}"}}
   end
 
+  def recv_window_update(%__MODULE__{state: :idle}, _increment) do
+    {:error, {:connection, Constants.protocol_error(), "Received WINDOW_UPDATE when in idle"}}
+  end
+
+  def recv_window_update(%__MODULE__{} = stream, increment) do
+    case FlowControl.update_send_window(stream.send_window_size, increment) do
+      {:ok, new_window} ->
+        {:ok, %{stream | send_window_size: new_window}}
+
+      {:error, error} ->
+        {:error, {:stream, stream.stream_id, Constants.flow_control_error(), error}}
+    end
+  end
+
   def recv_rst_stream(%__MODULE__{state: :idle}, _error_code) do
     {:error, {:connection, Constants.protocol_error(), "Received RST_STREAM when in idle"}}
   end
@@ -225,6 +243,16 @@ defmodule Bandit.HTTP2.Stream do
 
   def send_end_of_stream(%__MODULE__{} = stream, false) do
     {:ok, stream}
+  end
+
+  def terminate_stream(%__MODULE__{pid: pid}, reason) when is_pid(pid) do
+    # Just kill the process; we will receive a call to stream_terminated once the process actually
+    # dies, at which point we will transition the struct to the expected final state
+    Process.exit(pid, reason)
+  end
+
+  def terminate_stream(%__MODULE__{}, _reason) do
+    :ok
   end
 
   def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do

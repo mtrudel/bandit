@@ -29,4 +29,12 @@ defmodule Bandit.HTTP2.FlowControl do
       {new_recv_window_size, increment}
     end
   end
+
+  def update_send_window(current_send_window, increment) do
+    if current_send_window + increment > @max_window_size do
+      {:error, "Invalid WINDOW_UPDATE increment RFC7540§6.9.1"}
+    else
+      {:ok, current_send_window + increment}
+    end
+  end
 end
