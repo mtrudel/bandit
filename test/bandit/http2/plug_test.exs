@@ -141,6 +141,19 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, "OK")
   end
 
+  test "sending a body as iolist", context do
+    {:ok, response} =
+      Finch.build(:get, context[:base] <> "/iolist_body_test")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+    assert response.body == "OK"
+  end
+
+  def iolist_body_test(conn) do
+    conn |> send_resp(200, ["O", "K"])
+  end
+
   test "lazy sending a body", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/lazy_body_test")

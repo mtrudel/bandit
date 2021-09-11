@@ -41,7 +41,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
-    if byte_size(body) == 0 do
+    if IO.iodata_length(body) == 0 do
       send_headers(adapter, status, headers, true)
     else
       send_headers(adapter, status, headers, false)

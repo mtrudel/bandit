@@ -37,6 +37,6 @@ defmodule Bandit.HTTP2.Frame do
   def serialize(frame) do
     {type, flags, stream_id, payload} = Serializable.serialize(frame)
 
-    [<<byte_size(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
+    [<<IO.iodata_length(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
   end
 end
