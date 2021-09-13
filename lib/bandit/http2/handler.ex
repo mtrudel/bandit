@@ -68,8 +68,8 @@ defmodule Bandit.HTTP2.Handler do
     Connection.connection_terminated(socket, state.connection)
   end
 
-  def handle_call({:send_headers, stream_id, headers, end_stream}, {from, _tag}, {socket, state}) do
-    case Connection.send_headers(stream_id, from, headers, end_stream, socket, state.connection) do
+  def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do
+    case Connection.send_headers(stream_id, pid, headers, end_stream, socket, state.connection) do
       {:ok, connection} ->
         {:reply, :ok, {socket, %{state | connection: connection}}}
 
@@ -81,9 +81,19 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_call({:send_data, stream_id, data, end_stream}, {from, _tag}, {socket, state}) do
-    case Connection.send_data(stream_id, from, data, end_stream, socket, state.connection) do
-      {:ok, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
+  def handle_call({:send_data, stream_id, data, end_stream}, {pid, _tag} = from, {socket, state}) do
+    # It's possible that this send could not complete syncronously if we do not have enough space
+    # in either/both our connection or stream send windows. In this case Connection.send_data will
+    # return false as the second value of its result tuple, signaling that we should `:no_reply`
+    # to the caller. If/when the send window(s) are enlarged by the client and the data in the
+    # data from this call is sent successfully, the unblock function will be called & our caller
+    # process will be replied to. This ensures that we have backpressure all the way back to the
+    # stream's handler process in the event of window overruns
+    unblock = fn -> GenServer.reply(from, :ok) end
+
+    case Connection.send_data(stream_id, pid, data, end_stream, unblock, socket, state.connection) do
+      {:ok, true, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
+      {:ok, false, connection} -> {:noreply, {socket, %{state | connection: connection}}}
       {:error, reason} -> {:reply, {:error, reason}, {socket, state}}
     end
   end

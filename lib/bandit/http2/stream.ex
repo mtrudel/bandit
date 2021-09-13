@@ -213,6 +213,8 @@ defmodule Bandit.HTTP2.Stream do
   def owner?(%__MODULE__{pid: pid}, pid), do: :ok
   def owner?(%__MODULE__{}, _pid), do: {:error, :not_owner}
 
+  def get_send_window_size(%__MODULE__{} = stream), do: stream.send_window_size
+
   def send_headers(%__MODULE__{state: state} = stream) when state in [:open, :remote_closed] do
     {:ok, stream}
   end
@@ -221,11 +223,15 @@ defmodule Bandit.HTTP2.Stream do
     {:error, :invalid_state}
   end
 
-  def send_data(%__MODULE__{state: state} = stream) when state in [:open, :remote_closed] do
-    {:ok, stream}
+  def send_data(%__MODULE__{state: state} = stream, len) when state in [:open, :remote_closed] do
+    if len <= stream.send_window_size do
+      {:ok, %{stream | send_window_size: stream.send_window_size - len}}
+    else
+      {:error, :insufficient_window_size}
+    end
   end
 
-  def send_data(%__MODULE__{}) do
+  def send_data(%__MODULE__{}, _len) do
     {:error, :invalid_state}
   end
 

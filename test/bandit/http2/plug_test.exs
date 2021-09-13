@@ -219,6 +219,120 @@ defmodule HTTP2PlugTest do
     )
   end
 
+  test "sending a body blocks on connection flow control", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/blocking_test", context.port)
+    SimpleH2Client.successful_response?(socket, 1, false)
+
+    # Give ourselves lots of room on the stream so we can focus on the
+    # effect of the connection window
+    SimpleH2Client.send_window_update(socket, 1, 1_000_000)
+
+    # Consume 6 10k chunks
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+
+    # Consume 1 5_535 byte chunk
+    {:ok, 1, false, chunk} = SimpleH2Client.recv_body(socket)
+    assert byte_size(chunk) == 5_535
+
+    # Sleep a bit before updating the window (we expect to see this delay in
+    # the timings for the blocked chunk below)
+    Process.sleep(100)
+
+    # Grow the connection window by 100 and observe we now unlocked the server
+    SimpleH2Client.send_window_update(socket, 0, 100_000)
+
+    # This will return the 10k - 5_535 byte remainder of the 7th chunk
+    SimpleH2Client.recv_body(socket)
+
+    # This will return our stats. Run some tests on them
+    {:ok, 1, false, timings} = SimpleH2Client.recv_body(socket)
+    [non_blocked, blocked] = Jason.decode!(timings)
+
+    # Ensure the the non-blocked chunks (60k worth) were *much* faster than the
+    # blocked chunk (which only did 10k)
+    assert non_blocked < 10
+    assert blocked > 100
+    assert blocked < 200
+  end
+
+  test "sending a body blocks on stream flow control", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    # Give ourselves lots of room on the connection so we can focus on the
+    # effect of the stream window
+    SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/blocking_test", context.port)
+    SimpleH2Client.successful_response?(socket, 1, false)
+
+    # Consume 6 10k chunks
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+    SimpleH2Client.recv_body(socket)
+
+    # Consume 1 5_535 byte chunk
+    {:ok, 1, false, chunk} = SimpleH2Client.recv_body(socket)
+    assert byte_size(chunk) == 5_535
+
+    # Sleep a bit before updating the window (we expect to see this delay in
+    # the timings for the blocked chunk below)
+    Process.sleep(100)
+
+    # Grow the stream window by 100 and observe we now unlocked the server
+    SimpleH2Client.send_window_update(socket, 1, 100_000)
+
+    # This will return the 10k - 5_535 byte remainder of the 7th chunk
+    SimpleH2Client.recv_body(socket)
+
+    # This will return our stats. Run some tests on them
+    {:ok, 1, false, timings} = SimpleH2Client.recv_body(socket)
+    [non_blocked, blocked] = Jason.decode!(timings)
+
+    # Ensure the the non-blocked chunks (60k worth) were *much* faster than the
+    # blocked chunk (which only did 10k)
+    assert non_blocked < 10
+    assert blocked > 100
+    assert blocked < 200
+  end
+
+  def blocking_test(conn) do
+    data = String.duplicate("a", 10_000)
+
+    start_time = System.monotonic_time(:millisecond)
+
+    # This entire block of writes will proceed without blocking
+    conn = conn |> send_chunked(200)
+    {:ok, conn} = conn |> chunk(data)
+    {:ok, conn} = conn |> chunk(data)
+    {:ok, conn} = conn |> chunk(data)
+    {:ok, conn} = conn |> chunk(data)
+    {:ok, conn} = conn |> chunk(data)
+    {:ok, conn} = conn |> chunk(data)
+
+    mid_time = System.monotonic_time(:millisecond)
+
+    # This write will block until the client extends the send window
+    {:ok, conn} = conn |> chunk(data)
+
+    end_time = System.monotonic_time(:millisecond)
+
+    # Send timings of how long the unblocked writes took (to write 60k) and
+    # how long the blocked write took (to write a measly 10k)
+    {:ok, conn} = conn |> chunk(Jason.encode!([mid_time - start_time, end_time - mid_time]))
+
+    conn
+  end
+
   @tag :skip
   test "sending informational responses", _context do
     # TODO land inform support in 0.3.4

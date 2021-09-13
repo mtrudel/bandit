@@ -126,7 +126,11 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   defp send_data(adapter, data, end_stream) do
-    GenServer.call(adapter.connection, {:send_data, adapter.stream_id, data, end_stream})
+    GenServer.call(
+      adapter.connection,
+      {:send_data, adapter.stream_id, data, end_stream},
+      :infinity
+    )
   end
 
   defp split_cookies(headers) do

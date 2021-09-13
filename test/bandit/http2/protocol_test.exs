@@ -731,8 +731,8 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
-  describe "WINDOW_UPDATE frames" do
-    test "issues a large window update on first uploaded DATA frame", context do
+  describe "WINDOW_UPDATE frames (upload direction)" do
+    test "issues a large receive window update on first uploaded DATA frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
@@ -747,7 +747,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
-    test "manages connection and stream windows separately", context do
+    test "manages connection and stream receive windows separately", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
@@ -773,7 +773,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
-    test "does not issue a subsequent update until window goes below 2^30", context do
+    test "does not issue a subsequent update until receive window goes below 2^30", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/large_post", context.port)
@@ -839,6 +839,8 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
 
       # Send more than the open window (65_535 initially) to overrun on purpose
       body = String.duplicate("a", 100_000)
@@ -851,6 +853,114 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, body}
+    end
+  end
+
+  describe "WINDOW_UPDATE frames (download direction)" do
+    test "respects the remaining space in the connection's send window", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      data = String.duplicate("a", 65_535 + 100 + 1)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+
+      # Give ourselves lots of room on the stream
+      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
+
+      SimpleH2Client.send_body(socket, 1, true, data)
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+
+      # Expect 65_535 bytes as that is our initial connection window
+      expected_data = String.duplicate("a", 65_535)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+
+      # Grow the connection window by 100 and observe that we get 100 more bytes
+      SimpleH2Client.send_window_update(socket, 0, 100)
+      expected_data = String.duplicate("a", 100)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+
+      # Grow the connection window by another 100 and observe that we get the rest of the response
+      # Also note that we receive end_of_stream here
+      SimpleH2Client.send_window_update(socket, 0, 100)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "a"}
+    end
+
+    test "respects the remaining space in the stream's send window", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Give ourselves lots of room on the connection
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+
+      data = String.duplicate("a", 65_535 + 100 + 1)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, true, data)
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+
+      # Expect 65_535 bytes as that is our initial stream window
+      expected_data = String.duplicate("a", 65_535)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+
+      # Grow the stream window by 100 and observe that we get 100 more bytes
+      SimpleH2Client.send_window_update(socket, 1, 100)
+      expected_data = String.duplicate("a", 100)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+
+      # Grow the stream window by another 100 and observe that we get the rest of the response
+      # Also note that we receive end_of_stream here
+      SimpleH2Client.send_window_update(socket, 1, 100)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "a"}
+    end
+
+    test "respects both stream and connection windows in complex scenarios", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      data = String.duplicate("a", 65_535 + 100)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+
+      SimpleH2Client.send_body(socket, 1, true, data)
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert {:ok, 1, false, [{":status", "200"} | _], ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Expect 65_535 bytes as that is our initial connection window
+      expected_data = String.duplicate("a", 65_535)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+
+      # Start a second stream and observe that it gets blocked right away
+      SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
+
+      SimpleH2Client.send_body(socket, 3, true, data)
+      assert {:ok, 3, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
+
+      # Grow the connection window by 65_535 and observe that we get bytes on 3
+      # since 1 is blocked on its stream window
+      SimpleH2Client.send_window_update(socket, 0, 65_535)
+      expected_data = String.duplicate("a", 65_535)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, expected_data}
+
+      # Grow the stream windows such that we expect to see 100 bytes from 1 and 50 bytes from
+      # 3 (note that 1 is queued at a higher priority than 3 due to FIFO ordering) Also note that
+      # we receive end_of_stream on stream 1 here
+      SimpleH2Client.send_window_update(socket, 3, 100)
+      SimpleH2Client.send_window_update(socket, 1, 100)
+      SimpleH2Client.send_window_update(socket, 0, 150)
+      expected_data = String.duplicate("a", 100)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected_data}
+      expected_data = String.duplicate("a", 50)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, expected_data}
+
+      # Finally grow our connection window and verify we get the last of stream 3
+      SimpleH2Client.send_window_update(socket, 0, 50)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, expected_data}
+    end
+
+    @tag :skip
+    test "updates stream send window based on SETTINGS frames", _context do
     end
   end
 

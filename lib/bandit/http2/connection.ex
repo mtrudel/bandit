@@ -11,6 +11,7 @@ defmodule Bandit.HTTP2.Connection do
             send_window_size: 65_535,
             recv_window_size: 65_535,
             streams: %Bandit.HTTP2.StreamCollection{},
+            pending_sends: [],
             peer: nil,
             plug: nil
 
@@ -97,16 +98,20 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Frame.WindowUpdate{stream_id: 0} = frame, socket, connection) do
     case FlowControl.update_send_window(connection.send_window_size, frame.size_increment) do
-      {:ok, new_window} -> {:ok, :continue, %{connection | send_window_size: new_window}}
+      {:ok, new_window} -> do_pending_sends(socket, %{connection | send_window_size: new_window})
       {:error, error} -> handle_error(Constants.flow_control_error(), error, socket, connection)
     end
   end
+
+  #
+  # Stream-level receiving
+  #
 
   def handle_frame(%Frame.WindowUpdate{} = frame, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          {:ok, stream} <- Stream.recv_window_update(stream, frame.size_increment),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      {:ok, :continue, %{connection | streams: streams}}
+      do_pending_sends(socket, %{connection | streams: streams})
     else
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
@@ -118,10 +123,6 @@ defmodule Bandit.HTTP2.Connection do
         handle_error(Constants.internal_error(), error, socket, connection)
     end
   end
-
-  #
-  # Stream-level receiving
-  #
 
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with block <- frame.fragment,
@@ -246,22 +247,85 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  def send_data(stream_id, pid, data, end_stream, socket, connection) do
+  def send_data(stream_id, pid, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
-         :ok <- Stream.owner?(stream, pid),
-         {:ok, stream} <- Stream.send_data(stream),
-         {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream),
-         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      %Frame.Data{stream_id: stream_id, end_stream: end_stream, data: data}
-      |> send_frame(socket)
+         :ok <- Stream.owner?(stream, pid) do
+      do_send_data(stream_id, data, end_stream, on_unblock, socket, connection)
+    end
+  end
 
-      {:ok, %{connection | streams: streams}}
+  defp do_send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
+         stream_window_size <- Stream.get_send_window_size(stream),
+         connection_window_size <- get_send_window_size(connection),
+         max_length_to_send <- min(stream_window_size, connection_window_size),
+         {data_to_send, length_to_send, rest} <- split_data(data, max_length_to_send),
+         {:ok, stream} <- Stream.send_data(stream, length_to_send),
+         connection <- update_send_window(connection, length_to_send),
+         end_stream_to_send <- end_stream && rest == <<>>,
+         {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream_to_send),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      if end_stream_to_send || IO.iodata_length(data_to_send) > 0 do
+        %Frame.Data{stream_id: stream_id, end_stream: end_stream_to_send, data: data_to_send}
+        |> send_frame(socket)
+      end
+
+      if byte_size(rest) == 0 do
+        {:ok, true, %{connection | streams: streams}}
+      else
+        pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
+        {:ok, false, %{connection | streams: streams, pending_sends: pending_sends}}
+      end
     else
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
 
       {:error, error} ->
         {:error, error}
+    end
+  end
+
+  defp get_send_window_size(connection), do: connection.send_window_size
+
+  defp update_send_window(connection, delta) do
+    %{connection | send_window_size: connection.send_window_size - delta}
+  end
+
+  defp split_data(data, desired_length) do
+    data_length = IO.iodata_length(data)
+
+    if data_length <= desired_length do
+      {data, data_length, <<>>}
+    else
+      <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
+      {to_send, desired_length, rest}
+    end
+  end
+
+  defp do_pending_sends(socket, connection) do
+    connection.pending_sends
+    |> Enum.reverse()
+    |> Enum.reduce_while(connection, fn pending_send, connection ->
+      connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
+
+      {stream_id, rest, end_stream, on_unblock} = pending_send
+
+      case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
+        {:ok, true, connection} ->
+          on_unblock.()
+          {:cont, connection}
+
+        {:ok, false, connection} ->
+          {:cont, connection}
+
+        error ->
+          {:halt, error}
+      end
+    end)
+    |> case do
+      %__MODULE__{} = connection -> {:ok, :continue, connection}
+      {:error, error} -> {:error, error, connection}
+      error -> error
     end
   end
 
