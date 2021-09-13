@@ -71,6 +71,18 @@ defmodule HTTP2FrameSerializationTest do
     end
   end
 
+  describe "PRIORITY frames" do
+    test "serializes frames" do
+      frame = %Frame.Priority{
+        stream_id: 123,
+        dependent_stream_id: 456,
+        weight: 78
+      }
+
+      assert Frame.serialize(frame) == [<<0, 0, 5, 2, 0, 0, 0, 0, 123>>, <<0::1, 456::31, 78::8>>]
+    end
+  end
+
   describe "RST_STREAM frames" do
     test "serializes frames" do
       frame = %Frame.RstStream{

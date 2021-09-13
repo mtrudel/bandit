@@ -12,6 +12,7 @@ defmodule Bandit.HTTP2.Frame do
     |> case do
       0x0 -> Frame.Data.deserialize(flags, stream_id, payload)
       0x1 -> Frame.Headers.deserialize(flags, stream_id, payload)
+      0x2 -> Frame.Priority.deserialize(flags, stream_id, payload)
       0x3 -> Frame.RstStream.deserialize(flags, stream_id, payload)
       0x4 -> Frame.Settings.deserialize(flags, stream_id, payload)
       0x6 -> Frame.Ping.deserialize(flags, stream_id, payload)

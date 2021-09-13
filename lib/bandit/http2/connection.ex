@@ -192,6 +192,24 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def handle_frame(
+        %Frame.Priority{stream_id: stream_id, dependent_stream_id: stream_id},
+        socket,
+        connection
+      ) do
+    handle_stream_error(
+      stream_id,
+      Constants.protocol_error(),
+      "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
+      socket,
+      connection
+    )
+  end
+
+  def handle_frame(%Frame.Priority{}, _socket, connection) do
+    {:ok, :continue, connection}
+  end
+
   def handle_frame(%Frame.RstStream{} = frame, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          {:ok, stream} <- Stream.recv_rst_stream(stream, frame.error_code),

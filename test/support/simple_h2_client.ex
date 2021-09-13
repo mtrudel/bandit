@@ -79,6 +79,10 @@ defmodule SimpleH2Client do
     ])
   end
 
+  def send_priority(socket, stream_id, dependent_stream_id, weight) do
+    :ssl.send(socket, <<0, 0, 5, 2, 0, stream_id::32, dependent_stream_id::32, weight::8>>)
+  end
+
   def successful_response?(socket, stream_id, end_stream, ctx \\ HPack.Table.new(4096)) do
     {:ok, ^stream_id, ^end_stream, [{":status", "200"} | _], _ctx} = recv_headers(socket, ctx)
   end

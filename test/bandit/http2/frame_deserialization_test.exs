@@ -186,6 +186,31 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "PRIORITY frames" do
+    test "deserializes frames" do
+      frame = <<0, 0, 5, 2, 0, 0, 0, 0, 1, 0, 0, 0, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Priority{stream_id: 1, dependent_stream_id: 2, weight: 3}}, <<>>}
+    end
+
+    test "rejects frames with 0 stream_id" do
+      frame = <<0, 0, 5, 2, 0, 0, 0, 0, 0, 0, 0, 0, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error, {:connection, 1, "PRIORITY frame with zero stream_id (RFC7540§6.3)"}},
+                <<>>}
+    end
+
+    test "rejects frames with invalid size" do
+      frame = <<0, 0, 6, 2, 0, 0, 0, 0, 1, 0, 0, 0, 2, 3, 0>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:connection, 6, "Invalid payload size in PRIORITY frame (RFC7540§6.3)"}}, <<>>}
+    end
+  end
+
   describe "RST_STREAM frames" do
     test "deserializes frames" do
       frame = <<0, 0, 4, 3, 0, 0, 0, 0, 1, 0, 0, 0, 123>>

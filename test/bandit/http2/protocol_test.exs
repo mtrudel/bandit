@@ -612,6 +612,25 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "PRIORITY frames" do
+    test "receives PRIORITY frames without complaint (and does nothing)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_priority(socket, 1, 3, 4)
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "rejects PRIORITY frames which depend on itself", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_priority(socket, 1, 1, 4)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+  end
+
   describe "RST_STREAM frames" do
     @tag capture_log: true
     test "sends RST_FRAME with no error if stream task ends without closed stream", context do
