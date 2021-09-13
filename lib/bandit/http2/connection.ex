@@ -318,14 +318,14 @@ defmodule Bandit.HTTP2.Connection do
         {:ok, false, connection} ->
           {:cont, connection}
 
-        error ->
-          {:halt, error}
+        other ->
+          {:halt, other}
       end
     end)
     |> case do
       %__MODULE__{} = connection -> {:ok, :continue, connection}
       {:error, error} -> {:error, error, connection}
-      error -> error
+      other -> other
     end
   end
 
