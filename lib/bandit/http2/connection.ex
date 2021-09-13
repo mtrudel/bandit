@@ -359,7 +359,7 @@ defmodule Bandit.HTTP2.Connection do
   # Stream-level error handling
   #
 
-  def handle_stream_error(stream_id, error_code, reason, socket, connection) do
+  defp handle_stream_error(stream_id, error_code, reason, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          _ <- Stream.terminate_stream(stream, reason) do
       %Frame.RstStream{stream_id: stream_id, error_code: error_code}

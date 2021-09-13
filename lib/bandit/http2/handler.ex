@@ -52,14 +52,6 @@ defmodule Bandit.HTTP2.Handler do
           {:error, reason, connection} ->
             {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
-
-      {:error, {:stream, stream_id, code, reason}}, {:ok, :continue, state} ->
-        # We encountered an error while deserializing the frame. Let the connection figure out
-        # how to respond to it
-        case Connection.handle_stream_error(stream_id, code, reason, socket, state.connection) do
-          {:ok, :continue, connection} ->
-            {:cont, {:ok, :continue, %{state | connection: connection, buffer: <<>>}}}
-        end
     end)
   end
 
