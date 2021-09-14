@@ -115,6 +115,36 @@ defmodule HTTP2FrameSerializationTest do
     end
   end
 
+  describe "PUSH_PROMISE frames" do
+    test "serializes frames" do
+      frame = %Frame.PushPromise{
+        stream_id: 123,
+        end_headers: false,
+        promised_stream_id: 234,
+        fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [
+               <<0, 0, 7, 5, 0, 0, 0, 0, 123>>,
+               <<0, 0, 0, 234, 1, 2, 3>>
+             ]
+    end
+
+    test "serializes frames with end_headers set" do
+      frame = %Frame.PushPromise{
+        stream_id: 123,
+        end_headers: true,
+        promised_stream_id: 234,
+        fragment: <<1, 2, 3>>
+      }
+
+      assert Frame.serialize(frame) == [
+               <<0, 0, 7, 5, 0x04, 0, 0, 0, 123>>,
+               <<0, 0, 0, 234, 1, 2, 3>>
+             ]
+    end
+  end
+
   describe "PING frames" do
     test "serializes non-ack frames" do
       frame = %Frame.Ping{ack: false, payload: <<1, 2, 3, 4, 5, 6, 7, 8>>}

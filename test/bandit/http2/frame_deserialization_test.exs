@@ -294,6 +294,64 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "PUSH_PROMISE frames" do
+    test "deserializes frames with padding" do
+      frame = <<0, 0, 10, 5, 0x08, 0, 0, 0, 1, 2, 0, 0, 0, 3, 1, 2, 3, 4, 5>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.PushPromise{
+                   stream_id: 1,
+                   end_headers: false,
+                   promised_stream_id: 3,
+                   fragment: <<1, 2, 3>>
+                 }}, <<>>}
+    end
+
+    test "deserializes frames with no padding" do
+      frame = <<0, 0, 7, 5, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.PushPromise{
+                   stream_id: 1,
+                   end_headers: false,
+                   promised_stream_id: 3,
+                   fragment: <<1, 2, 3>>
+                 }}, <<>>}
+    end
+
+    test "sets end_headers" do
+      frame = <<0, 0, 7, 5, 0x04, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok,
+                 %Frame.PushPromise{
+                   stream_id: 1,
+                   end_headers: true,
+                   promised_stream_id: 3,
+                   fragment: <<1, 2, 3>>
+                 }}, <<>>}
+    end
+
+    test "rejects frames with 0 stream_id" do
+      frame = <<0, 0, 7, 5, 0, 0, 0, 0, 0, 0, 0, 0, 3, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:connection, 1, "PUSH_PROMISE frame with zero stream_id (RFC7540§6.6)"}}, <<>>}
+    end
+
+    test "rejects frames with invalid padding" do
+      frame = <<0, 0, 8, 5, 0x08, 0, 0, 0, 1, 4, 0, 0, 0, 3, 1, 2, 3>>
+
+      assert Frame.deserialize(frame) ==
+               {{:error,
+                 {:connection, 1, "PUSH_PROMISE frame with invalid padding length (RFC7540§6.6)"}},
+                <<>>}
+    end
+  end
+
   describe "PING frames" do
     test "deserializes non-ack frames" do
       frame = <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
