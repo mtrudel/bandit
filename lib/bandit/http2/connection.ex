@@ -224,6 +224,15 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def handle_frame(%Frame.PushPromise{}, socket, connection) do
+    handle_error(
+      Constants.protocol_error(),
+      "Received PUSH_PROMISE (RFC7540§8.2)",
+      socket,
+      connection
+    )
+  end
+
   # Catch-all handler for unknown frame types
 
   def handle_frame(%Frame.Unknown{} = frame, _socket, connection) do

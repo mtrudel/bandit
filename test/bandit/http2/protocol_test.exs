@@ -711,6 +711,17 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "PUSH_PROMISE frames" do
+    @tag capture_log: true
+    test "the server should reject any received PUSH_PROMISE frames", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      :ssl.send(socket, <<0, 0, 7, 5, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+    end
+  end
+
   describe "PING frames" do
     test "the server should acknowledge a client's PING frames", context do
       socket = SimpleH2Client.setup_connection(context)
