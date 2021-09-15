@@ -5,15 +5,15 @@ defmodule Bandit.HTTP2.StreamTask do
 
   alias Bandit.HTTP2.Adapter
 
-  def start_link(connection, stream_id, peer, headers, plug) do
-    Task.start_link(__MODULE__, :run, [connection, stream_id, peer, headers, plug])
+  def start_link(connection, stream_id, headers, peer, plug) do
+    Task.start_link(__MODULE__, :run, [connection, stream_id, headers, peer, plug])
   end
 
   def recv_data(pid, data), do: Process.send(pid, {:data, data}, [])
   def recv_end_of_stream(pid), do: Process.send(pid, :end_stream, [])
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
-  def run(connection, stream_id, peer, headers, {plug, plug_opts}) do
+  def run(connection, stream_id, headers, peer, {plug, plug_opts}) do
     headers = combine_cookie_crumbs(headers)
 
     {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id}}

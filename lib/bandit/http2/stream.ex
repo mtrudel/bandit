@@ -41,7 +41,7 @@ defmodule Bandit.HTTP2.Stream do
          :ok <- exactly_one_instance_of(headers, ":method", stream.stream_id),
          :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
          :ok <- non_empty_path(headers, stream.stream_id) do
-      {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, peer, headers, plug)
+      {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
       {:ok, %{stream | state: :open, pid: pid}}
     end
   end
