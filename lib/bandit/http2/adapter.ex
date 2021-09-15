@@ -101,9 +101,11 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def inform(_req, _status, _headers) do
-    # TODO send headers
-    {:error, :not_supported}
+  def inform(adapter, status, headers) do
+    headers = split_cookies(headers)
+    headers = [{":status", to_string(status)} | headers]
+
+    GenServer.call(adapter.connection, {:send_headers, adapter.stream_id, headers, false})
   end
 
   @impl Plug.Conn.Adapter

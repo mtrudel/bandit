@@ -333,9 +333,22 @@ defmodule HTTP2PlugTest do
     conn
   end
 
-  @tag :skip
-  test "sending informational responses", _context do
-    # TODO land inform support in 0.3.4
+  test "sending informational responses", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_inform", context.port)
+
+    expected_headers = [{":status", "100"}, {"x-from", "inform"}]
+    assert {:ok, 1, false, ^expected_headers, ctx} = SimpleH2Client.recv_headers(socket)
+    assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
+    assert {:ok, 1, true, "Informer"} = SimpleH2Client.recv_body(socket)
+
+    assert SimpleH2Client.connection_alive?(socket)
+  end
+
+  def send_inform(conn) do
+    conn = conn |> inform(100, [{"x-from", "inform"}])
+    conn |> send_resp(200, "Informer")
   end
 
   test "server push messages", context do
