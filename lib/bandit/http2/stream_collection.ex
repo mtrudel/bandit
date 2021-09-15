@@ -88,6 +88,9 @@ defmodule Bandit.HTTP2.StreamCollection do
     end
   end
 
+  @spec next_local_stream_id(t()) :: Stream.stream_id()
+  def next_local_stream_id(collection), do: collection.last_local_stream_id + 2
+
   @spec last_remote_stream_id(t()) :: Stream.stream_id()
   def last_remote_stream_id(collection), do: collection.last_remote_stream_id
 end

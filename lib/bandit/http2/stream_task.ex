@@ -15,9 +15,10 @@ defmodule Bandit.HTTP2.StreamTask do
 
   def run(connection, stream_id, headers, peer, {plug, plug_opts}) do
     headers = combine_cookie_crumbs(headers)
+    uri = uri(headers)
 
-    {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id}}
-    |> conn(method(headers), uri(headers), peer.address, headers)
+    {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
+    |> conn(method(headers), uri, peer.address, headers)
     |> plug.call(plug_opts)
     |> case do
       %Plug.Conn{state: :unset} ->

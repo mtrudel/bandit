@@ -24,14 +24,14 @@ defmodule Bandit.HTTP2.Stream do
   @type stream_id :: non_neg_integer()
 
   @typedoc "An HTTP/2 stream state"
-  @type state :: :idle | :open | :local_closed | :remote_closed | :closed
+  @type state :: :reserved_local | :idle | :open | :local_closed | :remote_closed | :closed
 
   @typedoc "A single HTTP/2 stream"
   @type t :: %__MODULE__{stream_id: stream_id(), state: state(), pid: pid() | nil}
 
   def recv_headers(%__MODULE__{} = stream, headers, peer, plug) do
     with :ok <- stream_is_idle(stream),
-         :ok <- stream_id_is_valid(stream.stream_id),
+         :ok <- stream_id_is_valid_client(stream.stream_id),
          :ok <- headers_all_lowercase(headers, stream.stream_id),
          :ok <- pseudo_headers_all_request(headers, stream.stream_id),
          :ok <- pseudo_headers_first(headers, stream.stream_id),
@@ -46,6 +46,27 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  def send_push_headers(%__MODULE__{} = stream, headers) do
+    with :ok <- stream_is_idle(stream),
+         :ok <- stream_id_is_valid_server(stream.stream_id),
+         :ok <- headers_all_lowercase(headers, stream.stream_id),
+         :ok <- pseudo_headers_all_request(headers, stream.stream_id),
+         :ok <- pseudo_headers_first(headers, stream.stream_id),
+         :ok <- no_connection_headers(headers, stream.stream_id),
+         :ok <- valid_te_header(headers, stream.stream_id),
+         :ok <- exactly_one_instance_of(headers, ":scheme", stream.stream_id),
+         :ok <- exactly_one_instance_of(headers, ":method", stream.stream_id),
+         :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
+         :ok <- non_empty_path(headers, stream.stream_id) do
+      {:ok, %{stream | state: :reserved_local}}
+    end
+  end
+
+  def start_push(%__MODULE__{state: :reserved_local} = stream, headers, peer, plug) do
+    {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
+    {:ok, %{stream | state: :remote_closed, pid: pid}}
+  end
+
   defp stream_is_idle(stream) do
     if stream.state == :idle do
       :ok
@@ -55,11 +76,20 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   # RFC7540§5.1.1 - client initiated streams must be odd
-  defp stream_id_is_valid(stream_id) do
+  defp stream_id_is_valid_client(stream_id) do
     if Integer.is_odd(stream_id) do
       :ok
     else
       {:error, {:connection, Constants.protocol_error(), "Received HEADERS with even stream_id"}}
+    end
+  end
+
+  # RFC7540§5.1.1 - server initiated streams must be even
+  defp stream_id_is_valid_server(stream_id) do
+    if Integer.is_even(stream_id) do
+      :ok
+    else
+      {:error, {:connection, Constants.protocol_error(), "Sending HEADERS with odd stream_id"}}
     end
   end
 

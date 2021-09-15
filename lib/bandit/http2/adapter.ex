@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
 
-  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false
+  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false, uri: nil
 
   @behaviour Plug.Conn.Adapter
 
@@ -107,9 +107,14 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def push(_req, _path, _headers) do
-    # TODO send PUSH_PROMISE
-    {:error, :not_supported}
+  def push(adapter, path, headers) do
+    headers = split_cookies(headers)
+    headers = [{":path", path} | headers]
+    headers = [{":authority", adapter.uri.authority} | headers]
+    headers = [{":scheme", adapter.uri.scheme} | headers]
+    headers = [{":method", "GET"} | headers]
+
+    GenServer.call(adapter.connection, {:send_push, adapter.stream_id, headers})
   end
 
   @impl Plug.Conn.Adapter

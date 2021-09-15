@@ -52,7 +52,7 @@ defmodule SimpleH2Client do
     :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, last_stream_id::32, error_code::32>>)
   end
 
-  def send_simple_headers(socket, stream_id, verb, path, port) do
+  def send_simple_headers(socket, stream_id, verb, path, port, ctx \\ HPack.Table.new(4096)) do
     {verb, end_stream} =
       case verb do
         :get -> {"GET", true}
@@ -60,16 +60,21 @@ defmodule SimpleH2Client do
         :post -> {"POST", false}
       end
 
-    send_headers(socket, stream_id, end_stream, [
-      {":method", verb},
-      {":path", path},
-      {":scheme", "https"},
-      {":authority", "localhost:#{port}"}
-    ])
+    send_headers(
+      socket,
+      stream_id,
+      end_stream,
+      [
+        {":method", verb},
+        {":path", path},
+        {":scheme", "https"},
+        {":authority", "localhost:#{port}"}
+      ],
+      ctx
+    )
   end
 
-  def send_headers(socket, stream_id, end_stream, headers) do
-    ctx = HPack.Table.new(4096)
+  def send_headers(socket, stream_id, end_stream, headers, ctx \\ HPack.Table.new(4096)) do
     {:ok, _, headers} = HPack.encode(headers, ctx)
     flags = if end_stream, do: 0x05, else: 0x04
 
@@ -77,6 +82,8 @@ defmodule SimpleH2Client do
       <<byte_size(headers)::24, 1::8, flags::8, 0::1, stream_id::31>>,
       headers
     ])
+
+    {:ok, ctx}
   end
 
   def send_priority(socket, stream_id, dependent_stream_id, weight) do
@@ -117,6 +124,15 @@ defmodule SimpleH2Client do
       {:ok, body} = :ssl.recv(socket, body_length)
       {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
     end
+  end
+
+  def recv_push_promise(socket, ctx \\ HPack.Table.new(4096)) do
+    {:ok, <<length::24, 5::8, 0x4::8, 0::1, stream_id::31, 0::1, promised_stream_id::31>>} =
+      :ssl.recv(socket, 13)
+
+    {:ok, header_block} = :ssl.recv(socket, length - 4)
+    {:ok, ctx, headers} = HPack.decode(header_block, ctx)
+    {:ok, stream_id, promised_stream_id, headers, ctx}
   end
 
   def send_rst_stream(socket, stream_id, error_code) do

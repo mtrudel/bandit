@@ -356,6 +356,34 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def send_push(stream_id, headers, socket, connection) do
+    with promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
+         {:ok, stream} <- StreamCollection.get_stream(connection.streams, promised_stream_id),
+         {:ok, stream} <- Stream.send_push_headers(stream, headers),
+         {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
+         :ok <- send_push_promise_frame(stream_id, promised_stream_id, block, socket),
+         {:ok, stream} <- Stream.start_push(stream, headers, connection.peer, connection.plug),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
+    else
+      {:error, {:connection, _error_code, error_message}} -> {:error, error_message}
+      {:error, {:stream, _stream_id, _error_code, error_message}} -> {:error, error_message}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  defp send_push_promise_frame(stream_id, promised_stream_id, block, socket) do
+    %Frame.PushPromise{
+      stream_id: stream_id,
+      end_headers: true,
+      promised_stream_id: promised_stream_id,
+      fragment: block
+    }
+    |> send_frame(socket)
+
+    :ok
+  end
+
   #
   # Connection-level error handling
   #
