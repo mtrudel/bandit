@@ -1,7 +1,7 @@
 defmodule HTTP2FrameSerializationTest do
   use ExUnit.Case, async: true
 
-  alias Bandit.HTTP2.Frame
+  alias Bandit.HTTP2.{Frame, Settings}
 
   describe "DATA frames" do
     test "serializes frames" do
@@ -95,17 +95,40 @@ defmodule HTTP2FrameSerializationTest do
   end
 
   describe "SETTINGS frames" do
-    test "serializes non-ack frames when there are no contained settings" do
-      frame = %Frame.Settings{ack: false, settings: %{}}
+    test "serializes non-ack frames when there are no non-default settings" do
+      frame = %Frame.Settings{ack: false, settings: %Settings{}}
 
-      assert Frame.serialize(frame) == [<<0, 0, 0, 4, 0, 0, 0, 0, 0>>, <<>>]
+      assert Frame.serialize(frame) == [
+               <<0, 0, 0, 4, 0, 0, 0, 0, 0>>,
+               [<<>>, <<>>, <<>>, <<>>, <<>>, <<>>]
+             ]
     end
 
-    test "serializes non-ack frames when there are contained settings" do
-      frame = %Frame.Settings{ack: false, settings: %{1 => 2, 100 => 200}}
+    test "serializes non-ack frames when there are non-default settings" do
+      frame = %Frame.Settings{
+        ack: false,
+        settings: %Settings{
+          header_table_size: 1000,
+          enable_push: false,
+          max_concurrent_streams: 2000,
+          initial_window_size: 3000,
+          max_frame_size: 40_000,
+          max_header_list_size: 5000
+        }
+      }
 
       assert Frame.serialize(frame) ==
-               [<<0, 0, 12, 4, 0, 0, 0, 0, 0>>, <<0, 1, 0, 0, 0, 2, 0, 100, 0, 0, 0, 200>>]
+               [
+                 <<0, 0, 36, 4, 0, 0, 0, 0, 0>>,
+                 [
+                   <<2::16, 0::32>>,
+                   <<1::16, 1000::32>>,
+                   <<4::16, 3000::32>>,
+                   <<3::16, 2000::32>>,
+                   <<5::16, 40_000::32>>,
+                   <<6::16, 5000::32>>
+                 ]
+               ]
     end
 
     test "serializes ack frames" do

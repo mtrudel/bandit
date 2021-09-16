@@ -1,7 +1,7 @@
 defmodule HTTP2FrameDeserializationTest do
   use ExUnit.Case, async: true
 
-  alias Bandit.HTTP2.{Constants, Frame}
+  alias Bandit.HTTP2.{Constants, Frame, Settings}
 
   describe "insufficient data" do
     test "asks for more" do
@@ -19,9 +19,10 @@ defmodule HTTP2FrameDeserializationTest do
 
   describe "extra data" do
     test "returns extra data" do
-      frame = <<0, 0, 0, 4, 0, 0, 0, 0, 0, 1, 2, 3>>
+      frame = <<0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{}}, <<1, 2, 3>>}
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Data{stream_id: 1, data: <<>>}}, <<1, 2, 3>>}
     end
   end
 
@@ -238,17 +239,19 @@ defmodule HTTP2FrameDeserializationTest do
   end
 
   describe "SETTINGS frames" do
-    test "deserializes non-ack frames when there are no contained settings" do
+    test "deserializes non-ack frames when there are no non-default settings" do
       frame = <<0, 0, 0, 4, 0, 0, 0, 0, 0>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{ack: false, settings: %{}}}, <<>>}
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Settings{ack: false, settings: %Settings{}}}, <<>>}
     end
 
-    test "deserializes non-ack frames when there are contained settings" do
+    test "deserializes non-ack frames when there are non-default settings" do
       frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 255>>
 
       assert Frame.deserialize(frame) ==
-               {{:ok, %Frame.Settings{ack: false, settings: %{1 => 255}}}, <<>>}
+               {{:ok, %Frame.Settings{ack: false, settings: %Settings{header_table_size: 255}}},
+                <<>>}
     end
 
     test "rejects non-ack frames when there is a malformed payload" do
@@ -272,7 +275,7 @@ defmodule HTTP2FrameDeserializationTest do
     test "deserializes ack frames" do
       frame = <<0, 0, 0, 4, 1, 0, 0, 0, 0>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{ack: true, settings: %{}}}, <<>>}
+      assert Frame.deserialize(frame) == {{:ok, %Frame.Settings{ack: true, settings: nil}}, <<>>}
     end
 
     test "rejects ack frames when there is a payload" do

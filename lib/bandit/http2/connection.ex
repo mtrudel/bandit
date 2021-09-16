@@ -3,8 +3,8 @@ defmodule Bandit.HTTP2.Connection do
   Represents the state of an HTTP/2 connection
   """
 
-  defstruct local_settings: %{},
-            remote_settings: %{},
+  defstruct local_settings: %Bandit.HTTP2.Settings{},
+            remote_settings: %Bandit.HTTP2.Settings{},
             fragment_frame: nil,
             send_hpack_state: HPack.Table.new(4096),
             recv_hpack_state: HPack.Table.new(4096),
