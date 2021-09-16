@@ -17,7 +17,15 @@ defmodule Bandit.HTTP2.Connection do
 
   require Logger
 
-  alias Bandit.HTTP2.{Connection, Constants, FlowControl, Frame, Stream, StreamCollection}
+  alias Bandit.HTTP2.{
+    Connection,
+    Constants,
+    FlowControl,
+    Frame,
+    Settings,
+    Stream,
+    StreamCollection
+  }
 
   def init(socket, plug) do
     socket
@@ -357,7 +365,8 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def send_push(stream_id, headers, socket, connection) do
-    with promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
+    with :ok <- can_send_push_promises(connection),
+         promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, promised_stream_id),
          {:ok, stream} <- Stream.send_push_headers(stream, headers),
          {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
@@ -371,6 +380,9 @@ defmodule Bandit.HTTP2.Connection do
       {:error, error} -> {:error, error}
     end
   end
+
+  defp can_send_push_promises(%__MODULE__{remote_settings: %Settings{enable_push: true}}), do: :ok
+  defp can_send_push_promises(_), do: {:error, :client_disabled_push}
 
   defp send_push_promise_frame(stream_id, promised_stream_id, block, socket) do
     %Frame.PushPromise{

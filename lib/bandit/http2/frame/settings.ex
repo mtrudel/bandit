@@ -18,6 +18,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
       {:ok, {0x01, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | header_table_size: value}}}
       {:ok, {0x02, 0x01}}, {:ok, acc} -> {:cont, {:ok, %{acc | enable_push: true}}}
       {:ok, {0x02, 0x00}}, {:ok, acc} -> {:cont, {:ok, %{acc | enable_push: false}}}
+      {:ok, {0x02, _value}}, {:ok, _acc} -> {:cont, {:error, :invalid_enable_push}}
       {:ok, {0x03, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
       {:ok, {0x04, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | initial_window_size: value}}}
       {:ok, {0x05, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | max_frame_size: value}}}
@@ -28,6 +29,9 @@ defmodule Bandit.HTTP2.Frame.Settings do
     |> case do
       {:ok, settings} ->
         {:ok, %__MODULE__{ack: false, settings: settings}}
+
+      {:error, reason} ->
+        {:error, {:connection, Constants.protocol_error(), reason}}
 
       :error ->
         {:error,
