@@ -25,7 +25,7 @@ defmodule Bandit.HTTP2.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     (state.buffer <> data)
-    |> Stream.unfold(&Frame.deserialize/1)
+    |> Stream.unfold(&Frame.deserialize(&1, state.connection.local_settings.max_frame_size))
     |> Enum.reduce_while({:ok, :continue, state}, fn
       {:ok, frame}, {:ok, :continue, state} ->
         case Connection.handle_frame(frame, socket, state.connection) do

@@ -820,10 +820,10 @@ defmodule HTTP2ProtocolTest do
       window = window + adjustment
       assert window == (1 <<< 31) - 1
 
-      # Send 2^15 - 1 chunks of 2^15 bytes to end up just shy of expecting a
+      # Send 2^16 - 1 chunks of 2^14 bytes to end up just shy of expecting a
       # window update (we expect one when our window goes below 2^30).
-      iters = (1 <<< 15) - 1
-      chunk = String.duplicate("a", 1 <<< 15)
+      iters = (1 <<< 16) - 1
+      chunk = String.duplicate("a", 1 <<< 14)
 
       for _n <- 1..iters do
         SimpleH2Client.send_body(socket, 1, false, chunk)
@@ -864,39 +864,23 @@ defmodule HTTP2ProtocolTest do
         {:more, body, conn} -> do_large_post(conn, size + byte_size(body))
       end
     end
-
-    test "properly handles cases where client misbehaves and overruns the window", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
-      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
-
-      # Send more than the open window (65_535 initially) to overrun on purpose
-      body = String.duplicate("a", 100_000)
-      SimpleH2Client.send_body(socket, 1, true, body)
-
-      expected_adjustment = (1 <<< 31) - 1
-
-      {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
-
-      assert SimpleH2Client.successful_response?(socket, 1, false)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, body}
-    end
   end
 
   describe "WINDOW_UPDATE frames (download direction)" do
     test "respects the remaining space in the connection's send window", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      data = String.duplicate("a", 65_535 + 100 + 1)
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
 
       # Give ourselves lots of room on the stream
       SimpleH2Client.send_window_update(socket, 1, 1_000_000)
 
-      SimpleH2Client.send_body(socket, 1, true, data)
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 100))
+
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 1, false)
@@ -919,12 +903,17 @@ defmodule HTTP2ProtocolTest do
     test "respects the remaining space in the stream's send window", context do
       socket = SimpleH2Client.setup_connection(context)
 
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+
       # Give ourselves lots of room on the connection
       SimpleH2Client.send_window_update(socket, 0, 1_000_000)
 
-      data = String.duplicate("a", 65_535 + 100 + 1)
-      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-      SimpleH2Client.send_body(socket, 1, true, data)
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 100))
+
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 1, false)
@@ -947,10 +936,14 @@ defmodule HTTP2ProtocolTest do
     test "respects both stream and connection windows in complex scenarios", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      data = String.duplicate("a", 65_535 + 100)
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
 
-      SimpleH2Client.send_body(socket, 1, true, data)
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 99))
+
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
@@ -963,7 +956,12 @@ defmodule HTTP2ProtocolTest do
       # Start a second stream and observe that it gets blocked right away
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
 
-      SimpleH2Client.send_body(socket, 3, true, data)
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
+      SimpleH2Client.send_body(socket, 3, true, String.duplicate("a", 99))
+
       assert {:ok, 3, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
 

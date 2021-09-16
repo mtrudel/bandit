@@ -1,13 +1,15 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Frame, Serializable}
+  alias Bandit.HTTP2.{Constants, Frame, Serializable}
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
-          payload::binary-size(length), rest::binary>>
-      ) do
+          payload::binary-size(length), rest::binary>>,
+        max_frame_size
+      )
+      when length <= max_frame_size do
     type
     |> case do
       0x0 -> Frame.Data.deserialize(flags, stream_id, payload)
@@ -28,11 +30,26 @@ defmodule Bandit.HTTP2.Frame do
     end
   end
 
-  def deserialize(<<>>) do
+  # This is a little more aggressive than necessary. RFC7540§4.2 says we only need
+  # to treat frame size violations as connection level errors if the frame in
+  # question would affect the connection as a whole, so we could be more surgical
+  # here and send stream level errors in some cases. However, we are well within
+  # our rights to consider such errors as connection errors
+  def deserialize(
+        <<length::24, _type::8, _flags::8, _reserved::1, _stream_id::31,
+          _payload::binary-size(length), rest::binary>>,
+        max_frame_size
+      )
+      when length > max_frame_size do
+    {{:error,
+      {:connection, Constants.frame_size_error(), "Payload size too large (RFC7540§4.2)"}}, rest}
+  end
+
+  def deserialize(<<>>, _max_frame_size) do
     nil
   end
 
-  def deserialize(msg) do
+  def deserialize(msg, _max_frame_size) do
     {{:more, msg}, <<>>}
   end
 
