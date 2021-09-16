@@ -54,8 +54,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
     def serialize(%Settings{ack: true}), do: {0x4, 0x1, 0, <<>>}
 
-    def serialize(%Settings{ack: false, settings: settings}) do
-      # Note that the ordering here corresponds to the keys' alphabetical 
+    def serialize(%Settings{ack: false} = frame) do
+      # Note that the ordering here corresponds to the keys' alphabetical
       # ordering on the Setting struct. However, we know there are no duplicates
       # in this list so this is not a problem per RFC7540§6.5
       #
@@ -63,7 +63,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
       # them. This means we can't restore settings back to default values if we
       # change them, but since we don't ever change our settings this is fine
       payload =
-        settings
+        frame.settings
         |> Map.from_struct()
         |> Enum.map(fn
           {:header_table_size, 4_096} -> <<>>
