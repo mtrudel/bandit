@@ -26,7 +26,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
       "PING frame with invalid payload size (RFC7540§6.7)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Ping
 
     def serialize(%Ping{ack: true} = frame), do: {0x6, 0x1, 0, frame.payload}

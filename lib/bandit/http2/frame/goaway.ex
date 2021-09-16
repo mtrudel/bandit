@@ -25,7 +25,7 @@ defmodule Bandit.HTTP2.Frame.Goaway do
       "GOAWAY frame with invalid payload size (RFC7540§6.8)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Goaway
 
     def serialize(%Goaway{} = frame) do

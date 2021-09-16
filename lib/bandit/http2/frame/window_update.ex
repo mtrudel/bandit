@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
      {:connection, Constants.frame_size_error(), "Invalid WINDOW_UPDATE frame (RFC7540§6.9)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.WindowUpdate
 
     def serialize(%WindowUpdate{} = frame) do

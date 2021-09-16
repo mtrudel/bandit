@@ -41,7 +41,7 @@ defmodule Bandit.HTTP2.Frame.Data do
       "DATA frame with invalid padding length (RFC7540§6.1)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Data
 
     def serialize(%Data{} = frame) do

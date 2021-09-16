@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.Frame
+  alias Bandit.HTTP2.{Frame, Serializable}
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(

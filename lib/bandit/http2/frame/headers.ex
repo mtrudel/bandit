@@ -100,7 +100,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
       "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Headers
 
     def serialize(

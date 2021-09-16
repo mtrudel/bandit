@@ -53,7 +53,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
     {:error, {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
     def serialize(%Settings{ack: true}), do: {0x4, 0x1, 0, <<>>}

@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.Frame.Priority do
       "Invalid payload size in PRIORITY frame (RFC7540§6.3)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Priority
 
     def serialize(%Priority{} = frame) do

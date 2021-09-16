@@ -20,7 +20,7 @@ defmodule Bandit.HTTP2.Frame.Continuation do
      %__MODULE__{stream_id: stream_id, end_headers: (flags &&& 0x04) == 0x04, fragment: fragment}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Continuation
 
     def serialize(%Continuation{} = frame) do

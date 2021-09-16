@@ -53,7 +53,7 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
       "PUSH_PROMISE frame with invalid padding length (RFC7540§6.6)"}}
   end
 
-  defimpl Serializable do
+  defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.PushPromise
 
     def serialize(%PushPromise{} = frame) do
