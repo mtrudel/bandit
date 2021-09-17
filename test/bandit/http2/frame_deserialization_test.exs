@@ -260,7 +260,43 @@ defmodule HTTP2FrameDeserializationTest do
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
                  {:connection, Constants.frame_size_error(),
-                  "Invalid SETTINGS payload (RFC7540§6.5)"}}, <<>>}
+                  "Invalid SETTINGS size (RFC7540§6.5)"}}, <<>>}
+    end
+
+    test "rejects non-ack frames with invalid enable_push_promise value" do
+      frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 2>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error,
+                 {:connection, Constants.protocol_error(),
+                  "Invalid enable_push value (RFC7540§6.5)"}}, <<>>}
+    end
+
+    test "rejects non-ack frames with invalid initial_window_size value" do
+      frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 4, 255, 255, 255, 255>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error,
+                 {:connection, Constants.flow_control_error(),
+                  "Invalid window_size (RFC7540§6.5)"}}, <<>>}
+    end
+
+    test "rejects non-ack frames with invalid large max_frame_size value" do
+      frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 5, 255, 255, 255, 255>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "Invalid max_frame_size (RFC7540§6.5)"}}, <<>>}
+    end
+
+    test "rejects non-ack frames with invalid small max_frame_size value" do
+      frame = <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 5, 0, 0, 0, 0>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error,
+                 {:connection, Constants.frame_size_error(),
+                  "Invalid max_frame_size (RFC7540§6.5)"}}, <<>>}
     end
 
     test "rejects non-ack frames when there is stream identifier" do

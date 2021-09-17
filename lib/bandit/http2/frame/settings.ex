@@ -3,9 +3,13 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   defstruct ack: false, settings: nil
 
-  import Bitwise
+  use Bitwise
 
   alias Bandit.HTTP2.Constants
+
+  @max_window_size (1 <<< 31) - 1
+  @min_frame_size 1 <<< 14
+  @max_frame_size (1 <<< 24) - 1
 
   def deserialize(flags, 0, payload) when (flags &&& 0x1) == 0x0 do
     payload
@@ -15,27 +19,48 @@ defmodule Bandit.HTTP2.Frame.Settings do
       <<rest::binary>> -> {{:error, rest}, <<>>}
     end)
     |> Enum.reduce_while({:ok, %Bandit.HTTP2.Settings{}}, fn
-      {:ok, {0x01, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | header_table_size: value}}}
-      {:ok, {0x02, 0x01}}, {:ok, acc} -> {:cont, {:ok, %{acc | enable_push: true}}}
-      {:ok, {0x02, 0x00}}, {:ok, acc} -> {:cont, {:ok, %{acc | enable_push: false}}}
-      {:ok, {0x02, _value}}, {:ok, _acc} -> {:cont, {:error, :invalid_enable_push}}
-      {:ok, {0x03, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
-      {:ok, {0x04, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | initial_window_size: value}}}
-      {:ok, {0x05, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | max_frame_size: value}}}
-      {:ok, {0x06, value}}, {:ok, acc} -> {:cont, {:ok, %{acc | max_header_list_size: value}}}
-      {:ok, {_setting, _value}}, {:ok, acc} -> {:cont, {:ok, acc}}
-      {:error, _rest}, _acc -> {:halt, :error}
+      {:ok, {0x01, value}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | header_table_size: value}}}
+
+      {:ok, {0x02, 0x01}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | enable_push: true}}}
+
+      {:ok, {0x02, 0x00}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | enable_push: false}}}
+
+      {:ok, {0x02, _value}}, {:ok, _acc} ->
+        {:halt, {:error, Constants.protocol_error(), "Invalid enable_push value (RFC7540§6.5)"}}
+
+      {:ok, {0x03, value}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
+
+      {:ok, {0x04, value}}, {:ok, _acc} when value > @max_window_size ->
+        {:halt, {:error, Constants.flow_control_error(), "Invalid window_size (RFC7540§6.5)"}}
+
+      {:ok, {0x04, value}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | initial_window_size: value}}}
+
+      {:ok, {0x05, value}}, {:ok, _acc} when value < @min_frame_size ->
+        {:halt, {:error, Constants.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}}
+
+      {:ok, {0x05, value}}, {:ok, _acc} when value > @max_frame_size ->
+        {:halt, {:error, Constants.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}}
+
+      {:ok, {0x05, value}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | max_frame_size: value}}}
+
+      {:ok, {0x06, value}}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | max_header_list_size: value}}}
+
+      {:ok, {_setting, _value}}, {:ok, acc} ->
+        {:cont, {:ok, acc}}
+
+      {:error, _rest}, _acc ->
+        {:halt, {:error, Constants.frame_size_error(), "Invalid SETTINGS size (RFC7540§6.5)"}}
     end)
     |> case do
-      {:ok, settings} ->
-        {:ok, %__MODULE__{ack: false, settings: settings}}
-
-      {:error, reason} ->
-        {:error, {:connection, Constants.protocol_error(), reason}}
-
-      :error ->
-        {:error,
-         {:connection, Constants.frame_size_error(), "Invalid SETTINGS payload (RFC7540§6.5)"}}
+      {:ok, settings} -> {:ok, %__MODULE__{ack: false, settings: settings}}
+      {:error, error_code, reason} -> {:error, {:connection, error_code, reason}}
     end
   end
 
