@@ -826,8 +826,8 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      :ssl.send(socket, <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0>>)
-      {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
+      # Signal that we do not accept push
+      SimpleH2Client.exchange_client_settings(socket, <<2::16, 0::32>>)
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
 

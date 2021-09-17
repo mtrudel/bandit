@@ -29,8 +29,9 @@ defmodule SimpleH2Client do
     :ssl.send(socket, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
   end
 
-  def exchange_client_settings(socket) do
-    :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
+  def exchange_client_settings(socket, settings \\ <<>>) do
+    :ssl.send(socket, <<byte_size(settings)::24, 4, 0, 0, 0, 0, 0>>)
+    :ssl.send(socket, settings)
     {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
   end
 
