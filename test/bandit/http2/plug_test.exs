@@ -392,21 +392,6 @@ defmodule HTTP2PlugTest do
     |> send_resp(200, "It's a #{source}")
   end
 
-  test "server push messages do not send if the client disabled them", context do
-    socket = SimpleH2Client.tls_client(context)
-    SimpleH2Client.exchange_prefaces(socket)
-
-    :ssl.send(socket, <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0>>)
-    {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
-
-    {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
-
-    assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
-    assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
-
-    assert SimpleH2Client.connection_alive?(socket)
-  end
-
   test "reading HTTP version", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/report_version")

@@ -8,7 +8,7 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
 
   import Bitwise
 
-  alias Bandit.HTTP2.Constants
+  alias Bandit.HTTP2.{Constants, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,
@@ -53,14 +53,30 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
       "PUSH_PROMISE frame with invalid padding length (RFC7540§6.6)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
-    alias Bandit.HTTP2.Frame.PushPromise
+  defimpl Serializable do
+    alias Bandit.HTTP2.Frame.{Continuation, PushPromise}
 
-    def serialize(%PushPromise{} = frame) do
-      flags = if frame.end_headers, do: 0x04, else: 0x00
+    def serialize(%PushPromise{} = frame, max_frame_size) do
+      fragment_length = IO.iodata_length(frame.fragment)
+      max_fragment_size = max_frame_size - 4
 
-      {0x5, flags, frame.stream_id,
-       <<0::1, frame.promised_stream_id::31, frame.fragment::binary>>}
+      if fragment_length <= max_fragment_size do
+        [{0x5, 0x04, frame.stream_id, <<frame.promised_stream_id::32, frame.fragment::binary>>}]
+      else
+        <<this_frame::binary-size(max_fragment_size), rest::binary>> =
+          IO.iodata_to_binary(frame.fragment)
+
+        [
+          {0x5, 0x00, frame.stream_id, <<frame.promised_stream_id::32, this_frame::binary>>}
+          | Serializable.serialize(
+              %Continuation{
+                stream_id: frame.stream_id,
+                fragment: rest
+              },
+              max_frame_size
+            )
+        ]
+      end
     end
   end
 end

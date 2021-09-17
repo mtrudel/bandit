@@ -56,9 +56,9 @@ defmodule Bandit.HTTP2.Frame.Settings do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
-    def serialize(%Settings{ack: true}), do: {0x4, 0x1, 0, <<>>}
+    def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, 0x1, 0, <<>>}]
 
-    def serialize(%Settings{ack: false} = frame) do
+    def serialize(%Settings{ack: false} = frame, _max_frame_size) do
       # Note that the ordering here corresponds to the keys' alphabetical
       # ordering on the Setting struct. However, we know there are no duplicates
       # in this list so this is not a problem per RFC7540§6.5
@@ -84,7 +84,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
           {:max_header_list_size, value} -> <<0x06::16, value::32>>
         end)
 
-      {0x4, 0x0, 0, payload}
+      [{0x4, 0x0, 0, payload}]
     end
   end
 end

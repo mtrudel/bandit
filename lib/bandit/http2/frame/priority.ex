@@ -24,8 +24,8 @@ defmodule Bandit.HTTP2.Frame.Priority do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Priority
 
-    def serialize(%Priority{} = frame) do
-      {0x2, 0x0, frame.stream_id, <<0::1, frame.dependent_stream_id::31, frame.weight::8>>}
+    def serialize(%Priority{} = frame, _max_frame_size) do
+      [{0x2, 0x0, frame.stream_id, <<0::1, frame.dependent_stream_id::31, frame.weight::8>>}]
     end
   end
 end

@@ -28,9 +28,11 @@ defmodule Bandit.HTTP2.Frame.Goaway do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Goaway
 
-    def serialize(%Goaway{} = frame) do
-      {0x7, 0x0, 0,
-       <<0x0::1, frame.last_stream_id::31, frame.error_code::32, frame.debug_data::binary>>}
+    def serialize(%Goaway{} = frame, _max_frame_size) do
+      [
+        {0x7, 0x0, 0,
+         <<0x0::1, frame.last_stream_id::31, frame.error_code::32, frame.debug_data::binary>>}
+      ]
     end
   end
 end

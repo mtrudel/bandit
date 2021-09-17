@@ -29,7 +29,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.Ping
 
-    def serialize(%Ping{ack: true} = frame), do: {0x6, 0x1, 0, frame.payload}
-    def serialize(%Ping{ack: false} = frame), do: {0x6, 0x0, 0, frame.payload}
+    def serialize(%Ping{ack: true} = frame, _max_frame_size), do: [{0x6, 0x1, 0, frame.payload}]
+    def serialize(%Ping{ack: false} = frame, _max_frame_size), do: [{0x6, 0x0, 0, frame.payload}]
   end
 end

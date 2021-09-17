@@ -36,7 +36,7 @@ defmodule Bandit.HTTP2.Connection do
         connection = %__MODULE__{plug: plug, peer: peer}
         # Send SETTINGS frame per RFC7540§3.5
         %Frame.Settings{ack: false, settings: connection.local_settings}
-        |> send_frame(socket)
+        |> send_frame(socket, connection)
 
         {:ok, connection}
 
@@ -87,7 +87,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
-    %Frame.Settings{ack: true} |> send_frame(socket)
+    %Frame.Settings{ack: true} |> send_frame(socket, connection)
     {:ok, :continue, %{connection | remote_settings: frame.settings}}
   end
 
@@ -96,7 +96,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
-    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket)
+    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket, connection)
     {:ok, :continue, connection}
   end
 
@@ -181,12 +181,12 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       if connection_window_increment > 0 do
         %Frame.WindowUpdate{stream_id: 0, size_increment: connection_window_increment}
-        |> send_frame(socket)
+        |> send_frame(socket, connection)
       end
 
       if stream_window_increment > 0 do
         %Frame.WindowUpdate{stream_id: frame.stream_id, size_increment: stream_window_increment}
-        |> send_frame(socket)
+        |> send_frame(socket, connection)
       end
 
       {:ok, :continue,
@@ -262,11 +262,10 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       %Frame.Headers{
         stream_id: stream_id,
-        end_headers: true,
         end_stream: end_stream,
         fragment: block
       }
-      |> send_frame(socket)
+      |> send_frame(socket, connection)
 
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
     else
@@ -302,7 +301,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       if end_stream_to_send || IO.iodata_length(data_to_send) > 0 do
         %Frame.Data{stream_id: stream_id, end_stream: end_stream_to_send, data: data_to_send}
-        |> send_frame(socket)
+        |> send_frame(socket, connection)
       end
 
       if byte_size(rest) == 0 do
@@ -370,7 +369,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, promised_stream_id),
          {:ok, stream} <- Stream.send_push_headers(stream, headers),
          {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
-         :ok <- send_push_promise_frame(stream_id, promised_stream_id, block, socket),
+         :ok <- send_push_promise_frame(stream_id, promised_stream_id, block, socket, connection),
          {:ok, stream} <- Stream.start_push(stream, headers, connection.peer, connection.plug),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
@@ -384,14 +383,13 @@ defmodule Bandit.HTTP2.Connection do
   defp can_send_push_promises(%__MODULE__{remote_settings: %Settings{enable_push: true}}), do: :ok
   defp can_send_push_promises(_), do: {:error, :client_disabled_push}
 
-  defp send_push_promise_frame(stream_id, promised_stream_id, block, socket) do
+  defp send_push_promise_frame(stream_id, promised_stream_id, block, socket, connection) do
     %Frame.PushPromise{
       stream_id: stream_id,
-      end_headers: true,
       promised_stream_id: promised_stream_id,
       fragment: block
     }
-    |> send_frame(socket)
+    |> send_frame(socket, connection)
 
     :ok
   end
@@ -404,7 +402,7 @@ defmodule Bandit.HTTP2.Connection do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
     %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
-    |> send_frame(socket)
+    |> send_frame(socket, connection)
 
     if error_code == Constants.no_error() do
       {:ok, :close, connection}
@@ -417,7 +415,7 @@ defmodule Bandit.HTTP2.Connection do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
     %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Constants.no_error()}
-    |> send_frame(socket)
+    |> send_frame(socket, connection)
 
     :ok
   end
@@ -430,7 +428,7 @@ defmodule Bandit.HTTP2.Connection do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          _ <- Stream.terminate_stream(stream, reason) do
       %Frame.RstStream{stream_id: stream_id, error_code: error_code}
-      |> send_frame(socket)
+      |> send_frame(socket, connection)
 
       {:ok, :continue, connection}
     end
@@ -442,7 +440,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       if !is_nil(error_code) do
         %Frame.RstStream{stream_id: stream.stream_id, error_code: error_code}
-        |> send_frame(socket)
+        |> send_frame(socket, connection)
       end
 
       {:ok, %{connection | streams: streams}}
@@ -453,7 +451,10 @@ defmodule Bandit.HTTP2.Connection do
   # Utility functions
   #
 
-  defp send_frame(frame, socket) do
-    ThousandIsland.Socket.send(socket, Frame.serialize(frame))
+  defp send_frame(frame, socket, connection) do
+    ThousandIsland.Socket.send(
+      socket,
+      Frame.serialize(frame, connection.remote_settings.max_frame_size)
+    )
   end
 end

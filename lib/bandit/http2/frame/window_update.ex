@@ -24,8 +24,8 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.WindowUpdate
 
-    def serialize(%WindowUpdate{} = frame) do
-      {0x8, 0, frame.stream_id, <<0::1, frame.size_increment::31>>}
+    def serialize(%WindowUpdate{} = frame, _max_frame_size) do
+      [{0x8, 0, frame.stream_id, <<0::1, frame.size_increment::31>>}]
     end
   end
 end

@@ -11,7 +11,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
   import Bitwise
 
-  alias Bandit.HTTP2.Constants
+  alias Bandit.HTTP2.{Constants, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,
@@ -100,17 +100,34 @@ defmodule Bandit.HTTP2.Frame.Headers do
       "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
-    alias Bandit.HTTP2.Frame.Headers
+  defimpl Serializable do
+    alias Bandit.HTTP2.Frame.{Continuation, Headers}
 
     def serialize(
-          %Headers{exclusive_dependency: false, stream_dependency: nil, weight: nil} = frame
+          %Headers{exclusive_dependency: false, stream_dependency: nil, weight: nil} = frame,
+          max_frame_size
         ) do
-      flags = 0
-      flags = if frame.end_stream, do: flags ||| 0x01, else: flags
-      flags = if frame.end_headers, do: flags ||| 0x04, else: flags
+      flags = if frame.end_stream, do: 0x01, else: 0x00
 
-      {0x1, flags, frame.stream_id, frame.fragment}
+      fragment_length = IO.iodata_length(frame.fragment)
+
+      if fragment_length <= max_frame_size do
+        [{0x1, flags ||| 0x04, frame.stream_id, frame.fragment}]
+      else
+        <<this_frame::binary-size(max_frame_size), rest::binary>> =
+          IO.iodata_to_binary(frame.fragment)
+
+        [
+          {0x1, flags, frame.stream_id, this_frame}
+          | Serializable.serialize(
+              %Continuation{
+                stream_id: frame.stream_id,
+                fragment: rest
+              },
+              max_frame_size
+            )
+        ]
+      end
     end
   end
 end

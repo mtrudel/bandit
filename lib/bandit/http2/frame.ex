@@ -53,9 +53,11 @@ defmodule Bandit.HTTP2.Frame do
     {{:more, msg}, <<>>}
   end
 
-  def serialize(frame) do
-    {type, flags, stream_id, payload} = Serializable.serialize(frame)
-
-    [<<IO.iodata_length(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
+  def serialize(frame, max_frame_size) do
+    frame
+    |> Serializable.serialize(max_frame_size)
+    |> Enum.map(fn {type, flags, stream_id, payload} ->
+      [<<IO.iodata_length(payload)::24, type::8, flags::8, 0::1, stream_id::31>>, payload]
+    end)
   end
 end

@@ -24,6 +24,8 @@ defmodule Bandit.HTTP2.Frame.RstStream do
   defimpl Bandit.HTTP2.Serializable do
     alias Bandit.HTTP2.Frame.RstStream
 
-    def serialize(%RstStream{} = frame), do: {0x3, 0x0, frame.stream_id, <<frame.error_code::32>>}
+    def serialize(%RstStream{} = frame, _max_frame_size) do
+      [{0x3, 0x0, frame.stream_id, <<frame.error_code::32>>}]
+    end
   end
 end

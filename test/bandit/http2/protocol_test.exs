@@ -214,6 +214,60 @@ defmodule HTTP2ProtocolTest do
       assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"})
     end
 
+    test "breaks large headers into multiple CONTINUATION frames when sending", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/large_headers", context.port)
+
+      random_string = for _ <- 1..60_000, into: "", do: <<Enum.random('0123456789abcdef')>>
+      <<to_send::binary-size(16_384), rest::binary>> = random_string
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+
+      <<to_send::binary-size(16_384), rest::binary>> = rest
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+
+      <<to_send::binary-size(16_384), rest::binary>> = rest
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+      SimpleH2Client.send_body(socket, 1, true, rest)
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      # We assume that 60k of random data will get hpacked down into somewhere
+      # between 32768 and 49152 bytes, so we'll need 3 packets total
+      {:ok, <<16_384::24, 1::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, header_fragment} = :ssl.recv(socket, 16_384)
+
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_1} = :ssl.recv(socket, 16_384)
+
+      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_2} = :ssl.recv(socket, length)
+
+      {:ok, _ctx, headers} =
+        [header_fragment, fragment_1, fragment_2]
+        |> IO.iodata_to_binary()
+        |> HPack.decode(HPack.Table.new(4096))
+
+      assert headers == [
+               {":status", "200"},
+               {"cache-control", "max-age=0, private, must-revalidate"},
+               {"giant", random_string}
+             ]
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    def large_headers(conn) do
+      {:ok, body, conn} = read_body(conn)
+
+      conn
+      |> put_resp_header("giant", body)
+      |> send_resp(200, "OK")
+    end
+
     test "accepts well-formed headers without padding or priority", context do
       socket = SimpleH2Client.setup_connection(context)
       headers = headers_for_header_read_test(context)
@@ -302,6 +356,24 @@ defmodule HTTP2ProtocolTest do
       assert get_req_header(conn, "x-request-header") == ["Request"]
 
       conn |> send_resp(200, "OK")
+    end
+
+    test "accumulates header fragments over multiple CONTINUATION frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
+        headers_for_header_read_test(context)
+
+      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
+      :ssl.send(socket, [<<0, 0, byte_size(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
+
+      assert {:ok, 1, false,
+              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
+              _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag capture_log: true
@@ -712,6 +784,126 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "PUSH_PROMISE frames" do
+    test "send in expected order", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
+
+      expected_headers = [
+        {":method", "GET"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":path", "/push_hello_world"},
+        {"accept", "application/octet-stream"},
+        {"x-from", "push"}
+      ]
+
+      assert {:ok, 1, 2, ^expected_headers, _} = SimpleH2Client.recv_push_promise(socket, ctx)
+
+      assert {:ok, 2, false, _, ctx} = SimpleH2Client.recv_headers(socket)
+      assert {:ok, 2, true, "It's a push"} = SimpleH2Client.recv_body(socket)
+
+      assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
+      assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    def send_push(conn) do
+      conn = conn |> push("/push_hello_world", [{"x-from", "push"}])
+      # Let the hello_world response make its way back so we can test in order
+      # This isn't a protocol race (we've already sent the push promise), but this
+      # allows us to write our tests above with assumptions on ordering
+      Process.sleep(100)
+      conn |> send_resp(200, "Push starter")
+    end
+
+    def push_hello_world(conn) do
+      conn |> send_resp(200, "It's a push")
+    end
+
+    test "server push messages do not send if the client disabled them", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      :ssl.send(socket, <<0, 0, 6, 4, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0>>)
+      {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
+
+      assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
+      assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "breaks large push promises into multiple CONTINUATION frames when sending", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/large_push_promise", context.port)
+
+      random_string = for _ <- 1..60_000, into: "", do: <<Enum.random('0123456789abcdef')>>
+      <<to_send::binary-size(16_384), rest::binary>> = random_string
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+
+      <<to_send::binary-size(16_384), rest::binary>> = rest
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+
+      <<to_send::binary-size(16_384), rest::binary>> = rest
+      SimpleH2Client.send_body(socket, 1, false, to_send)
+      SimpleH2Client.send_body(socket, 1, true, rest)
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      # We assume that 60k of random data will get hpacked down into somewhere
+      # between 32764 and 49148 bytes, so we'll need 3 packets total
+      # Note that we're reading the promised_stream_id field as part of the frame header
+      {:ok, <<16_384::24, 5::8, 0::8, 0::1, 1::31, 2::32>>} = :ssl.recv(socket, 13)
+      {:ok, header_fragment} = :ssl.recv(socket, 16_380)
+
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_1} = :ssl.recv(socket, 16_384)
+
+      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_2} = :ssl.recv(socket, length)
+
+      {:ok, _ctx, headers} =
+        [header_fragment, fragment_1, fragment_2]
+        |> IO.iodata_to_binary()
+        |> HPack.decode(HPack.Table.new(4096))
+
+      assert headers == [
+               {":method", "GET"},
+               {":scheme", "https"},
+               {":authority", "localhost:#{context.port}"},
+               {":path", "/push_hello_world"},
+               {"accept", "application/octet-stream"},
+               {"giant", random_string}
+             ]
+
+      assert {:ok, 2, false, _, ctx} = SimpleH2Client.recv_headers(socket)
+      assert {:ok, 2, true, "It's a push"} = SimpleH2Client.recv_body(socket)
+
+      assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
+      assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    def large_push_promise(conn) do
+      {:ok, body, conn} = read_body(conn)
+
+      conn = conn |> push("/push_hello_world", [{"giant", body}])
+
+      # Let the hello_world response make its way back so we can test in order
+      # This isn't a protocol race (we've already sent the push promise), but this
+      # allows us to write our tests above with assumptions on ordering
+      Process.sleep(100)
+
+      conn |> send_resp(200, "Push starter")
+    end
+
     @tag capture_log: true
     test "the server should reject any received PUSH_PROMISE frames", context do
       socket = SimpleH2Client.tls_client(context)
@@ -886,13 +1078,14 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 65_535 bytes as that is our initial connection window
-      expected_data = String.duplicate("a", 65_535)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
 
       # Grow the connection window by 100 and observe that we get 100 more bytes
       SimpleH2Client.send_window_update(socket, 0, 100)
-      expected_data = String.duplicate("a", 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
 
       # Grow the connection window by another 100 and observe that we get the rest of the response
       # Also note that we receive end_of_stream here
@@ -919,13 +1112,14 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 65_535 bytes as that is our initial stream window
-      expected_data = String.duplicate("a", 65_535)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
 
       # Grow the stream window by 100 and observe that we get 100 more bytes
       SimpleH2Client.send_window_update(socket, 1, 100)
-      expected_data = String.duplicate("a", 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
 
       # Grow the stream window by another 100 and observe that we get the rest of the response
       # Also note that we receive end_of_stream here
@@ -950,8 +1144,10 @@ defmodule HTTP2ProtocolTest do
       assert {:ok, 1, false, [{":status", "200"} | _], ctx} = SimpleH2Client.recv_headers(socket)
 
       # Expect 65_535 bytes as that is our initial connection window
-      expected_data = String.duplicate("a", 65_535)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
 
       # Start a second stream and observe that it gets blocked right away
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
@@ -968,8 +1164,10 @@ defmodule HTTP2ProtocolTest do
       # Grow the connection window by 65_535 and observe that we get bytes on 3
       # since 1 is blocked on its stream window
       SimpleH2Client.send_window_update(socket, 0, 65_535)
-      expected_data = String.duplicate("a", 65_535)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_383)}
 
       # Grow the stream windows such that we expect to see 100 bytes from 1 and 50 bytes from
       # 3 (note that 1 is queued at a higher priority than 3 due to FIFO ordering) Also note that
@@ -977,14 +1175,12 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_window_update(socket, 3, 100)
       SimpleH2Client.send_window_update(socket, 1, 100)
       SimpleH2Client.send_window_update(socket, 0, 150)
-      expected_data = String.duplicate("a", 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected_data}
-      expected_data = String.duplicate("a", 50)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 100)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 50)}
 
       # Finally grow our connection window and verify we get the last of stream 3
       SimpleH2Client.send_window_update(socket, 0, 50)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, expected_data}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, String.duplicate("a", 50)}
     end
 
     @tag :skip
@@ -993,24 +1189,6 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "CONTINUATION frames" do
-    test "accumulates header fragments over multiple CONTINUATION frames", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
-        headers_for_header_read_test(context)
-
-      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
-      :ssl.send(socket, [<<0, 0, byte_size(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
-
-      assert {:ok, 1, false,
-              [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
-              _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
     @tag capture_log: true
     test "rejects non-CONTINUATION frames received when end_headers is false", context do
       socket = SimpleH2Client.setup_connection(context)
