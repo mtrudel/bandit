@@ -94,7 +94,15 @@ defmodule Bandit.HTTP2.Connection do
       |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
       |> StreamCollection.update_max_concurrent_streams(frame.settings.max_concurrent_streams)
 
-    do_pending_sends(socket, %{connection | remote_settings: frame.settings, streams: streams})
+    {:ok, send_hpack_state} =
+      HPack.Table.resize(frame.settings.header_table_size, connection.send_hpack_state)
+
+    do_pending_sends(socket, %{
+      connection
+      | remote_settings: frame.settings,
+        streams: streams,
+        send_hpack_state: send_hpack_state
+    })
   end
 
   def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do

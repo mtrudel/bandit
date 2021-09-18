@@ -696,6 +696,28 @@ defmodule HTTP2ProtocolTest do
     def cookie_write_check(conn) do
       conn |> put_resp_header("cookie", "a=b; c=d; e=f") |> send_resp(200, "OK")
     end
+
+    test "handles changes to client's header table size", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      expected_headers = [
+        {":status", "200"},
+        {"cache-control", "max-age=0, private, must-revalidate"}
+      ]
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
+      {:ok, 1, false, ^expected_headers, ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      # Shrink our decoding table size
+      SimpleH2Client.exchange_client_settings(socket, <<1::16, 1::32>>)
+
+      {:ok, ctx} = HPack.Table.resize(1, ctx)
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", context.port)
+      {:ok, 3, false, ^expected_headers, _ctx} = SimpleH2Client.recv_headers(socket, ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+    end
   end
 
   describe "PRIORITY frames" do
