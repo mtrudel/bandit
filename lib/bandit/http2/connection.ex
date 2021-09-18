@@ -92,6 +92,7 @@ defmodule Bandit.HTTP2.Connection do
     streams =
       connection.streams
       |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
+      |> StreamCollection.update_max_concurrent_streams(frame.settings.max_concurrent_streams)
 
     do_pending_sends(socket, %{connection | remote_settings: frame.settings, streams: streams})
   end
@@ -430,13 +431,15 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   defp handle_stream_error(stream_id, error_code, reason, socket, connection) do
-    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
-         _ <- Stream.terminate_stream(stream, reason) do
-      %Frame.RstStream{stream_id: stream_id, error_code: error_code}
-      |> send_frame(socket, connection)
-
-      {:ok, :continue, connection}
+    case StreamCollection.get_stream(connection.streams, stream_id) do
+      {:ok, stream} -> Stream.terminate_stream(stream, reason)
+      _ -> :ok
     end
+
+    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+    |> send_frame(socket, connection)
+
+    {:ok, :continue, connection}
   end
 
   def stream_terminated(pid, reason, socket, connection) do

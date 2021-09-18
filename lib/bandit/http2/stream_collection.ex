@@ -7,22 +7,29 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   defstruct initial_recv_window_size: 65_535,
             initial_send_window_size: 65_535,
+            max_concurrent_streams: :infinity,
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
             streams: %{}
 
   require Integer
 
-  alias Bandit.HTTP2.Stream
+  alias Bandit.HTTP2.{Constants, Stream}
 
   @typedoc "A collection of Stream structs, accessisble by id or pid"
   @type t :: %__MODULE__{
           initial_recv_window_size: non_neg_integer(),
           initial_send_window_size: non_neg_integer(),
+          max_concurrent_streams: non_neg_integer() | :infinity,
           last_remote_stream_id: Stream.stream_id(),
           last_local_stream_id: Stream.stream_id(),
           streams: %{Stream.stream_id() => Stream.t()}
         }
+
+  @spec update_max_concurrent_streams(t(), non_neg_integer()) :: t()
+  def update_max_concurrent_streams(collection, max_concurrent_streams) do
+    %{collection | max_concurrent_streams: max_concurrent_streams}
+  end
 
   @spec update_initial_send_window_size(t(), non_neg_integer()) :: t()
   def update_initial_send_window_size(collection, initial_send_window_size) do
@@ -42,41 +49,47 @@ defmodule Bandit.HTTP2.StreamCollection do
     %{collection | streams: streams, initial_send_window_size: initial_send_window_size}
   end
 
-  @spec get_stream(t(), Stream.stream_id()) :: {:ok, Stream.t()}
+  @spec get_stream(t(), Stream.stream_id()) ::
+          {:ok, Stream.t()}
+          | {:error, {:stream, Stream.stream_id(), non_neg_integer(), String.t()}}
+
   def get_stream(collection, stream_id) do
     case Map.get(collection.streams, stream_id) do
       %Stream{} = stream ->
         {:ok, stream}
 
       nil ->
-        cond do
-          Integer.is_even(stream_id) && stream_id <= collection.last_local_stream_id ->
-            {:ok,
-             %Stream{
-               stream_id: stream_id,
-               state: :closed,
-               recv_window_size: collection.initial_recv_window_size,
-               send_window_size: collection.initial_send_window_size
-             }}
+        create_new_stream(collection, stream_id)
+    end
+  end
 
-          Integer.is_odd(stream_id) && stream_id <= collection.last_remote_stream_id ->
-            {:ok,
-             %Stream{
-               stream_id: stream_id,
-               state: :closed,
-               recv_window_size: collection.initial_recv_window_size,
-               send_window_size: collection.initial_send_window_size
-             }}
+  defp create_new_stream(collection, stream_id) do
+    cond do
+      (Integer.is_even(stream_id) && stream_id <= collection.last_local_stream_id) ||
+          (Integer.is_odd(stream_id) && stream_id <= collection.last_remote_stream_id) ->
+        {:ok,
+         %Stream{
+           stream_id: stream_id,
+           state: :closed,
+           recv_window_size: collection.initial_recv_window_size,
+           send_window_size: collection.initial_send_window_size
+         }}
 
-          true ->
-            {:ok,
-             %Stream{
-               stream_id: stream_id,
-               state: :idle,
-               recv_window_size: collection.initial_recv_window_size,
-               send_window_size: collection.initial_send_window_size
-             }}
-        end
+      collection.max_concurrent_streams == :infinity ||
+          collection.max_concurrent_streams >
+            collection.streams
+            |> Map.values()
+            |> Enum.count(&(&1.state in [:open, :remote_closed])) ->
+        {:ok,
+         %Stream{
+           stream_id: stream_id,
+           state: :idle,
+           recv_window_size: collection.initial_recv_window_size,
+           send_window_size: collection.initial_send_window_size
+         }}
+
+      true ->
+        {:error, {:stream, stream_id, Constants.refused_stream(), "At max concurrent streams"}}
     end
   end
 

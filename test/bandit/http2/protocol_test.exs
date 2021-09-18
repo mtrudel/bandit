@@ -407,6 +407,20 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 1}
     end
 
+    test "rejects streams if we would exceed max concurrent streams", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      # Signal that we do not want any streams
+      SimpleH2Client.exchange_client_settings(socket, <<3::16, 0::32>>)
+
+      {:ok, _ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 7}
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
     @tag capture_log: true
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -831,6 +845,24 @@ defmodule HTTP2ProtocolTest do
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
 
+      assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
+      assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "server push messages do not send if we would exceed max concurrent streams", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      # Signal that we only want 1 concurrent stream
+      SimpleH2Client.exchange_client_settings(socket, <<3::16, 1::32>>)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
+
+      # RFC7540§8.2.2 gives us the option of not sending push promise frames if we would exceed
+      # max concurrent streams, which is what we do. Thus, expect to see only the initial request
+      # and no push promises
       assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
       assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
 
