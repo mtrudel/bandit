@@ -88,7 +88,12 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
     %Frame.Settings{ack: true} |> send_frame(socket, connection)
-    {:ok, :continue, %{connection | remote_settings: frame.settings}}
+
+    streams =
+      connection.streams
+      |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
+
+    do_pending_sends(socket, %{connection | remote_settings: frame.settings, streams: streams})
   end
 
   def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
@@ -292,7 +297,7 @@ defmodule Bandit.HTTP2.Connection do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          stream_window_size <- Stream.get_send_window_size(stream),
          connection_window_size <- get_send_window_size(connection),
-         max_length_to_send <- min(stream_window_size, connection_window_size),
+         max_length_to_send <- max(min(stream_window_size, connection_window_size), 0),
          {data_to_send, length_to_send, rest} <- split_data(data, max_length_to_send),
          {:ok, stream} <- Stream.send_data(stream, length_to_send),
          connection <- update_send_window(connection, length_to_send),

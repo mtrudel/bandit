@@ -12,8 +12,8 @@ defmodule Bandit.HTTP2.Stream do
   defstruct stream_id: nil,
             state: nil,
             pid: nil,
-            recv_window_size: 65_535,
-            send_window_size: 65_535
+            recv_window_size: nil,
+            send_window_size: nil
 
   require Integer
   require Logger
@@ -251,6 +251,10 @@ defmodule Bandit.HTTP2.Stream do
 
   def send_headers(%__MODULE__{}) do
     {:error, :invalid_state}
+  end
+
+  def send_data(%__MODULE__{state: state} = stream, 0) when state in [:open, :remote_closed] do
+    {:ok, stream}
   end
 
   def send_data(%__MODULE__{state: state} = stream, len) when state in [:open, :remote_closed] do

@@ -5,7 +5,9 @@ defmodule Bandit.HTTP2.StreamCollection do
   only manages explicit state for existing (current) streams.
   """
 
-  defstruct last_local_stream_id: 0,
+  defstruct initial_recv_window_size: 65_535,
+            initial_send_window_size: 65_535,
+            last_local_stream_id: 0,
             last_remote_stream_id: 0,
             streams: %{}
 
@@ -15,10 +17,30 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   @typedoc "A collection of Stream structs, accessisble by id or pid"
   @type t :: %__MODULE__{
+          initial_recv_window_size: non_neg_integer(),
+          initial_send_window_size: non_neg_integer(),
           last_remote_stream_id: Stream.stream_id(),
           last_local_stream_id: Stream.stream_id(),
           streams: %{Stream.stream_id() => Stream.t()}
         }
+
+  @spec update_initial_send_window_size(t(), non_neg_integer()) :: t()
+  def update_initial_send_window_size(collection, initial_send_window_size) do
+    delta = initial_send_window_size - collection.initial_send_window_size
+
+    streams =
+      collection.streams
+      |> Enum.map(fn
+        {id, %Stream{state: state} = stream} when state in [:open, :remote_closed] ->
+          {id, %{stream | send_window_size: stream.send_window_size + delta}}
+
+        {id, stream} ->
+          {id, stream}
+      end)
+      |> Map.new()
+
+    %{collection | streams: streams, initial_send_window_size: initial_send_window_size}
+  end
 
   @spec get_stream(t(), Stream.stream_id()) :: {:ok, Stream.t()}
   def get_stream(collection, stream_id) do
@@ -29,13 +51,31 @@ defmodule Bandit.HTTP2.StreamCollection do
       nil ->
         cond do
           Integer.is_even(stream_id) && stream_id <= collection.last_local_stream_id ->
-            {:ok, %Stream{stream_id: stream_id, state: :closed}}
+            {:ok,
+             %Stream{
+               stream_id: stream_id,
+               state: :closed,
+               recv_window_size: collection.initial_recv_window_size,
+               send_window_size: collection.initial_send_window_size
+             }}
 
           Integer.is_odd(stream_id) && stream_id <= collection.last_remote_stream_id ->
-            {:ok, %Stream{stream_id: stream_id, state: :closed}}
+            {:ok,
+             %Stream{
+               stream_id: stream_id,
+               state: :closed,
+               recv_window_size: collection.initial_recv_window_size,
+               send_window_size: collection.initial_send_window_size
+             }}
 
           true ->
-            {:ok, %Stream{stream_id: stream_id, state: :idle}}
+            {:ok,
+             %Stream{
+               stream_id: stream_id,
+               state: :idle,
+               recv_window_size: collection.initial_recv_window_size,
+               send_window_size: collection.initial_send_window_size
+             }}
         end
     end
   end

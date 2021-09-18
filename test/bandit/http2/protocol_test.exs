@@ -1183,8 +1183,65 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, String.duplicate("a", 50)}
     end
 
-    @tag :skip
-    test "updates stream send window based on SETTINGS frames", _context do
+    test "updates new stream send windows based on SETTINGS frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Give ourselves lots of room on the connection
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+
+      # Set our initial stream window size to something small
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 100::32>>)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 16_384))
+
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+
+      # Expect 100 bytes as that is our initial stream window
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
+
+      # Grow the stream window by 100k and observe that we get everything else
+      SimpleH2Client.send_window_update(socket, 1, 100_000)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 16_284)}
+    end
+
+    test "adjusts existing stream send windows based on SETTINGS frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Give ourselves lots of room on the connection
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+
+      # Set our initial stream window size to something small
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 100::32>>)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 16_384))
+
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+
+      # Expect 100 bytes as that is our initial stream window
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
+
+      # Shrink the window to 10 (this should give our open stream a window of -90)
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 10::32>>)
+
+      # Grow our window to 110 (this should give our open stream a window of 10)
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 110::32>>)
+
+      # We expect to see those 10 bytes come over
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 10)}
+
+      # Finally, grow our window to 100k and observe the rest of our stream come over
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 100_000::32>>)
+
+      # We expect to see those 10 bytes come over
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 16_274)}
     end
   end
 
