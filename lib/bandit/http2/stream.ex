@@ -29,9 +29,18 @@ defmodule Bandit.HTTP2.Stream do
   @typedoc "A single HTTP/2 stream"
   @type t :: %__MODULE__{stream_id: stream_id(), state: state(), pid: pid() | nil}
 
-  def recv_headers(%__MODULE__{} = stream, headers, peer, plug) do
-    with :ok <- stream_is_idle(stream),
-         :ok <- stream_id_is_valid_client(stream.stream_id),
+  def recv_headers(%__MODULE__{state: state} = stream, trailers, true, _peer, _plug)
+      when state in [:open, :local_closed] do
+    with :ok <- no_pseudo_headers(trailers, stream.stream_id) do
+      # These are actually trailers, which Plug doesn't support. Log and ignore
+      Logger.warn("Ignoring trailers on stream #{stream.stream_id}: #{inspect(trailers)}")
+
+      {:ok, stream}
+    end
+  end
+
+  def recv_headers(%__MODULE__{state: :idle} = stream, headers, _end_stream, peer, plug) do
+    with :ok <- stream_id_is_valid_client(stream.stream_id),
          :ok <- headers_all_lowercase(headers, stream.stream_id),
          :ok <- pseudo_headers_all_request(headers, stream.stream_id),
          :ok <- pseudo_headers_first(headers, stream.stream_id),
@@ -46,9 +55,12 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  def send_push_headers(%__MODULE__{} = stream, headers) do
-    with :ok <- stream_is_idle(stream),
-         :ok <- stream_id_is_valid_server(stream.stream_id),
+  def recv_headers(%__MODULE__{}, _headers, _end_stream, _peer, _plug) do
+    {:error, {:connection, Constants.protocol_error(), "Received HEADERS in unexpected state"}}
+  end
+
+  def send_push_headers(%__MODULE__{state: :idle} = stream, headers) do
+    with :ok <- stream_id_is_valid_server(stream.stream_id),
          :ok <- headers_all_lowercase(headers, stream.stream_id),
          :ok <- pseudo_headers_all_request(headers, stream.stream_id),
          :ok <- pseudo_headers_first(headers, stream.stream_id),
@@ -65,14 +77,6 @@ defmodule Bandit.HTTP2.Stream do
   def start_push(%__MODULE__{state: :reserved_local} = stream, headers, peer, plug) do
     {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
     {:ok, %{stream | state: :remote_closed, pid: pid}}
-  end
-
-  defp stream_is_idle(stream) do
-    if stream.state == :idle do
-      :ok
-    else
-      {:error, {:connection, Constants.protocol_error(), "Received HEADERS when not in idle"}}
-    end
   end
 
   # RFC7540§5.1.1 - client initiated streams must be odd
@@ -115,6 +119,18 @@ defmodule Bandit.HTTP2.Stream do
       :ok
     else
       {:error, {:stream, stream_id, Constants.protocol_error(), "Received invalid pseudo header"}}
+    end
+  end
+
+  # RFC7540§8.1.2.1 - pseudo headers must appear first
+  defp no_pseudo_headers(headers, stream_id) do
+    headers
+    |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
+    |> if do
+      {:error,
+       {:stream, stream_id, Constants.protocol_error(), "Received trailers with pseudo headers"}}
+    else
+      :ok
     end
   end
 

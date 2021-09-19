@@ -162,10 +162,12 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with block <- frame.fragment,
+         end_stream <- frame.end_stream,
          {:ok, recv_hpack_state, headers} <- HPack.decode(block, connection.recv_hpack_state),
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         {:ok, stream} <- Stream.recv_headers(stream, headers, connection.peer, connection.plug),
-         {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
+         {:ok, stream} <-
+           Stream.recv_headers(stream, headers, end_stream, connection.peer, connection.plug),
+         {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else

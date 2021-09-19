@@ -376,6 +376,23 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
     end
 
+    @tag capture_log: true
+    test "accepts HEADER frames sent as trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "trailer"}], ctx)
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
     test "rejects HEADER frames which depend on itself", context do
       socket = SimpleH2Client.setup_connection(context)
       headers = headers_for_header_read_test(context)
