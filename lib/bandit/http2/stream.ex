@@ -13,7 +13,8 @@ defmodule Bandit.HTTP2.Stream do
             state: nil,
             pid: nil,
             recv_window_size: nil,
-            send_window_size: nil
+            send_window_size: nil,
+            pending_content_length: nil
 
   require Integer
   require Logger
@@ -49,9 +50,10 @@ defmodule Bandit.HTTP2.Stream do
          :ok <- exactly_one_instance_of(headers, ":scheme", stream.stream_id),
          :ok <- exactly_one_instance_of(headers, ":method", stream.stream_id),
          :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
-         :ok <- non_empty_path(headers, stream.stream_id) do
+         :ok <- non_empty_path(headers, stream.stream_id),
+         expected_content_length <- expected_content_length(headers) do
       {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
-      {:ok, %{stream | state: :open, pid: pid}}
+      {:ok, %{stream | state: :open, pid: pid, pending_content_length: expected_content_length}}
     end
   end
 
@@ -202,13 +204,28 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  defp expected_content_length(headers) do
+    case List.keyfind(headers, "content-length", 0) do
+      nil -> nil
+      {_, content_length} -> String.to_integer(content_length)
+    end
+  end
+
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
     StreamTask.recv_data(stream.pid, data)
 
     {new_window, increment} =
       FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
 
-    {:ok, %{stream | recv_window_size: new_window}, increment}
+    pending_content_length =
+      case stream.pending_content_length do
+        nil -> nil
+        pending_content_length -> pending_content_length - byte_size(data)
+      end
+
+    {:ok,
+     %{stream | recv_window_size: new_window, pending_content_length: pending_content_length},
+     increment}
   end
 
   def recv_data(%__MODULE__{} = stream, _data) do
@@ -239,13 +256,17 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def recv_end_of_stream(%__MODULE__{state: :open} = stream, true) do
-    StreamTask.recv_end_of_stream(stream.pid)
-    {:ok, %{stream | state: :remote_closed}}
+    with :ok <- verify_content_length(stream) do
+      StreamTask.recv_end_of_stream(stream.pid)
+      {:ok, %{stream | state: :remote_closed}}
+    end
   end
 
   def recv_end_of_stream(%__MODULE__{state: :local_closed} = stream, true) do
-    StreamTask.recv_end_of_stream(stream.pid)
-    {:ok, %{stream | state: :closed, pid: nil}}
+    with :ok <- verify_content_length(stream) do
+      StreamTask.recv_end_of_stream(stream.pid)
+      {:ok, %{stream | state: :closed, pid: nil}}
+    end
   end
 
   def recv_end_of_stream(%__MODULE__{}, true) do
@@ -254,6 +275,15 @@ defmodule Bandit.HTTP2.Stream do
 
   def recv_end_of_stream(%__MODULE__{} = stream, false) do
     {:ok, stream}
+  end
+
+  defp verify_content_length(%__MODULE__{pending_content_length: nil}), do: :ok
+  defp verify_content_length(%__MODULE__{pending_content_length: 0}), do: :ok
+
+  defp verify_content_length(%__MODULE__{} = stream) do
+    {:error,
+     {:stream, stream.stream_id, Constants.protocol_error(),
+      "Received end of stream with #{stream.pending_content_length} byte(s) pending"}}
   end
 
   def owner?(%__MODULE__{pid: pid}, pid), do: :ok
@@ -312,6 +342,12 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
+    {:ok, %{stream | state: :closed, pid: nil}, nil}
+  end
+
+  def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
+    Logger.warn("Stream #{stream.stream_id} was killed by bandit (#{reason})")
+
     {:ok, %{stream | state: :closed, pid: nil}, nil}
   end
 

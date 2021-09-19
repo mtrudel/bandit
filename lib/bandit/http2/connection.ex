@@ -203,9 +203,10 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Data{} = frame, socket, connection) do
-    with {connection_recv_window_size, connection_window_increment} <-
-           FlowControl.compute_recv_window(connection.recv_window_size, byte_size(frame.data)),
-         {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+    {connection_recv_window_size, connection_window_increment} =
+      FlowControl.compute_recv_window(connection.recv_window_size, byte_size(frame.data))
+
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          {:ok, stream, stream_window_increment} <- Stream.recv_data(stream, frame.data),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
@@ -224,6 +225,15 @@ defmodule Bandit.HTTP2.Connection do
     else
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
+
+      {:error, {:stream, stream_id, error_code, error_message}} ->
+        # If we're erroring out on a stream error, RFC7540§6.9 stipulates that we MUST take into
+        # account the sizes of errored frames. As such, ensure that we update our connection
+        # window to reflect that space taken up by this frame. We needn't worry about the stream's
+        # window since we're shutting it down anyway
+
+        connection = %{connection | recv_window_size: connection_recv_window_size}
+        handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
         handle_error(Constants.internal_error(), error, socket, connection)
@@ -456,7 +466,7 @@ defmodule Bandit.HTTP2.Connection do
 
   defp handle_stream_error(stream_id, error_code, reason, socket, connection) do
     case StreamCollection.get_stream(connection.streams, stream_id) do
-      {:ok, stream} -> Stream.terminate_stream(stream, reason)
+      {:ok, stream} -> Stream.terminate_stream(stream, {:bandit, reason})
       _ -> :ok
     end
 

@@ -159,6 +159,29 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
+    test "returns a stream error if sent content-length doesn't match sent data", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "3"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+      SimpleH2Client.send_body(socket, 1, true, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag capture_log: true
     test "rejects DATA frames received on a remote closed stream", context do
       socket = SimpleH2Client.setup_connection(context)
 
