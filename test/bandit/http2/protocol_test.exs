@@ -289,7 +289,7 @@ defmodule HTTP2ProtocolTest do
       # Send headers with priority
       :ssl.send(socket, [
         <<0, 0, byte_size(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
-        <<0, 0, 0, 1, 5>>,
+        <<0, 0, 0, 3, 5>>,
         headers
       ])
 
@@ -373,6 +373,21 @@ defmodule HTTP2ProtocolTest do
               _ctx} = SimpleH2Client.recv_headers(socket)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "rejects HEADER frames which depend on itself", context do
+      socket = SimpleH2Client.setup_connection(context)
+      headers = headers_for_header_read_test(context)
+
+      # Send headers with padding and priority
+      :ssl.send(socket, [
+        <<0, 0, byte_size(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
+        <<0, 0, 0, 1, 5>>,
+        headers
+      ])
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
     end
 

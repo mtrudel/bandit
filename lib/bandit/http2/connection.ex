@@ -146,6 +146,20 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  def handle_frame(
+        %Frame.Headers{stream_id: stream_id, stream_dependency: stream_id},
+        socket,
+        connection
+      ) do
+    handle_stream_error(
+      stream_id,
+      Constants.protocol_error(),
+      "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
+      socket,
+      connection
+    )
+  end
+
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with block <- frame.fragment,
          {:ok, recv_hpack_state, headers} <- HPack.decode(block, connection.recv_hpack_state),
