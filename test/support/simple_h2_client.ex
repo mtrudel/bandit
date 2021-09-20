@@ -80,7 +80,7 @@ defmodule SimpleH2Client do
     flags = if end_stream, do: 0x05, else: 0x04
 
     :ssl.send(socket, [
-      <<byte_size(headers)::24, 1::8, flags::8, 0::1, stream_id::31>>,
+      <<IO.iodata_length(headers)::24, 1::8, flags::8, 0::1, stream_id::31>>,
       headers
     ])
 
@@ -104,7 +104,7 @@ defmodule SimpleH2Client do
 
   def send_body(socket, stream_id, end_stream, body) do
     flags = if end_stream, do: 0x01, else: 0x00
-    :ssl.send(socket, [<<byte_size(body)::24, 0::8, flags::8, 0::1, stream_id::31>>, body])
+    :ssl.send(socket, [<<IO.iodata_length(body)::24, 0::8, flags::8, 0::1, stream_id::31>>, body])
   end
 
   def send_window_update(socket, stream_id, increment) do

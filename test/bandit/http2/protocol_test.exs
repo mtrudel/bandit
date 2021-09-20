@@ -302,7 +302,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send unadorned headers
-      :ssl.send(socket, [<<0, 0, byte_size(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
       assert {:ok, 1, false,
               [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
@@ -317,7 +317,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with priority
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
+        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
         <<0, 0, 0, 3, 5>>,
         headers
       ])
@@ -335,7 +335,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with padding
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 5, 1, 0x0D, 0, 0, 0, 1>>,
+        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x0D, 0, 0, 0, 1>>,
         <<4>>,
         headers,
         <<1, 2, 3, 4>>
@@ -354,7 +354,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with padding and priority
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 10, 1, 0x2D, 0, 0, 0, 1>>,
+        <<0, 0, IO.iodata_length(headers) + 10, 1, 0x2D, 0, 0, 0, 1>>,
         <<4, 0, 0, 0, 0, 1>>,
         headers,
         <<1, 2, 3, 4>>
@@ -378,7 +378,7 @@ defmodule HTTP2ProtocolTest do
 
       ctx = HPack.Table.new(4096)
       {:ok, _, headers} = HPack.encode(headers, ctx)
-      headers
+      IO.iodata_to_binary(headers)
     end
 
     def header_read_test(conn) do
@@ -393,9 +393,9 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
-      :ssl.send(socket, [<<0, 0, byte_size(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
 
       assert {:ok, 1, false,
               [{":status", "200"}, {"cache-control", "max-age=0, private, must-revalidate"}],
@@ -428,7 +428,7 @@ defmodule HTTP2ProtocolTest do
 
       # Send headers with padding and priority
       :ssl.send(socket, [
-        <<0, 0, byte_size(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
+        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
         <<0, 0, 0, 1, 5>>,
         headers
       ])
@@ -500,7 +500,7 @@ defmodule HTTP2ProtocolTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      :ssl.send(socket, [<<byte_size(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      :ssl.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
@@ -1139,7 +1139,7 @@ defmodule HTTP2ProtocolTest do
       end
 
       # Adjust our window down for the frames we just sent
-      window = window - iters * byte_size(chunk)
+      window = window - iters * IO.iodata_length(chunk)
 
       assert window >= 1 <<< 30
 
@@ -1148,7 +1148,7 @@ defmodule HTTP2ProtocolTest do
 
       # Now send one more chunk and update our window size
       SimpleH2Client.send_body(socket, 1, true, chunk)
-      window = window - byte_size(chunk)
+      window = window - IO.iodata_length(chunk)
 
       # We should now be below 2^30 and so we expect an update
       assert window < 1 <<< 30
@@ -1160,7 +1160,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       assert SimpleH2Client.recv_body(socket) ==
-               {:ok, 1, true, "#{1 + (iters + 1) * byte_size(chunk)}"}
+               {:ok, 1, true, "#{1 + (iters + 1) * IO.iodata_length(chunk)}"}
     end
 
     def large_post(conn) do
@@ -1169,8 +1169,8 @@ defmodule HTTP2ProtocolTest do
 
     defp do_large_post(conn, size) do
       case read_body(conn) do
-        {:ok, body, conn} -> conn |> send_resp(200, "#{size + byte_size(body)}")
-        {:more, body, conn} -> do_large_post(conn, size + byte_size(body))
+        {:ok, body, conn} -> conn |> send_resp(200, "#{size + IO.iodata_length(body)}")
+        {:more, body, conn} -> do_large_post(conn, size + IO.iodata_length(body))
       end
     end
   end
@@ -1370,7 +1370,7 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
       :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
@@ -1383,8 +1383,8 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, byte_size(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, [<<0, 0, byte_size(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -1395,7 +1395,7 @@ defmodule HTTP2ProtocolTest do
 
       headers = headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, byte_size(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
+      :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
