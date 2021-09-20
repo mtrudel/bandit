@@ -61,7 +61,7 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
       max_fragment_size = max_frame_size - 4
 
       if fragment_length <= max_fragment_size do
-        [{0x5, 0x04, frame.stream_id, <<frame.promised_stream_id::32, frame.fragment::binary>>}]
+        [{0x5, 0x04, frame.stream_id, [<<frame.promised_stream_id::32>>, frame.fragment]}]
       else
         <<this_frame::binary-size(max_fragment_size), rest::binary>> =
           IO.iodata_to_binary(frame.fragment)

@@ -178,7 +178,7 @@ defmodule HTTP2FrameSerializationTest do
       }
 
       assert Frame.serialize(frame, 16_384) == [
-               [<<0, 0, 7, 5, 4, 0, 0, 0, 123>>, <<0, 0, 0, 234, 1, 2, 3>>]
+               [<<0, 0, 7, 5, 4, 0, 0, 0, 123>>, [<<0, 0, 0, 234>>, <<1, 2, 3>>]]
              ]
     end
 
