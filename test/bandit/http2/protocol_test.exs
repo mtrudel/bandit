@@ -263,20 +263,23 @@ defmodule HTTP2ProtocolTest do
       {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
       # We assume that 60k of random data will get hpacked down into somewhere
-      # between 32768 and 49152 bytes, so we'll need 3 packets total
+      # between 49152 and 65536 bytes, so we'll need 3 packets total
       {:ok, <<16_384::24, 1::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
       {:ok, header_fragment} = :ssl.recv(socket, 16_384)
 
       {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
       {:ok, fragment_1} = :ssl.recv(socket, 16_384)
 
-      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, fragment_2} = :ssl.recv(socket, length)
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_2} = :ssl.recv(socket, 16_384)
 
-      {:ok, _ctx, headers} =
-        [header_fragment, fragment_1, fragment_2]
+      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_3} = :ssl.recv(socket, length)
+
+      {:ok, headers, _ctx} =
+        [header_fragment, fragment_1, fragment_2, fragment_3]
         |> IO.iodata_to_binary()
-        |> HPack.decode(HPack.Table.new(4096))
+        |> HPAX.decode(HPAX.new(4096))
 
       assert headers == [
                {":status", "200"},
@@ -376,8 +379,8 @@ defmodule HTTP2ProtocolTest do
         {"x-request-header", "Request"}
       ]
 
-      ctx = HPack.Table.new(4096)
-      {:ok, _, headers} = HPack.encode(headers, ctx)
+      ctx = HPAX.new(4096)
+      {headers, _} = headers |> Enum.map(fn {k, v} -> {:store, k, v} end) |> HPAX.encode(ctx)
       IO.iodata_to_binary(headers)
     end
 
@@ -495,7 +498,7 @@ defmodule HTTP2ProtocolTest do
     test "returns a stream error if sent headers with uppercase names", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      # HPack won't encode capitalized headers so take example from H2Spec
+      # Take example from H2Spec
       headers =
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
@@ -774,7 +777,7 @@ defmodule HTTP2ProtocolTest do
       # Shrink our decoding table size
       SimpleH2Client.exchange_client_settings(socket, <<1::16, 1::32>>)
 
-      {:ok, ctx} = HPack.Table.resize(1, ctx)
+      ctx = HPAX.resize(ctx, 1)
 
       SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", context.port)
       {:ok, 3, false, ^expected_headers, _ctx} = SimpleH2Client.recv_headers(socket, ctx)
@@ -973,7 +976,7 @@ defmodule HTTP2ProtocolTest do
       {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
       # We assume that 60k of random data will get hpacked down into somewhere
-      # between 32764 and 49148 bytes, so we'll need 3 packets total
+      # between 49148 and 65532 bytes, so we'll need 4 packets total
       # Note that we're reading the promised_stream_id field as part of the frame header
       {:ok, <<16_384::24, 5::8, 0::8, 0::1, 1::31, 2::32>>} = :ssl.recv(socket, 13)
       {:ok, header_fragment} = :ssl.recv(socket, 16_380)
@@ -981,13 +984,16 @@ defmodule HTTP2ProtocolTest do
       {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
       {:ok, fragment_1} = :ssl.recv(socket, 16_384)
 
-      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, fragment_2} = :ssl.recv(socket, length)
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_2} = :ssl.recv(socket, 16_384)
 
-      {:ok, _ctx, headers} =
-        [header_fragment, fragment_1, fragment_2]
+      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
+      {:ok, fragment_3} = :ssl.recv(socket, length)
+
+      {:ok, headers, _ctx} =
+        [header_fragment, fragment_1, fragment_2, fragment_3]
         |> IO.iodata_to_binary()
-        |> HPack.decode(HPack.Table.new(4096))
+        |> HPAX.decode(HPAX.new(4096))
 
       assert headers == [
                {":method", "GET"},

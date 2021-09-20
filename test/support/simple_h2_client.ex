@@ -30,7 +30,7 @@ defmodule SimpleH2Client do
   end
 
   def exchange_client_settings(socket, settings \\ <<>>) do
-    :ssl.send(socket, <<byte_size(settings)::24, 4, 0, 0, 0, 0, 0>>)
+    :ssl.send(socket, <<IO.iodata_length(settings)::24, 4, 0, 0, 0, 0, 0>>)
     :ssl.send(socket, settings)
     {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>} = :ssl.recv(socket, 9)
   end
@@ -53,7 +53,7 @@ defmodule SimpleH2Client do
     :ssl.send(socket, <<0, 0, 8, 7, 0, 0, 0, 0, 0, last_stream_id::32, error_code::32>>)
   end
 
-  def send_simple_headers(socket, stream_id, verb, path, port, ctx \\ HPack.Table.new(4096)) do
+  def send_simple_headers(socket, stream_id, verb, path, port, ctx \\ HPAX.new(4096)) do
     {verb, end_stream} =
       case verb do
         :get -> {"GET", true}
@@ -75,8 +75,8 @@ defmodule SimpleH2Client do
     )
   end
 
-  def send_headers(socket, stream_id, end_stream, headers, ctx \\ HPack.Table.new(4096)) do
-    {:ok, _, headers} = HPack.encode(headers, ctx)
+  def send_headers(socket, stream_id, end_stream, headers, ctx \\ HPAX.new(4096)) do
+    {headers, _} = headers |> Enum.map(fn {k, v} -> {:store, k, v} end) |> HPAX.encode(ctx)
     flags = if end_stream, do: 0x05, else: 0x04
 
     :ssl.send(socket, [
@@ -91,14 +91,14 @@ defmodule SimpleH2Client do
     :ssl.send(socket, <<0, 0, 5, 2, 0, stream_id::32, dependent_stream_id::32, weight::8>>)
   end
 
-  def successful_response?(socket, stream_id, end_stream, ctx \\ HPack.Table.new(4096)) do
+  def successful_response?(socket, stream_id, end_stream, ctx \\ HPAX.new(4096)) do
     {:ok, ^stream_id, ^end_stream, [{":status", "200"} | _], _ctx} = recv_headers(socket, ctx)
   end
 
-  def recv_headers(socket, ctx \\ HPack.Table.new(4096)) do
+  def recv_headers(socket, ctx \\ HPAX.new(4096)) do
     {:ok, <<length::24, 1::8, flags::8, 0::1, stream_id::31>>} = :ssl.recv(socket, 9)
     {:ok, header_block} = :ssl.recv(socket, length)
-    {:ok, ctx, headers} = HPack.decode(header_block, ctx)
+    {:ok, headers, ctx} = HPAX.decode(header_block, ctx)
     {:ok, stream_id, (flags &&& 0x01) == 0x01, headers, ctx}
   end
 
@@ -127,12 +127,12 @@ defmodule SimpleH2Client do
     end
   end
 
-  def recv_push_promise(socket, ctx \\ HPack.Table.new(4096)) do
+  def recv_push_promise(socket, ctx \\ HPAX.new(4096)) do
     {:ok, <<length::24, 5::8, 0x4::8, 0::1, stream_id::31, 0::1, promised_stream_id::31>>} =
       :ssl.recv(socket, 13)
 
     {:ok, header_block} = :ssl.recv(socket, length - 4)
-    {:ok, ctx, headers} = HPack.decode(header_block, ctx)
+    {:ok, headers, ctx} = HPAX.decode(header_block, ctx)
     {:ok, stream_id, promised_stream_id, headers, ctx}
   end
 

@@ -6,8 +6,8 @@ defmodule Bandit.HTTP2.Connection do
   defstruct local_settings: %Bandit.HTTP2.Settings{},
             remote_settings: %Bandit.HTTP2.Settings{},
             fragment_frame: nil,
-            send_hpack_state: HPack.Table.new(4096),
-            recv_hpack_state: HPack.Table.new(4096),
+            send_hpack_state: HPAX.new(4096),
+            recv_hpack_state: HPAX.new(4096),
             send_window_size: 65_535,
             recv_window_size: 65_535,
             streams: %Bandit.HTTP2.StreamCollection{},
@@ -94,8 +94,7 @@ defmodule Bandit.HTTP2.Connection do
       |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
       |> StreamCollection.update_max_concurrent_streams(frame.settings.max_concurrent_streams)
 
-    {:ok, send_hpack_state} =
-      HPack.Table.resize(frame.settings.header_table_size, connection.send_hpack_state)
+    send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
 
     do_pending_sends(socket, %{
       connection
@@ -163,7 +162,8 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with block <- frame.fragment,
          end_stream <- frame.end_stream,
-         {:ok, recv_hpack_state, headers} <- HPack.decode(block, connection.recv_hpack_state),
+         {:hpack, {:ok, headers, recv_hpack_state}} <-
+           {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          {:ok, stream} <-
            Stream.recv_headers(stream, headers, end_stream, connection.peer, connection.plug),
@@ -171,11 +171,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else
-      {:error, :decode_error} ->
-        handle_error(Constants.compression_error(), "Header decode error", socket, connection)
-
-      # https://github.com/OleMchls/elixir-hpack/issues/16
-      other when is_binary(other) ->
+      {:hpack, _} ->
         handle_error(Constants.compression_error(), "Header decode error", socket, connection)
 
       {:error, {:connection, error_code, error_message}} ->
@@ -294,7 +290,8 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
-    with {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
+    with enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
+         {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state),
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          :ok <- Stream.owner?(stream, pid),
          {:ok, stream} <- Stream.send_headers(stream),
@@ -309,10 +306,6 @@ defmodule Bandit.HTTP2.Connection do
 
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
     else
-      {:error, :encode_error} ->
-        # Not explcitily documented in RFC7540
-        handle_error(Constants.compression_error(), "Header encode error", socket, connection)
-
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
 
@@ -408,7 +401,8 @@ defmodule Bandit.HTTP2.Connection do
          promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, promised_stream_id),
          {:ok, stream} <- Stream.send_push_headers(stream, headers),
-         {:ok, send_hpack_state, block} <- HPack.encode(headers, connection.send_hpack_state),
+         enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
+         {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state),
          :ok <- send_push_promise_frame(stream_id, promised_stream_id, block, socket, connection),
          {:ok, stream} <- Stream.start_push(stream, headers, connection.peer, connection.plug),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do

@@ -29,7 +29,7 @@ defmodule Bandit.MixProject do
     [
       {:thousand_island, "~> 0.4.3"},
       {:plug, "~> 1.11"},
-      {:hpack, "~> 3.0.0"},
+      {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.7", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
