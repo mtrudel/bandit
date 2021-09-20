@@ -3,6 +3,8 @@ defmodule HTTP2PlugTest do
   use ServerHelpers
   use FinchHelpers
 
+  import ExUnit.CaptureLog
+
   setup :https_server
   setup :finch_h2_client
 
@@ -183,6 +185,40 @@ defmodule HTTP2PlugTest do
     |> elem(1)
   end
 
+  test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
+    errors =
+      capture_log(fn ->
+        response =
+          Finch.build(:get, context[:base] <> "/noop")
+          |> Finch.request(context[:finch_name])
+
+        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
+                 response
+      end)
+
+    assert errors =~
+             "%Plug.Conn.NotSentError{message: \"a response was neither set nor sent from the connection\"}"
+  end
+
+  def noop(conn), do: conn
+
+  test "raises an error if the conn returns garbage", context do
+    errors =
+      capture_log(fn ->
+        response =
+          Finch.build(:get, context[:base] <> "/garbage")
+          |> Finch.request(context[:finch_name])
+
+        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
+                 response
+      end)
+
+    assert errors =~
+             "%RuntimeError{message: \"Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom\"}"
+  end
+
+  def garbage(_conn), do: :boom
+
   test "writes out a sent file for the entire file", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/send_full_file")
@@ -204,6 +240,21 @@ defmodule HTTP2PlugTest do
 
     assert response.status == 200
     assert response.body == "BCD"
+  end
+
+  test "errors out if asked to read beyond the file", context do
+    errors =
+      capture_log(fn ->
+        response =
+          Finch.build(:get, context[:base] <> "/send_file?offset=1&length=3000")
+          |> Finch.request(context[:finch_name])
+
+        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
+                 response
+      end)
+
+    assert errors =~
+             "%RuntimeError{message: \"Cannot read 3000 bytes starting at 1"
   end
 
   def send_file(conn) do

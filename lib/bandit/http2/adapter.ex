@@ -78,8 +78,7 @@ defmodule Bandit.HTTP2.Adapter do
         end
 
       true ->
-        {:error,
-         "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
+        raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
     end
   end
 
