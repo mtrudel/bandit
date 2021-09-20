@@ -93,11 +93,10 @@ defmodule HTTP2PlugTest do
 
     SimpleH2Client.send_simple_headers(socket, 1, :post, "/timeout_body_read", context.port)
     SimpleH2Client.send_body(socket, 1, false, "A")
-    Process.sleep(100)
-    SimpleH2Client.send_body(socket, 1, true, "BC")
-
     {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
     {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+    Process.sleep(500)
+    SimpleH2Client.send_body(socket, 1, true, "BC")
 
     assert SimpleH2Client.successful_response?(socket, 1, true)
   end
@@ -257,9 +256,9 @@ defmodule HTTP2PlugTest do
 
     # Ensure the the non-blocked chunks (60k worth) were *much* faster than the
     # blocked chunk (which only did 10k)
-    assert non_blocked < 10
+    assert non_blocked < 20
     assert blocked > 100
-    assert blocked < 200
+    assert blocked < 300
   end
 
   test "sending a body blocks on stream flow control", context do

@@ -185,10 +185,16 @@ defmodule HTTP2ProtocolTest do
     test "rejects DATA frames received on a remote closed stream", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleep_and_echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+    end
+
+    def sleep_and_echo(conn) do
+      {:ok, body, conn} = read_body(conn)
+      Process.sleep(100)
+      conn |> send_resp(200, body)
     end
 
     @tag capture_log: true
@@ -457,6 +463,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
+      assert {:ok, 99, true, _, _} = SimpleH2Client.recv_headers(socket)
       SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 1}
@@ -1056,6 +1063,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
+      SimpleH2Client.successful_response?(socket, 99, true)
       SimpleH2Client.send_goaway(socket, 0, 0)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 0}
