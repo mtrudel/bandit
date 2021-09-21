@@ -475,8 +475,8 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  @spec connection_terminated(Socket.t(), t()) :: :ok
-  def connection_terminated(socket, connection) do
+  @spec shutdown_connection(Socket.t(), t()) :: :ok
+  def shutdown_connection(socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
     %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Errors.no_error()}

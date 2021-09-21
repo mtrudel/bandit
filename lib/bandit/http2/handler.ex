@@ -57,7 +57,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_shutdown(socket, state) do
-    Connection.connection_terminated(socket, state.connection)
+    Connection.shutdown_connection(socket, state.connection)
   end
 
   def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do
