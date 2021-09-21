@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Constants, Frame, Serializable}
+  alias Bandit.HTTP2.{Errors, Frame, Serializable}
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(
@@ -41,8 +41,8 @@ defmodule Bandit.HTTP2.Frame do
         max_frame_size
       )
       when length > max_frame_size do
-    {{:error,
-      {:connection, Constants.frame_size_error(), "Payload size too large (RFC7540§4.2)"}}, rest}
+    {{:error, {:connection, Errors.frame_size_error(), "Payload size too large (RFC7540§4.2)"}},
+     rest}
   end
 
   def deserialize(<<>>, _max_frame_size) do

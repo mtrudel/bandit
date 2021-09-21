@@ -7,11 +7,11 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Constants, Serializable}
+  alias Bandit.HTTP2.{Errors, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Constants.protocol_error(),
+     {:connection, Errors.protocol_error(),
       "CONTINUATION frame with zero stream_id (RFC7540§6.10)"}}
   end
 

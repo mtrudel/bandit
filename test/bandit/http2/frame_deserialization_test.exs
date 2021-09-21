@@ -1,7 +1,7 @@
 defmodule HTTP2FrameDeserializationTest do
   use ExUnit.Case, async: true
 
-  alias Bandit.HTTP2.{Constants, Frame, Settings}
+  alias Bandit.HTTP2.{Errors, Frame, Settings}
 
   describe "insufficient data" do
     test "asks for more" do
@@ -259,8 +259,8 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
-                  "Invalid SETTINGS size (RFC7540§6.5)"}}, <<>>}
+                 {:connection, Errors.frame_size_error(), "Invalid SETTINGS size (RFC7540§6.5)"}},
+                <<>>}
     end
 
     test "rejects non-ack frames with invalid enable_push_promise value" do
@@ -268,8 +268,8 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.protocol_error(),
-                  "Invalid enable_push value (RFC7540§6.5)"}}, <<>>}
+                 {:connection, Errors.protocol_error(), "Invalid enable_push value (RFC7540§6.5)"}},
+                <<>>}
     end
 
     test "rejects non-ack frames with invalid initial_window_size value" do
@@ -277,8 +277,8 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.flow_control_error(),
-                  "Invalid window_size (RFC7540§6.5)"}}, <<>>}
+                 {:connection, Errors.flow_control_error(), "Invalid window_size (RFC7540§6.5)"}},
+                <<>>}
     end
 
     test "rejects non-ack frames with invalid large max_frame_size value" do
@@ -286,8 +286,8 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
-                  "Invalid max_frame_size (RFC7540§6.5)"}}, <<>>}
+                 {:connection, Errors.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}},
+                <<>>}
     end
 
     test "rejects non-ack frames with invalid small max_frame_size value" do
@@ -295,8 +295,8 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
-                  "Invalid max_frame_size (RFC7540§6.5)"}}, <<>>}
+                 {:connection, Errors.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}},
+                <<>>}
     end
 
     test "rejects non-ack frames when there is stream identifier" do
@@ -304,7 +304,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
+                 {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
                 <<>>}
     end
 
@@ -320,7 +320,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
+                 {:connection, Errors.frame_size_error(),
                   "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}}, <<>>}
     end
 
@@ -329,7 +329,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
+                 {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}},
                 <<>>}
     end
   end
@@ -412,7 +412,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
+                 {:connection, Errors.frame_size_error(),
                   "PING frame with invalid payload size (RFC7540§6.7)"}}, <<>>}
     end
 
@@ -421,7 +421,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.protocol_error(),
+                 {:connection, Errors.protocol_error(),
                   "Invalid stream ID in PING frame (RFC7540§6.7)"}}, <<>>}
     end
   end
@@ -447,7 +447,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
+                 {:connection, Errors.frame_size_error(),
                   "GOAWAY frame with invalid payload size (RFC7540§6.8)"}}, <<>>}
     end
 
@@ -456,7 +456,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.protocol_error(),
+                 {:connection, Errors.protocol_error(),
                   "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}}, <<>>}
     end
   end
@@ -474,7 +474,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.flow_control_error(),
+                 {:connection, Errors.flow_control_error(),
                   "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}, <<>>}
     end
 
@@ -483,7 +483,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.flow_control_error(),
+                 {:connection, Errors.flow_control_error(),
                   "Invalid WINDOW_UPDATE size increment (RFC7540§6.9)"}}, <<>>}
     end
 
@@ -492,7 +492,7 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error,
-                 {:connection, Constants.frame_size_error(),
+                 {:connection, Errors.frame_size_error(),
                   "Invalid WINDOW_UPDATE frame (RFC7540§6.9)"}}, <<>>}
     end
   end

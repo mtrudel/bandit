@@ -1,7 +1,10 @@
-defmodule Bandit.HTTP2.Constants do
+defmodule Bandit.HTTP2.Errors do
   @moduledoc """
-  Constants as defined in RFC7540§11
+  Errors as defined in RFC7540§11
   """
+
+  @typedoc "An error code as defined for GOAWAY and RST_STREAM errors"
+  @type error_code() :: non_neg_integer()
 
   def no_error, do: 0x0
   def protocol_error, do: 0x1

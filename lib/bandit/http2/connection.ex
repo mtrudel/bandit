@@ -19,7 +19,7 @@ defmodule Bandit.HTTP2.Connection do
 
   alias Bandit.HTTP2.{
     Connection,
-    Constants,
+    Errors,
     FlowControl,
     Frame,
     Settings,
@@ -71,7 +71,7 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(_frame, socket, %Connection{fragment_frame: %Frame.Headers{}} = connection) do
     handle_error(
-      Constants.protocol_error(),
+      Errors.protocol_error(),
       "Expected CONTINUATION frame (RFC7540§6.10)",
       socket,
       connection
@@ -114,13 +114,13 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Goaway{}, socket, connection) do
-    handle_error(Constants.no_error(), "Received GOAWAY", socket, connection)
+    handle_error(Errors.no_error(), "Received GOAWAY", socket, connection)
   end
 
   def handle_frame(%Frame.WindowUpdate{stream_id: 0} = frame, socket, connection) do
     case FlowControl.update_send_window(connection.send_window_size, frame.size_increment) do
       {:ok, new_window} -> do_pending_sends(socket, %{connection | send_window_size: new_window})
-      {:error, error} -> handle_error(Constants.flow_control_error(), error, socket, connection)
+      {:error, error} -> handle_error(Errors.flow_control_error(), error, socket, connection)
     end
   end
 
@@ -141,7 +141,7 @@ defmodule Bandit.HTTP2.Connection do
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Constants.internal_error(), error, socket, connection)
+        handle_error(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -152,7 +152,7 @@ defmodule Bandit.HTTP2.Connection do
       ) do
     handle_stream_error(
       stream_id,
-      Constants.protocol_error(),
+      Errors.protocol_error(),
       "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
       socket,
       connection
@@ -172,7 +172,7 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else
       {:hpack, _} ->
-        handle_error(Constants.compression_error(), "Header decode error", socket, connection)
+        handle_error(Errors.compression_error(), "Header decode error", socket, connection)
 
       {:error, {:connection, error_code, error_message}} ->
         handle_error(error_code, error_message, socket, connection)
@@ -181,7 +181,7 @@ defmodule Bandit.HTTP2.Connection do
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Constants.internal_error(), error, socket, connection)
+        handle_error(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -191,7 +191,7 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Frame.Continuation{}, socket, connection) do
     handle_error(
-      Constants.protocol_error(),
+      Errors.protocol_error(),
       "Received unexpected CONTINUATION frame (RFC7540§6.10)",
       socket,
       connection
@@ -232,7 +232,7 @@ defmodule Bandit.HTTP2.Connection do
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Constants.internal_error(), error, socket, connection)
+        handle_error(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -243,7 +243,7 @@ defmodule Bandit.HTTP2.Connection do
       ) do
     handle_stream_error(
       stream_id,
-      Constants.protocol_error(),
+      Errors.protocol_error(),
       "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
       socket,
       connection
@@ -264,13 +264,13 @@ defmodule Bandit.HTTP2.Connection do
         handle_error(error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Constants.internal_error(), error, socket, connection)
+        handle_error(Errors.internal_error(), error, socket, connection)
     end
   end
 
   def handle_frame(%Frame.PushPromise{}, socket, connection) do
     handle_error(
-      Constants.protocol_error(),
+      Errors.protocol_error(),
       "Received PUSH_PROMISE (RFC7540§8.2)",
       socket,
       connection
@@ -438,7 +438,7 @@ defmodule Bandit.HTTP2.Connection do
     %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
     |> send_frame(socket, connection)
 
-    if error_code == Constants.no_error() do
+    if error_code == Errors.no_error() do
       {:ok, :close, connection}
     else
       {:error, reason, connection}
@@ -448,7 +448,7 @@ defmodule Bandit.HTTP2.Connection do
   def connection_terminated(socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
-    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Constants.no_error()}
+    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Errors.no_error()}
     |> send_frame(socket, connection)
 
     :ok

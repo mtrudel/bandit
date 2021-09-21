@@ -5,7 +5,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   import Bitwise
 
-  alias Bandit.HTTP2.Constants
+  alias Bandit.HTTP2.Errors
 
   def deserialize(flags, 0, <<payload::binary-size(8)>>) when (flags &&& 0x1) == 0x1 do
     {:ok, %__MODULE__{ack: true, payload: payload}}
@@ -17,12 +17,12 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   def deserialize(_flags, stream_id, _payload) when stream_id != 0 do
     {:error,
-     {:connection, Constants.protocol_error(), "Invalid stream ID in PING frame (RFC7540§6.7)"}}
+     {:connection, Errors.protocol_error(), "Invalid stream ID in PING frame (RFC7540§6.7)"}}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
     {:error,
-     {:connection, Constants.frame_size_error(),
+     {:connection, Errors.frame_size_error(),
       "PING frame with invalid payload size (RFC7540§6.7)"}}
   end
 

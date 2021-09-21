@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Goaway do
 
   defstruct last_stream_id: 0, error_code: 0, debug_data: <<>>
 
-  alias Bandit.HTTP2.Constants
+  alias Bandit.HTTP2.Errors
 
   def deserialize(
         _flags,
@@ -16,12 +16,12 @@ defmodule Bandit.HTTP2.Frame.Goaway do
 
   def deserialize(_flags, stream_id, _payload) when stream_id != 0 do
     {:error,
-     {:connection, Constants.protocol_error(), "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}}
+     {:connection, Errors.protocol_error(), "Invalid stream ID in GOAWAY frame (RFC7540§6.8)"}}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
     {:error,
-     {:connection, Constants.frame_size_error(),
+     {:connection, Errors.frame_size_error(),
       "GOAWAY frame with invalid payload size (RFC7540§6.8)"}}
   end
 

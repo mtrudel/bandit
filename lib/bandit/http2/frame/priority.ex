@@ -3,11 +3,11 @@ defmodule Bandit.HTTP2.Frame.Priority do
 
   defstruct stream_id: nil, dependent_stream_id: nil, weight: nil
 
-  alias Bandit.HTTP2.Constants
+  alias Bandit.HTTP2.Errors
 
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Constants.protocol_error(), "PRIORITY frame with zero stream_id (RFC7540§6.3)"}}
+     {:connection, Errors.protocol_error(), "PRIORITY frame with zero stream_id (RFC7540§6.3)"}}
   end
 
   def deserialize(_flags, stream_id, <<_reserved::1, dependent_stream_id::31, weight::8>>) do
@@ -17,7 +17,7 @@ defmodule Bandit.HTTP2.Frame.Priority do
 
   def deserialize(_flags, _stream_id, _payload) do
     {:error,
-     {:connection, Constants.frame_size_error(),
+     {:connection, Errors.frame_size_error(),
       "Invalid payload size in PRIORITY frame (RFC7540§6.3)"}}
   end
 

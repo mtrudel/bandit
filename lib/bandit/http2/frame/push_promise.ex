@@ -8,11 +8,11 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Constants, Serializable}
+  alias Bandit.HTTP2.{Errors, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Constants.protocol_error(),
+     {:connection, Errors.protocol_error(),
       "PUSH_PROMISE frame with zero stream_id (RFC7540§6.6)"}}
   end
 
@@ -49,7 +49,7 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
       )
       when (flags &&& 0x08) == 0x08 do
     {:error,
-     {:connection, Constants.protocol_error(),
+     {:connection, Errors.protocol_error(),
       "PUSH_PROMISE frame with invalid padding length (RFC7540§6.6)"}}
   end
 

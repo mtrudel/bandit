@@ -7,11 +7,11 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Constants, Serializable}
+  alias Bandit.HTTP2.{Errors, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Constants.protocol_error(), "DATA frame with zero stream_id (RFC7540§6.1)"}}
+     {:connection, Errors.protocol_error(), "DATA frame with zero stream_id (RFC7540§6.1)"}}
   end
 
   def deserialize(flags, stream_id, <<padding_length::8, rest::binary>>)
@@ -37,7 +37,7 @@ defmodule Bandit.HTTP2.Frame.Data do
   def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
       when (flags &&& 0x08) == 0x08 do
     {:error,
-     {:connection, Constants.protocol_error(),
+     {:connection, Errors.protocol_error(),
       "DATA frame with invalid padding length (RFC7540§6.1)"}}
   end
 

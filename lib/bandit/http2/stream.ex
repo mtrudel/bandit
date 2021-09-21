@@ -19,7 +19,7 @@ defmodule Bandit.HTTP2.Stream do
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Constants, FlowControl, StreamTask}
+  alias Bandit.HTTP2.{Errors, FlowControl, StreamTask}
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
@@ -58,7 +58,7 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def recv_headers(%__MODULE__{}, _headers, _end_stream, _peer, _plug) do
-    {:error, {:connection, Constants.protocol_error(), "Received HEADERS in unexpected state"}}
+    {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 
   def send_push_headers(%__MODULE__{state: :idle} = stream, headers) do
@@ -86,7 +86,7 @@ defmodule Bandit.HTTP2.Stream do
     if Integer.is_odd(stream_id) do
       :ok
     else
-      {:error, {:connection, Constants.protocol_error(), "Received HEADERS with even stream_id"}}
+      {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
     end
   end
 
@@ -95,7 +95,7 @@ defmodule Bandit.HTTP2.Stream do
     if Integer.is_even(stream_id) do
       :ok
     else
-      {:error, {:connection, Constants.protocol_error(), "Sending HEADERS with odd stream_id"}}
+      {:error, {:connection, Errors.protocol_error(), "Sending HEADERS with odd stream_id"}}
     end
   end
 
@@ -106,7 +106,7 @@ defmodule Bandit.HTTP2.Stream do
     |> if do
       :ok
     else
-      {:error, {:stream, stream_id, Constants.protocol_error(), "Received uppercase header"}}
+      {:error, {:stream, stream_id, Errors.protocol_error(), "Received uppercase header"}}
     end
   end
 
@@ -120,7 +120,7 @@ defmodule Bandit.HTTP2.Stream do
     |> if do
       :ok
     else
-      {:error, {:stream, stream_id, Constants.protocol_error(), "Received invalid pseudo header"}}
+      {:error, {:stream, stream_id, Errors.protocol_error(), "Received invalid pseudo header"}}
     end
   end
 
@@ -130,7 +130,7 @@ defmodule Bandit.HTTP2.Stream do
     |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
     |> if do
       {:error,
-       {:stream, stream_id, Constants.protocol_error(), "Received trailers with pseudo headers"}}
+       {:stream, stream_id, Errors.protocol_error(), "Received trailers with pseudo headers"}}
     else
       :ok
     end
@@ -143,8 +143,7 @@ defmodule Bandit.HTTP2.Stream do
     |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
     |> if do
       {:error,
-       {:stream, stream_id, Constants.protocol_error(),
-        "Received pseudo headers after regular one"}}
+       {:stream, stream_id, Errors.protocol_error(), "Received pseudo headers after regular one"}}
     else
       :ok
     end
@@ -160,7 +159,7 @@ defmodule Bandit.HTTP2.Stream do
     end)
     |> if do
       {:error,
-       {:stream, stream_id, Constants.protocol_error(), "Received connection-specific header"}}
+       {:stream, stream_id, Errors.protocol_error(), "Received connection-specific header"}}
     else
       :ok
     end
@@ -176,7 +175,7 @@ defmodule Bandit.HTTP2.Stream do
         :ok
 
       _ ->
-        {:error, {:stream, stream_id, Constants.protocol_error(), "Received invalid TE header"}}
+        {:error, {:stream, stream_id, Errors.protocol_error(), "Received invalid TE header"}}
     end
   end
 
@@ -189,7 +188,7 @@ defmodule Bandit.HTTP2.Stream do
         :ok
 
       _ ->
-        {:error, {:stream, stream_id, Constants.protocol_error(), "Expected 1 #{header} headers"}}
+        {:error, {:stream, stream_id, Errors.protocol_error(), "Expected 1 #{header} headers"}}
     end
   end
 
@@ -197,7 +196,7 @@ defmodule Bandit.HTTP2.Stream do
   defp non_empty_path(headers, stream_id) do
     case List.keyfind(headers, ":path", 0) do
       {_, ""} ->
-        {:error, {:stream, stream_id, Constants.protocol_error(), "Received empty :path"}}
+        {:error, {:stream, stream_id, Errors.protocol_error(), "Received empty :path"}}
 
       _ ->
         :ok
@@ -229,11 +228,11 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def recv_data(%__MODULE__{} = stream, _data) do
-    {:error, {:connection, Constants.protocol_error(), "Received DATA when in #{stream.state}"}}
+    {:error, {:connection, Errors.protocol_error(), "Received DATA when in #{stream.state}"}}
   end
 
   def recv_window_update(%__MODULE__{state: :idle}, _increment) do
-    {:error, {:connection, Constants.protocol_error(), "Received WINDOW_UPDATE when in idle"}}
+    {:error, {:connection, Errors.protocol_error(), "Received WINDOW_UPDATE when in idle"}}
   end
 
   def recv_window_update(%__MODULE__{} = stream, increment) do
@@ -242,12 +241,12 @@ defmodule Bandit.HTTP2.Stream do
         {:ok, %{stream | send_window_size: new_window}}
 
       {:error, error} ->
-        {:error, {:stream, stream.stream_id, Constants.flow_control_error(), error}}
+        {:error, {:stream, stream.stream_id, Errors.flow_control_error(), error}}
     end
   end
 
   def recv_rst_stream(%__MODULE__{state: :idle}, _error_code) do
-    {:error, {:connection, Constants.protocol_error(), "Received RST_STREAM when in idle"}}
+    {:error, {:connection, Errors.protocol_error(), "Received RST_STREAM when in idle"}}
   end
 
   def recv_rst_stream(%__MODULE__{} = stream, error_code) do
@@ -270,7 +269,7 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def recv_end_of_stream(%__MODULE__{}, true) do
-    {:error, {:connection, Constants.protocol_error(), "Received unexpected end_stream"}}
+    {:error, {:connection, Errors.protocol_error(), "Received unexpected end_stream"}}
   end
 
   def recv_end_of_stream(%__MODULE__{} = stream, false) do
@@ -282,7 +281,7 @@ defmodule Bandit.HTTP2.Stream do
 
   defp verify_content_length(%__MODULE__{} = stream) do
     {:error,
-     {:stream, stream.stream_id, Constants.protocol_error(),
+     {:stream, stream.stream_id, Errors.protocol_error(),
       "Received end of stream with #{stream.pending_content_length} byte(s) pending"}}
   end
 
@@ -354,12 +353,12 @@ defmodule Bandit.HTTP2.Stream do
   def stream_terminated(%__MODULE__{} = stream, :normal) do
     Logger.warn("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
 
-    {:ok, %{stream | state: :closed, pid: nil}, Constants.no_error()}
+    {:ok, %{stream | state: :closed, pid: nil}, Errors.no_error()}
   end
 
   def stream_terminated(%__MODULE__{} = stream, reason) do
     Logger.error("Task for stream #{stream.stream_id} crashed with #{inspect(reason)}")
 
-    {:ok, %{stream | state: :closed, pid: nil}, Constants.internal_error()}
+    {:ok, %{stream | state: :closed, pid: nil}, Errors.internal_error()}
   end
 end

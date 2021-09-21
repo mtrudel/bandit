@@ -14,7 +14,7 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   require Integer
 
-  alias Bandit.HTTP2.{Constants, Stream}
+  alias Bandit.HTTP2.{Errors, Stream}
 
   @typedoc "A collection of Stream structs, accessisble by id or pid"
   @type t :: %__MODULE__{
@@ -89,7 +89,7 @@ defmodule Bandit.HTTP2.StreamCollection do
          }}
 
       true ->
-        {:error, {:stream, stream_id, Constants.refused_stream(), "At max concurrent streams"}}
+        {:error, {:stream, stream_id, Errors.refused_stream(), "At max concurrent streams"}}
     end
   end
 
