@@ -3,16 +3,36 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
-  alias Bandit.HTTP2.Adapter
+  alias Bandit.HTTP2.{Adapter, Errors, Stream}
 
+  @spec start_link(
+          pid(),
+          Stream.stream_id(),
+          Plug.Conn.headers(),
+          Plug.Conn.Adapter.peer_data(),
+          Bandit.plug()
+        ) :: {:ok, pid()}
   def start_link(connection, stream_id, headers, peer, plug) do
     Task.start_link(__MODULE__, :run, [connection, stream_id, headers, peer, plug])
   end
 
+  @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
   def recv_data(pid, data), do: Process.send(pid, {:data, data}, [])
+
+  @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
   def recv_end_of_stream(pid), do: Process.send(pid, :end_stream, [])
+
+  @spec recv_rst_stream(pid(), Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
+  @spec run(
+          pid(),
+          Stream.stream_id(),
+          Plug.Conn.headers(),
+          Plug.Conn.Adapter.peer_data(),
+          Bandit.plug()
+        ) ::
+          any()
   def run(connection, stream_id, headers, peer, {plug, plug_opts}) do
     headers = combine_cookie_crumbs(headers)
     uri = uri(headers)

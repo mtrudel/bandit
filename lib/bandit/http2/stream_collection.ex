@@ -51,8 +51,7 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   @spec get_stream(t(), Stream.stream_id()) ::
           {:ok, Stream.t()}
-          | {:error, {:stream, Stream.stream_id(), non_neg_integer(), String.t()}}
-
+          | {:error, Stream.error()}
   def get_stream(collection, stream_id) do
     case Map.get(collection.streams, stream_id) do
       %Stream{} = stream ->

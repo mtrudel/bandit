@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   use Bitwise
 
-  alias Bandit.HTTP2.Errors
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable}
 
   @max_window_size (1 <<< 31) - 1
   @min_frame_size 1 <<< 14
@@ -11,6 +11,13 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   defstruct ack: false, settings: nil
 
+  @typedoc "An HTTP/2 SETTINGS frame"
+  @type t ::
+          %__MODULE__{ack: true, settings: nil}
+          | %__MODULE__{ack: false, settings: Bandit.HTTP2.Settings.t()}
+
+  @spec deserialize(Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(flags, 0, payload) when (flags &&& 0x1) == 0x0 do
     payload
     |> Stream.unfold(fn
@@ -78,7 +85,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
     {:error, {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
+  defimpl Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
     def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, 0x1, 0, <<>>}]

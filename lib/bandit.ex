@@ -23,6 +23,10 @@ defmodule Bandit do
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
   """
 
+  @typedoc "A Plug definition"
+  @type plug :: {module(), keyword()}
+
+  @spec child_spec([]) :: Supervisor.child_spec()
   def child_spec(arg) do
     {options, illegal_options} =
       arg

@@ -9,6 +9,8 @@ defmodule Bandit.HTTP2.FlowControl do
   @max_window_size (1 <<< 31) - 1
   @min_window_size 1 <<< 30
 
+  @spec compute_recv_window(non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), non_neg_integer()}
   def compute_recv_window(recv_window_size, data_size) do
     # This is what our window size will be after receiving data_size bytes
     recv_window_size = recv_window_size - data_size
@@ -30,6 +32,8 @@ defmodule Bandit.HTTP2.FlowControl do
     end
   end
 
+  @spec update_send_window(non_neg_integer(), non_neg_integer()) ::
+          {:ok, non_neg_integer()} | {:error, term()}
   def update_send_window(current_send_window, increment) do
     if current_send_window + increment > @max_window_size do
       {:error, "Invalid WINDOW_UPDATE increment RFC7540§6.9.1"}

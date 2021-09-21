@@ -3,10 +3,18 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   import Bitwise
 
-  alias Bandit.HTTP2.Errors
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct ack: false, payload: nil
 
+  @typedoc "An HTTP/2 PING frame"
+  @type t :: %__MODULE__{
+          ack: boolean(),
+          payload: iodata()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(flags, 0, <<payload::binary-size(8)>>) when (flags &&& 0x1) == 0x1 do
     {:ok, %__MODULE__{ack: true, payload: payload}}
   end
@@ -26,7 +34,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
       "PING frame with invalid payload size (RFC7540§6.7)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
+  defimpl Serializable do
     alias Bandit.HTTP2.Frame.Ping
 
     def serialize(%Ping{ack: true} = frame, _max_frame_size), do: [{0x6, 0x1, 0, frame.payload}]

@@ -9,4 +9,14 @@ defmodule Bandit.HTTP2.Settings do
             initial_window_size: 65_535,
             max_frame_size: 16_384,
             max_header_list_size: :infinity
+
+  @typedoc "A collection of settings as defined in RFC7540§6"
+  @type t :: %__MODULE__{
+          header_table_size: non_neg_integer(),
+          enable_push: boolean(),
+          max_concurrent_streams: non_neg_integer() | :infinity,
+          initial_window_size: non_neg_integer(),
+          max_frame_size: non_neg_integer(),
+          max_header_list_size: non_neg_integer() | :infinity
+        }
 end

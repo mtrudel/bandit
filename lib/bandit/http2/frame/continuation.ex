@@ -3,12 +3,21 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Errors, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct stream_id: nil,
             end_headers: false,
             fragment: nil
 
+  @typedoc "An HTTP/2 CONTINUATION frame"
+  @type t :: %__MODULE__{
+          stream_id: Stream.stream_id(),
+          end_headers: boolean(),
+          fragment: iodata()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
     {:error,
      {:connection, Errors.protocol_error(),

@@ -5,6 +5,8 @@ defmodule Bandit.HTTP2.Connection do
 
   require Logger
 
+  alias ThousandIsland.{Handler, Socket, Transport}
+
   alias Bandit.HTTP2.{
     Connection,
     Errors,
@@ -27,12 +29,31 @@ defmodule Bandit.HTTP2.Connection do
             peer: nil,
             plug: nil
 
+  @typedoc "A description of a connection error"
+  @type error :: {:connection, Errors.error_code(), String.t()}
+
+  @typedoc "Encapsulates the state of an HTTP/2 connection"
+  @type t :: %__MODULE__{
+          local_settings: Settings.t(),
+          remote_settings: Settings.t(),
+          fragment_frame: Frame.Headers.t() | nil,
+          send_hpack_state: HPAX.Table.t(),
+          recv_hpack_state: HPAX.Table.t(),
+          send_window_size: non_neg_integer(),
+          recv_window_size: non_neg_integer(),
+          streams: StreamCollection.t(),
+          pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
+          peer: Transport.socket_info(),
+          plug: Bandit.plug()
+        }
+
+  @spec init(Socket.t(), Bandit.plug()) :: {:ok, t()} | {:error, term()}
   def init(socket, plug) do
     socket
-    |> ThousandIsland.Socket.recv(24)
+    |> Socket.recv(24)
     |> case do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} ->
-        peer = ThousandIsland.Socket.peer_info(socket)
+        peer = Socket.peer_info(socket)
         connection = %__MODULE__{plug: plug, peer: peer}
         # Send SETTINGS frame per RFC7540§3.5
         %Frame.Settings{ack: false, settings: connection.local_settings}
@@ -49,6 +70,7 @@ defmodule Bandit.HTTP2.Connection do
   # Receiving while expecting CONTINUATION frames is a special case (RFC7540§6.10); handle it first
   #
 
+  @spec handle_frame(Frame.frame(), Socket.t(), t()) :: Handler.handler_result()
   def handle_frame(
         %Frame.Continuation{end_headers: true, stream_id: stream_id} = frame,
         socket,
@@ -289,6 +311,8 @@ defmodule Bandit.HTTP2.Connection do
   # Stream-level sending
   #
 
+  @spec send_headers(Stream.stream_id(), pid(), Plug.Conn.headers(), boolean(), Socket.t(), t()) ::
+          {:ok, t()} | {:error, term()}
   def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
     with enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
          {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state),
@@ -314,6 +338,8 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  @spec send_data(Stream.stream_id(), pid(), iodata(), boolean(), fun(), Socket.t(), t()) ::
+          {:ok, boolean(), t()} | {:error, term()}
   def send_data(stream_id, pid, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          :ok <- Stream.owner?(stream, pid) do
@@ -396,6 +422,8 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  @spec send_push(Stream.stream_id(), Plug.Conn.headers(), Socket.t(), t()) ::
+          {:ok, t()} | {:error, term()}
   def send_push(stream_id, headers, socket, connection) do
     with :ok <- can_send_push_promises(connection),
          promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
@@ -432,6 +460,8 @@ defmodule Bandit.HTTP2.Connection do
   # Connection-level error handling
   #
 
+  @spec handle_error(Errors.error_code(), term(), Socket.t(), t()) ::
+          {:ok, :close, t()} | {:error, term(), t()}
   def handle_error(error_code, reason, socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
@@ -445,6 +475,7 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  @spec connection_terminated(Socket.t(), t()) :: :ok
   def connection_terminated(socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
@@ -470,6 +501,7 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, :continue, connection}
   end
 
+  @spec stream_terminated(pid(), term(), Socket.t(), t()) :: {:ok, t()} | {:error, term()}
   def stream_terminated(pid, reason, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
          {:ok, stream, error_code} <- Stream.stream_terminated(stream, reason),
@@ -488,9 +520,6 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   defp send_frame(frame, socket, connection) do
-    ThousandIsland.Socket.send(
-      socket,
-      Frame.serialize(frame, connection.remote_settings.max_frame_size)
-    )
+    Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
   end
 end

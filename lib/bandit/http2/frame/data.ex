@@ -3,12 +3,21 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Errors, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct stream_id: nil,
             end_stream: false,
             data: nil
 
+  @typedoc "An HTTP/2 DATA frame"
+  @type t :: %__MODULE__{
+          stream_id: Stream.stream_id(),
+          end_stream: boolean(),
+          data: iodata()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
     {:error,
      {:connection, Errors.protocol_error(), "DATA frame with zero stream_id (RFC7540§6.1)"}}

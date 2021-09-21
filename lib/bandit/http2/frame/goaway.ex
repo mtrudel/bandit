@@ -1,10 +1,19 @@
 defmodule Bandit.HTTP2.Frame.Goaway do
   @moduledoc false
 
-  alias Bandit.HTTP2.Errors
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct last_stream_id: 0, error_code: 0, debug_data: <<>>
 
+  @typedoc "An HTTP/2 GOAWAY frame"
+  @type t :: %__MODULE__{
+          last_stream_id: Stream.stream_id(),
+          error_code: Errors.error_code(),
+          debug_data: iodata()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(
         _flags,
         0,
@@ -25,7 +34,7 @@ defmodule Bandit.HTTP2.Frame.Goaway do
       "GOAWAY frame with invalid payload size (RFC7540§6.8)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
+  defimpl Serializable do
     alias Bandit.HTTP2.Frame.Goaway
 
     def serialize(%Goaway{} = frame, _max_frame_size) do

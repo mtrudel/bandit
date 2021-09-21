@@ -1,10 +1,18 @@
 defmodule Bandit.HTTP2.Frame.RstStream do
   @moduledoc false
 
-  alias Bandit.HTTP2.Errors
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct stream_id: nil, error_code: nil
 
+  @typedoc "An HTTP/2 RST_STREAM frame"
+  @type t :: %__MODULE__{
+          stream_id: Stream.stream_id(),
+          error_code: Errors.error_code()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
     {:error,
      {:connection, Errors.protocol_error(), "RST_STREAM frame with zero stream_id (RFC7540§6.4)"}}
@@ -20,7 +28,7 @@ defmodule Bandit.HTTP2.Frame.RstStream do
       "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
+  defimpl Serializable do
     alias Bandit.HTTP2.Frame.RstStream
 
     def serialize(%RstStream{} = frame, _max_frame_size) do

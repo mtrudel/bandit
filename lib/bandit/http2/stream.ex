@@ -12,7 +12,7 @@ defmodule Bandit.HTTP2.Stream do
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Errors, FlowControl, StreamTask}
+  alias Bandit.HTTP2.{Connection, Errors, FlowControl, StreamTask}
 
   defstruct stream_id: nil,
             state: nil,
@@ -27,9 +27,26 @@ defmodule Bandit.HTTP2.Stream do
   @typedoc "An HTTP/2 stream state"
   @type state :: :reserved_local | :idle | :open | :local_closed | :remote_closed | :closed
 
-  @typedoc "A single HTTP/2 stream"
-  @type t :: %__MODULE__{stream_id: stream_id(), state: state(), pid: pid() | nil}
+  @typedoc "A description of a stream error"
+  @type error :: {:stream, stream_id(), Errors.error_code(), String.t()}
 
+  @typedoc "A single HTTP/2 stream"
+  @type t :: %__MODULE__{
+          stream_id: stream_id(),
+          state: state(),
+          pid: pid() | nil,
+          recv_window_size: non_neg_integer(),
+          send_window_size: non_neg_integer(),
+          pending_content_length: non_neg_integer() | nil
+        }
+
+  @spec recv_headers(
+          t(),
+          Plug.Conn.headers(),
+          boolean,
+          Plug.Conn.Adapter.peer_data(),
+          Bandit.plug()
+        ) :: {:ok, t()} | {:error, Connection.error()} | {:error, error()}
   def recv_headers(%__MODULE__{state: state} = stream, trailers, true, _peer, _plug)
       when state in [:open, :local_closed] do
     with :ok <- no_pseudo_headers(trailers, stream.stream_id) do
@@ -61,6 +78,7 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 
+  @spec send_push_headers(t(), Plug.Conn.headers()) :: {:ok, t()} | {:error, error}
   def send_push_headers(%__MODULE__{state: :idle} = stream, headers) do
     with :ok <- stream_id_is_valid_server(stream.stream_id),
          :ok <- headers_all_lowercase(headers, stream.stream_id),
@@ -76,6 +94,8 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  @spec start_push(t(), Plug.Conn.headers(), Plug.Conn.Adapter.peer_data(), Bandit.plug()) ::
+          {:ok, t()}
   def start_push(%__MODULE__{state: :reserved_local} = stream, headers, peer, plug) do
     {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
     {:ok, %{stream | state: :remote_closed, pid: pid}}
@@ -210,6 +230,7 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  @spec recv_data(t(), binary()) :: {:ok, t(), non_neg_integer()} | {:error, Connection.error()}
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
     StreamTask.recv_data(stream.pid, data)
 
@@ -231,6 +252,8 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Errors.protocol_error(), "Received DATA when in #{stream.state}"}}
   end
 
+  @spec recv_window_update(t(), non_neg_integer()) ::
+          {:ok, t()} | {:error, Connection.error()} | {:error, error()}
   def recv_window_update(%__MODULE__{state: :idle}, _increment) do
     {:error, {:connection, Errors.protocol_error(), "Received WINDOW_UPDATE when in idle"}}
   end
@@ -245,6 +268,8 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  @spec recv_rst_stream(t(), Errors.error_code()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def recv_rst_stream(%__MODULE__{state: :idle}, _error_code) do
     {:error, {:connection, Errors.protocol_error(), "Received RST_STREAM when in idle"}}
   end
@@ -254,6 +279,8 @@ defmodule Bandit.HTTP2.Stream do
     {:ok, %{stream | state: :closed, pid: nil}}
   end
 
+  @spec recv_end_of_stream(t(), boolean()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def recv_end_of_stream(%__MODULE__{state: :open} = stream, true) do
     with :ok <- verify_content_length(stream) do
       StreamTask.recv_end_of_stream(stream.pid)
@@ -285,11 +312,14 @@ defmodule Bandit.HTTP2.Stream do
       "Received end of stream with #{stream.pending_content_length} byte(s) pending"}}
   end
 
+  @spec owner?(t(), pid()) :: :ok | {:error, :not_owner}
   def owner?(%__MODULE__{pid: pid}, pid), do: :ok
   def owner?(%__MODULE__{}, _pid), do: {:error, :not_owner}
 
+  @spec get_send_window_size(t()) :: non_neg_integer()
   def get_send_window_size(%__MODULE__{} = stream), do: stream.send_window_size
 
+  @spec send_headers(t()) :: {:ok, t()} | {:error, :invalid_state}
   def send_headers(%__MODULE__{state: state} = stream) when state in [:open, :remote_closed] do
     {:ok, stream}
   end
@@ -298,6 +328,8 @@ defmodule Bandit.HTTP2.Stream do
     {:error, :invalid_state}
   end
 
+  @spec send_data(t(), non_neg_integer()) ::
+          {:ok, t()} | {:error, :insufficient_window_size} | {:error, :invalid_state}
   def send_data(%__MODULE__{state: state} = stream, 0) when state in [:open, :remote_closed] do
     {:ok, stream}
   end
@@ -314,6 +346,7 @@ defmodule Bandit.HTTP2.Stream do
     {:error, :invalid_state}
   end
 
+  @spec send_end_of_stream(t(), boolean()) :: {:ok, t()} | {:error, :invalid_state}
   def send_end_of_stream(%__MODULE__{state: :open} = stream, true) do
     {:ok, %{stream | state: :local_closed}}
   end
@@ -330,16 +363,19 @@ defmodule Bandit.HTTP2.Stream do
     {:ok, stream}
   end
 
+  @spec terminate_stream(t(), term()) :: :ok
   def terminate_stream(%__MODULE__{pid: pid}, reason) when is_pid(pid) do
     # Just kill the process; we will receive a call to stream_terminated once the process actually
     # dies, at which point we will transition the struct to the expected final state
     Process.exit(pid, reason)
+    :ok
   end
 
   def terminate_stream(%__MODULE__{}, _reason) do
     :ok
   end
 
+  @spec stream_terminated(t(), term()) :: {:ok, t(), Errors.error_code() | nil}
   def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
     {:ok, %{stream | state: :closed, pid: nil}, nil}
   end

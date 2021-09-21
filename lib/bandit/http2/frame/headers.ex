@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Errors, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct stream_id: nil,
             end_stream: false,
@@ -12,6 +12,20 @@ defmodule Bandit.HTTP2.Frame.Headers do
             stream_dependency: nil,
             weight: nil,
             fragment: nil
+
+  @typedoc "An HTTP/2 HEADERS frame"
+  @type t :: %__MODULE__{
+          stream_id: Stream.stream_id(),
+          end_stream: boolean(),
+          end_headers: boolean(),
+          exclusive_dependency: boolean(),
+          stream_dependency: Stream.stream_id() | nil,
+          weight: non_neg_integer() | nil,
+          fragment: iodata()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
 
   def deserialize(_flags, 0, _payload) do
     {:error,

@@ -1,8 +1,30 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Errors, Frame, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable}
 
+  @typedoc "Indicates a frame type"
+  @type frame_type :: non_neg_integer()
+
+  @typedoc "The flags passed along with a frame"
+  @type flags :: byte()
+
+  @typedoc "A valid HTTP/2 frame"
+  @type frame ::
+          Frame.Data.t()
+          | Frame.Headers.t()
+          | Frame.Priority.t()
+          | Frame.RstStream.t()
+          | Frame.Settings.t()
+          | Frame.PushPromise.t()
+          | Frame.Ping.t()
+          | Frame.Goaway.t()
+          | Frame.WindowUpdate.t()
+          | Frame.Continuation.t()
+          | Frame.Unknown.t()
+
+  @spec deserialize(binary(), non_neg_integer()) ::
+          {{:ok, frame()}, iodata()} | {{:error, Connection.error()}, iodata()}
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
@@ -53,6 +75,7 @@ defmodule Bandit.HTTP2.Frame do
     {{:more, msg}, <<>>}
   end
 
+  @spec serialize(frame(), non_neg_integer()) :: iodata()
   def serialize(frame, max_frame_size) do
     frame
     |> Serializable.serialize(max_frame_size)

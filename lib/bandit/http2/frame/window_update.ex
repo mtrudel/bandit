@@ -1,11 +1,19 @@
 defmodule Bandit.HTTP2.Frame.WindowUpdate do
   @moduledoc false
 
-  alias Bandit.HTTP2.Errors
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
 
   defstruct stream_id: nil,
             size_increment: nil
 
+  @typedoc "An HTTP/2 WINDOW_UPDATE frame"
+  @type t :: %__MODULE__{
+          stream_id: Stream.stream_id(),
+          size_increment: non_neg_integer()
+        }
+
+  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, _stream_id, <<_reserved::1, 0::31>>) do
     {:error,
      {:connection, Errors.flow_control_error(),
@@ -21,7 +29,7 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
      {:connection, Errors.frame_size_error(), "Invalid WINDOW_UPDATE frame (RFC7540§6.9)"}}
   end
 
-  defimpl Bandit.HTTP2.Serializable do
+  defimpl Serializable do
     alias Bandit.HTTP2.Frame.WindowUpdate
 
     def serialize(%WindowUpdate{} = frame, _max_frame_size) do
