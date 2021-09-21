@@ -1,11 +1,11 @@
 defmodule Bandit.HTTP2.Frame.Ping do
   @moduledoc false
 
-  defstruct ack: false, payload: nil
-
   import Bitwise
 
   alias Bandit.HTTP2.Errors
+
+  defstruct ack: false, payload: nil
 
   def deserialize(flags, 0, <<payload::binary-size(8)>>) when (flags &&& 0x1) == 0x1 do
     {:ok, %__MODULE__{ack: true, payload: payload}}

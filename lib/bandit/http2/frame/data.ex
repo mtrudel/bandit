@@ -1,13 +1,13 @@
 defmodule Bandit.HTTP2.Frame.Data do
   @moduledoc false
 
-  defstruct stream_id: nil,
-            end_stream: false,
-            data: nil
-
   import Bitwise
 
   alias Bandit.HTTP2.{Errors, Serializable}
+
+  defstruct stream_id: nil,
+            end_stream: false,
+            data: nil
 
   def deserialize(_flags, 0, _payload) do
     {:error,

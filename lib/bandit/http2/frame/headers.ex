@@ -1,6 +1,10 @@
 defmodule Bandit.HTTP2.Frame.Headers do
   @moduledoc false
 
+  import Bitwise
+
+  alias Bandit.HTTP2.{Errors, Serializable}
+
   defstruct stream_id: nil,
             end_stream: false,
             end_headers: false,
@@ -8,10 +12,6 @@ defmodule Bandit.HTTP2.Frame.Headers do
             stream_dependency: nil,
             weight: nil,
             fragment: nil
-
-  import Bitwise
-
-  alias Bandit.HTTP2.{Errors, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,

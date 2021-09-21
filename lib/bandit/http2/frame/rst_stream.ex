@@ -1,9 +1,9 @@
 defmodule Bandit.HTTP2.Frame.RstStream do
   @moduledoc false
 
-  defstruct stream_id: nil, error_code: nil
-
   alias Bandit.HTTP2.Errors
+
+  defstruct stream_id: nil, error_code: nil
 
   def deserialize(_flags, 0, _payload) do
     {:error,

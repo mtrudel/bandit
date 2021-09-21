@@ -1,8 +1,6 @@
 defmodule Bandit.HTTP2.Frame.Settings do
   @moduledoc false
 
-  defstruct ack: false, settings: nil
-
   use Bitwise
 
   alias Bandit.HTTP2.Errors
@@ -10,6 +8,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
   @max_window_size (1 <<< 31) - 1
   @min_frame_size 1 <<< 14
   @max_frame_size (1 <<< 24) - 1
+
+  defstruct ack: false, settings: nil
 
   def deserialize(flags, 0, payload) when (flags &&& 0x1) == 0x0 do
     payload

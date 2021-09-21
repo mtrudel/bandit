@@ -1,9 +1,9 @@
 defmodule Bandit.HTTP2.Frame.Goaway do
   @moduledoc false
 
-  defstruct last_stream_id: 0, error_code: 0, debug_data: <<>>
-
   alias Bandit.HTTP2.Errors
+
+  defstruct last_stream_id: 0, error_code: 0, debug_data: <<>>
 
   def deserialize(
         _flags,

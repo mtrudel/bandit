@@ -3,18 +3,6 @@ defmodule Bandit.HTTP2.Connection do
   Represents the state of an HTTP/2 connection
   """
 
-  defstruct local_settings: %Bandit.HTTP2.Settings{},
-            remote_settings: %Bandit.HTTP2.Settings{},
-            fragment_frame: nil,
-            send_hpack_state: HPAX.new(4096),
-            recv_hpack_state: HPAX.new(4096),
-            send_window_size: 65_535,
-            recv_window_size: 65_535,
-            streams: %Bandit.HTTP2.StreamCollection{},
-            pending_sends: [],
-            peer: nil,
-            plug: nil
-
   require Logger
 
   alias Bandit.HTTP2.{
@@ -26,6 +14,18 @@ defmodule Bandit.HTTP2.Connection do
     Stream,
     StreamCollection
   }
+
+  defstruct local_settings: %Settings{},
+            remote_settings: %Settings{},
+            fragment_frame: nil,
+            send_hpack_state: HPAX.new(4096),
+            recv_hpack_state: HPAX.new(4096),
+            send_window_size: 65_535,
+            recv_window_size: 65_535,
+            streams: %StreamCollection{},
+            pending_sends: [],
+            peer: nil,
+            plug: nil
 
   def init(socket, plug) do
     socket

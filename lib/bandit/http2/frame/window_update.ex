@@ -1,10 +1,10 @@
 defmodule Bandit.HTTP2.Frame.WindowUpdate do
   @moduledoc false
 
+  alias Bandit.HTTP2.Errors
+
   defstruct stream_id: nil,
             size_increment: nil
-
-  alias Bandit.HTTP2.Errors
 
   def deserialize(_flags, _stream_id, <<_reserved::1, 0::31>>) do
     {:error,

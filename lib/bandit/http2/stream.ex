@@ -9,17 +9,17 @@ defmodule Bandit.HTTP2.Stream do
   flow control at a connection level
   """
 
+  require Integer
+  require Logger
+
+  alias Bandit.HTTP2.{Errors, FlowControl, StreamTask}
+
   defstruct stream_id: nil,
             state: nil,
             pid: nil,
             recv_window_size: nil,
             send_window_size: nil,
             pending_content_length: nil
-
-  require Integer
-  require Logger
-
-  alias Bandit.HTTP2.{Errors, FlowControl, StreamTask}
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()

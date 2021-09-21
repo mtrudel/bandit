@@ -5,16 +5,16 @@ defmodule Bandit.HTTP2.StreamCollection do
   only manages explicit state for existing (current) streams.
   """
 
+  require Integer
+
+  alias Bandit.HTTP2.{Errors, Stream}
+
   defstruct initial_recv_window_size: 65_535,
             initial_send_window_size: 65_535,
             max_concurrent_streams: :infinity,
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
             streams: %{}
-
-  require Integer
-
-  alias Bandit.HTTP2.{Errors, Stream}
 
   @typedoc "A collection of Stream structs, accessisble by id or pid"
   @type t :: %__MODULE__{

@@ -1,9 +1,9 @@
 defmodule Bandit.HTTP2.Frame.Priority do
   @moduledoc false
 
-  defstruct stream_id: nil, dependent_stream_id: nil, weight: nil
-
   alias Bandit.HTTP2.Errors
+
+  defstruct stream_id: nil, dependent_stream_id: nil, weight: nil
 
   def deserialize(_flags, 0, _payload) do
     {:error,

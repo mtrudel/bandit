@@ -1,14 +1,14 @@
 defmodule Bandit.HTTP2.Frame.PushPromise do
   @moduledoc false
 
+  import Bitwise
+
+  alias Bandit.HTTP2.{Errors, Serializable}
+
   defstruct stream_id: nil,
             end_headers: false,
             promised_stream_id: nil,
             fragment: nil
-
-  import Bitwise
-
-  alias Bandit.HTTP2.{Errors, Serializable}
 
   def deserialize(_flags, 0, _payload) do
     {:error,

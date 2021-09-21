@@ -1,9 +1,18 @@
 defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
 
+  @behaviour Plug.Conn.Adapter
+
   defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false, uri: nil
 
-  @behaviour Plug.Conn.Adapter
+  @typedoc "A struct for backing a Plug.Conn.Adapter"
+  @type t :: %__MODULE__{
+          connection: Bandit.HTTP2.Connection.t(),
+          peer: Plug.Conn.Adapter.peer_data(),
+          stream_id: Bandit.HTTP2.Stream.stream_id(),
+          end_stream: boolean(),
+          uri: URI.t()
+        }
 
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{end_stream: true} = adapter, _opts), do: {:ok, <<>>, adapter}
