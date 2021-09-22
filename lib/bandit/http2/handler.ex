@@ -9,7 +9,7 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
-  alias Bandit.HTTP2.{Connection, Frame}
+  alias Bandit.HTTP2.{Connection, Errors, Frame}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
@@ -45,7 +45,7 @@ defmodule Bandit.HTTP2.Handler do
       {:error, {:connection, code, reason}}, {:ok, :continue, state} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
-        case Connection.handle_error(code, reason, socket, state.connection) do
+        case Connection.shutdown_connection(code, reason, socket, state.connection) do
           {:ok, :close, connection} ->
             {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
 
@@ -57,7 +57,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_shutdown(socket, state) do
-    Connection.shutdown_connection(socket, state.connection)
+    Connection.shutdown_connection(Errors.no_error(), "Server shutdown", socket, state.connection)
   end
 
   def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do

@@ -92,7 +92,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(_frame, socket, %Connection{fragment_frame: %Frame.Headers{}} = connection) do
-    handle_error(
+    shutdown_connection(
       Errors.protocol_error(),
       "Expected CONTINUATION frame (RFC7540§6.10)",
       socket,
@@ -136,13 +136,16 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Goaway{}, socket, connection) do
-    handle_error(Errors.no_error(), "Received GOAWAY", socket, connection)
+    shutdown_connection(Errors.no_error(), "Received GOAWAY", socket, connection)
   end
 
   def handle_frame(%Frame.WindowUpdate{stream_id: 0} = frame, socket, connection) do
     case FlowControl.update_send_window(connection.send_window_size, frame.size_increment) do
-      {:ok, new_window} -> do_pending_sends(socket, %{connection | send_window_size: new_window})
-      {:error, error} -> handle_error(Errors.flow_control_error(), error, socket, connection)
+      {:ok, new_window} ->
+        do_pending_sends(socket, %{connection | send_window_size: new_window})
+
+      {:error, error} ->
+        shutdown_connection(Errors.flow_control_error(), error, socket, connection)
     end
   end
 
@@ -157,13 +160,13 @@ defmodule Bandit.HTTP2.Connection do
       do_pending_sends(socket, %{connection | streams: streams})
     else
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, {:stream, stream_id, error_code, error_message}} ->
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Errors.internal_error(), error, socket, connection)
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -194,16 +197,16 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else
       {:hpack, _} ->
-        handle_error(Errors.compression_error(), "Header decode error", socket, connection)
+        shutdown_connection(Errors.compression_error(), "Header decode error", socket, connection)
 
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, {:stream, stream_id, error_code, error_message}} ->
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Errors.internal_error(), error, socket, connection)
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -212,7 +215,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Continuation{}, socket, connection) do
-    handle_error(
+    shutdown_connection(
       Errors.protocol_error(),
       "Received unexpected CONTINUATION frame (RFC7540§6.10)",
       socket,
@@ -242,7 +245,7 @@ defmodule Bandit.HTTP2.Connection do
        %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, {:stream, stream_id, error_code, error_message}} ->
         # If we're erroring out on a stream error, RFC7540§6.9 stipulates that we MUST take into
@@ -254,7 +257,7 @@ defmodule Bandit.HTTP2.Connection do
         handle_stream_error(stream_id, error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Errors.internal_error(), error, socket, connection)
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
   end
 
@@ -283,15 +286,15 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, :continue, %{connection | streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, error} ->
-        handle_error(Errors.internal_error(), error, socket, connection)
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
   end
 
   def handle_frame(%Frame.PushPromise{}, socket, connection) do
-    handle_error(
+    shutdown_connection(
       Errors.protocol_error(),
       "Received PUSH_PROMISE (RFC7540§8.2)",
       socket,
@@ -303,6 +306,37 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Frame.Unknown{} = frame, _socket, connection) do
     Logger.warn("Unknown frame (#{inspect(Map.from_struct(frame))})")
+
+    {:ok, :continue, connection}
+  end
+
+  #
+  # Error handling on receipt of frames
+  #
+
+  @spec shutdown_connection(Errors.error_code(), term(), Socket.t(), t()) ::
+          {:ok, :close, t()} | {:error, term(), t()}
+  def shutdown_connection(error_code, reason, socket, connection) do
+    last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
+
+    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
+    |> send_frame(socket, connection)
+
+    if error_code == Errors.no_error() do
+      {:ok, :close, connection}
+    else
+      {:error, reason, connection}
+    end
+  end
+
+  defp handle_stream_error(stream_id, error_code, reason, socket, connection) do
+    case StreamCollection.get_stream(connection.streams, stream_id) do
+      {:ok, stream} -> Stream.terminate_stream(stream, {:bandit, reason})
+      _ -> :ok
+    end
+
+    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+    |> send_frame(socket, connection)
 
     {:ok, :continue, connection}
   end
@@ -331,7 +365,7 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, error} ->
         {:error, error}
@@ -371,7 +405,7 @@ defmodule Bandit.HTTP2.Connection do
       end
     else
       {:error, {:connection, error_code, error_message}} ->
-        handle_error(error_code, error_message, socket, connection)
+        shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, error} ->
         {:error, error}
@@ -454,51 +488,6 @@ defmodule Bandit.HTTP2.Connection do
     |> send_frame(socket, connection)
 
     :ok
-  end
-
-  #
-  # Connection-level error handling
-  #
-
-  @spec handle_error(Errors.error_code(), term(), Socket.t(), t()) ::
-          {:ok, :close, t()} | {:error, term(), t()}
-  def handle_error(error_code, reason, socket, connection) do
-    last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
-
-    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
-    |> send_frame(socket, connection)
-
-    if error_code == Errors.no_error() do
-      {:ok, :close, connection}
-    else
-      {:error, reason, connection}
-    end
-  end
-
-  @spec shutdown_connection(Socket.t(), t()) :: :ok
-  def shutdown_connection(socket, connection) do
-    last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
-
-    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: Errors.no_error()}
-    |> send_frame(socket, connection)
-
-    :ok
-  end
-
-  #
-  # Stream-level error handling
-  #
-
-  defp handle_stream_error(stream_id, error_code, reason, socket, connection) do
-    case StreamCollection.get_stream(connection.streams, stream_id) do
-      {:ok, stream} -> Stream.terminate_stream(stream, {:bandit, reason})
-      _ -> :ok
-    end
-
-    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
-    |> send_frame(socket, connection)
-
-    {:ok, :continue, connection}
   end
 
   @spec stream_terminated(pid(), term(), Socket.t(), t()) :: {:ok, t()} | {:error, term()}
