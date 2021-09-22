@@ -7,7 +7,7 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   require Integer
 
-  alias Bandit.HTTP2.{Errors, Stream}
+  alias Bandit.HTTP2.Stream
 
   defstruct initial_recv_window_size: 65_535,
             initial_send_window_size: 65_535,
@@ -49,46 +49,28 @@ defmodule Bandit.HTTP2.StreamCollection do
     %{collection | streams: streams, initial_send_window_size: initial_send_window_size}
   end
 
-  @spec get_stream(t(), Stream.stream_id()) ::
-          {:ok, Stream.t()}
-          | {:error, Stream.error()}
+  @spec get_stream(t(), Stream.stream_id()) :: {:ok, Stream.t()}
   def get_stream(collection, stream_id) do
     case Map.get(collection.streams, stream_id) do
       %Stream{} = stream ->
         {:ok, stream}
 
       nil ->
-        create_new_stream(collection, stream_id)
-    end
-  end
+        state =
+          if (Integer.is_even(stream_id) && stream_id <= collection.last_local_stream_id) ||
+               (Integer.is_odd(stream_id) && stream_id <= collection.last_remote_stream_id) do
+            :closed
+          else
+            :idle
+          end
 
-  defp create_new_stream(collection, stream_id) do
-    cond do
-      (Integer.is_even(stream_id) && stream_id <= collection.last_local_stream_id) ||
-          (Integer.is_odd(stream_id) && stream_id <= collection.last_remote_stream_id) ->
         {:ok,
          %Stream{
            stream_id: stream_id,
-           state: :closed,
+           state: state,
            recv_window_size: collection.initial_recv_window_size,
            send_window_size: collection.initial_send_window_size
          }}
-
-      collection.max_concurrent_streams == :infinity ||
-          collection.max_concurrent_streams >
-            collection.streams
-            |> Map.values()
-            |> Enum.count(&(&1.state in [:open, :remote_closed])) ->
-        {:ok,
-         %Stream{
-           stream_id: stream_id,
-           state: :idle,
-           recv_window_size: collection.initial_recv_window_size,
-           send_window_size: collection.initial_send_window_size
-         }}
-
-      true ->
-        {:error, {:stream, stream_id, Errors.refused_stream(), "At max concurrent streams"}}
     end
   end
 
@@ -137,6 +119,27 @@ defmodule Bandit.HTTP2.StreamCollection do
              last_remote_stream_id: last_remote_stream_id,
              last_local_stream_id: last_local_stream_id
          }}
+    end
+  end
+
+  @spec can_send_new_push_promise(t()) :: :ok | {:error, :max_concurrent_streams}
+  def can_send_new_push_promise(collection) do
+    case collection.max_concurrent_streams do
+      :infinity ->
+        :ok
+
+      max_concurrent_streams ->
+        # Only count server-started (ie: push) streams per RFC7540§6.5.2
+        current_push_stream_count =
+          collection.streams
+          |> Map.values()
+          |> Enum.count(&(&1.state in [:open, :remote_closed] && Integer.is_even(&1.stream_id)))
+
+        if max_concurrent_streams > current_push_stream_count do
+          :ok
+        else
+          {:error, :max_concurrent_streams}
+        end
     end
   end
 

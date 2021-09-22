@@ -487,20 +487,6 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 1}
     end
 
-    test "rejects streams if we would exceed max concurrent streams", context do
-      socket = SimpleH2Client.tls_client(context)
-      SimpleH2Client.exchange_prefaces(socket)
-
-      # Signal that we do not want any streams
-      SimpleH2Client.exchange_client_settings(socket, <<3::16, 0::32>>)
-
-      {:ok, _ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 7}
-
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
     @tag capture_log: true
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -957,8 +943,9 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      # Signal that we only want 1 concurrent stream
-      SimpleH2Client.exchange_client_settings(socket, <<3::16, 1::32>>)
+      # Signal that we want 0 concurrent streams (this count only includes server-sent streams per
+      # RFC7540§6.5.2)
+      SimpleH2Client.exchange_client_settings(socket, <<3::16, 0::32>>)
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
 

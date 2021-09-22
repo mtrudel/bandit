@@ -91,6 +91,9 @@ defmodule Bandit.HTTP2.Stream do
          :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
          :ok <- non_empty_path(headers, stream.stream_id) do
       {:ok, %{stream | state: :reserved_local}}
+    else
+      {:error, {:connection, _error_code, error_message}} -> {:error, error_message}
+      {:error, {:stream, _stream_id, _error_code, error_message}} -> {:error, error_message}
     end
   end
 
