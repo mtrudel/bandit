@@ -46,8 +46,8 @@ jobs:
     - name: Check Formatting
       run: mix format --check-formatted
 
-    - name: Run Credo (allowing TODOs)
-      run: mix credo --strict --ignore Credo.Check.Design.TagTODO
+    - name: Run Credo
+      run: mix credo --strict
 
     - name: Retrieve PLT Cache
       uses: actions/cache@v1

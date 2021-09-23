@@ -38,7 +38,7 @@ defmodule Bandit.HTTP2.StreamTask do
     uri = uri(headers)
 
     {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
-    |> conn(method(headers), uri, peer.address, headers)
+    |> Plug.Conn.Adapter.conn(method(headers), uri, peer.address, headers)
     |> plug.call(plug_opts)
     |> case do
       %Plug.Conn{state: :unset} ->
@@ -59,30 +59,6 @@ defmodule Bandit.HTTP2.StreamTask do
     end
   end
 
-  # TODO - remove this in favour of Plug.Conn.Adapter.conn/5 once Plug > 1.11.1 ships
-  defp conn(adapter, method, uri, remote_ip, req_headers) do
-    %URI{path: path, host: host, port: port, query: qs, scheme: scheme} = uri
-
-    %Plug.Conn{
-      adapter: adapter,
-      host: host,
-      method: method,
-      owner: self(),
-      path_info: split_path(path),
-      port: port,
-      remote_ip: remote_ip,
-      query_string: qs || "",
-      req_headers: req_headers,
-      request_path: path,
-      scheme: String.to_atom(scheme)
-    }
-  end
-
-  defp split_path(path) do
-    segments = :binary.split(path, "/", [:global])
-    for segment <- segments, segment != "", do: segment
-  end
-
   # Per RFC7540§8.1.2.5
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
@@ -94,13 +70,17 @@ defmodule Bandit.HTTP2.StreamTask do
 
   defp method(headers), do: get_header(headers, ":method")
 
-  # Build up a URI based on RFC7540§8.1.2.3
-  # TODO - This is a bogus hack since the interface into URI is so anemic
-  # See https://github.com/elixir-plug/plug/issues/948 for future paths here
   defp uri(headers) do
     scheme = get_header(headers, ":scheme")
     authority = get_header(headers, ":authority")
     path = get_header(headers, ":path")
+
+    # Parse a string to build a URI struct. This is quite a hack and isn't tolerant
+    # of requests proxied from an HTTP/1.1 client (RFC7540§8.1.2.3 specifies that
+    # :authority MUST NOT be set in this case). In general, canonicalizing URIs is
+    # a delicate process & rather than building a half-baked implementation here it's
+    # better to leave a simple and ugly hack in place so that future improvements are
+    # obvious. Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
     URI.parse(scheme <> "://" <> authority <> path)
   end
 
