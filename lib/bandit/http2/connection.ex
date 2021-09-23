@@ -310,6 +310,30 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, :continue, connection}
   end
 
+  # Shared logic to send any pending frames upon adjustment of our send window
+  defp do_pending_sends(socket, connection) do
+    connection.pending_sends
+    |> Enum.reverse()
+    |> Enum.reduce_while({:ok, :continue, connection}, fn pending_send,
+                                                          {:ok, :continue, connection} ->
+      connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
+
+      {stream_id, rest, end_stream, on_unblock} = pending_send
+
+      case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
+        {:ok, true, connection} ->
+          on_unblock.()
+          {:cont, {:ok, :continue, connection}}
+
+        {:ok, false, connection} ->
+          {:cont, {:ok, :continue, connection}}
+
+        {:error, error} ->
+          {:halt, {:error, error, connection}}
+      end
+    end)
+  end
+
   #
   # Error handling on receipt of frames
   #
@@ -340,6 +364,12 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   #
+  # Sending logic
+  #
+  # All callers of functions below will be from stream tasks, looked up via pid
+  #
+
+  #
   # Stream-level sending
   #
 
@@ -361,12 +391,6 @@ defmodule Bandit.HTTP2.Connection do
       |> send_frame(socket, connection)
 
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
-    else
-      {:error, {:connection, error_code, error_message}} ->
-        shutdown_connection(error_code, error_message, socket, connection)
-
-      {:error, error} ->
-        {:error, error}
     end
   end
 
@@ -382,11 +406,11 @@ defmodule Bandit.HTTP2.Connection do
   defp do_send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          stream_window_size <- Stream.get_send_window_size(stream),
-         connection_window_size <- get_send_window_size(connection),
-         max_length_to_send <- max(min(stream_window_size, connection_window_size), 0),
-         {data_to_send, length_to_send, rest} <- split_data(data, max_length_to_send),
-         {:ok, stream} <- Stream.send_data(stream, length_to_send),
-         connection <- update_send_window(connection, length_to_send),
+         connection_window_size <- connection.send_window_size,
+         max_bytes_to_send <- max(min(stream_window_size, connection_window_size), 0),
+         {data_to_send, bytes_to_send, rest} <- split_data(data, max_bytes_to_send),
+         {:ok, stream} <- Stream.send_data(stream, bytes_to_send),
+         connection <- %{connection | send_window_size: connection_window_size - bytes_to_send},
          end_stream_to_send <- end_stream && rest == <<>>,
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream_to_send),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
@@ -401,19 +425,7 @@ defmodule Bandit.HTTP2.Connection do
         pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
         {:ok, false, %{connection | streams: streams, pending_sends: pending_sends}}
       end
-    else
-      {:error, {:connection, error_code, error_message}} ->
-        shutdown_connection(error_code, error_message, socket, connection)
-
-      {:error, error} ->
-        {:error, error}
     end
-  end
-
-  defp get_send_window_size(connection), do: connection.send_window_size
-
-  defp update_send_window(connection, delta) do
-    %{connection | send_window_size: connection.send_window_size - delta}
   end
 
   defp split_data(data, desired_length) do
@@ -424,33 +436,6 @@ defmodule Bandit.HTTP2.Connection do
     else
       <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
       {to_send, desired_length, rest}
-    end
-  end
-
-  defp do_pending_sends(socket, connection) do
-    connection.pending_sends
-    |> Enum.reverse()
-    |> Enum.reduce_while(connection, fn pending_send, connection ->
-      connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
-
-      {stream_id, rest, end_stream, on_unblock} = pending_send
-
-      case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
-        {:ok, true, connection} ->
-          on_unblock.()
-          {:cont, connection}
-
-        {:ok, false, connection} ->
-          {:cont, connection}
-
-        other ->
-          {:halt, other}
-      end
-    end)
-    |> case do
-      %__MODULE__{} = connection -> {:ok, :continue, connection}
-      {:error, error} -> {:error, error, connection}
-      other -> other
     end
   end
 

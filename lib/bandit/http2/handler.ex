@@ -46,9 +46,6 @@ defmodule Bandit.HTTP2.Handler do
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
         case Connection.shutdown_connection(code, reason, socket, state.connection) do
-          {:ok, :close, connection} ->
-            {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
-
           {:error, reason, connection} ->
             {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
@@ -67,9 +64,6 @@ defmodule Bandit.HTTP2.Handler do
 
       {:error, reason} ->
         {:reply, {:error, reason}, {socket, state}}
-
-      {:error, reason, connection} ->
-        {:stop, reason, {:error, reason}, {socket, %{state | connection: connection}}}
     end
   end
 
