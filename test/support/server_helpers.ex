@@ -7,9 +7,13 @@ defmodule ServerHelpers do
     quote location: :keep do
       import Plug.Conn
 
-      def http_server(_context) do
+      def http_server(context) do
         {:ok, server_pid} =
-          [plug: __MODULE__, options: [port: 0, transport_options: [ip: :loopback]]]
+          [
+            plug: __MODULE__,
+            read_timeout: 1000,
+            options: [port: 0, transport_options: [ip: :loopback]]
+          ]
           |> Bandit.child_spec()
           |> start_supervised()
 
@@ -17,11 +21,12 @@ defmodule ServerHelpers do
         [base: "http://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
-      def https_server(_context) do
+      def https_server(context) do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
             scheme: :https,
+            read_timeout: 1000,
             options: [
               port: 0,
               transport_options: [

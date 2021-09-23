@@ -47,10 +47,10 @@ defmodule Bandit.HTTP2.Connection do
           plug: Bandit.plug()
         }
 
-  @spec init(Socket.t(), Bandit.plug()) :: {:ok, t()} | {:error, term()}
-  def init(socket, plug) do
+  @spec init(Socket.t(), Bandit.plug(), timeout()) :: {:ok, t()} | {:error, term()}
+  def init(socket, plug, timeout) do
     socket
-    |> Socket.recv(24)
+    |> Socket.recv(24, timeout)
     |> case do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} ->
         peer = Socket.peer_info(socket)

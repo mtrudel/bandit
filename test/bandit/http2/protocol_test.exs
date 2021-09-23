@@ -57,6 +57,23 @@ defmodule HTTP2ProtocolTest do
       :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
+
+    @tag capture_log: true
+    test "it should shut down the connection after read timeout has been reached with no initial data sent",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      Process.sleep(1500)
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+
+    @tag capture_log: true
+    test "it should shut down the connection after read timeout has been reached with no data sent",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      Process.sleep(1500)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
+    end
   end
 
   describe "connection preface handling" do

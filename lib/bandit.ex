@@ -12,6 +12,8 @@ defmodule Bandit do
   * `scheme`: One of `:http` or `:https`. If `:https` is supported, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
+  * `read_timeout`: How long to wait for data from the client before timing out and closing the
+    connection, specified in milliseconds. Defaults to 60_000
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the 
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
@@ -43,6 +45,8 @@ defmodule Bandit do
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
+    read_timeout = Keyword.get(arg, :read_timeout, 60_000)
+
     options =
       options
       |> Keyword.put_new(:transport_module, transport_module)
@@ -52,7 +56,11 @@ defmodule Bandit do
         &Keyword.merge(&1, extra_transport_options)
       )
       |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
-      |> Keyword.put(:handler_options, %{plug: plug(arg), handler_module: Bandit.InitialHandler})
+      |> Keyword.put(:handler_options, %{
+        plug: plug(arg),
+        handler_module: Bandit.InitialHandler,
+        read_timeout: read_timeout
+      })
 
     %{id: Bandit, start: {ThousandIsland, :start_link, [options]}}
   end

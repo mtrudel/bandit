@@ -13,9 +13,10 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    case Connection.init(socket, state.plug) do
+    case Connection.init(socket, state.plug, state.read_timeout) do
       {:ok, connection} ->
-        {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
+        {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection}),
+         state.read_timeout}
 
       {:error, reason} ->
         {:error, reason, state}
@@ -26,11 +27,12 @@ defmodule Bandit.HTTP2.Handler do
   def handle_data(data, socket, state) do
     (state.buffer <> data)
     |> Stream.unfold(&Frame.deserialize(&1, state.connection.local_settings.max_frame_size))
-    |> Enum.reduce_while({:ok, :continue, state}, fn
-      {:ok, frame}, {:ok, :continue, state} ->
+    |> Enum.reduce_while({:ok, :continue, state, state.read_timeout}, fn
+      {:ok, frame}, {:ok, :continue, state, _timeout} ->
         case Connection.handle_frame(frame, socket, state.connection) do
           {:ok, :continue, connection} ->
-            {:cont, {:ok, :continue, %{state | connection: connection, buffer: <<>>}}}
+            {:cont,
+             {:ok, :continue, %{state | connection: connection, buffer: <<>>}, state.read_timeout}}
 
           {:ok, :close, connection} ->
             {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
@@ -39,10 +41,10 @@ defmodule Bandit.HTTP2.Handler do
             {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
 
-      {:more, rest}, {:ok, :continue, state} ->
-        {:halt, {:ok, :continue, %{state | buffer: rest}}}
+      {:more, rest}, {:ok, :continue, state, _timeout} ->
+        {:halt, {:ok, :continue, %{state | buffer: rest}, state.read_timeout}}
 
-      {:error, {:connection, code, reason}}, {:ok, :continue, state} ->
+      {:error, {:connection, code, reason}}, {:ok, :continue, state, _timeout} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
         case Connection.shutdown_connection(code, reason, socket, state.connection) do
@@ -57,13 +59,18 @@ defmodule Bandit.HTTP2.Handler do
     Connection.shutdown_connection(Errors.no_error(), "Server shutdown", socket, state.connection)
   end
 
+  @impl ThousandIsland.Handler
+  def handle_timeout(socket, state) do
+    Connection.shutdown_connection(Errors.no_error(), "Client timeout", socket, state.connection)
+  end
+
   def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do
     case Connection.send_headers(stream_id, pid, headers, end_stream, socket, state.connection) do
       {:ok, connection} ->
-        {:reply, :ok, {socket, %{state | connection: connection}}}
+        {:reply, :ok, {socket, %{state | connection: connection}}, state.read_timeout}
 
       {:error, reason} ->
-        {:reply, {:error, reason}, {socket, state}}
+        {:reply, {:error, reason}, {socket, state}, state.read_timeout}
     end
   end
 
@@ -78,23 +85,34 @@ defmodule Bandit.HTTP2.Handler do
     unblock = fn -> GenServer.reply(from, :ok) end
 
     case Connection.send_data(stream_id, pid, data, end_stream, unblock, socket, state.connection) do
-      {:ok, true, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
-      {:ok, false, connection} -> {:noreply, {socket, %{state | connection: connection}}}
-      {:error, reason} -> {:reply, {:error, reason}, {socket, state}}
+      {:ok, true, connection} ->
+        {:reply, :ok, {socket, %{state | connection: connection}}, state.read_timeout}
+
+      {:ok, false, connection} ->
+        {:noreply, {socket, %{state | connection: connection}}, state.read_timeout}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, {socket, state}, state.read_timeout}
     end
   end
 
   def handle_call({:send_push, stream_id, headers}, _from, {socket, state}) do
     case Connection.send_push(stream_id, headers, socket, state.connection) do
-      {:ok, connection} -> {:reply, :ok, {socket, %{state | connection: connection}}}
-      {:error, reason} -> {:reply, {:error, reason}, {socket, state}}
+      {:ok, connection} ->
+        {:reply, :ok, {socket, %{state | connection: connection}}, state.read_timeout}
+
+      {:error, reason} ->
+        {:reply, {:error, reason}, {socket, state}, state.read_timeout}
     end
   end
 
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
     case Connection.stream_terminated(pid, reason, socket, state.connection) do
-      {:ok, connection} -> {:noreply, {socket, %{state | connection: connection}}}
-      {:error, _error} -> {:noreply, {socket, state}}
+      {:ok, connection} ->
+        {:noreply, {socket, %{state | connection: connection}}, state.read_timeout}
+
+      {:error, _error} ->
+        {:noreply, {socket, state}, state.read_timeout}
     end
   end
 end

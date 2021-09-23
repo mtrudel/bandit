@@ -29,6 +29,11 @@ defmodule Bandit.DelegatingHandler do
   end
 
   @impl ThousandIsland.Handler
+  def handle_timeout(socket, %{handler_module: handler_module} = state) do
+    handler_module.handle_timeout(socket, state)
+  end
+
+  @impl ThousandIsland.Handler
   def handle_error(error, socket, %{handler_module: handler_module} = state) do
     handler_module.handle_error(error, socket, state)
   end
