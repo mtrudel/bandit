@@ -13,14 +13,10 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    case Connection.init(socket, state.plug, state.read_timeout) do
-      {:ok, connection} ->
-        {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection}),
-         state.read_timeout}
+    {:ok, connection} = Connection.init(socket, state.plug)
 
-      {:error, reason} ->
-        {:error, reason, state}
-    end
+    {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection}),
+     state.read_timeout}
   end
 
   @impl ThousandIsland.Handler

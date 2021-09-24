@@ -76,14 +76,7 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
-  describe "connection preface handling" do
-    @tag capture_log: true
-    test "closes with an error if the HTTP/2 connection preface is not present", context do
-      socket = SimpleH2Client.tls_client(context)
-      :ssl.send(socket, "PRI * NOPE/2.0\r\n\r\nSM\r\n\r\n")
-      assert :ssl.recv(socket, 0) == {:error, :closed}
-    end
-
+  describe "settings exchange" do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
       :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")

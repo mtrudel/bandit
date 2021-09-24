@@ -47,23 +47,15 @@ defmodule Bandit.HTTP2.Connection do
           plug: Bandit.plug()
         }
 
-  @spec init(Socket.t(), Bandit.plug(), timeout()) :: {:ok, t()} | {:error, term()}
-  def init(socket, plug, timeout) do
-    socket
-    |> Socket.recv(24, timeout)
-    |> case do
-      {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} ->
-        peer = Socket.peer_info(socket)
-        connection = %__MODULE__{plug: plug, peer: peer}
-        # Send SETTINGS frame per RFC7540§3.5
-        %Frame.Settings{ack: false, settings: connection.local_settings}
-        |> send_frame(socket, connection)
+  @spec init(Socket.t(), Bandit.plug()) :: {:ok, t()}
+  def init(socket, plug) do
+    peer = Socket.peer_info(socket)
+    connection = %__MODULE__{plug: plug, peer: peer}
+    # Send SETTINGS frame per RFC7540§3.5
+    %Frame.Settings{ack: false, settings: connection.local_settings}
+    |> send_frame(socket, connection)
 
-        {:ok, connection}
-
-      _ ->
-        {:error, "Did not receive expected HTTP/2 connection preface (RFC7540§3.5)"}
-    end
+    {:ok, connection}
   end
 
   #
