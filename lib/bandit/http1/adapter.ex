@@ -313,6 +313,9 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Bandit.Adapter
   def get_local_data(%__MODULE__{socket: socket}), do: Socket.local_info(socket)
 
+  @impl Bandit.Adapter
+  def secure?(%__MODULE__{socket: socket}), do: Socket.secure?(socket)
+
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
 

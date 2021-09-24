@@ -24,6 +24,11 @@ defmodule Bandit.Adapter do
   """
   @callback get_local_data(Plug.Conn.Adapter.payload()) :: Plug.Conn.Adapter.peer_data()
 
+  @doc """
+  Returns whether or not this connection is secure
+  """
+  @callback secure?(Plug.Conn.Adapter.payload()) :: boolean()
+
   defmodule UnreadHeadersError do
     defexception(message: "Headers have not been read yet")
 

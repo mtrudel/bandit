@@ -13,10 +13,10 @@ defmodule Bandit.ConnPipeline do
     case adapter_mod.read_headers(req) do
       {:ok, headers, method, path, req} ->
         %{address: remote_ip} = adapter_mod.get_peer_data(req)
-        %{port: local_port, ssl_cert: ssl_cert} = adapter_mod.get_local_data(req)
+        %{port: local_port} = adapter_mod.get_local_data(req)
 
         {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
-        scheme = if is_binary(ssl_cert), do: :https, else: :http
+        scheme = if adapter_mod.secure?(req), do: :https, else: :http
 
         {path, query_string} = path_and_query_string(path)
 
