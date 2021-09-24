@@ -27,10 +27,10 @@ defmodule Bandit.MixProject do
 
   defp deps do
     [
-      {:thousand_island, "~> 0.4.3"},
-      {:plug, "~> 1.11"},
+      {:thousand_island, "~> 0.4.5"},
+      {:plug, "~> 1.12"},
       {:hpax, "~> 0.1.1"},
-      {:finch, "~> 0.7", only: [:dev, :test]},
+      {:finch, "~> 0.8", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.0", only: [:dev, :test], runtime: false},
