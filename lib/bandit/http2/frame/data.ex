@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct stream_id: nil,
             end_stream: false,
@@ -50,7 +50,7 @@ defmodule Bandit.HTTP2.Frame.Data do
       "DATA frame with invalid padding length (RFC7540§6.1)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Data
 
     def serialize(%Data{} = frame, max_frame_size) do
@@ -65,7 +65,7 @@ defmodule Bandit.HTTP2.Frame.Data do
 
         [
           {0x0, 0x00, frame.stream_id, this_frame}
-          | Serializable.serialize(
+          | Frame.Serializable.serialize(
               %Data{
                 stream_id: frame.stream_id,
                 end_stream: frame.end_stream,

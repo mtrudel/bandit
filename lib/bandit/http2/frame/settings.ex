@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   use Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame}
 
   @max_window_size (1 <<< 31) - 1
   @min_frame_size 1 <<< 14
@@ -85,7 +85,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
     {:error, {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
     def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, 0x1, 0, <<>>}]

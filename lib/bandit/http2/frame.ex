@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   @typedoc "Indicates a frame type"
   @type frame_type :: non_neg_integer()
@@ -73,6 +73,15 @@ defmodule Bandit.HTTP2.Frame do
 
   def deserialize(msg, _max_frame_size) do
     {{:more, msg}, <<>>}
+  end
+
+  defprotocol Serializable do
+    @moduledoc false
+
+    @spec serialize(any(), non_neg_integer()) :: [
+            {Frame.frame_type(), Frame.flags(), Stream.stream_id(), iodata()}
+          ]
+    def serialize(frame, max_frame_size)
   end
 
   @spec serialize(frame(), non_neg_integer()) :: iodata()

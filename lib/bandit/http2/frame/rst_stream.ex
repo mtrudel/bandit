@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame.RstStream do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct stream_id: nil, error_code: nil
 
@@ -28,7 +28,7 @@ defmodule Bandit.HTTP2.Frame.RstStream do
       "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.RstStream
 
     def serialize(%RstStream{} = frame, _max_frame_size) do

@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct stream_id: nil,
             end_stream: false,
@@ -114,7 +114,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
       "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.{Continuation, Headers}
 
     def serialize(
@@ -133,7 +133,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
         [
           {0x1, flags, frame.stream_id, this_frame}
-          | Serializable.serialize(
+          | Frame.Serializable.serialize(
               %Continuation{
                 stream_id: frame.stream_id,
                 fragment: rest

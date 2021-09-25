@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct stream_id: nil,
             end_headers: false,
@@ -29,7 +29,7 @@ defmodule Bandit.HTTP2.Frame.Continuation do
      %__MODULE__{stream_id: stream_id, end_headers: (flags &&& 0x04) == 0x04, fragment: fragment}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Continuation
 
     def serialize(%Continuation{} = frame, max_frame_size) do
@@ -43,7 +43,7 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
         [
           {0x9, 0x00, frame.stream_id, this_frame}
-          | Serializable.serialize(
+          | Frame.Serializable.serialize(
               %Continuation{stream_id: frame.stream_id, fragment: rest},
               max_frame_size
             )

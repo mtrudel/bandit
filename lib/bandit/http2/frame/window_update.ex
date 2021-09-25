@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame.WindowUpdate do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct stream_id: nil,
             size_increment: nil
@@ -29,7 +29,7 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
      {:connection, Errors.frame_size_error(), "Invalid WINDOW_UPDATE frame (RFC7540§6.9)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.WindowUpdate
 
     def serialize(%WindowUpdate{} = frame, _max_frame_size) do

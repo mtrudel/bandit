@@ -3,7 +3,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   import Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Serializable, Stream}
+  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
   defstruct ack: false, payload: nil
 
@@ -34,7 +34,7 @@ defmodule Bandit.HTTP2.Frame.Ping do
       "PING frame with invalid payload size (RFC7540§6.7)"}}
   end
 
-  defimpl Serializable do
+  defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Ping
 
     def serialize(%Ping{ack: true} = frame, _max_frame_size), do: [{0x6, 0x1, 0, frame.payload}]
