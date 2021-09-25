@@ -1,7 +1,6 @@
 defmodule Bandit.HTTP2.FlowControl do
-  @moduledoc """
-  Helpers for working with flow control window calculations
-  """
+  @moduledoc false
+  # Helpers for working with flow control window calculations
 
   use Bitwise
 

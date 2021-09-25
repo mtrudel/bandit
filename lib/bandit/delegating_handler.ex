@@ -1,10 +1,9 @@
 defmodule Bandit.DelegatingHandler do
-  @moduledoc """
-  Delegates all inplementation of the ThousandIsland.Handler behaviour
-  to an implementation specified in state. Allows for clean separation
-  between protocol implementations & friction free protocol selection &
-  upgrades.
-  """
+  @moduledoc false
+  # Delegates all inplementation of the ThousandIsland.Handler behaviour
+  # to an implementation specified in state. Allows for clean separation
+  # between protocol implementations & friction free protocol selection &
+  # upgrades.
 
   use ThousandIsland.Handler
 

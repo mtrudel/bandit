@@ -1,5 +1,6 @@
 defmodule Bandit.HTTP2.StreamTask do
   @moduledoc false
+  # This Task is where an actual Plug is executed, within the context of an HTTP/2 stream
 
   use Task
 

@@ -1,7 +1,6 @@
 defmodule Bandit.HTTP1.Handler do
-  @moduledoc """
-  An HTTP 1.0 & 1.1 Thousand Island Handler
-  """
+  @moduledoc false
+  # An HTTP 1.0 & 1.1 Thousand Island Handler
 
   use ThousandIsland.Handler
 

@@ -1,9 +1,8 @@
 defmodule Bandit.InitialHandler do
-  @moduledoc """
-  The initial protocol implementation used for all connections. Switches to a 
-  specific protocol implementation based on configuration, ALPN negotiation, and
-  line heuristics.
-  """
+  @moduledoc false
+  # The initial protocol implementation used for all connections. Switches to a
+  # specific protocol implementation based on configuration, ALPN negotiation, and
+  # line heuristics.
 
   use ThousandIsland.Handler
 

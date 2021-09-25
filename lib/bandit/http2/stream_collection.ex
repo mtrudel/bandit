@@ -1,9 +1,8 @@
 defmodule Bandit.HTTP2.StreamCollection do
-  @moduledoc """
-  Represents a collection of HTTP/2 streams, accessible by stream id or pid.
-  Provides the ability to track streams with any identifier, even though it 
-  only manages explicit state for existing (current) streams.
-  """
+  @moduledoc false
+  # Represents a collection of HTTP/2 streams, accessible by stream id or pid.
+  # Provides the ability to track streams with any identifier, even though it
+  # only manages explicit state for existing (current) streams.
 
   require Integer
 

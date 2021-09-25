@@ -1,4 +1,6 @@
 defprotocol Bandit.HTTP2.Serializable do
+  @moduledoc false
+
   alias Bandit.HTTP2.{Frame, Stream}
 
   @spec serialize(any(), non_neg_integer()) :: [

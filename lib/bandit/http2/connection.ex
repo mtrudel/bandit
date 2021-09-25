@@ -1,7 +1,6 @@
 defmodule Bandit.HTTP2.Connection do
-  @moduledoc """
-  Represents the state of an HTTP/2 connection
-  """
+  @moduledoc false
+  # Represents the state of an HTTP/2 connection
 
   require Logger
 

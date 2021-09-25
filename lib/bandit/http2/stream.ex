@@ -1,13 +1,12 @@
 defmodule Bandit.HTTP2.Stream do
-  @moduledoc """
-  Carries out state management transitions per RFC7540§5.1. Anything having to do
-  with the internal state of a stream is handled in this module. Note that sending
-  of frames on behalf of a stream is a bit of a split responsibility: the stream
-  itself may update state depending on the value of the end_stream flag (this is 
-  a stream concern and thus handled here), but the sending of the data over the
-  wire is a connection concern as it must be serialized properly & is subject to
-  flow control at a connection level
-  """
+  @moduledoc false
+  # Carries out state management transitions per RFC7540§5.1. Anything having to do
+  # with the internal state of a stream is handled in this module. Note that sending
+  # of frames on behalf of a stream is a bit of a split responsibility: the stream
+  # itself may update state depending on the value of the end_stream flag (this is
+  # a stream concern and thus handled here), but the sending of the data over the
+  # wire is a connection concern as it must be serialized properly & is subject to
+  # flow control at a connection level
 
   require Integer
   require Logger

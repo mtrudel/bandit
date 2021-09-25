@@ -1,8 +1,7 @@
 defmodule Bandit.Adapter do
-  @moduledoc """
-  Defines behaviour to be implemented by HTTP Adapters in addition 
-  to those defined by `Plug.Conn.Adapter`. 
-  """
+  @moduledoc false
+  # Defines behaviour to be implemented by HTTP Adapters in addition
+  # to those defined by `Plug.Conn.Adapter`.
 
   @typedoc """
   The requested URI exactly as it appears in the request line at the beginning 
