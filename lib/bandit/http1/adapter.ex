@@ -102,8 +102,6 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp do_read_headers(%__MODULE__{}, _, _, _, _), do: raise(Bandit.Adapter.AlreadyReadError)
-
   defp should_keepalive?(version, headers) do
     cond do
       get_header(headers, "connection") |> is_nil -> version == :"HTTP/1.1"
@@ -126,9 +124,6 @@ defmodule Bandit.HTTP1.Adapter do
   ##############
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{state: :new}, _opts),
-    do: raise(Bandit.Adapter.UnreadHeadersError)
-
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
 
   def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
