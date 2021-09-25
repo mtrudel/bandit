@@ -4,7 +4,6 @@ defmodule Bandit.HTTP1.Adapter do
   @type state :: :new | :headers_read | :no_body | :body_read | :sent | :chunking_out
 
   @behaviour Plug.Conn.Adapter
-  @behaviour Bandit.Adapter
 
   defstruct state: :new,
             socket: nil,
@@ -25,7 +24,6 @@ defmodule Bandit.HTTP1.Adapter do
   # Header Reading
   ################
 
-  @impl Bandit.Adapter
   def read_headers(req) do
     case do_read_headers(req) do
       {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} ->
@@ -310,10 +308,8 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def get_peer_data(%__MODULE__{socket: socket}), do: Socket.peer_info(socket)
 
-  @impl Bandit.Adapter
   def get_local_data(%__MODULE__{socket: socket}), do: Socket.local_info(socket)
 
-  @impl Bandit.Adapter
   def secure?(%__MODULE__{socket: socket}), do: Socket.secure?(socket)
 
   @impl Plug.Conn.Adapter
