@@ -28,7 +28,7 @@ The roadmap to 1.0 looks more or less like the following:
 
 * [x] `0.1.x` series: Proof of concept (along with [Thousand Island](https://github.com/mtrudel/thousand_island)) sufficient to support [HAP](https://github.com/mtrudel/hap)
 * [x] `0.2.x` series: Revise process model to accommodate forthcoming HTTP/2 and WebSocket adapters
-* [ ] `0.3.x` series: Implement HTTP/2 adapter
+* [x] `0.3.x` series: Implement HTTP/2 adapter
 * [ ] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [ ] `0.5.x` series: Implement WebSocket extension
 * [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
