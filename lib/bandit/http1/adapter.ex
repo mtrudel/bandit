@@ -161,7 +161,7 @@ defmodule Bandit.HTTP1.Adapter do
     {:error, :unsupported_transfer_encoding}
   end
 
-  def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.Adapter.AlreadyReadError)
+  def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
   defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
     case :binary.match(buffer, "\r\n") do

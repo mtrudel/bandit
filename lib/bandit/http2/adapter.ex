@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.Adapter do
         }
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{end_stream: true} = adapter, _opts), do: {:ok, <<>>, adapter}
+  def read_req_body(%__MODULE__{end_stream: true}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
   def read_req_body(%__MODULE__{} = adapter, opts) do
     timeout = Keyword.get(opts, :read_timeout, 15_000)

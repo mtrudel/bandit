@@ -50,6 +50,21 @@ defmodule HTTP1RequestTest do
       assert body == String.duplicate("a", 8_000_000)
       send_resp(conn, 200, "OK")
     end
+
+    test "reading request body multiple times works as expected", context do
+      {:ok, response} =
+        Finch.build(:post, context[:base] <> "/multiple_body_read", [], "OK")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+    end
+
+    def multiple_body_read(conn) do
+      {:ok, body, conn} = read_body(conn)
+      assert body == "OK"
+      assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
+      conn |> send_resp(200, body)
+    end
   end
 
   describe "response handling" do
