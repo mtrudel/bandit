@@ -48,7 +48,7 @@ defmodule ConnPipelineTest do
       :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == 'HTTP/1.0 400\r\n\r\n'
+      assert response == 'HTTP/1.0 400 Bad Request\r\n\r\n'
     end
   end
 end
