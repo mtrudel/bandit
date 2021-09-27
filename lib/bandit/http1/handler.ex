@@ -4,22 +4,14 @@ defmodule Bandit.HTTP1.Handler do
 
   use ThousandIsland.Handler
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+  alias Bandit.HTTP1.ConnPipeline
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, %{plug: plug} = state) do
-    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data}
-
-    case Bandit.ConnPipeline.run(Bandit.HTTP1.Adapter, req, plug) do
-      {:ok, req} ->
-        if Bandit.HTTP1.Adapter.keepalive?(req) do
-          {:ok, :continue, state}
-        else
-          {:ok, :close, state}
-        end
-
-      {:error, reason} ->
-        {:error, reason, state}
+    case ConnPipeline.run(data, socket, plug) do
+      {:ok, true} -> {:ok, :continue, state}
+      {:ok, false} -> {:ok, :close, state}
+      {:error, reason} -> {:error, reason, state}
     end
   end
 
