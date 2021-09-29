@@ -143,6 +143,8 @@ progress moving in the same direction.
 All contributors must agree and adhere to the project's [Code of
 Conduct](https://github.com/mtrudel/bandit/blob/main/CODE_OF_CONDUCT.md).
 
+Security disclosures should be sent privately to mat@geeky.net.
+
 ## Installation
 
 Bandit is [available in Hex](https://hex.pm/docs/publish). The package can be installed
