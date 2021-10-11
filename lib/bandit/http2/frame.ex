@@ -75,6 +75,19 @@ defmodule Bandit.HTTP2.Frame do
     {{:more, msg}, <<>>}
   end
 
+  defmodule Flags do
+    @moduledoc false
+
+    import Bitwise
+
+    defguard set?(flags, bit) when band(flags, bsl(1, bit)) != 0
+    defguard clear?(flags, bit) when band(flags, bsl(1, bit)) == 0
+
+    @spec set([0..255]) :: 0..255
+    def set([]), do: 0x0
+    def set([bit | rest]), do: bor(bsl(1, bit), set(rest))
+  end
+
   defprotocol Serializable do
     @moduledoc false
 

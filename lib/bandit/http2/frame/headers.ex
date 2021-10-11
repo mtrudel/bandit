@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame.Headers do
   @moduledoc false
 
-  import Bitwise
+  import Bandit.HTTP2.Frame.Flags
 
   alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
@@ -24,6 +24,11 @@ defmodule Bandit.HTTP2.Frame.Headers do
           fragment: iodata()
         }
 
+  @end_stream_bit 0
+  @end_headers_bit 2
+  @padding_bit 3
+  @priority_bit 5
+
   @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
           {:ok, t()} | {:error, Connection.error()}
 
@@ -39,12 +44,13 @@ defmodule Bandit.HTTP2.Frame.Headers do
         <<padding_length::8, exclusive_dependency::1, stream_dependency::31, weight::8,
           rest::binary>>
       )
-      when (flags &&& 0x28) == 0x28 and byte_size(rest) >= padding_length do
+      when set?(flags, @padding_bit) and set?(flags, @priority_bit) and
+             byte_size(rest) >= padding_length do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
-       end_headers: (flags &&& 0x04) == 0x04,
+       end_stream: set?(flags, @end_stream_bit),
+       end_headers: set?(flags, @end_headers_bit),
        exclusive_dependency: exclusive_dependency == 0x01,
        stream_dependency: stream_dependency,
        weight: weight,
@@ -54,28 +60,36 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
   # Padding but not priority
   def deserialize(flags, stream_id, <<padding_length::8, rest::binary>>)
-      when (flags &&& 0x28) == 0x08 and byte_size(rest) >= padding_length do
+      when set?(flags, @padding_bit) and clear?(flags, @priority_bit) and
+             byte_size(rest) >= padding_length do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
-       end_headers: (flags &&& 0x04) == 0x04,
+       end_stream: set?(flags, @end_stream_bit),
+       end_headers: set?(flags, @end_headers_bit),
        fragment: binary_part(rest, 0, byte_size(rest) - padding_length)
      }}
   end
 
-  # Priority but not padding
+  # Any other case where padding is set
+  def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
+      when set?(flags, @padding_bit) do
+    {:error,
+     {:connection, Errors.protocol_error(),
+      "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
+  end
+
   def deserialize(
         flags,
         stream_id,
         <<exclusive_dependency::1, stream_dependency::31, weight::8, fragment::binary>>
       )
-      when (flags &&& 0x28) == 0x20 do
+      when set?(flags, @priority_bit) do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
-       end_headers: (flags &&& 0x04) == 0x04,
+       end_stream: set?(flags, @end_stream_bit),
+       end_headers: set?(flags, @end_headers_bit),
        exclusive_dependency: exclusive_dependency == 0x01,
        stream_dependency: stream_dependency,
        weight: weight,
@@ -83,56 +97,39 @@ defmodule Bandit.HTTP2.Frame.Headers do
      }}
   end
 
-  # Neither padding nor priority
   def deserialize(flags, stream_id, <<fragment::binary>>)
-      when (flags &&& 0x28) == 0x00 do
+      when clear?(flags, @priority_bit) and clear?(flags, @padding_bit) do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
-       end_headers: (flags &&& 0x04) == 0x04,
+       end_stream: set?(flags, @end_stream_bit),
+       end_headers: set?(flags, @end_headers_bit),
        fragment: fragment
      }}
-  end
-
-  def deserialize(
-        flags,
-        _stream_id,
-        <<_padding_length::8, _exclusive_dependency::1, _stream_dependency::31, _weight::8,
-          _rest::binary>>
-      )
-      when (flags &&& 0x28) == 0x28 do
-    {:error,
-     {:connection, Errors.protocol_error(),
-      "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
-  end
-
-  def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
-      when (flags &&& 0x28) == 0x08 do
-    {:error,
-     {:connection, Errors.protocol_error(),
-      "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
   end
 
   defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.{Continuation, Headers}
 
+    @end_stream_bit 0
+    @end_headers_bit 2
+
     def serialize(
           %Headers{exclusive_dependency: false, stream_dependency: nil, weight: nil} = frame,
           max_frame_size
         ) do
-      flags = if frame.end_stream, do: 0x01, else: 0x00
+      flags = if frame.end_stream, do: [@end_stream_bit], else: []
 
       fragment_length = IO.iodata_length(frame.fragment)
 
       if fragment_length <= max_frame_size do
-        [{0x1, flags ||| 0x04, frame.stream_id, frame.fragment}]
+        [{0x1, set([@end_headers_bit | flags]), frame.stream_id, frame.fragment}]
       else
         <<this_frame::binary-size(max_frame_size), rest::binary>> =
           IO.iodata_to_binary(frame.fragment)
 
         [
-          {0x1, flags, frame.stream_id, this_frame}
+          {0x1, set(flags), frame.stream_id, this_frame}
           | Frame.Serializable.serialize(
               %Continuation{
                 stream_id: frame.stream_id,

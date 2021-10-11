@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame.Continuation do
   @moduledoc false
 
-  import Bitwise
+  import Bandit.HTTP2.Frame.Flags
 
   alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
@@ -16,6 +16,8 @@ defmodule Bandit.HTTP2.Frame.Continuation do
           fragment: iodata()
         }
 
+  @end_headers_bit 2
+
   @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
           {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
@@ -26,17 +28,23 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
   def deserialize(flags, stream_id, <<fragment::binary>>) do
     {:ok,
-     %__MODULE__{stream_id: stream_id, end_headers: (flags &&& 0x04) == 0x04, fragment: fragment}}
+     %__MODULE__{
+       stream_id: stream_id,
+       end_headers: set?(flags, @end_headers_bit),
+       fragment: fragment
+     }}
   end
 
   defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Continuation
 
+    @end_headers_bit 2
+
     def serialize(%Continuation{} = frame, max_frame_size) do
       fragment_length = IO.iodata_length(frame.fragment)
 
       if fragment_length <= max_frame_size do
-        [{0x9, 0x04, frame.stream_id, frame.fragment}]
+        [{0x9, set([@end_headers_bit]), frame.stream_id, frame.fragment}]
       else
         <<this_frame::binary-size(max_frame_size), rest::binary>> =
           IO.iodata_to_binary(frame.fragment)

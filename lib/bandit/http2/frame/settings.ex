@@ -1,7 +1,8 @@
 defmodule Bandit.HTTP2.Frame.Settings do
   @moduledoc false
 
-  use Bitwise
+  import Bandit.HTTP2.Frame.Flags
+  import Bitwise
 
   alias Bandit.HTTP2.{Connection, Errors, Frame}
 
@@ -16,9 +17,11 @@ defmodule Bandit.HTTP2.Frame.Settings do
           %__MODULE__{ack: true, settings: nil}
           | %__MODULE__{ack: false, settings: Bandit.HTTP2.Settings.t()}
 
+  @ack_bit 0
+
   @spec deserialize(Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
           {:ok, t()} | {:error, Connection.error()}
-  def deserialize(flags, 0, payload) when (flags &&& 0x1) == 0x0 do
+  def deserialize(flags, 0, payload) when clear?(flags, @ack_bit) do
     payload
     |> Stream.unfold(fn
       <<>> -> nil
@@ -71,11 +74,11 @@ defmodule Bandit.HTTP2.Frame.Settings do
     end
   end
 
-  def deserialize(flags, 0, <<>>) when (flags &&& 0x1) == 0x1 do
+  def deserialize(flags, 0, <<>>) when set?(flags, @ack_bit) do
     {:ok, %__MODULE__{ack: true}}
   end
 
-  def deserialize(flags, 0, _payload) when (flags &&& 0x1) == 0x1 do
+  def deserialize(flags, 0, _payload) when set?(flags, @ack_bit) do
     {:error,
      {:connection, Errors.frame_size_error(),
       "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}}
@@ -88,7 +91,9 @@ defmodule Bandit.HTTP2.Frame.Settings do
   defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Settings
 
-    def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, 0x1, 0, <<>>}]
+    @ack_bit 0
+
+    def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, set([@ack_bit]), 0, <<>>}]
 
     def serialize(%Settings{ack: false} = frame, _max_frame_size) do
       # Note that the ordering here corresponds to the keys' alphabetical

@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.Frame.Data do
   @moduledoc false
 
-  import Bitwise
+  import Bandit.HTTP2.Frame.Flags
 
   alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
 
@@ -16,6 +16,9 @@ defmodule Bandit.HTTP2.Frame.Data do
           data: iodata()
         }
 
+  @end_stream_bit 0
+  @padding_bit 3
+
   @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
           {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
@@ -24,27 +27,26 @@ defmodule Bandit.HTTP2.Frame.Data do
   end
 
   def deserialize(flags, stream_id, <<padding_length::8, rest::binary>>)
-      when (flags &&& 0x08) == 0x08 and byte_size(rest) >= padding_length do
+      when set?(flags, @padding_bit) and byte_size(rest) >= padding_length do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
+       end_stream: set?(flags, @end_stream_bit),
        data: binary_part(rest, 0, byte_size(rest) - padding_length)
      }}
   end
 
-  # Neither padding nor priority
-  def deserialize(flags, stream_id, <<data::binary>>) when (flags &&& 0x08) == 0x00 do
+  def deserialize(flags, stream_id, <<data::binary>>) when clear?(flags, @padding_bit) do
     {:ok,
      %__MODULE__{
        stream_id: stream_id,
-       end_stream: (flags &&& 0x01) == 0x01,
+       end_stream: set?(flags, @end_stream_bit),
        data: data
      }}
   end
 
   def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
-      when (flags &&& 0x08) == 0x08 do
+      when set?(flags, @padding_bit) do
     {:error,
      {:connection, Errors.protocol_error(),
       "DATA frame with invalid padding length (RFC7540§6.1)"}}
@@ -53,12 +55,14 @@ defmodule Bandit.HTTP2.Frame.Data do
   defimpl Frame.Serializable do
     alias Bandit.HTTP2.Frame.Data
 
+    @end_stream_bit 0
+
     def serialize(%Data{} = frame, max_frame_size) do
       data_length = IO.iodata_length(frame.data)
 
       if data_length <= max_frame_size do
-        flags = if frame.end_stream, do: 0x01, else: 0x00
-        [{0x0, flags, frame.stream_id, frame.data}]
+        flags = if frame.end_stream, do: [@end_stream_bit], else: []
+        [{0x0, set(flags), frame.stream_id, frame.data}]
       else
         <<this_frame::binary-size(max_frame_size), rest::binary>> =
           IO.iodata_to_binary(frame.data)
