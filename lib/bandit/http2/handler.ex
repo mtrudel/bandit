@@ -14,32 +14,31 @@ defmodule Bandit.HTTP2.Handler do
   def handle_connection(socket, state) do
     {:ok, connection} = Connection.init(socket, state.plug)
 
-    {:ok, :continue, state |> Map.merge(%{buffer: <<>>, connection: connection}),
-     state.read_timeout}
+    {:continue, state |> Map.merge(%{buffer: <<>>, connection: connection}), state.read_timeout}
   end
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     (state.buffer <> data)
     |> Stream.unfold(&Frame.deserialize(&1, state.connection.local_settings.max_frame_size))
-    |> Enum.reduce_while({:ok, :continue, state, state.read_timeout}, fn
-      {:ok, frame}, {:ok, :continue, state, _timeout} ->
+    |> Enum.reduce_while({:continue, state, state.read_timeout}, fn
+      {:ok, frame}, {:continue, state, _timeout} ->
         case Connection.handle_frame(frame, socket, state.connection) do
-          {:ok, :continue, connection} ->
+          {:continue, connection} ->
             {:cont,
-             {:ok, :continue, %{state | connection: connection, buffer: <<>>}, state.read_timeout}}
+             {:continue, %{state | connection: connection, buffer: <<>>}, state.read_timeout}}
 
-          {:ok, :close, connection} ->
-            {:halt, {:ok, :close, %{state | connection: connection, buffer: <<>>}}}
+          {:close, connection} ->
+            {:halt, {:close, %{state | connection: connection, buffer: <<>>}}}
 
           {:error, reason, connection} ->
             {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
 
-      {:more, rest}, {:ok, :continue, state, _timeout} ->
-        {:halt, {:ok, :continue, %{state | buffer: rest}, state.read_timeout}}
+      {:more, rest}, {:continue, state, _timeout} ->
+        {:halt, {:continue, %{state | buffer: rest}, state.read_timeout}}
 
-      {:error, {:connection, code, reason}}, {:ok, :continue, state, _timeout} ->
+      {:error, {:connection, code, reason}}, {:continue, state, _timeout} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
         case Connection.shutdown_connection(code, reason, socket, state.connection) do

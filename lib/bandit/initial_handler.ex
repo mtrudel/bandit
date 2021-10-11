@@ -54,10 +54,10 @@ defmodule Bandit.InitialHandler do
     state = %{state | handler_module: next_handler}
 
     case Bandit.DelegatingHandler.handle_connection(socket, state) do
-      {:ok, :continue, state} ->
+      {:continue, state} ->
         Bandit.DelegatingHandler.handle_data(data, socket, state)
 
-      {:ok, :continue, state, _timeout} ->
+      {:continue, state, _timeout} ->
         Bandit.DelegatingHandler.handle_data(data, socket, state)
 
       other ->

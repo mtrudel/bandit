@@ -9,8 +9,8 @@ defmodule Bandit.HTTP1.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, socket, %{plug: plug} = state) do
     case ConnPipeline.run(data, socket, plug) do
-      {:ok, true} -> {:ok, :continue, state}
-      {:ok, false} -> {:ok, :close, state}
+      {:ok, true} -> {:continue, state}
+      {:ok, false} -> {:close, state}
       {:error, reason} -> {:error, reason, state}
     end
   end

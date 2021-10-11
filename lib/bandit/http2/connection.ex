@@ -79,7 +79,7 @@ defmodule Bandit.HTTP2.Connection do
       ) do
     header_block = connection.fragment_frame.fragment <> frame.fragment
     header_frame = %{connection.fragment_frame | fragment: header_block}
-    {:ok, :continue, %{connection | fragment_frame: header_frame}}
+    {:continue, %{connection | fragment_frame: header_frame}}
   end
 
   def handle_frame(_frame, socket, %Connection{fragment_frame: %Frame.Headers{}} = connection) do
@@ -96,7 +96,7 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   def handle_frame(%Frame.Settings{ack: true}, _socket, connection) do
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
@@ -118,12 +118,12 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Ping{ack: true}, _socket, connection) do
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
     %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket, connection)
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   def handle_frame(%Frame.Goaway{}, socket, connection) do
@@ -185,7 +185,7 @@ defmodule Bandit.HTTP2.Connection do
            Stream.recv_headers(stream, headers, end_stream, connection.peer, connection.plug),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      {:ok, :continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
+      {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
     else
       {:hpack, _} ->
         shutdown_connection(Errors.compression_error(), "Header decode error", socket, connection)
@@ -202,7 +202,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Headers{end_headers: false} = frame, _socket, connection) do
-    {:ok, :continue, %{connection | fragment_frame: frame}}
+    {:continue, %{connection | fragment_frame: frame}}
   end
 
   def handle_frame(%Frame.Continuation{}, socket, connection) do
@@ -232,8 +232,7 @@ defmodule Bandit.HTTP2.Connection do
         |> send_frame(socket, connection)
       end
 
-      {:ok, :continue,
-       %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
+      {:continue, %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
         shutdown_connection(error_code, error_message, socket, connection)
@@ -267,14 +266,14 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Priority{}, _socket, connection) do
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   def handle_frame(%Frame.RstStream{} = frame, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          {:ok, stream} <- Stream.recv_rst_stream(stream, frame.error_code),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      {:ok, :continue, %{connection | streams: streams}}
+      {:continue, %{connection | streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
         shutdown_connection(error_code, error_message, socket, connection)
@@ -298,15 +297,14 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Unknown{} = frame, _socket, connection) do
     Logger.warn("Unknown frame (#{inspect(Map.from_struct(frame))})")
 
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   # Shared logic to send any pending frames upon adjustment of our send window
   defp do_pending_sends(socket, connection) do
     connection.pending_sends
     |> Enum.reverse()
-    |> Enum.reduce_while({:ok, :continue, connection}, fn pending_send,
-                                                          {:ok, :continue, connection} ->
+    |> Enum.reduce_while({:continue, connection}, fn pending_send, {:continue, connection} ->
       connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
 
       {stream_id, rest, end_stream, on_unblock} = pending_send
@@ -314,10 +312,10 @@ defmodule Bandit.HTTP2.Connection do
       case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
         {:ok, true, connection} ->
           on_unblock.()
-          {:cont, {:ok, :continue, connection}}
+          {:cont, {:continue, connection}}
 
         {:ok, false, connection} ->
-          {:cont, {:ok, :continue, connection}}
+          {:cont, {:continue, connection}}
 
         {:error, error} ->
           {:halt, {:error, error, connection}}
@@ -330,7 +328,7 @@ defmodule Bandit.HTTP2.Connection do
   #
 
   @spec shutdown_connection(Errors.error_code(), term(), Socket.t(), t()) ::
-          {:ok, :close, t()} | {:error, term(), t()}
+          {:close, t()} | {:error, term(), t()}
   def shutdown_connection(error_code, reason, socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
@@ -338,7 +336,7 @@ defmodule Bandit.HTTP2.Connection do
     |> send_frame(socket, connection)
 
     if error_code == Errors.no_error() do
-      {:ok, :close, connection}
+      {:close, connection}
     else
       {:error, reason, connection}
     end
@@ -351,7 +349,7 @@ defmodule Bandit.HTTP2.Connection do
     %Frame.RstStream{stream_id: stream_id, error_code: error_code}
     |> send_frame(socket, connection)
 
-    {:ok, :continue, connection}
+    {:continue, connection}
   end
 
   #
