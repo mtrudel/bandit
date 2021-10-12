@@ -17,7 +17,8 @@ defmodule Bandit.MixProject do
         maintainers: ["Mat Trudel"],
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mtrudel/bandit"}
-      ]
+      ],
+      docs: docs()
     ]
   end
 
@@ -40,5 +41,9 @@ defmodule Bandit.MixProject do
 
   defp dialyzer do
     [plt_core_path: "priv/plts", plt_file: {:no_warn, "priv/plts/dialyzer.plt"}]
+  end
+
+  defp docs do
+    [main: "Bandit"]
   end
 end

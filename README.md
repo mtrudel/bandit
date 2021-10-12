@@ -2,7 +2,7 @@
 
 [![Build Status](https://github.com/mtrudel/bandit/workflows/Elixir%20CI/badge.svg)](https://github.com/mtrudel/bandit/actions)
 [![Docs](https://img.shields.io/badge/api-docs-green.svg?style=flat)](https://hexdocs.pm/bandit)
-[![Hex.pm](https://img.shields.io/hexpm/v/bandit.svg?style=flat-square)](https://hex.pm/packages/bandit)
+[![Hex.pm](https://img.shields.io/hexpm/v/bandit.svg?style=flat&color=blue)](https://hex.pm/packages/bandit)
 
 Bandit is an HTTP server for Plug apps.
 
