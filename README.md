@@ -134,6 +134,12 @@ def start(_type, _args) do
 end
 ```
 
+## Implementation Details
+
+The HTTP/2 implementation is described in details in its own
+[README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x implementation is
+a work in progress.
+
 ## Contributing
 
 Contributions to Bandit are very much welcome! Before undertaking any substantial work, please
