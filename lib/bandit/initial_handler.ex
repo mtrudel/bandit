@@ -15,7 +15,7 @@ defmodule Bandit.InitialHandler do
     end
   end
 
-  # Attempts to guess the protocol in use, returning the applicable next handler and any 
+  # Attempts to guess the protocol in use, returning the applicable next handler and any
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   defp guess_protocol(socket, state) do
     {alpn_protocol(socket), sniff_wire(socket, state.read_timeout)}
