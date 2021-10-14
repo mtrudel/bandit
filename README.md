@@ -136,9 +136,7 @@ end
 
 ## Implementation Details
 
-The HTTP/2 implementation is described in details in its own
-[README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x implementation is
-a work in progress.
+Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x implementation is a work in progress.
 
 ## Contributing
 

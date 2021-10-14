@@ -16,14 +16,19 @@ The lifetimes of these processes correspond to their role; a connection process 
 as a client is connected, and a stream process lives only as long as is required to process
 a single stream request within a connection. 
 
+Connection processes are the 'root' of each connection's process group, and are supervised by
+Thousand Island in the same manner that `ThousandIsland.Handler` processes are usually supervised
+(see the [project README](https://github.com/mtrudel/thousand_island) for details).
+
 Stream processes are not supervised by design. The connection process starts new stream processes as required, and does so
-once a complete header block for a new stream has been received. It does this via a standard
-`start_link` call, and manages the termination of stream processes by handling `{:EXIT,...}` messages as
-described in the Elixir documentation. This approach is aligned with the realities of the HTTP/2
-model, insofar as if a connection process terminates there is no reason to keep its constituent
-stream processes around, and if a stream process dies the connection should be able to handle this
-without itself terminating. It also means that our process model is very lightweight - there is no
-extra supervision overhead present because it is not required.
+once a complete header block for a new stream has been received. It starts stream processes via
+a standard `start_link` call, and manages the termination of the resultant linked stream processes
+by handling `{:EXIT,...}` messages as described in the Elixir documentation. This approach is
+aligned with the realities of the HTTP/2 model, insofar as if a connection process terminates
+there is no reason to keep its constituent stream processes around, and if a stream process dies
+the connection should be able to handle this without itself terminating. It also means that our
+process model is very lightweight - there is no extra supervision overhead present because no such
+supervision is required for the system to function in the desired way.
 
 ## Reading client data
 
@@ -44,17 +49,17 @@ looks like the following:
    any number of other actions
 4. This process is repeated every time we receive data from the client until the
    `Bandit.HTTP2.Connection` module indicates that the connection should be closed, either
-   normally or due to error. Note that the Frame deserialization process may end up signalling
-   a connection error if the parsed frames fail specific criteria (generally, the Frame parsing
-   modules are responsible for identifying errors as described in [section
+   normally or due to error. Note that frame deserialization may end up returning a connection
+   error if the parsed frames fail specific criteria (generally, the frame parsing modules are
+   responsible for identifying errors as described in [section
    6](https://datatracker.ietf.org/doc/html/rfc7540#section-6) of RFC 7540). In these cases, the
-   failure is passed through to the connection module for processing, as it remains the ultimate
-   authority on the state of the connection
+   failure is passed through to the connection module for processing in order to coordinate an
+   orderly shutdown or client notification as appropriate
 
 ## Processing requests
 
 The details of a particular stream are contained within a `Bandit.HTTP2.Stream` struct
-& a `Bandit.HTTP2.StreamTask` process in the case of active streams. The
+(as well as a `Bandit.HTTP2.StreamTask` process in the case of active streams). The
 `Bandit.HTTP2.StreamCollection` module manages a collection of streams, allowing for the memory
 efficient management of complete & yet unborn streams alongside active ones.
 
