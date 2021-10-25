@@ -227,7 +227,7 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     headers =
       response
-      |> byte_size()
+      |> IO.iodata_length()
       |> case do
         0 -> headers
         content_length -> [{"content-length", content_length |> to_string()} | headers]
