@@ -124,7 +124,7 @@ defmodule Bandit.HTTP1.Adapter do
   ##############
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, nil, req}
+  def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
 
   def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
     {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}

@@ -7,6 +7,21 @@ defmodule HTTP1RequestTest do
   setup :finch_http1_client
 
   describe "request handling" do
+    test "reads a zero length body properly", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/expect_no_body", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def expect_no_body(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == ""
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a content-length encoded body properly", context do
       {:ok, response} =
         Finch.build(

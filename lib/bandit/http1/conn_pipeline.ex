@@ -17,7 +17,7 @@ defmodule Bandit.HTTP1.ConnPipeline do
       {:ok, headers, method, path, req} ->
         %{address: remote_ip} = Adapter.get_peer_data(req)
 
-        # Parse a string to build a URI struct. This is quite a hack In general, canonicalizing
+        # Parse a string to build a URI struct. This is quite a hack. In general, canonicalizing
         # URIs is a delicate process & rather than building a half-baked implementation here it's
         # better to leave a simple and ugly hack in place so that future improvements are obvious.
         # Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
