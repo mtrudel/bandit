@@ -83,7 +83,7 @@ defmodule HTTP1RequestTest do
   end
 
   describe "response handling" do
-    test "writes out a response with no body", context do
+    test "writes out a response with no content-length header for 204 responses", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
         |> Finch.request(context[:finch_name])
@@ -97,18 +97,46 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 204, "")
     end
 
-    test "writes out a response with a content-length header", context do
+    test "writes out a response with no content-length header for 3xx responses", context do
       {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_200", [{"connection", "close"}])
+        Finch.build(:get, context[:base] <> "/send_301", [{"connection", "close"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 301
+      assert response.body == ""
+      assert is_nil(List.keyfind(response.headers, "content-length", 0))
+    end
+
+    def send_301(conn) do
+      send_resp(conn, 301, "")
+    end
+
+    test "writes out a response with zero content-length for 200 responses", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_200")
         |> Finch.request(context[:finch_name])
 
       assert response.status == 200
-      assert response.body == "OK"
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "2"}
+      assert response.body == ""
+      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
     end
 
     def send_200(conn) do
-      send_resp(conn, 200, "OK")
+      send_resp(conn, 200, "")
+    end
+
+    test "writes out a response with zero content-length for 401 responses", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_401")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 401
+      assert response.body == ""
+      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
+    end
+
+    def send_401(conn) do
+      send_resp(conn, 401, "")
     end
 
     test "writes out a chunked response", context do

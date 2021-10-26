@@ -226,17 +226,21 @@ defmodule Bandit.HTTP1.Adapter do
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     headers =
-      response
-      |> IO.iodata_length()
-      |> case do
-        0 -> headers
-        content_length -> [{"content-length", content_length |> to_string()} | headers]
+      if add_content_length?(status) do
+        [{"content-length", response |> IO.iodata_length() |> to_string()} | headers]
+      else
+        headers
       end
 
     header_io_data = response_header(version, status, headers)
     Socket.send(socket, [header_io_data, response])
     {:ok, nil, %{req | state: :sent}}
   end
+
+  # Per RFC2616§4.{3,4}
+  defp add_content_length?(204), do: false
+  defp add_content_length?(status) when status in 300..399, do: false
+  defp add_content_length?(_), do: true
 
   @impl Plug.Conn.Adapter
   def send_file(
