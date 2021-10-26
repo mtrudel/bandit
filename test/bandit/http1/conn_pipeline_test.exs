@@ -26,7 +26,8 @@ defmodule ConnPipelineTest do
       assert conn.method == "GET"
       assert conn.remote_ip == {127, 0, 0, 1}
       assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana"]
-      send_resp(conn, 200, "OK")
+      # make iodata explicit
+      send_resp(conn, 200, ["O", "K"])
     end
 
     @tag capture_log: true
