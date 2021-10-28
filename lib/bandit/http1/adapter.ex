@@ -30,7 +30,7 @@ defmodule Bandit.HTTP1.Adapter do
         body_size = get_header(headers, "content-length")
         body_encoding = get_header(headers, "transfer-encoding")
         connection = get_header(headers, "connection")
-        keepalive = should_keepalive?(version, headers)
+        keepalive = should_keepalive?(version, connection)
 
         case {body_size, body_encoding} do
           {nil, nil} ->
@@ -102,11 +102,11 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp should_keepalive?(version, headers) do
+  defp should_keepalive?(version, connection_header) do
     cond do
-      get_header(headers, "connection") |> is_nil -> version == :"HTTP/1.1"
-      get_header(headers, "connection") |> String.match?(~r/^keep-alive$/i) -> true
-      get_header(headers, "connection") |> String.match?(~r/^close$/i) -> false
+      is_nil(connection_header) -> version == :"HTTP/1.1"
+      String.match?(connection_header, ~r/^keep-alive$/i) -> true
+      String.match?(connection_header, ~r/^close$/i) -> false
       version == :"HTTP/1.1" -> true
       true -> false
     end
