@@ -8,7 +8,7 @@ Bandit is an HTTP server for Plug apps.
 
 Bandit is written entirely in Elixir and is built atop [Thousand
 Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x and HTTP/2 clients over
-both HTTP and HTTPS. It is written with correctness, clarity & performance as fundamental goals.
+both HTTP and HTTPS. It is written with correctness, clarity & performance as fundamental goals. It was introduced at [ElixirConf 2021](https://www.youtube.com/watch?v=ZLjWyanLHuk).
 
 In [recent performance
 tests](https://github.com/mtrudel/network_benchmark/blob/0b18a9b299b9619c38d2a70ab967831565121d65/benchmarks-09-2021.pdf),
