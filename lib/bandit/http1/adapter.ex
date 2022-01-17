@@ -318,7 +318,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 
-  respopnse_reasons = %{
+  response_reasons = %{
     100 => "Continue",
     101 => "Switching Protocols",
     200 => "OK",
@@ -361,7 +361,7 @@ defmodule Bandit.HTTP1.Adapter do
     505 => "HTTP Version not supported"
   }
 
-  for {code, reason} <- respopnse_reasons do
+  for {code, reason} <- response_reasons do
     defp reason_for_status(unquote(code)), do: unquote(reason)
   end
 
