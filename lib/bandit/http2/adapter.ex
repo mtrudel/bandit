@@ -1,5 +1,8 @@
 defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
+  # Implements the Plug-facing `Plug.Conn.Adapter` behaviour. These functions provide the primary
+  # mechanism for Plug applications to interact with a client, including functions to read the
+  # client body (if sent) and send response information back to the client.
 
   @behaviour Plug.Conn.Adapter
 
@@ -14,6 +17,9 @@ defmodule Bandit.HTTP2.Adapter do
           uri: URI.t()
         }
 
+  # As described in the header documentation for the `Bandit.HTTP2.StreamTask` module, we
+  # purposefully use raw `receive` message patterns here in order to facilitate an imperatively
+  # structured blocking interface. Comments inline.
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{end_stream: true}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
@@ -21,6 +27,8 @@ defmodule Bandit.HTTP2.Adapter do
     timeout = Keyword.get(opts, :read_timeout, 15_000)
     length = Keyword.get(opts, :length, 8_000_000)
 
+    # Repeatedly stream messages from the Connection process using the bare `receive` primitive
+    # and reduce this stream down based on their content (or on a timeout condition on receive)
     Stream.repeatedly(fn ->
       receive do
         msg -> msg

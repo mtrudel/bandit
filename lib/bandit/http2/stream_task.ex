@@ -1,11 +1,31 @@
 defmodule Bandit.HTTP2.StreamTask do
   @moduledoc false
-  # This Task is where an actual Plug is executed, within the context of an HTTP/2 stream
+  # This Task is where an actual Plug is executed, within the context of an HTTP/2 stream. There
+  # is a bit of split responsiblity between this module and the `Bandit.HTTP2.Adapter` module
+  # which merits explanation:
+  #
+  # Broadly, this module is responsible for the execution of a Plug and does so within a Task
+  # process. Task is used in preference to GenServer here because of the shape of the
+  # `Plug.Conn.Adapter` API (implemented by the `Bandit.HTTP2.Adapter` module). Specifically, that
+  # API requires blocking semantics for the `Plug.Conn.Adapter.read_req_body/2`) call and expects
+  # it to block until some underlying condition has been met (the body has been read, a timeout
+  # has occurred, etc). The events which 'unblock' these conditions typically come from within the
+  # Connection, and are pushed down to streams as a fundamental design decision (rather than
+  # having stream processes query the connection directly). As such, it is much simpler for Task
+  # processes to wait in an imperative fashion using `receive` calls directly. 
+  #
+  # To contain these design decisions, the 'connection-facing' API for sending data to a stream
+  # process is expressed on this module (via the `recv_*` functions) even though the 'other half'
+  # of those calls exists in the `Bandit.HTTP2.Adapter` module. As a result, this module and the
+  # Handler module are fairly tightly coupled, but together they express clear APIs towards both
+  # Plug applications and the rest of Bandit.
 
   use Task
 
   alias Bandit.HTTP2.{Adapter, Errors, Stream}
 
+  # A stream process can be created only once we have a stream id & set of headers. Pass them in
+  # at creation time to ensure this invariant
   @spec start_link(
           pid(),
           Stream.stream_id(),
@@ -17,12 +37,18 @@ defmodule Bandit.HTTP2.StreamTask do
     Task.start_link(__MODULE__, :run, [connection, stream_id, headers, peer, plug])
   end
 
+  # Let the stream task know that body data has arrived from the client. The other half of this
+  # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
   def recv_data(pid, data), do: Process.send(pid, {:data, data}, [])
 
+  # Let the stream task know that the client has set the end of stream flag. The other half of
+  # this flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
   def recv_end_of_stream(pid), do: Process.send(pid, :end_stream, [])
 
+  # Let the stream task know that the client has reset the stream. This will terminate the
+  # stream's handling process
   @spec recv_rst_stream(pid(), Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
@@ -38,6 +64,7 @@ defmodule Bandit.HTTP2.StreamTask do
     headers = combine_cookie_crumbs(headers)
     uri = uri(headers)
 
+    # Build an Adapter struct and call the actual underlying Plug module
     {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
     |> Plug.Conn.Adapter.conn(method(headers), uri, peer.address, headers)
     |> plug.call(plug_opts)
