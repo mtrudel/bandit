@@ -12,7 +12,7 @@ defmodule Bandit.HTTP2.StreamTask do
   # has occurred, etc). The events which 'unblock' these conditions typically come from within the
   # Connection, and are pushed down to streams as a fundamental design decision (rather than
   # having stream processes query the connection directly). As such, it is much simpler for Task
-  # processes to wait in an imperative fashion using `receive` calls directly. 
+  # processes to wait in an imperative fashion using `receive` calls directly.
   #
   # To contain these design decisions, the 'connection-facing' API for sending data to a stream
   # process is expressed on this module (via the `recv_*` functions) even though the 'other half'
