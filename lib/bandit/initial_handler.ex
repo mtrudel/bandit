@@ -23,6 +23,9 @@ defmodule Bandit.InitialHandler do
       {Bandit.HTTP2.Handler, Bandit.HTTP2.Handler} ->
         {:ok, Bandit.HTTP2.Handler, <<>>}
 
+      {Bandit.HTTP1.Handler, {:no_match, data}} ->
+        {:ok, Bandit.HTTP1.Handler, data}
+
       {:no_match, Bandit.HTTP2.Handler} ->
         {:ok, Bandit.HTTP2.Handler, <<>>}
 
@@ -39,6 +42,12 @@ defmodule Bandit.InitialHandler do
     case ThousandIsland.Socket.negotiated_protocol(socket) do
       {:ok, "h2"} ->
         Bandit.HTTP2.Handler
+
+      {:ok, "http/1.1"} ->
+        Bandit.HTTP1.Handler
+
+      {:ok, "http/1.0"} ->
+        Bandit.HTTP1.Handler
 
       _ ->
         :no_match
