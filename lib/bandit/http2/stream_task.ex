@@ -91,9 +91,9 @@ defmodule Bandit.HTTP2.StreamTask do
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
 
-    combined_cookie = crumbs |> Enum.map(fn {"cookie", crumb} -> crumb end) |> Enum.join("; ")
+    combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
 
-    other_headers ++ [{"cookie", combined_cookie}]
+    [{"cookie", combined_cookie} | other_headers]
   end
 
   defp method(headers), do: get_header(headers, ":method")
