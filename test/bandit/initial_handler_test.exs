@@ -60,5 +60,11 @@ defmodule InitialHandlerTest do
       assert response.status == 200
       assert response.body == "HTTP/2 https"
     end
+
+    test "closes with an error if HTTP2 is attempted over a HTTP/1.1 connection", context do
+      socket = ClientHelpers.tls_client(context, ["http/1.1"])
+      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
   end
 end
