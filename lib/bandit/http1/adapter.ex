@@ -102,13 +102,14 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
+  # If we do not have a connection header, then keep alive iff we're running on HTTP/1.1
+  defp should_keepalive?(version, nil), do: version == :"HTTP/1.1"
+
   defp should_keepalive?(version, connection_header) do
-    cond do
-      is_nil(connection_header) -> version == :"HTTP/1.1"
-      String.match?(connection_header, ~r/^keep-alive$/i) -> true
-      String.match?(connection_header, ~r/^close$/i) -> false
-      version == :"HTTP/1.1" -> true
-      true -> false
+    case String.downcase(connection_header) do
+      "keep-alive" -> true
+      "close" -> false
+      _ -> version == :"HTTP/1.1"
     end
   end
 
