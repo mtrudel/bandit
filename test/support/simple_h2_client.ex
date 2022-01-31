@@ -3,18 +3,7 @@ defmodule SimpleH2Client do
 
   import Bitwise
 
-  def tls_client(context) do
-    {:ok, socket} =
-      :ssl.connect('localhost', context[:port],
-        active: false,
-        mode: :binary,
-        verify: :verify_peer,
-        cacertfile: Path.join(__DIR__, "../support/ca.pem"),
-        alpn_advertised_protocols: ["h2"]
-      )
-
-    socket
-  end
+  def tls_client(context), do: ClientHelpers.tls_client(context, ["h2"])
 
   def setup_connection(context) do
     socket = tls_client(context)
