@@ -46,9 +46,6 @@ defmodule Bandit.InitialHandler do
       {:ok, "http/1.1"} ->
         Bandit.HTTP1.Handler
 
-      {:ok, "http/1.0"} ->
-        Bandit.HTTP1.Handler
-
       _ ->
         :no_match
     end
