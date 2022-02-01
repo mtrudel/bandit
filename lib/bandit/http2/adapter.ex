@@ -114,7 +114,6 @@ defmodule Bandit.HTTP2.Adapter do
     # (RFC7230§4.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC7540§8.1)
     # so this entire section of the API is a bit slanty regardless.
     send_data(adapter, chunk, chunk == <<>>)
-    :ok
   end
 
   @impl Plug.Conn.Adapter
