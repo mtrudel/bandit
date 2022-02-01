@@ -81,6 +81,7 @@ defmodule Bandit.HTTP2.Adapter do
           File.stream!(path, [], 2048)
           |> Enum.reduce(adapter, fn chunk, adapter ->
             chunk(adapter, chunk)
+            adapter
           end)
 
         chunk(adapter, "")
