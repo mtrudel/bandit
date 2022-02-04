@@ -241,6 +241,22 @@ defmodule HTTP2PlugTest do
     assert response.body == "BCD"
   end
 
+  @large_file_path Path.join([__DIR__, "../../support/sendfile_large"])
+
+  test "sending a large file greater than 2048 bytes", context do
+    {:ok, response} =
+      Finch.build(:get, context[:base] <> "/large_file_test")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+    assert response.body == File.read!(@large_file_path)
+  end
+
+  def large_file_test(conn) do
+    conn
+    |> send_file(200, @large_file_path, 0, :all)
+  end
+
   test "errors out if asked to read beyond the file", context do
     errors =
       capture_log(fn ->

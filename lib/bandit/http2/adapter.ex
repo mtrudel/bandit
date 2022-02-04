@@ -77,13 +77,17 @@ defmodule Bandit.HTTP2.Adapter do
       offset + length == size && offset == 0 ->
         send_chunked(adapter, status, headers)
 
-        _ =
-          File.stream!(path, [], 2048)
-          |> Enum.reduce(adapter, fn chunk, adapter ->
-            chunk(adapter, chunk)
-          end)
+        # As per Plug documentation `chunk/2` always returns `:ok`
+        # and webservers SHOULDN'T modify any state on sending a chunk,
+        # so there is no need to check the return value
+        # of `chunk/2` and the adapter doesn't need updating.
+        path
+        |> File.stream!([], 2048)
+        |> Enum.each(&chunk(adapter, &1))
 
+        # Send empty chunk to indicate the end of stream
         chunk(adapter, "")
+
         {:ok, nil, adapter}
 
       offset + length < size ->
