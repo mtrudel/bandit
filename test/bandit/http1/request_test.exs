@@ -198,5 +198,20 @@ defmodule HTTP1RequestTest do
         String.to_integer(conn.params["length"])
       )
     end
+
+    test "allows plug processes to spawn processes", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/spawn_child")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 204
+      assert response.body == ""
+      assert is_nil(List.keyfind(response.headers, "content-length", 0))
+    end
+
+    def spawn_child(conn) do
+      System.cmd("ls", [])
+      send_resp(conn, 204, "")
+    end
   end
 end
