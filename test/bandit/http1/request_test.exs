@@ -1,7 +1,10 @@
 defmodule HTTP1RequestTest do
-  use ExUnit.Case, async: true
+  # False due to capture log emptiness check
+  use ExUnit.Case, async: false
   use ServerHelpers
   use FinchHelpers
+
+  import ExUnit.CaptureLog
 
   setup :http_server
   setup :finch_http1_client
@@ -199,19 +202,49 @@ defmodule HTTP1RequestTest do
       )
     end
 
-    test "allows plug processes to spawn processes", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/spawn_child")
-        |> Finch.request(context[:finch_name])
+    test "silently accepts EXIT messages from normally terminating spwaned processes", context do
+      errors =
+        capture_log(fn ->
+          Finch.build(:get, context[:base] <> "/spawn_child")
+          |> Finch.request(context[:finch_name])
 
-      assert response.status == 204
-      assert response.body == ""
-      assert is_nil(List.keyfind(response.headers, "content-length", 0))
+          # Let the backing process see & handle the handle_info EXIT message
+          Process.sleep(100)
+        end)
+
+      # The return value here isn't relevant, since the HTTP call is done within
+      # a single GenServer call & will complete before the handler process handles
+      # the handle_info call returned by the spawned process. Look at the logged
+      # errors instead
+      assert errors == ""
     end
 
     def spawn_child(conn) do
-      System.cmd("ls", [])
+      spawn_link(fn -> exit(:normal) end)
       send_resp(conn, 204, "")
     end
+  end
+
+  test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
+       context do
+    errors =
+      capture_log(fn ->
+        Finch.build(:get, context[:base] <> "/spawn_abnormal_child")
+        |> Finch.request(context[:finch_name])
+
+        # Let the backing process see & handle the handle_info EXIT message
+        Process.sleep(100)
+      end)
+
+    # The return value here isn't relevant, since the HTTP call is done within
+    # a single GenServer call & will complete before the handler process handles
+    # the handle_info call returned by the spawned process. Look at the logged
+    # errors instead
+    assert errors =~ ~r[\[error\] GenServer .* terminating]
+  end
+
+  def spawn_abnormal_child(conn) do
+    spawn_link(fn -> exit(:abnormal) end)
+    send_resp(conn, 204, "")
   end
 end

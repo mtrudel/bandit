@@ -1,5 +1,6 @@
 defmodule HTTP2PlugTest do
-  use ExUnit.Case, async: true
+  # False due to capture log emptiness check
+  use ExUnit.Case, async: false
   use ServerHelpers
   use FinchHelpers
 
@@ -483,5 +484,52 @@ defmodule HTTP2PlugTest do
 
   def peer_data(conn) do
     send_resp(conn, 200, conn |> get_peer_data() |> inspect())
+  end
+
+  test "silently accepts EXIT messages from normally terminating spwaned processes", context do
+    errors =
+      capture_log(fn ->
+        Finch.build(:get, context[:base] <> "/spawn_child")
+        |> Finch.request(context[:finch_name])
+
+        # Let the backing process see & handle the handle_info EXIT message
+        Process.sleep(100)
+      end)
+
+    # The return value here isn't relevant, since the HTTP call is done within
+    # a single Task call & may complete before the spawned process exits. Look
+    # at the logged errors instead
+    assert errors == ""
+  end
+
+  def spawn_child(conn) do
+    spawn_link(fn -> exit(:normal) end)
+    # Ensure that the spawned process has a chance to exit
+    Process.sleep(100)
+    send_resp(conn, 204, "")
+  end
+
+  test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
+       context do
+    errors =
+      capture_log(fn ->
+        Finch.build(:get, context[:base] <> "/spawn_abnormal_child")
+        |> Finch.request(context[:finch_name])
+
+        # Let the backing process see & handle the handle_info EXIT message
+        Process.sleep(100)
+      end)
+
+    # The return value here isn't relevant, since the HTTP call is done within
+    # a single Task call & may complete before the spawned process exits. Look
+    # at the logged errors instead
+    assert errors =~ ~r[\[error\] Task for stream .* crashed with :abnormal]
+  end
+
+  def spawn_abnormal_child(conn) do
+    spawn_link(fn -> exit(:abnormal) end)
+    # Ensure that the spawned process has a chance to exit
+    Process.sleep(100)
+    send_resp(conn, 204, "")
   end
 end

@@ -17,5 +17,5 @@ defmodule Bandit.HTTP1.Handler do
 
   def handle_info({:plug_conn, :sent}, state), do: {:noreply, state}
 
-  def handle_info({:EXIT, _pid, _reason}, state), do: {:noreply, state}
+  def handle_info({:EXIT, _pid, :normal}, state), do: {:noreply, state}
 end
