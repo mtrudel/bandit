@@ -17,7 +17,7 @@ defmodule ServerHelpers do
           |> Bandit.child_spec()
           |> start_supervised()
 
-        {:ok, port} = ThousandIsland.local_port(server_pid)
+        %{port: port} = ThousandIsland.listener_info(server_pid)
         [base: "http://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
@@ -39,7 +39,7 @@ defmodule ServerHelpers do
           |> Bandit.child_spec()
           |> start_supervised()
 
-        {:ok, port} = ThousandIsland.local_port(server_pid)
+        %{port: port} = ThousandIsland.listener_info(server_pid)
         [base: "https://localhost:#{port}", port: port, server_pid: server_pid]
       end
 

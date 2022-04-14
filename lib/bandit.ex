@@ -83,11 +83,17 @@ defmodule Bandit do
   ```
   """
 
+  require Logger
+
   @typedoc "A Plug definition"
   @type plug :: {module(), keyword()}
 
-  @spec child_spec([]) :: Supervisor.child_spec()
+  @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
+    %{id: Bandit, start: {__MODULE__, :start_link, [arg]}}
+  end
+
+  def start_link(arg) do
     {options, illegal_options} =
       arg
       |> Keyword.get(:options, [])
@@ -97,30 +103,39 @@ defmodule Bandit do
       raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
     end
 
+    scheme = Keyword.get(arg, :scheme, :http)
+    {plug_mod, _} = plug = plug(arg)
+
     {transport_module, extra_transport_options} =
-      case Keyword.get(arg, :scheme, :http) do
+      case scheme do
         :http -> {ThousandIsland.Transports.TCP, []}
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
-    read_timeout = Keyword.get(arg, :read_timeout, 60_000)
+    handler_options = %{
+      plug: plug,
+      handler_module: Bandit.InitialHandler,
+      read_timeout: Keyword.get(arg, :read_timeout, 60_000)
+    }
 
-    options =
-      options
-      |> Keyword.put_new(:transport_module, transport_module)
-      |> Keyword.update(
-        :transport_options,
-        extra_transport_options,
-        &Keyword.merge(&1, extra_transport_options)
-      )
-      |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
-      |> Keyword.put(:handler_options, %{
-        plug: plug(arg),
-        handler_module: Bandit.InitialHandler,
-        read_timeout: read_timeout
-      })
+    options
+    |> Keyword.put_new(:transport_module, transport_module)
+    |> Keyword.update(
+      :transport_options,
+      extra_transport_options,
+      &Keyword.merge(&1, extra_transport_options)
+    )
+    |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
+    |> Keyword.put(:handler_options, handler_options)
+    |> ThousandIsland.start_link()
+    |> case do
+      {:ok, pid} ->
+        Logger.info(info(scheme, plug_mod, pid))
+        {:ok, pid}
 
-    %{id: Bandit, start: {ThousandIsland, :start_link, [options]}}
+      {:error, _} = error ->
+        error
+    end
   end
 
   defp plug(arg) do
@@ -129,6 +144,23 @@ defmodule Bandit do
     |> case do
       {plug, plug_options} -> {plug, plug.init(plug_options)}
       plug -> {plug, plug.init([])}
+    end
+  end
+
+  defp info(scheme, plug, pid) do
+    server = "Bandit #{Application.spec(:bandit)[:vsn]}"
+    "Running #{inspect(plug)} with #{server} at #{bound_address(scheme, pid)}"
+  end
+
+  defp bound_address(scheme, pid) do
+    %{address: address, port: port} = ThousandIsland.listener_info(pid)
+
+    case address do
+      {:local, unix_path} ->
+        "#{unix_path} (#{scheme}+unix)"
+
+      address ->
+        "#{:inet.ntoa(address)}:#{port} (#{scheme})"
     end
   end
 end
