@@ -153,7 +153,7 @@ defmodule Bandit do
   end
 
   defp bound_address(scheme, pid) do
-    %{address: address, port: port} = ThousandIsland.listener_info(pid)
+    {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
 
     case address do
       {:local, unix_path} ->
