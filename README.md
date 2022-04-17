@@ -134,6 +134,14 @@ def start(_type, _args) do
 end
 ```
 
+For less formal usage, you can also start Bandit using the same configuration
+options via the `Bandit.start_link/1` function:
+
+```
+# Start an http server on port 4000, serving MyApp.MyPlug
+Bandit.start_link(plug: MyApp.MyPlug)
+```
+
 ## Implementation Details
 
 Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x implementation is a work in progress.

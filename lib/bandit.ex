@@ -93,6 +93,10 @@ defmodule Bandit do
     %{id: Bandit, start: {__MODULE__, :start_link, [arg]}}
   end
 
+  @doc """
+  Starts a Bandit server using the provided arguments. See "Config Options' above for specific
+  options to pass to this function.
+  """
   def start_link(arg) do
     {options, illegal_options} =
       arg
