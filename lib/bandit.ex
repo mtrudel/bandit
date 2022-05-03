@@ -11,11 +11,31 @@ defmodule Bandit do
   any) they would like to change when starting a Bandit server. The sparseness of the Bandit API
   should not be taken as an indicator of the comprehensiveness or robustness of the project.
 
-  ## Basic Usage
+  ## Using Bandit With Phoenix
 
-  Usage of Bandit is very straightforward. Assuming you have a Plug module implemented already, you can
-  host it within Bandit by adding something similar to the following to your application's
-  `Application.start/2` function:
+  Note that as of the 0.5.x branch Bandit supports Phoenix applications which use HTTP(S).
+  Phoenix applications which use WebSockets for features such as Channels or LiveView are not yet
+  supported (though this support is coming soon!).
+
+  That having been said, using Bandit to host your Phoenix application couldn't be simpler:
+
+  1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
+      ```elixir
+      {:bandit, ">= 0.5.0"}
+      ```
+  2. Add the following to your endpoint configuration in `config/config.exs`:
+       ```elixir
+       config :your_app, YourAppWeb.Endpoint,
+         adapter: Bandit.PhoenixAdapter
+       ```
+  3. That's it! You should now see messages at startup indicating that Phoenix is using Bandit to
+  serve your endpoint.
+
+  ## Using Bandit With Plug Applications
+
+  Using Bandit to host your own Plug is very straightforward. Assuming you have a Plug module
+  implemented already, you can host it within Bandit by adding something similar to the following
+  to your application's `Application.start/2` function:
 
   ```elixir
   def start(_type, _args) do
@@ -28,15 +48,12 @@ defmodule Bandit do
   end
   ```
 
-  ## Writing Plug Applications
-
   For details about writing Plug based applications, consult the excellent [Plug
   documentation](https://hexdocs.pm/plug/) for plenty of examples & tips to get started. Note that
   while Bandit supports the complete Plug API & should work correctly with any Plug-based
-  application you may write, it does not currently support Phoenix applications due to our lack of
-  support for WebSocket connections. Early support for Phoenix will be coming to Bandit in the
-  0.4.x release series (likely Q4'21), with full support landing in the 0.7.x release series
-  (likely Q1'22).
+  application. If you encounter errors using Bandit your Plug app, please do get in touch by
+  filing an issue on the Bandit GitHub project (especially if the error does not occur with
+  another HTTP server such as Cowboy).
 
   ## Config Options
 

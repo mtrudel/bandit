@@ -46,39 +46,21 @@ having been said, much progress has been made already. The project is progressin
 towards full Phoenix support, with a phased development plan focusing on one major set of features
 at a time.
 
-As of the current 0.4.x release series, Bandit features the following:
+As of the current 0.5.x release series, Bandit features the following:
 
+* Complete support for running HTTP(S) Phoenix applications which do not make
+  use of WebSockets
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
 * Complete server support for HTTP/2 as defined in [RFC
   7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
   [h2spec](https://github.com/summerwind/h2spec) conformance testing
 * Complete server support for HTTP/1.x as defined in [RFC
-  2616](https://datatracker.ietf.org/doc/html/rfc2616). Testing is nowhere near as comprehensive
-  as for HTTP/2, but improving this is the primary goal of the 0.4.x release series
+  2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Extremely scalable and performant client handling at a rate up to 5x that of Cowboy for the same
   workload with as-good-or-better memory use
 
-Today, almost any non-Phoenix Plug app should work with Bandit as a drop-in replacement for
-Cowboy. However, Bandit is still a long way away from being a drop-in solution for Phoenix apps.
-There are three main pieces of work to be done in order for this to happen:
-
-* Bandit does not yet support WebSocket connections. Implementing them is the main goal of the
-  0.5.x release series. As part of this, we will also be proposing to the community a generalized
-  WebSocket API abstraction in the same vein as Plug is to HTTP
-* Bandit support must be added to Phoenix itself:
-    * A Bandit-supported Phoenix Endpoint Adapter implementation is required. This is mostly
-      blocked at the moment by Bandit's lack of WebSocket support
-    * The work to integrate Bandit into the Phoenix configuration & startup process has not been done
-
-  Integrating Bandit support into Phoenix is the main goal of the 0.7.x release series, and the majority of the
-  work will be taking place as PRs against the Phoenix project, with some inevitable support work
-  taking place on Bandit itself
-* Finally, extensive real-world burn-in testing needs to be carried out by adventurous volunteers in
-  order to gain confidence in the stability and real-world performance characteristics of Bandit.
-  This is the main goal of the 0.8.x series, in order to ensure that Bandit's eventual 1.0 release
-  is truly ready for prime time
-
-To summarize, the roadmap to full Phoenix support and an eventual 1.0 release looks more or less
+Today, any HTTP(S)-only Phoenix app or Plug app should work with Bandit as a drop-in replacement for
+Cowboy. The roadmap to full Phoenix support and an eventual 1.0 release looks more or less
 like the following:
 
 * [x] `0.1.x` series: Proof of concept (along with [Thousand
@@ -87,13 +69,38 @@ like the following:
 * [x] `0.2.x` series: Revise process model to accommodate forthcoming HTTP/2 and WebSocket
   adapters
 * [x] `0.3.x` series: Implement HTTP/2 adapter
-* [ ] `0.4.x` series: Re-implement HTTP/1.x adapter
+* [x] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [ ] `0.5.x` series: Implement WebSocket extension
 * [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
-* [ ] `0.7.x` series: Integrate with Phoenix
-* [ ] `0.8.x` series: Bugfixes from a wider release to ensure a solid 1.0
+* [ ] `0.7.x` series: Bugfixes from a wider release to ensure a solid 1.0
 
-## Usage
+## Using Bandit With Phoenix
+
+As of the 0.5.x branch Bandit supports Phoenix applications which use HTTP(S).
+Phoenix applications which use WebSockets for features such as Channels or LiveView are not yet
+supported (though this support is coming soon!).
+
+That having been said, using Bandit to host your Phoenix application couldn't be simpler:
+
+1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
+    
+    ```elixir
+    {:bandit, ">= 0.5.0"}
+    ```
+2. Add the following to your endpoint configuration in `config/config.exs`:
+
+     ```elixir
+     config :your_app, YourAppWeb.Endpoint,
+       adapter: Bandit.PhoenixAdapter
+     ```
+3. That's it! You should now see messages at startup indicating that Phoenix is using Bandit to
+serve your endpoint.
+
+## Using Bandit With Plug Applications
+
+Using Bandit to host your own Plug is very straightforward. Assuming you have a Plug module
+implemented already, you can host it within Bandit by adding something similar to the following
+to your application's `Application.start/2` function:
 
 Usage of Bandit is very straightforward. Assuming you have a Plug module implemented already, you can
 host it within Bandit by adding something similar to the following to your application's
@@ -111,34 +118,13 @@ end
 ```
 
 Bandit takes a number of options at startup, which are described in detail in the Bandit
-[documentation](https://hexdocs.pm/bandit/Bandit.html). By far the most common stumbling block
-encountered with configuration involves setting up an HTTPS server. Bandit is comparatively easy
-to set up in this regard, with a working example looking similar to the following:
-
-```elixir
-def start(_type, _args) do
-  bandit_options = [
-    port: 4000,
-    transport_options: [
-      certfile: Path.join(__DIR__, "path/to/cert.pem"),
-      keyfile: Path.join(__DIR__, "path/to/key.pem")
-    ]
-  ]
-
-  children = [
-    {Bandit, plug: MyApp.MyPlug, scheme: :https, options: bandit_options}
-  ]
-
-  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-  Supervisor.start_link(children, opts)
-end
-```
+[documentation](https://hexdocs.pm/bandit/Bandit.html).
 
 For less formal usage, you can also start Bandit using the same configuration
 options via the `Bandit.start_link/1` function:
 
 ```
-# Start an http server on port 4000, serving MyApp.MyPlug
+# Start an http server on the default port 4000, serving MyApp.MyPlug
 Bandit.start_link(plug: MyApp.MyPlug)
 ```
 
@@ -165,7 +151,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, "~> 0.4.3"}
+    {:bandit, ">= 0.5.0"}
   ]
 end
 ```
