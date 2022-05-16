@@ -6,6 +6,8 @@ defmodule Bandit.HTTP1.Handler do
 
   alias Bandit.HTTP1.Adapter
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
   @impl ThousandIsland.Handler
   def handle_data(data, socket, %{plug: plug} = state) do
     with req <- %Adapter{socket: socket, buffer: data},
@@ -48,7 +50,7 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp should_upgrade(conn) do
-    case Bandit.WebSocket.Handler.http1_handshake?(conn) do
+    case Bandit.WebSocket.HTTP1Handshake.http1_handshake?(conn) do
       true -> {:ok, :websocket, conn}
       false -> {:ok, :no_upgrade}
     end
