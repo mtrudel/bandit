@@ -109,11 +109,16 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
-      {:ok, client} = :gen_tcp.connect(:localhost, context[:port], active: false)
+      client = ClientHelpers.tcp_client(context)
+
       :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == 'HTTP/1.0 400 Bad Request\r\ncontent-length: 0\r\n\r\n'
+      assert response == """
+             HTTP/1.0 400 Bad Request\r
+             content-length: 0\r
+             \r
+             """
     end
   end
 
