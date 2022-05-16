@@ -10,11 +10,13 @@ defmodule Bandit.DelegatingHandler do
   @impl ThousandIsland.Handler
   def handle_connection(socket, %{handler_module: handler_module} = state) do
     handler_module.handle_connection(socket, state)
+    |> handle_bandit_continuation(socket)
   end
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, %{handler_module: handler_module} = state) do
     handler_module.handle_data(data, socket, state)
+    |> handle_bandit_continuation(socket)
   end
 
   @impl ThousandIsland.Handler
@@ -55,5 +57,27 @@ defmodule Bandit.DelegatingHandler do
   @impl GenServer
   def terminate(reason, %{handler_module: handler_module} = state) do
     handler_module.terminate(reason, state)
+  end
+
+  defp handle_bandit_continuation(continuation, socket) do
+    case continuation do
+      {:switch, next_handler, state} ->
+        handle_connection(socket, %{state | handler_module: next_handler})
+
+      {:switch, next_handler, data, state} ->
+        case handle_connection(socket, %{state | handler_module: next_handler}) do
+          {:continue, state} ->
+            handle_data(data, socket, state)
+
+          {:continue, state, _timeout} ->
+            handle_data(data, socket, state)
+
+          other ->
+            other
+        end
+
+      other ->
+        other
+    end
   end
 end
