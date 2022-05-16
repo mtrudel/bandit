@@ -10,6 +10,29 @@ defmodule HTTP1RequestTest do
   setup :finch_http1_client
 
   describe "request handling" do
+    test "reads headers properly", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/expect_headers/a//b/c?abc=def", [
+          {"X-Fruit", "banana"},
+          {"connection", "close"}
+        ])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def expect_headers(conn) do
+      assert conn.request_path == "/expect_headers/a//b/c"
+      assert conn.path_info == ["expect_headers", "a", "b", "c"]
+      assert conn.query_string == "abc=def"
+      assert conn.method == "GET"
+      assert conn.remote_ip == {127, 0, 0, 1}
+      assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana"]
+      # make iodata explicit
+      send_resp(conn, 200, ["O", "K"])
+    end
+
     test "reads a zero length body properly", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/expect_no_body", [{"connection", "close"}])
@@ -82,6 +105,15 @@ defmodule HTTP1RequestTest do
       assert body == "OK"
       assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
       conn |> send_resp(200, body)
+    end
+
+    @tag capture_log: true
+    test "returns a 400 if the request cannot be parsed", context do
+      {:ok, client} = :gen_tcp.connect(:localhost, context[:port], active: false)
+      :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert response == 'HTTP/1.0 400 Bad Request\r\ncontent-length: 0\r\n\r\n'
     end
   end
 
@@ -200,6 +232,19 @@ defmodule HTTP1RequestTest do
         String.to_integer(conn.params["offset"]),
         String.to_integer(conn.params["length"])
       )
+    end
+
+    @tag capture_log: true
+    test "returns a 500 if the plug raises an exception", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/raise_error")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 500
+    end
+
+    def raise_error(_conn) do
+      raise "boom"
     end
 
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do
