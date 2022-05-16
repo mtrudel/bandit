@@ -10,6 +10,7 @@ defmodule Bandit.HTTP1.Handler do
   def handle_data(data, socket, %{plug: plug} = state) do
     with req <- %Adapter{socket: socket, buffer: data},
          {:ok, conn} <- build_conn(req),
+         {:ok, :no_upgrade} <- should_upgrade(conn),
          {:ok, conn} <- call_plug(conn, plug),
          {:ok, conn} <- commit_response(conn, plug) do
       case keepalive?(conn) do
@@ -18,6 +19,7 @@ defmodule Bandit.HTTP1.Handler do
       end
     else
       {:error, reason} -> {:error, reason, state}
+      {:ok, :websocket, conn} -> {:switch, Bandit.WebSocket.Handler, Map.put(state, :conn, conn)}
     end
   end
 
@@ -42,6 +44,13 @@ defmodule Bandit.HTTP1.Handler do
       {:error, reason} ->
         attempt_to_send_fallback(req, 400)
         {:error, reason}
+    end
+  end
+
+  defp should_upgrade(conn) do
+    case Bandit.WebSocket.Handler.http1_handshake?(conn) do
+      true -> {:ok, :websocket, conn}
+      false -> {:ok, :no_upgrade}
     end
   end
 
