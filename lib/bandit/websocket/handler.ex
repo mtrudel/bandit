@@ -4,12 +4,12 @@ defmodule Bandit.WebSocket.Handler do
 
   use ThousandIsland.Handler
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+  alias Bandit.WebSocket.{Frame, HTTP1Handshake}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    Bandit.WebSocket.HTTP1Handshake.send_http1_handshake(socket, state.conn)
-    {:continue, Map.delete(state, :conn)}
+    HTTP1Handshake.send_http1_handshake(socket, state.conn)
+    {:continue, Map.drop(state, [:conn, :plug])}
   end
 
   @impl ThousandIsland.Handler
