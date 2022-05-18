@@ -62,13 +62,13 @@ defmodule Bandit do
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
-  * `read_timeout`: How long to wait for data from the client before timing out and closing the
-    connection, specified in milliseconds. Defaults to 60_000
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the 
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
       * `num_acceptors`: The number of acceptor processes to run. This is mostly a performance
       tuning knob and can usually be left at the default value of 10
+      * `read_timeout`: How long to wait for data from the client before timing out and closing the
+      connection, specified in milliseconds. Defaults to `15_000` milliseconds
       * `transport_module`: The name of the module which provides basic socket functions.
       This overrides any value set for `scheme` and is intended for cases where control
       over the socket at a fundamental level is needed.
@@ -118,7 +118,7 @@ defmodule Bandit do
     {options, illegal_options} =
       arg
       |> Keyword.get(:options, [])
-      |> Keyword.split(~w(port num_acceptors transport_module transport_options)a)
+      |> Keyword.split(~w(port num_acceptors read_timeout transport_module transport_options)a)
 
     if illegal_options != [] do
       raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
@@ -135,11 +135,11 @@ defmodule Bandit do
 
     handler_options = %{
       plug: plug,
-      handler_module: Bandit.InitialHandler,
-      read_timeout: Keyword.get(arg, :read_timeout, 60_000)
+      handler_module: Bandit.InitialHandler
     }
 
     options
+    |> Keyword.put_new(:read_timeout, 15_000)
     |> Keyword.put_new(:transport_module, transport_module)
     |> Keyword.update(
       :transport_options,

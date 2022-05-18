@@ -10,7 +10,7 @@ defmodule Bandit.InitialHandler do
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    {alpn_protocol(socket), sniff_wire(socket, state.read_timeout)}
+    {alpn_protocol(socket), sniff_wire(socket)}
     |> case do
       {Bandit.HTTP2.Handler, Bandit.HTTP2.Handler} ->
         {:switch, Bandit.HTTP2.Handler, state}
@@ -44,8 +44,8 @@ defmodule Bandit.InitialHandler do
   end
 
   # Returns the protocol as suggested by received data, if possible
-  defp sniff_wire(socket, read_timeout) do
-    case ThousandIsland.Socket.recv(socket, 24, read_timeout) do
+  defp sniff_wire(socket) do
+    case ThousandIsland.Socket.recv(socket, 24) do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} -> Bandit.HTTP2.Handler
       {:ok, data} -> {:no_match, data}
       {:error, error} -> {:error, error}

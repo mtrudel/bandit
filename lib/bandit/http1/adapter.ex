@@ -200,7 +200,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts \\ []) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
-    read_timeout = Keyword.get(opts, :read_timeout, 15_000)
+    read_timeout = Keyword.get(opts, :read_timeout)
 
     case Socket.recv(socket, read_size, read_timeout) do
       {:ok, chunk} ->

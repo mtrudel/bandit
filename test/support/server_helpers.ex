@@ -11,8 +11,7 @@ defmodule ServerHelpers do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
-            read_timeout: 1000,
-            options: [port: 0, transport_options: [ip: :loopback]]
+            options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
           ]
           |> Bandit.child_spec()
           |> start_supervised()
@@ -26,9 +25,9 @@ defmodule ServerHelpers do
           [
             plug: __MODULE__,
             scheme: :https,
-            read_timeout: 1000,
             options: [
               port: 0,
+              read_timeout: 1000,
               transport_options: [
                 ip: :loopback,
                 certfile: Path.join(__DIR__, "../support/cert.pem"),
