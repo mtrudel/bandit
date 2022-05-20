@@ -50,7 +50,7 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp should_upgrade(conn) do
-    case Bandit.WebSocket.HTTP1Handshake.http1_handshake?(conn) do
+    case Bandit.WebSocket.Handshake.handshake?(conn) do
       true -> {:ok, :websocket, conn}
       false -> {:ok, :no_upgrade}
     end
