@@ -8,8 +8,9 @@ defmodule WebSocketFrameDeserializationTest do
   describe "frame size" do
     test "parses frames up to 125 bytes" do
       payload = String.duplicate("a", 125)
+      masked_payload = Bandit.WebSocket.Frame.mask(payload, 1234)
 
-      frame = <<0x8::4, 0x1::4, 1::1, 125::7, 0::32, payload::binary>>
+      frame = <<0x8::4, 0x1::4, 1::1, 125::7, 1234::32, masked_payload::binary>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: true, data: payload}}, <<>>}
@@ -17,8 +18,9 @@ defmodule WebSocketFrameDeserializationTest do
 
     test "parses frames 126 bytes long" do
       payload = String.duplicate("a", 126)
+      masked_payload = Bandit.WebSocket.Frame.mask(payload, 1234)
 
-      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 126::16, 0::32, payload::binary>>
+      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 126::16, 1234::32, masked_payload::binary>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: true, data: payload}}, <<>>}
@@ -26,8 +28,9 @@ defmodule WebSocketFrameDeserializationTest do
 
     test "parses frames 127 bytes long" do
       payload = String.duplicate("a", 127)
+      masked_payload = Bandit.WebSocket.Frame.mask(payload, 1234)
 
-      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 127::16, 0::32, payload::binary>>
+      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 127::16, 1234::32, masked_payload::binary>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: true, data: payload}}, <<>>}
@@ -35,8 +38,9 @@ defmodule WebSocketFrameDeserializationTest do
 
     test "parses frames 16_000 bytes long" do
       payload = String.duplicate("a", 16_000)
+      masked_payload = Bandit.WebSocket.Frame.mask(payload, 1234)
 
-      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 16_000::16, 0::32, payload::binary>>
+      frame = <<0x8::4, 0x1::4, 1::1, 126::7, 16_000::16, 1234::32, masked_payload::binary>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: true, data: payload}}, <<>>}
@@ -44,8 +48,9 @@ defmodule WebSocketFrameDeserializationTest do
 
     test "parses frames 1_000_000 bytes long" do
       payload = String.duplicate("a", 1_000_000)
+      masked_payload = Bandit.WebSocket.Frame.mask(payload, 1234)
 
-      frame = <<0x8::4, 0x1::4, 1::1, 127::7, 1_000_000::64, 0::32, payload::binary>>
+      frame = <<0x8::4, 0x1::4, 1::1, 127::7, 1_000_000::64, 1234::32, masked_payload::binary>>
 
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: true, data: payload}}, <<>>}
