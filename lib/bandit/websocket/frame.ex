@@ -33,8 +33,13 @@ defmodule Bandit.WebSocket.Frame do
   def deserialize(
         <<flags::4, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
           rest::binary>>
-      ) do
+      )
+      when length <= 125 do
     to_frame(flags, opcode, mask, payload, rest)
+  end
+
+  def deserialize(<<>>) do
+    nil
   end
 
   def deserialize(msg) do
