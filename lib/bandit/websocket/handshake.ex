@@ -10,8 +10,8 @@ defmodule Bandit.WebSocket.Handshake do
         # Cases from RFC6455§4.2.1
         conn.method == "GET" &&
           get_req_header(conn, "host") != [] &&
-          "websocket" in get_req_header(conn, "upgrade") &&
-          "Upgrade" in get_req_header(conn, "connection") &&
+          "websocket" in String.downcase(get_req_header(conn, "upgrade")) &&
+          "upgrade" in String.downcase(get_req_header(conn, "connection")) &&
           match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key")) &&
           get_req_header(conn, "sec-websocket-version") == ["13"]
 
