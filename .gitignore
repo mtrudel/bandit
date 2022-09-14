@@ -24,3 +24,5 @@ bandit-*.tar
 
 # Ignore dialyzer caches
 /priv/plts/
+
+test/support/autobahn_reports

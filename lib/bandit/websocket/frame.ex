@@ -17,25 +17,25 @@ defmodule Bandit.WebSocket.Frame do
 
   @spec deserialize(binary()) :: {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
   def deserialize(
-        <<flags::4, opcode::4, 1::1, 127::7, length::64, mask::32, payload::binary-size(length),
-          rest::binary>>
+        <<fin::1, rsv::3, opcode::4, 1::1, 127::7, length::64, mask::32,
+          payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(flags, opcode, mask, payload, rest)
+    to_frame(fin == 1, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<flags::4, opcode::4, 1::1, 126::7, length::16, mask::32, payload::binary-size(length),
-          rest::binary>>
+        <<fin::1, rsv::3, opcode::4, 1::1, 126::7, length::16, mask::32,
+          payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(flags, opcode, mask, payload, rest)
+    to_frame(fin == 1, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<flags::4, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
+        <<fin::1, rsv::3, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
           rest::binary>>
       )
       when length <= 125 do
-    to_frame(flags, opcode, mask, payload, rest)
+    to_frame(fin == 1, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(<<>>) do
@@ -47,8 +47,7 @@ defmodule Bandit.WebSocket.Frame do
   end
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  defp to_frame(flags, opcode, mask, payload, rest) do
-    fin = Bitwise.band(flags, 0x8) != 0x0
+  defp to_frame(fin, 0, opcode, mask, payload, rest) do
     unmasked_payload = mask(payload, mask)
 
     opcode
@@ -65,6 +64,10 @@ defmodule Bandit.WebSocket.Frame do
       {:ok, frame} -> {{:ok, frame}, rest}
       {:error, reason} -> {{:error, reason}, rest}
     end
+  end
+
+  defp to_frame(_fin, _rsv, _opcode, _mask, _payload, rest) do
+    {{:error, "invalid payload in reserved area"}, rest}
   end
 
   defprotocol Serializable do

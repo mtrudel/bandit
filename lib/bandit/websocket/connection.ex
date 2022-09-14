@@ -4,7 +4,7 @@ defmodule Bandit.WebSocket.Connection do
 
   alias Bandit.WebSocket.{Frame, Handshake}
 
-  defstruct sock: nil, sock_state: nil, state: :open
+  defstruct sock: nil, sock_state: nil, state: :open, buffer: []
 
   @typedoc "Conection state"
   @type state :: :open | :closing
@@ -13,7 +13,8 @@ defmodule Bandit.WebSocket.Connection do
   @type t :: %__MODULE__{
           sock: module(),
           sock_state: Sock.opts(),
-          state: state()
+          state: state(),
+          buffer: [Frame.frame()]
         }
 
   def init({sock, sock_state}) do
@@ -36,13 +37,31 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_frame(frame, socket, connection) do
     case frame do
-      %Frame.Text{} = frame ->
+      %Frame.Text{fin: true} = frame ->
         connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
 
-      %Frame.Binary{} = frame ->
+      %Frame.Text{fin: false} = frame ->
+        {:continue, %{connection | buffer: [frame | connection.buffer]}}
+
+      %Frame.Binary{fin: true} = frame ->
         connection.sock.handle_binary_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
+
+      %Frame.Binary{fin: false} = frame ->
+        {:continue, %{connection | buffer: [frame | connection.buffer]}}
+
+      %Frame.Continuation{fin: true} = frame ->
+        [frame | connection.buffer]
+        |> Enum.reverse()
+        |> Enum.reduce(fn cont, frame ->
+          %{frame | data: frame.data <> cont.data}
+        end)
+        |> Map.put(:fin, true)
+        |> handle_frame(socket, %{connection | buffer: []})
+
+      %Frame.Continuation{fin: false} = frame ->
+        {:continue, %{connection | buffer: [frame | connection.buffer]}}
 
       %Frame.ConnectionClose{} = frame ->
         do_connection_close(frame.code || 1005, socket, connection)
