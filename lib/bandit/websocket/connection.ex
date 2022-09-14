@@ -35,7 +35,7 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_frame(frame, socket, connection) do
+  def handle_frame(frame, socket, %{buffer: []} = connection) do
     case frame do
       %Frame.Text{fin: true} = frame ->
         connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
@@ -51,17 +51,47 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Binary{fin: false} = frame ->
         {:continue, %{connection | buffer: [frame | connection.buffer]}}
 
+      %Frame.ConnectionClose{} = frame ->
+        do_connection_close(frame.code || 1005, socket, connection)
+        {:close, connection}
+
+      %Frame.Ping{} = frame ->
+        Sock.Socket.send_pong_frame(socket, frame.data)
+
+        connection.sock.handle_ping_frame(frame.data, socket, connection.sock_state)
+        |> handle_continutation(socket, connection)
+
+      %Frame.Pong{} = frame ->
+        connection.sock.handle_pong_frame(frame.data, socket, connection.sock_state)
+        |> handle_continutation(socket, connection)
+
+      _ ->
+        do_connection_close(1002, socket, connection)
+        {:close, connection}
+    end
+  end
+
+  def handle_frame(frame, socket, connection) do
+    case frame do
       %Frame.Continuation{fin: true} = frame ->
-        [frame | connection.buffer]
-        |> Enum.reverse()
-        |> Enum.reduce(fn cont, frame ->
-          %{frame | data: frame.data <> cont.data}
-        end)
-        |> Map.put(:fin, true)
-        |> handle_frame(socket, %{connection | buffer: []})
+        if connection.buffer == [] do
+          Bandit.WebSocket.Socket.close(socket, 1002)
+        else
+          [frame | connection.buffer]
+          |> Enum.reverse()
+          |> Enum.reduce(fn cont, frame ->
+            %{frame | data: frame.data <> cont.data}
+          end)
+          |> Map.put(:fin, true)
+          |> handle_frame(socket, %{connection | buffer: []})
+        end
 
       %Frame.Continuation{fin: false} = frame ->
-        {:continue, %{connection | buffer: [frame | connection.buffer]}}
+        if connection.buffer == [] do
+          Bandit.WebSocket.Socket.close(socket, 1002)
+        else
+          {:continue, %{connection | buffer: [frame | connection.buffer]}}
+        end
 
       %Frame.ConnectionClose{} = frame ->
         do_connection_close(frame.code || 1005, socket, connection)
@@ -76,6 +106,10 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Pong{} = frame ->
         connection.sock.handle_pong_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
+
+      _ ->
+        do_connection_close(1002, socket, connection)
+        {:close, connection}
     end
   end
 

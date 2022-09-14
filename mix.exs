@@ -12,6 +12,8 @@ defmodule Bandit.MixProject do
       name: "Bandit",
       description: "A pure-Elixir HTTP server built for Plug apps",
       source_url: "https://github.com/mtrudel/bandit",
+      aliases: aliases(),
+      preferred_cli_env: ["test.autobahn": :test],
       package: [
         files: ["lib", "test", "mix.exs", "README*", "LICENSE*"],
         maintainers: ["Mat Trudel"],
@@ -46,5 +48,9 @@ defmodule Bandit.MixProject do
 
   defp docs do
     [main: "Bandit"]
+  end
+
+  defp aliases do
+    ["test.autobahn": "test test/bandit/websocket/autobahn_test.exs --include autobahn:true"]
   end
 end
