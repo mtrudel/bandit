@@ -38,8 +38,13 @@ defmodule Bandit.WebSocket.Connection do
   def handle_frame(frame, socket, %{buffer: []} = connection) do
     case frame do
       %Frame.Text{fin: true} = frame ->
-        connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
-        |> handle_continutation(socket, connection)
+        if String.valid?(frame.data) do
+          connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
+          |> handle_continutation(socket, connection)
+        else
+          do_connection_close(1007, socket, connection)
+          {:close, connection}
+        end
 
       %Frame.Text{fin: false} = frame ->
         {:continue, %{connection | buffer: [frame | connection.buffer]}}
