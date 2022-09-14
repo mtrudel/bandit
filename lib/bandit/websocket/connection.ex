@@ -17,6 +17,9 @@ defmodule Bandit.WebSocket.Connection do
           buffer: [Frame.frame()]
         }
 
+  @valid_close_codes [1000, 1001, 1002, 1003] ++
+                       Enum.to_list(1005..1015) ++ Enum.to_list(3000..4999)
+
   def init({sock, sock_state}) do
     %__MODULE__{sock: sock, sock_state: sock_state}
   end
@@ -56,9 +59,18 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Binary{fin: false} = frame ->
         {:continue, %{connection | buffer: [frame | connection.buffer]}}
 
-      %Frame.ConnectionClose{} = frame ->
-        do_connection_close(frame.code || 1005, socket, connection)
+      %Frame.ConnectionClose{code: code} when not is_nil(code) and code not in @valid_close_codes ->
+        do_connection_close(1002, socket, connection)
         {:close, connection}
+
+      %Frame.ConnectionClose{} = frame ->
+        if frame.reason != <<>> and not String.valid?(frame.reason) do
+          do_connection_close(1002, socket, connection)
+          {:close, connection}
+        else
+          do_connection_close(frame.code || 1000, socket, connection)
+          {:close, connection}
+        end
 
       %Frame.Ping{} = frame ->
         Sock.Socket.send_pong_frame(socket, frame.data)
@@ -99,8 +111,16 @@ defmodule Bandit.WebSocket.Connection do
         end
 
       %Frame.ConnectionClose{} = frame ->
-        do_connection_close(frame.code || 1005, socket, connection)
-        {:close, connection}
+        if (frame.reason != <<>> and not String.valid?(frame.reason)) or
+             (frame.code != nil and frame.code not in @valid_close_codes) do
+          IO.inspect(frame.code, label: "Code")
+          IO.inspect("END")
+          do_connection_close(1002, socket, connection)
+          {:close, connection}
+        else
+          do_connection_close(frame.code || 1000, socket, connection)
+          {:close, connection}
+        end
 
       %Frame.Ping{} = frame ->
         Sock.Socket.send_pong_frame(socket, frame.data)
