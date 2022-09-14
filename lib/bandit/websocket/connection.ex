@@ -4,7 +4,7 @@ defmodule Bandit.WebSocket.Connection do
 
   alias Bandit.WebSocket.{Frame, Handshake}
 
-  defstruct sock: nil, sock_state: nil, state: :open, buffer: []
+  defstruct sock: nil, sock_state: nil, state: :open, buffer: nil
 
   @typedoc "Conection state"
   @type state :: :open | :closing
@@ -14,7 +14,7 @@ defmodule Bandit.WebSocket.Connection do
           sock: module(),
           sock_state: Sock.opts(),
           state: state(),
-          buffer: [Frame.frame()]
+          buffer: Frame.frame()
         }
 
   @valid_close_codes [1000, 1001, 1002, 1003] ++
@@ -38,7 +38,7 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_frame(frame, socket, %{buffer: []} = connection) do
+  def handle_frame(frame, socket, %{buffer: nil} = connection) do
     case frame do
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
@@ -50,16 +50,17 @@ defmodule Bandit.WebSocket.Connection do
         end
 
       %Frame.Text{fin: false} = frame ->
-        {:continue, %{connection | buffer: [frame | connection.buffer]}}
+        {:continue, %{connection | buffer: frame}}
 
       %Frame.Binary{fin: true} = frame ->
         connection.sock.handle_binary_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
-        {:continue, %{connection | buffer: [frame | connection.buffer]}}
+        {:continue, %{connection | buffer: frame}}
 
-      %Frame.ConnectionClose{code: code} when not is_nil(code) and code not in @valid_close_codes ->
+      %Frame.ConnectionClose{code: code}
+      when not is_nil(code) and code not in @valid_close_codes ->
         do_connection_close(1002, socket, connection)
         {:close, connection}
 
@@ -88,33 +89,18 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_frame(frame, socket, connection) do
+  def handle_frame(frame, socket, %{buffer: %{data: data} = buffer} = connection) do
     case frame do
       %Frame.Continuation{fin: true} = frame ->
-        if connection.buffer == [] do
-          Bandit.WebSocket.Socket.close(socket, 1002)
-        else
-          [frame | connection.buffer]
-          |> Enum.reverse()
-          |> Enum.reduce(fn cont, frame ->
-            %{frame | data: frame.data <> cont.data}
-          end)
-          |> Map.put(:fin, true)
-          |> handle_frame(socket, %{connection | buffer: []})
-        end
+        %{buffer | data: data <> frame.data, fin: true}
+        |> handle_frame(socket, %{connection | buffer: nil})
 
       %Frame.Continuation{fin: false} = frame ->
-        if connection.buffer == [] do
-          Bandit.WebSocket.Socket.close(socket, 1002)
-        else
-          {:continue, %{connection | buffer: [frame | connection.buffer]}}
-        end
+        {:continue, %{connection | buffer: %{buffer | data: data <> frame.data}}}
 
       %Frame.ConnectionClose{} = frame ->
         if (frame.reason != <<>> and not String.valid?(frame.reason)) or
              (frame.code != nil and frame.code not in @valid_close_codes) do
-          IO.inspect(frame.code, label: "Code")
-          IO.inspect("END")
           do_connection_close(1002, socket, connection)
           {:close, connection}
         else
