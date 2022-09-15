@@ -24,6 +24,7 @@ defmodule Bandit.WebSocket.Connection do
     %__MODULE__{sock: sock, sock_state: sock_state}
   end
 
+  # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   def handle_connection(conn, socket, connection) do
     case connection.sock.negotiate(conn, connection.sock_state) do
       {:accept, conn, sock_state} ->

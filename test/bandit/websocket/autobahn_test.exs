@@ -38,7 +38,7 @@ defmodule WebsocketAutobahnTest do
       end
 
       @impl Sock
-      def handle_ping_frame(ping, socket, state) do
+      def handle_ping_frame(_ping, _socket, state) do
         {:continue, state}
       end
 
@@ -53,14 +53,12 @@ defmodule WebsocketAutobahnTest do
       end
 
       @impl Sock
-      def handle_error(error, _socket, _state) do
-        IO.inspect(error)
+      def handle_error(_error, _socket, _state) do
         :ok
       end
 
       @impl Sock
       def handle_timeout(_socket, _state) do
-        IO.inspect("timeout")
         :ok
       end
 

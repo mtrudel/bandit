@@ -2,7 +2,7 @@ defmodule Bandit.HTTP2.FlowControl do
   @moduledoc false
   # Helpers for working with flow control window calculations
 
-  use Bitwise
+  import Bitwise
 
   @max_window_increment (1 <<< 31) - 1
   @max_window_size (1 <<< 31) - 1
