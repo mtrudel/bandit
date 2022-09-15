@@ -94,7 +94,9 @@ defmodule Bandit.WebSocket.Frame do
 
   # Note that masking is an involution, so we don't need a separate unmask function
   def mask(payload, mask) when is_integer(mask), do: mask(payload, <<mask::32>>)
-  def mask(payload, mask) when is_bitstring(mask), do: do_mask(payload, mask, <<>>)
+  def mask(payload, mask) when is_bitstring(mask) do
+    do_mask(payload, mask, <<>>)
+  end
 
   defp do_mask(<<>>, _mask, msg), do: msg
 

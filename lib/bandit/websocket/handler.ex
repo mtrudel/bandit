@@ -48,7 +48,7 @@ defmodule Bandit.WebSocket.Handler do
         {:halt, {:error, reason, %{state | buffer: <<>>}}}
 
       {:more, rest}, {:continue, state} ->
-        {:halt, {:continue, %{state | buffer: state.buffer <> rest}}}
+        {:halt, {:continue, %{state | buffer: rest}}}
     end)
   end
 

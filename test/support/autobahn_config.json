@@ -4,7 +4,7 @@
 
 	"servers": [{"agent": "bandit", "url": "ws://host.docker.internal:4000", "options": {"version": 18}}],
 
-	"cases": ["9.3.1"],
+	"cases": ["*"],
 	"exclude-cases": ["12.*", "13.*"],
 	"exclude-agent-cases": {}
 }
