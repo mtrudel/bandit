@@ -93,13 +93,12 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
   # Note that masking is an involution, so we don't need a separate unmask function
-  def mask(payload, mask) do
-    maskstream = mask |> :binary.encode_unsigned() |> :binary.bin_to_list() |> Stream.cycle()
+  def mask(payload, mask) when is_integer(mask), do: mask(payload, <<mask::32>>)
+  def mask(payload, mask) when is_bitstring(mask), do: do_mask(payload, mask, <<>>)
 
-    payload
-    |> :binary.bin_to_list()
-    |> Enum.zip(maskstream)
-    |> Enum.map(fn {x, y} -> Bitwise.bxor(x, y) end)
-    |> :binary.list_to_bin()
+  defp do_mask(<<>>, _mask, msg), do: msg
+
+  defp do_mask(<<h::8, rest::binary>>, <<cur::8, mask::24>>, msg) do
+    do_mask(rest, <<mask::24, cur::8>>, msg <> <<Bitwise.bxor(h, cur)::8>>)
   end
 end

@@ -40,9 +40,10 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_frame(frame, socket, %{buffer: nil} = connection) do
     case frame do
-      %Frame.Text{fin: true} = frame ->
-        if String.valid?(frame.data) do
-          connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
+      %Frame.Text{fin: true, data: data} ->
+        if String.valid?(data) do
+          data
+          |> connection.sock.handle_text_frame(socket, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
           do_connection_close(1007, socket, connection)
@@ -52,8 +53,9 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Text{fin: false} = frame ->
         {:continue, %{connection | buffer: frame}}
 
-      %Frame.Binary{fin: true} = frame ->
-        connection.sock.handle_binary_frame(frame.data, socket, connection.sock_state)
+      %Frame.Binary{fin: true, data: data} ->
+        data
+        |> connection.sock.handle_binary_frame(socket, connection.sock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
@@ -89,14 +91,16 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_frame(frame, socket, %{buffer: %{data: data} = buffer} = connection) do
+  def handle_frame(frame, socket, %{buffer: buffer} = connection) do
     case frame do
       %Frame.Continuation{fin: true} = frame ->
-        %{buffer | data: data <> frame.data, fin: true}
+        buffer
+        |> append_frame(frame)
+        |> Map.put(:fin, true)
         |> handle_frame(socket, %{connection | buffer: nil})
 
       %Frame.Continuation{fin: false} = frame ->
-        {:continue, %{connection | buffer: %{buffer | data: data <> frame.data}}}
+        {:continue, %{connection | buffer: append_frame(buffer, frame)}}
 
       %Frame.ConnectionClose{} = frame ->
         if (frame.reason != <<>> and not String.valid?(frame.reason)) or
@@ -165,5 +169,9 @@ defmodule Bandit.WebSocket.Connection do
       connection.sock.handle_error(reason, socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, 1011)
     end
+  end
+
+  defp append_frame(frame1, frame2) do
+    %{frame1 | data: frame1.data <> frame2.data}
   end
 end
