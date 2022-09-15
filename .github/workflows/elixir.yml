@@ -2,23 +2,29 @@ name: Elixir CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, "0.5" ]
   pull_request:
-    branches: [ main ]
+    branches: [ main, "0.5" ]
 
 env:
   MIX_ENV: test
 
 jobs:
   test:
-
     runs-on: ubuntu-latest
-
     strategy:
       fail-fast: false
       matrix:
-        elixir: [1.10.4, 1.11.4, 1.12.3, 1.13.3]
-        otp: [22.3.4, 23.3.4, 24.2.2]
+        include:
+          - elixir: 1.11.4
+            otp: 22.3.4
+          - elixir: 1.12.3
+            otp: 23.3.4
+          - elixir: 1.13.4
+            otp: 24.3.4
+          - elixir: 1.14.0
+            otp: 25.0.4
+            lint: true
 
     steps:
     - uses: actions/checkout@v2
@@ -44,12 +50,15 @@ jobs:
         mix deps.get
 
     - name: Check Formatting
+      if: ${{ matrix.lint }}
       run: mix format --check-formatted
 
     - name: Run Credo
+      if: ${{ matrix.lint }}
       run: mix credo --strict
 
     - name: Retrieve PLT Cache
+      if: ${{ matrix.lint }}
       uses: actions/cache@v1
       id: plt-cache
       with:
@@ -57,13 +66,18 @@ jobs:
         key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-plts-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
 
     - name: Create PLTs
-      if: steps.plt-cache.outputs.cache-hit != 'true'
+      if: ${{ matrix.lint == true && steps.plt-cache.outputs.cache-hit != 'true' }}
       run: |
         mkdir -p priv/plts
         mix dialyzer --plt
 
     - name: Run dialyzer
+      if: ${{ matrix.lint }}
       run: mix dialyzer --no-check
 
     - name: Run Tests
       run: mix test
+
+    - name: Run autobahn TestSuite
+      if: ${{ matrix.lint }}
+      run: mix test.autobahn
