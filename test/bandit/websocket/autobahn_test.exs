@@ -97,7 +97,7 @@ defmodule WebsocketAutobahnTest do
             "--mode",
             "fuzzingclient"
           ],
-          stderr_to_stdout: true
+        stderr_to_stdout: true
       )
 
     failures =
