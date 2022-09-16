@@ -77,7 +77,3 @@ jobs:
 
     - name: Run Tests
       run: mix test
-
-    - name: Run autobahn TestSuite
-      if: ${{ matrix.lint }}
-      run: mix test.autobahn
