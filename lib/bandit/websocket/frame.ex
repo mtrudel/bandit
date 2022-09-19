@@ -95,7 +95,7 @@ defmodule Bandit.WebSocket.Frame do
 
   # Note that masking is an involution, so we don't need a separate unmask function
   def mask(payload, mask) do
-    maskstream = mask |> :binary.encode_unsigned() |> :binary.bin_to_list() |> Stream.cycle()
+    maskstream = <<mask::32>> |> :binary.bin_to_list() |> Stream.cycle()
 
     payload
     |> :binary.bin_to_list()
