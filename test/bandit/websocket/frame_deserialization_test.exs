@@ -116,8 +116,6 @@ defmodule WebSocketFrameDeserializationTest do
       assert Frame.deserialize(frame) ==
                {{:ok, %Frame.Text{fin: false, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
-
-    # TODO - test for UTF-8 handling (once we determine what to do about fragments in light of RFC6455§5.6
   end
 
   describe "BINARY frames" do

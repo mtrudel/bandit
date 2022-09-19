@@ -30,8 +30,6 @@ defmodule Bandit.WebSocket.Handler do
     end
   end
 
-  # TODO - handle close & error callbacks
-
   def handle_info({:plug_conn, :sent}, state), do: {:noreply, state}
 
   def handle_info({:EXIT, _pid, :normal}, state), do: {:noreply, state}

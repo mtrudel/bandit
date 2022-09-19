@@ -5,9 +5,7 @@ defmodule Bandit.WebSocket.Connection do
   alias Bandit.WebSocket.{Frame, Handshake, Socket}
 
   def handle_connection(_socket, conn) do
-    # TODO - ask sock to negotiate_connection and determine subprotocols, path, etc
     Handshake.send_handshake(conn)
-    # TODO - tell sock that we've nailed up the connection and they can send via socket
     {:continue, %{}}
   end
 
@@ -23,12 +21,8 @@ defmodule Bandit.WebSocket.Connection do
         Socket.send_frame(socket, %Frame.Pong{data: frame.data})
 
       other ->
-        IO.inspect(other)
+        :ok
     end
-
-    # TODO - buffer continuation frames if needed
-    # TODO - call with complete frame once its arrived
-    # TODO - handle control frames without prejudice
 
     {:continue, connection}
   end
