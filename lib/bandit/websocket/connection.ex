@@ -12,7 +12,7 @@ defmodule Bandit.WebSocket.Connection do
   @typedoc "Encapsulates the state of a WebSocket connection"
   @type t :: %__MODULE__{
           sock: module(),
-          sock_state: Sock.opts(),
+          sock_state: Sock.state(),
           state: state()
         }
 
