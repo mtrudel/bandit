@@ -88,12 +88,16 @@ defmodule SimpleWebSocketClient do
     {:ok, flags, opcode, data}
   end
 
-  def send_text_frame(client, data) do
-    send_frame(client, 0x8, 0x1, data)
+  def send_continuation_frame(client, data, flags \\ 0x8) do
+    send_frame(client, flags, 0x0, data)
   end
 
-  def send_binary_frame(client, data) do
-    send_frame(client, 0x8, 0x2, data)
+  def send_text_frame(client, data, flags \\ 0x8) do
+    send_frame(client, flags, 0x1, data)
+  end
+
+  def send_binary_frame(client, data, flags \\ 0x8) do
+    send_frame(client, flags, 0x2, data)
   end
 
   def send_connection_close_frame(client, reason) do

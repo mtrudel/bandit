@@ -192,6 +192,19 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
     end
 
+    test "is called when fragmented text frames are sent", context do
+      payload = String.duplicate("a", 1_000)
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
+
+      SimpleWebSocketClient.send_text_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload)
+
+      expected_payload = String.duplicate(payload, 3)
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, expected_payload}
+    end
+
     def echo_text_frame(data, socket, opts) do
       Sock.Socket.send_text_frame(socket, data)
       {:continue, opts}
@@ -236,6 +249,19 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, payload}
     end
 
+    test "is called when fragmented binary frames are sent", context do
+      payload = String.duplicate("a", 1_000)
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :echo_binary_frame)
+
+      SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload)
+
+      expected_payload = String.duplicate(payload, 3)
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
+    end
+
     def echo_binary_frame(data, socket, opts) do
       Sock.Socket.send_binary_frame(socket, data)
       {:continue, opts}
@@ -270,6 +296,22 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
 
+    test "is processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :echo_text_frame,
+        handle_ping_frame: :echo_ping_frame
+      )
+
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
+    end
+
     def echo_ping_frame(data, socket, opts) do
       Sock.Socket.send_text_frame(socket, data)
       {:continue, opts}
@@ -282,6 +324,21 @@ defmodule WebSocketSockTest do
       SimpleWebSocketClient.http1_handshake(client, handle_pong_frame: :echo_pong_frame)
       SimpleWebSocketClient.send_pong_frame(client, "OK")
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+    end
+
+    test "is processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :echo_text_frame,
+        handle_pong_frame: :echo_pong_frame
+      )
+
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      SimpleWebSocketClient.send_pong_frame(client, "OK")
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
     end
 
     def echo_pong_frame(data, socket, opts) do
@@ -470,6 +527,65 @@ defmodule WebSocketSockTest do
       Sock.Socket.send_text_frame(socket, "TIMEOUT")
       :ok
     end
+
+    @tag capture_log: true
+    test "server sends a 1002 status code on an unexpected continuation frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected continuation frame (RFC6455§5.4)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1002 status code on a text frame during continuation", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected text frame (RFC6455§5.4)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1002 status code on a binary frame during continuation", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected binary frame (RFC6455§5.4)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
   end
 
   describe "client-side connection close" do
@@ -486,6 +602,37 @@ defmodule WebSocketSockTest do
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
       assert Process.alive?(pid)
+
+      # Close the connection from the client
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
+
+      # Now ensure that we see the server's half of the shutdown handshake
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Finally, ensure that the server has shut down
+      refute Process.alive?(pid)
+    end
+
+    test "is processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :pid_text_frame,
+        handle_close: :send_text_on_close
+      )
+
+      # Get the server pid and ensure it's alive
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      assert Process.alive?(pid)
+
+      # Note that we don't expect this to send back a pid since it won't make it to the Sock
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
 
       # Close the connection from the client
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
