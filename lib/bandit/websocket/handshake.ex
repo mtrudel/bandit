@@ -10,8 +10,8 @@ defmodule Bandit.WebSocket.Handshake do
         # Cases from RFC6455§4.2.1
         conn.method == "GET" &&
           get_req_header(conn, "host") != [] &&
-          "websocket" in get_req_header(conn, "upgrade") &&
-          "Upgrade" in get_req_header(conn, "connection") &&
+          header_contains?(conn, "upgrade", "websocket") &&
+          header_contains?(conn, "connection", "upgrade") &&
           match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key")) &&
           get_req_header(conn, "sec-websocket-version") == ["13"]
 
@@ -34,5 +34,11 @@ defmodule Bandit.WebSocket.Handshake do
     |> put_resp_header("connection", "Upgrade")
     |> put_resp_header("sec-websocket-accept", server_key)
     |> send_resp()
+  end
+
+  defp header_contains?(conn, field, value) do
+    get_req_header(conn, field)
+    |> Enum.map(&String.downcase/1)
+    |> Enum.member?(String.downcase(value))
   end
 end

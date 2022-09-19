@@ -2,30 +2,44 @@ name: Elixir CI
 
 on:
   push:
-    branches: [ main, "0.5" ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, "0.5" ]
+    branches: [ main ]
 
 env:
   MIX_ENV: test
 
 jobs:
   test:
+
     runs-on: ubuntu-latest
+
     strategy:
       fail-fast: false
       matrix:
         include:
-          - elixir: 1.11.4
-            otp: 22.3.4
-          - elixir: 1.12.3
+          - elixir:  1.11.4
             otp: 23.3.4
-          - elixir: 1.13.4
-            otp: 24.3.4
-          - elixir: 1.14.0
+          - elixir:  1.11.4
+            otp: 24.3.4.5
+
+          - elixir:  1.12.3
+            otp: 23.3.4
+          - elixir:  1.11.4
+            otp: 24.3.4.5
+
+          - elixir:  1.13.4
+            otp: 23.3.4
+          - elixir:  1.13.4
+            otp: 24.3.4.5
+          - elixir:  1.13.4
+            otp: 25.0.4
+
+          - elixir:  1.13.4
+            otp: 24.3.4.5
+          - elixir:  1.13.4
             otp: 25.0.4
             lint: true
-
     steps:
     - uses: actions/checkout@v2
 
@@ -54,11 +68,9 @@ jobs:
       run: mix format --check-formatted
 
     - name: Run Credo
-      if: ${{ matrix.lint }}
       run: mix credo --strict
 
     - name: Retrieve PLT Cache
-      if: ${{ matrix.lint }}
       uses: actions/cache@v1
       id: plt-cache
       with:
@@ -66,13 +78,12 @@ jobs:
         key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-plts-${{ hashFiles(format('{0}{1}', github.workspace, '/mix.lock')) }}
 
     - name: Create PLTs
-      if: ${{ matrix.lint == true && steps.plt-cache.outputs.cache-hit != 'true' }}
+      if: steps.plt-cache.outputs.cache-hit != 'true'
       run: |
         mkdir -p priv/plts
         mix dialyzer --plt
 
     - name: Run dialyzer
-      if: ${{ matrix.lint }}
       run: mix dialyzer --no-check
 
     - name: Run Tests

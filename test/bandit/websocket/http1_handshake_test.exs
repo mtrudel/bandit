@@ -10,8 +10,8 @@ defmodule WebSocketHTTP1HandshakeTest do
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
       Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
+      Upgrade: WeBsOcKeT\r
+      Connection: UpGrAdE\r
       Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
       Sec-WebSocket-Version: 13\r
       \r

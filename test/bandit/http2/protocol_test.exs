@@ -1,9 +1,9 @@
 defmodule HTTP2ProtocolTest do
   use ExUnit.Case, async: true
 
-  import Bitwise
-
   use ServerHelpers
+
+  import Bitwise
 
   setup :https_server
 
