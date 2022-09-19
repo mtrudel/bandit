@@ -46,6 +46,9 @@ defmodule Bandit.WebSocket.Handler do
 
       {:more, rest}, {:continue, state} ->
         {:halt, {:continue, %{state | buffer: rest}}}
+
+      {:error, message}, {:continue, state} ->
+        {:halt, {:error, message, state}}
     end)
   end
 
