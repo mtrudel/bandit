@@ -586,6 +586,43 @@ defmodule WebSocketSockTest do
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
+
+    @tag capture_log: true
+    test "server sends a 1007 status code on a non UTF-8 text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1007 status code on fragmented non UTF-8 text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
   end
 
   describe "client-side connection close" do

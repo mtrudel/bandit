@@ -41,8 +41,12 @@ defmodule Bandit.WebSocket.Connection do
         do_error("Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
 
       %Frame.Text{fin: true} = frame ->
-        connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
-        |> handle_continutation(socket, connection)
+        if String.valid?(frame.data) do
+          connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
+          |> handle_continutation(socket, connection)
+        else
+          do_error("Received non UTF-8 text frame (RFC6455§8.1)", socket, connection, 1007)
+        end
 
       %Frame.Text{fin: false} = frame ->
         {:continue, %{connection | fragment_frame: frame}}
@@ -136,10 +140,10 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  defp do_error(reason, socket, connection) do
+  defp do_error(reason, socket, connection, code \\ 1011) do
     if connection.state == :open do
       connection.sock.handle_error(reason, socket, connection.sock_state)
-      Bandit.WebSocket.Socket.close(socket, 1011)
+      Bandit.WebSocket.Socket.close(socket, code)
     end
 
     {:error, reason, %{connection | state: :closing}}
