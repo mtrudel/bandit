@@ -46,7 +46,7 @@ defimpl Bandit.WebSocket.Socket, for: ThousandIsland.Socket do
   alias Bandit.WebSocket.Frame
 
   def close(socket, code) do
-    if code not in [1005, 1006, 1015], do: send_frame(socket, %Frame.ConnectionClose{code: code})
+    send_frame(socket, %Frame.ConnectionClose{code: code})
     ThousandIsland.Socket.shutdown(socket, :write)
   end
 
