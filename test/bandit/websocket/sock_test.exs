@@ -541,7 +541,7 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) ==
                {:ok, "Received unexpected continuation frame (RFC6455§5.4)"}
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
@@ -561,7 +561,7 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) ==
                {:ok, "Received unexpected text frame (RFC6455§5.4)"}
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
@@ -581,7 +581,7 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) ==
                {:ok, "Received unexpected binary frame (RFC6455§5.4)"}
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)

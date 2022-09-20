@@ -38,14 +38,14 @@ defmodule Bandit.WebSocket.Connection do
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
     case frame do
       %Frame.Continuation{} ->
-        do_error("Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
+        do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
 
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
           connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
-          do_error("Received non UTF-8 text frame (RFC6455§8.1)", socket, connection, 1007)
+          do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
         end
 
       %Frame.Text{fin: false} = frame ->
@@ -77,10 +77,10 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | fragment_frame: frame}}
 
       %Frame.Text{} ->
-        do_error("Received unexpected text frame (RFC6455§5.4)", socket, connection)
+        do_error(1002, "Received unexpected text frame (RFC6455§5.4)", socket, connection)
 
       %Frame.Binary{} ->
-        do_error("Received unexpected binary frame (RFC6455§5.4)", socket, connection)
+        do_error(1002, "Received unexpected binary frame (RFC6455§5.4)", socket, connection)
 
       frame ->
         handle_control_frame(frame, socket, connection)
@@ -109,7 +109,7 @@ defmodule Bandit.WebSocket.Connection do
   def handle_shutdown(socket, connection), do: do_connection_close(1001, socket, connection)
 
   def handle_error(reason, socket, connection) do
-    do_error(reason, socket, connection)
+    do_error(1011, reason, socket, connection)
   end
 
   def handle_timeout(socket, connection) do
@@ -129,7 +129,7 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | sock_state: sock_state, state: :closing}}
 
       {:error, reason, sock_state} ->
-        do_error(reason, socket, %{connection | sock_state: sock_state})
+        do_error(1011, reason, socket, %{connection | sock_state: sock_state})
     end
   end
 
@@ -140,7 +140,7 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  defp do_error(reason, socket, connection, code \\ 1011) do
+  defp do_error(code, reason, socket, connection) do
     if connection.state == :open do
       connection.sock.handle_error(reason, socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, code)
