@@ -1,17 +1,17 @@
 defmodule WebSocketHTTP1HandshakeTest do
-  use ServerHelpers
+  use WebSocketServerHelpers
 
-  setup :http_server
+  setup :http1_websocket_server
 
   describe "HTTP/1.1 handshake" do
     test "accepts well formed requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
       Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
+      Upgrade: WeBsOcKeT\r
+      Connection: UpGrAdE\r
       Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
       Sec-WebSocket-Version: 13\r
       \r
@@ -31,7 +31,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept non-GET requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       POST /websocket_test HTTP/1.1\r
@@ -54,7 +54,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept non-HTTP/1.1 requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.0\r
@@ -77,7 +77,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept requests without a host header", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
@@ -98,7 +98,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept non-websocket upgrade requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
@@ -120,7 +120,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept non-upgrade requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
@@ -142,7 +142,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept requests without a request key", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
@@ -163,7 +163,7 @@ defmodule WebSocketHTTP1HandshakeTest do
     end
 
     test "does not accept requests without a version of 13", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleWebSocketClient.tcp_client(context)
 
       :gen_tcp.send(client, """
       GET /websocket_test HTTP/1.1\r
@@ -186,6 +186,6 @@ defmodule WebSocketHTTP1HandshakeTest do
   end
 
   def websocket_test(conn) do
-    send_resp(conn, 204, <<>>)
+    Plug.Conn.send_resp(conn, 204, <<>>)
   end
 end

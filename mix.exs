@@ -5,7 +5,7 @@ defmodule Bandit.MixProject do
     [
       app: :bandit,
       version: "0.5.0",
-      elixir: "~> 1.9",
+      elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: dialyzer(),
@@ -29,7 +29,8 @@ defmodule Bandit.MixProject do
   defp deps do
     [
       {:thousand_island, "~> 0.5.8"},
-      {:plug, "~> 1.12"},
+      {:sock, "~> 0.2.0"},
+      {:plug, "~> 1.13"},
       {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.8", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},

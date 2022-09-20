@@ -1,11 +1,12 @@
 defmodule Bandit do
   @moduledoc """
-  Bandit is an HTTP server for Plug apps.
+  Bandit is an HTTP server for Plug and Sock apps.
 
   As an HTTP server, Bandit's primary goal is to act as 'glue' between client connections managed
   by [Thousand Island](https://github.com/mtrudel/thousand_island) and application code defined
-  via the [Plug API](https://github.com/elixir-plug/plug). As such there really isn't a whole lot
-  of user-visible surface area to Bandit, and as a consequence the API documentation presented here
+  via the [Plug](https://github.com/elixir-plug/plug) and/or
+  [Sock](https://github.com/mtrudel/sock) APIs. As such there really isn't a whole lot of
+  user-visible surface area to Bandit, and as a consequence the API documentation presented here
   is somewhat sparse. This is by design! Bandit is intended to 'just work' in almost all cases;
   the only thought users typically have to put into Bandit comes in the choice of which options (if
   any) they would like to change when starting a Bandit server. The sparseness of the Bandit API
@@ -55,11 +56,17 @@ defmodule Bandit do
   filing an issue on the Bandit GitHub project (especially if the error does not occur with
   another HTTP server such as Cowboy).
 
+  ## Using Bandit With Sock Applications
+
+  TBD
+
   ## Config Options
 
   Bandit takes a number of options at startup:
 
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
+  * `sock`: The sock to handle WebSocket connections. Can be specified as `MySock` or `{MySock,
+     sock_opts}`. Optional.
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the 
@@ -105,6 +112,9 @@ defmodule Bandit do
   @typedoc "A Plug definition"
   @type plug :: {module(), keyword()}
 
+  @typedoc "A Sock definition"
+  @type sock :: {module(), keyword()}
+
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
     %{id: Bandit, start: {__MODULE__, :start_link, [arg]}}
@@ -126,6 +136,7 @@ defmodule Bandit do
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
+    {sock_mod, _} = sock = sock(arg)
 
     {transport_module, extra_transport_options} =
       case scheme do
@@ -135,6 +146,7 @@ defmodule Bandit do
 
     handler_options = %{
       plug: plug,
+      sock: sock,
       handler_module: Bandit.InitialHandler
     }
 
@@ -151,7 +163,7 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        Logger.info(info(scheme, plug_mod, pid))
+        Logger.info(info(scheme, plug_mod, sock_mod, pid))
         {:ok, pid}
 
       {:error, _} = error ->
@@ -161,16 +173,28 @@ defmodule Bandit do
 
   defp plug(arg) do
     arg
-    |> Keyword.fetch!(:plug)
+    |> Keyword.fetch(:plug)
     |> case do
-      {plug, plug_options} -> {plug, plug.init(plug_options)}
-      plug -> {plug, plug.init([])}
+      :error -> {nil, nil}
+      {:ok, {plug, plug_options}} -> {plug, plug.init(plug_options)}
+      {:ok, plug} -> {plug, plug.init([])}
     end
   end
 
-  defp info(scheme, plug, pid) do
+  defp sock(arg) do
+    arg
+    |> Keyword.fetch(:sock)
+    |> case do
+      :error -> {nil, nil}
+      {:ok, {sock, sock_options}} -> {sock, sock.init(sock_options)}
+      {:ok, sock} -> {sock, sock.init([])}
+    end
+  end
+
+  defp info(scheme, plug, sock, pid) do
     server = "Bandit #{Application.spec(:bandit)[:vsn]}"
-    "Running #{inspect(plug)} with #{server} at #{bound_address(scheme, pid)}"
+
+    "Running plug: #{inspect(plug)}, sock: #{inspect(sock)} with #{server} at #{bound_address(scheme, pid)}"
   end
 
   defp bound_address(scheme, pid) do

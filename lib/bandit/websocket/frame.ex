@@ -17,33 +17,42 @@ defmodule Bandit.WebSocket.Frame do
 
   @spec deserialize(binary()) :: {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
   def deserialize(
-        <<flags::4, opcode::4, 1::1, 127::7, length::64, mask::32, payload::binary-size(length),
-          rest::binary>>
+        <<fin::1, rsv::3, opcode::4, 1::1, 127::7, length::64, mask::32,
+          payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(flags, opcode, mask, payload, rest)
+    to_frame(fin, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<flags::4, opcode::4, 1::1, 126::7, length::16, mask::32, payload::binary-size(length),
-          rest::binary>>
+        <<fin::1, rsv::3, opcode::4, 1::1, 126::7, length::16, mask::32,
+          payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(flags, opcode, mask, payload, rest)
+    to_frame(fin, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<flags::4, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
+        <<fin::1, rsv::3, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
           rest::binary>>
-      ) do
-    to_frame(flags, opcode, mask, payload, rest)
+      )
+      when length <= 125 do
+    to_frame(fin, rsv, opcode, mask, payload, rest)
+  end
+
+  def deserialize(<<>>) do
+    nil
   end
 
   def deserialize(msg) do
     {{:more, msg}, <<>>}
   end
 
+  defp to_frame(_fin, rsv, _opcode, _mask, _payload, rest) when rsv != 0x0 do
+    {{:error, "Received unsupported RSV flags #{rsv}"}, rest}
+  end
+
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  defp to_frame(flags, opcode, mask, payload, rest) do
-    fin = Bitwise.band(flags, 0x8) != 0x0
+  defp to_frame(fin, 0x0, opcode, mask, payload, rest) do
+    fin = fin == 0x1
     unmasked_payload = mask(payload, mask)
 
     opcode
@@ -74,9 +83,9 @@ defmodule Bandit.WebSocket.Frame do
     frame
     |> Serializable.serialize()
     |> Enum.map(fn {opcode, fin, payload} ->
-      flags = if fin, do: 0x8, else: 0x0
+      fin = if fin, do: 0x1, else: 0x0
       mask_and_length = payload |> IO.iodata_length() |> mask_and_length()
-      [<<flags::4, opcode::4>>, mask_and_length, payload]
+      [<<fin::1, 0x0::3, opcode::4>>, mask_and_length, payload]
     end)
   end
 
@@ -86,7 +95,7 @@ defmodule Bandit.WebSocket.Frame do
 
   # Note that masking is an involution, so we don't need a separate unmask function
   def mask(payload, mask) do
-    maskstream = mask |> :binary.encode_unsigned() |> :binary.bin_to_list() |> Stream.cycle()
+    maskstream = <<mask::32>> |> :binary.bin_to_list() |> Stream.cycle()
 
     payload
     |> :binary.bin_to_list()
