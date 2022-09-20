@@ -650,7 +650,8 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
-      # Finally, ensure that the server has shut down
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
       refute Process.alive?(pid)
     end
 
@@ -681,7 +682,8 @@ defmodule WebSocketSockTest do
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
-      # Finally, ensure that the server has shut down
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
       refute Process.alive?(pid)
     end
 
@@ -714,7 +716,8 @@ defmodule WebSocketSockTest do
       # Now ensure that we do not see a connection close frame from the server
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
-      # Finally, ensure that the server has shut down
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
       refute Process.alive?(pid)
     end
 
