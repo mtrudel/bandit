@@ -47,7 +47,7 @@ defmodule WebSocketServerHelpers do
         apply(__MODULE__, calls[:negotiate], [conn, opts])
       end
 
-      def noop_negotiate(conn, opts), do: {:accept, conn, opts}
+      def noop_negotiate(conn, opts), do: {:accept, conn, opts, []}
 
       @impl Sock
       def handle_connection(socket, opts) do

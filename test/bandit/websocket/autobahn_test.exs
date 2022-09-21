@@ -19,7 +19,7 @@ defmodule WebsocketAutobahnTest do
 
       @impl Sock
       def negotiate(conn, state) do
-        {:accept, conn, state}
+        {:accept, conn, state, []}
       end
 
       @impl Sock

@@ -23,15 +23,26 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_connection(conn, socket, connection) do
     case connection.sock.negotiate(conn, connection.sock_state) do
-      {:accept, conn, sock_state} ->
+      {:accept, conn, sock_state, opts} ->
         Handshake.send_handshake(conn)
 
         connection.sock.handle_connection(socket, sock_state)
         |> handle_continutation(socket, connection)
+        |> case do
+          {:continue, connection} -> process_options(connection, opts)
+          other -> other
+        end
 
       {:refuse, conn, _sock_state} ->
         if conn.state != :sent, do: Plug.Conn.send_resp(conn)
         {:close, connection}
+    end
+  end
+
+  defp process_options(connection, opts) do
+    case Keyword.get(opts, :timeout) do
+      nil -> {:continue, connection}
+      timeout -> {:continue, connection, {:persistent, timeout}}
     end
   end
 

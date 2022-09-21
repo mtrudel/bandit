@@ -13,18 +13,17 @@ defmodule Bandit.WebSocket.Handler do
 
     Connection.handle_connection(state.conn, socket, connection)
     |> case do
-      {:continue, connection} ->
-        state =
-          state
-          |> Map.drop([:conn, :plug])
-          |> Map.put(:connection, connection)
-          |> Map.put(:buffer, <<>>)
-
-        {:continue, state}
-
-      {:close, _} ->
-        {:close, state}
+      {:continue, connection} -> {:continue, update_state(state, connection)}
+      {:continue, connection, timeout} -> {:continue, update_state(state, connection), timeout}
+      {:close, _} -> {:close, state}
     end
+  end
+
+  defp update_state(state, connection) do
+    state
+    |> Map.drop([:conn, :plug])
+    |> Map.put(:connection, connection)
+    |> Map.put(:buffer, <<>>)
   end
 
   @impl ThousandIsland.Handler

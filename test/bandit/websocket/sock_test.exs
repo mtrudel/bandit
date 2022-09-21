@@ -61,12 +61,41 @@ defmodule WebSocketSockTest do
     end
 
     def accept(conn, opts) do
-      {:accept, conn, opts}
+      {:accept, conn, opts, []}
     end
 
     def ok(socket, opts) do
       Sock.Socket.send_text_frame(socket, "OK")
       {:continue, opts}
+    end
+
+    @tag capture_log: true
+    test "can specify a timeout option", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        negotiate: :short_timeout,
+        handle_timeout: :send_text_on_timeout
+      )
+
+      # Send a frame to ensure that whatever timeout we set is persistent
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      # Wait long enough for things to timeout
+      Process.sleep(100)
+
+      # Make sure that sock.handle_timeout is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TIMEOUT"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    def short_timeout(conn, opts) do
+      {:accept, conn, opts, timeout: 50}
     end
 
     test "can refuse a connection to send it back as an HTTP response", context do
