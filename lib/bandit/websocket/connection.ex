@@ -116,12 +116,9 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_close(socket, connection), do: do_connection_close_remote(1006, socket, connection)
+  def handle_close(socket, connection), do: do_error(1006, :closed, socket, connection)
   def handle_shutdown(socket, connection), do: do_connection_close_local(1001, socket, connection)
-
-  def handle_error(reason, socket, connection) do
-    do_error(1011, reason, socket, connection)
-  end
+  def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
 
   def handle_timeout(socket, connection) do
     if connection.state == :open do
@@ -151,14 +148,14 @@ defmodule Bandit.WebSocket.Connection do
 
   defp do_connection_close_local(code, socket, connection) do
     if connection.state == :open do
-      connection.sock.handle_close(code, socket, connection.sock_state)
+      connection.sock.handle_close({:local, code}, socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, code)
     end
   end
 
   defp do_connection_close_remote(code, socket, connection) do
     if connection.state == :open do
-      connection.sock.handle_close(code || 1005, socket, connection.sock_state)
+      connection.sock.handle_close({:remote, code || 1005}, socket, connection.sock_state)
 
       # This is a bit of a subtle case, see RFC6455§7.4.1-2
       to_send =

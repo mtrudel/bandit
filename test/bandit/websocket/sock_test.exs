@@ -401,9 +401,186 @@ defmodule WebSocketSockTest do
     end
   end
 
+  describe "server-side connection close" do
+    test "server shuts down connection with a 1000 on a close tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :pid_text_frame_and_close,
+        handle_close: :send_text_on_close
+      )
+
+      # Get the sock to tell bandit to shut down. It will send us its pid first
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      # Wait a bit and validate that the server is still very much alive
+      Process.sleep(100)
+      assert Process.alive?(pid)
+
+      # Now send our half of the handshake and verify that the server has shut down
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(100)
+      refute Process.alive?(pid)
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    def pid_text_frame_and_close(_data, socket, opts) do
+      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
+      {:close, opts}
+    end
+
+    def send_text_on_close(reason, socket, _opts) do
+      Sock.Socket.send_text_frame(socket, inspect(reason))
+      :ok
+    end
+
+    test "server shuts down connection with a 1000 on close tuple from handle_info", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :pid_text_frame_and_send_self_message,
+        handle_info: :echo_message_and_close,
+        handle_close: :send_text_on_close
+      )
+
+      # Get the sock to tell bandit to shut down. It will send us its pid first
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Make sure that sock.handle_info is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      # Wait a bit and validate that the server is still very much alive
+      Process.sleep(100)
+      assert Process.alive?(pid)
+
+      # Now send our half of the handshake and verify that the server has shut down
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(100)
+      refute Process.alive?(pid)
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    def pid_text_frame_and_send_self_message(_data, socket, opts) do
+      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
+      Process.send(self(), "OK", [])
+      {:continue, opts}
+    end
+
+    def echo_message_and_close(msg, socket, opts) do
+      Sock.Socket.send_text_frame(socket, msg)
+      {:close, opts}
+    end
+
+    test "server shuts down connection with a 1001 on clean shut down", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_close: :send_text_on_close)
+
+      # Shut the server down in an orderly manner
+      ThousandIsland.stop(context.server_pid)
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1001}"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1001::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+  end
+
+  describe "client-side connection close" do
+    test "returns a corresponding connection close frame and calls the sock callback", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :pid_text_frame,
+        handle_close: :send_text_on_close
+      )
+
+      # Get the server pid and ensure it's alive
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      assert Process.alive?(pid)
+
+      # Close the connection from the client
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:remote, 1000}"}
+
+      # Now ensure that we see the server's half of the shutdown handshake
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
+      refute Process.alive?(pid)
+    end
+
+    test "is processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client,
+        handle_text_frame: :pid_text_frame,
+        handle_close: :send_text_on_close
+      )
+
+      # Get the server pid and ensure it's alive
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      assert Process.alive?(pid)
+
+      # Note that we don't expect this to send back a pid since it won't make it to the Sock
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+
+      # Close the connection from the client
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      # Make sure that sock.handle_close is called
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:remote, 1000}"}
+
+      # Now ensure that we see the server's half of the shutdown handshake
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
+      refute Process.alive?(pid)
+    end
+
+    def pid_text_frame(_data, socket, opts) do
+      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
+      {:continue, opts}
+    end
+  end
+
   describe "error handling" do
     @tag capture_log: true
-    test "calls sock callback and closes websocket on error", context do
+    test "calls sock callback and closes websocket on error tuple", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
       SimpleWebSocketClient.http1_handshake(client,
@@ -431,7 +608,7 @@ defmodule WebSocketSockTest do
     end
 
     @tag capture_log: true
-    test "calls sock callback and closes websocket on error in handle_info", context do
+    test "calls sock callback and closes websocket on error tuple from handle_info", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
       SimpleWebSocketClient.http1_handshake(client,
@@ -468,154 +645,147 @@ defmodule WebSocketSockTest do
       Sock.Socket.send_text_frame(socket, reason)
       :ok
     end
-  end
 
-  describe "server-side connection close" do
-    test "server waits for client connection close message before shutting down", context do
+    test "an abnormal socket close calls sock callback", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
       SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_close,
-        handle_close: :send_text_on_close
+        handle_text_frame: :pid_text_frame_and_send_message_on_close,
+        handle_error: :send_message_on_error
       )
 
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
+      # Get the server pid and ensure it's alive
+      my_pid = self() |> :erlang.pid_to_list() |> to_string()
+      SimpleWebSocketClient.send_text_frame(client, my_pid)
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
       assert Process.alive?(pid)
 
-      # Now send our half of the handshake and verify that the server has shut down
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      # Close the client connection abnormally
+      :gen_tcp.close(client)
+
+      # Make sure that sock.handle_error is called
+      assert_receive "Reason closed"
+
+      # Now ensure that we do not see a connection close frame from the server
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Wait a bit and validate that the server is closed
       Process.sleep(100)
       refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
-    def pid_text_frame_and_close(_data, socket, opts) do
+    def pid_text_frame_and_send_message_on_close(data, socket, opts) do
+      their_pid = data |> String.to_charlist() |> :erlang.list_to_pid()
       Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:close, opts}
+      {:continue, Map.put(opts, :their_pid, their_pid)}
     end
 
-    def send_text_on_close(reason, socket, _opts) do
-      Sock.Socket.send_text_frame(socket, <<reason::16>>)
+    def send_message_on_error(reason, _socket, opts) do
+      Process.send(opts[:their_pid], "Reason #{reason}", [])
       :ok
     end
 
-    test "server waits for client connection close message before shutting down via handle_info",
-         context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_send_self_message,
-        handle_info: :echo_message_and_close,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_info is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
-      assert Process.alive?(pid)
-
-      # Now send our half of the handshake and verify that the server has shut down
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-      Process.sleep(100)
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    def pid_text_frame_and_send_self_message(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      Process.send(self(), "OK", [])
-      {:continue, opts}
-    end
-
-    def echo_message_and_close(msg, socket, opts) do
-      Sock.Socket.send_text_frame(socket, msg)
-      {:close, opts}
-    end
-
     @tag capture_log: true
-    test "server times out waiting for client connection close", context do
+    test "server sends a 1002 on an unexpected continuation frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_close,
-        handle_close: :send_text_on_close
-      )
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
 
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
 
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected continuation frame (RFC6455§5.4)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
-      assert Process.alive?(pid)
-
-      # Now wait for the server to timeout
-      Process.sleep(1500)
-
-      # Verify that the server has shut down
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    test "server sends a 1001 status code before clean shut down", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_close: :send_text_on_close)
-
-      # Shut the server down in an orderly manner
-      ThousandIsland.stop(context.server_pid)
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1001::16>>}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1001::16>>}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
     @tag capture_log: true
-    test "server sends a 1002 status code and calls the sock callback if no frames sent",
-         context do
+    test "server sends a 1002 on a text frame during continuation", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected text frame (RFC6455§5.4)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1002 on a binary frame during continuation", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
+      # This is not allowed by RFC6455§5.4
+      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received unexpected binary frame (RFC6455§5.4)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1007 on a non UTF-8 text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1007 on fragmented non UTF-8 text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
+
+      # Make sure that sock.handle_error is called
+      assert SimpleWebSocketClient.recv_text_frame(client) ==
+               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+  end
+
+  describe "timeout conditions" do
+    @tag capture_log: true
+    test "server sends a 1002 and calls the sock callback if no frames sent", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
       SimpleWebSocketClient.http1_handshake(client, handle_timeout: :send_text_on_timeout)
@@ -634,7 +804,7 @@ defmodule WebSocketSockTest do
     end
 
     @tag capture_log: true
-    test "server sends a 1002 status code and calls the sock callback on timeout between frames",
+    test "server sends a 1002 and calls the sock callback on timeout between frames",
          context do
       client = SimpleWebSocketClient.tcp_client(context)
 
@@ -660,207 +830,37 @@ defmodule WebSocketSockTest do
     end
 
     @tag capture_log: true
-    test "server sends a 1002 status code on an unexpected continuation frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected continuation frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1002 status code on a text frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected text frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1002 status code on a binary frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected binary frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1007 status code on a non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1007 status code on fragmented non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-  end
-
-  describe "client-side connection close" do
-    test "returns a corresponding connection close frame and calls the sock callback", context do
+    test "server times out waiting for client connection close", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
       SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame,
+        handle_text_frame: :pid_text_frame_and_close,
         handle_close: :send_text_on_close
       )
 
-      # Get the server pid and ensure it's alive
+      # Get the sock to tell bandit to shut down. It will send us its pid first
       SimpleWebSocketClient.send_text_frame(client, "OK")
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      assert Process.alive?(pid)
-
-      # Close the connection from the client
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
 
       # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
 
-      # Now ensure that we see the server's half of the shutdown handshake
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
-      # Wait a bit and validate that the server is closed
+      # Wait a bit and validate that the server is still very much alive
       Process.sleep(100)
-      refute Process.alive?(pid)
-    end
-
-    test "is processed when interleaved with continuation frames", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the server pid and ensure it's alive
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
       assert Process.alive?(pid)
 
-      # Note that we don't expect this to send back a pid since it won't make it to the Sock
-      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      # Now wait for the server to timeout
+      Process.sleep(1500)
 
-      # Close the connection from the client
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<1000::16>>}
-
-      # Now ensure that we see the server's half of the shutdown handshake
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
+      # Verify that the server has shut down
       refute Process.alive?(pid)
-    end
 
-    def pid_text_frame(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:continue, opts}
-    end
-
-    test "an abnormal client close calls the sock callback with a 1006 error code", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_send_message_on_close,
-        handle_close: :send_message_on_close
-      )
-
-      # Get the server pid and ensure it's alive
-      my_pid = self() |> :erlang.pid_to_list() |> to_string()
-      SimpleWebSocketClient.send_text_frame(client, my_pid)
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      assert Process.alive?(pid)
-
-      # Close the client connection abnormally
-      :gen_tcp.close(client)
-
-      # Make sure that sock.handle_close is called
-      assert_receive "Reason 1006"
-
-      # Now ensure that we do not see a connection close frame from the server
+      # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
-    end
-
-    def pid_text_frame_and_send_message_on_close(data, socket, opts) do
-      their_pid = data |> String.to_charlist() |> :erlang.list_to_pid()
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:continue, Map.put(opts, :their_pid, their_pid)}
-    end
-
-    def send_message_on_close(reason, _socket, opts) do
-      Process.send(opts[:their_pid], "Reason #{reason}", [])
-      :ok
     end
   end
 end

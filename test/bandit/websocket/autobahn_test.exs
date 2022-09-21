@@ -50,7 +50,7 @@ defmodule WebsocketAutobahnTest do
       end
 
       @impl Sock
-      def handle_close(_status_code, _socket, _state) do
+      def handle_close(_reason, _socket, _state) do
         :ok
       end
 
