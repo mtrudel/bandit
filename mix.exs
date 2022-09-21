@@ -29,7 +29,7 @@ defmodule Bandit.MixProject do
   defp deps do
     [
       {:thousand_island, "~> 0.5.8"},
-      {:sock, "~> 0.2.0"},
+      {:sock, "~> 0.2.1"},
       {:plug, "~> 1.13"},
       {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.8", only: [:dev, :test]},

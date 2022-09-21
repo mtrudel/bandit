@@ -119,6 +119,11 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
+  def handle_info(msg, socket, connection) do
+    connection.sock.handle_info(msg, socket, connection.sock_state)
+    |> handle_continutation(socket, connection)
+  end
+
   defp handle_continutation(continutation, socket, connection) do
     case continutation do
       {:continue, sock_state} ->

@@ -64,6 +64,11 @@ defmodule WebsocketAutobahnTest do
         :ok
       end
 
+      @impl Sock
+      def handle_info(_msg, _socket, state) do
+        {:continue, state}
+      end
+
       def call(conn, _) do
         conn
         |> put_resp_content_type("text/plain")

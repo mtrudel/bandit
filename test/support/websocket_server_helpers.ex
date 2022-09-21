@@ -31,7 +31,7 @@ defmodule WebSocketServerHelpers do
         conn = Plug.Conn.fetch_query_params(conn)
 
         calls =
-          ~w(negotiate handle_connection handle_text_frame handle_binary_frame handle_ping_frame handle_pong_frame handle_close handle_error handle_timeout)a
+          ~w(negotiate handle_connection handle_text_frame handle_binary_frame handle_ping_frame handle_pong_frame handle_close handle_error handle_timeout handle_info)a
           |> Enum.map(fn call_name ->
             function_name =
               conn.query_params
@@ -112,6 +112,14 @@ defmodule WebSocketServerHelpers do
       end
 
       def noop_handle_timeout(_socket, _opts), do: :ok
+
+      @impl Sock
+      def handle_info(msg, socket, opts) do
+        function = Map.get(opts, :handle_info)
+        apply(__MODULE__, function, [msg, socket, opts])
+      end
+
+      def noop_handle_info(_msg, _socket, opts), do: {:continue, opts}
 
       def call(conn, _) do
         function = String.to_atom(List.first(conn.path_info))
