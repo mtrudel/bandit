@@ -154,7 +154,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, ">= 0.5.1"}
+    {:bandit, ">= 0.5.2"}
   ]
 end
 ```
