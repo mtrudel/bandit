@@ -173,21 +173,21 @@ defmodule Bandit do
 
   defp plug(arg) do
     arg
-    |> Keyword.fetch(:plug)
+    |> Keyword.get(:plug)
     |> case do
-      :error -> {nil, nil}
-      {:ok, {plug, plug_options}} -> {plug, plug.init(plug_options)}
-      {:ok, plug} -> {plug, plug.init([])}
+      nil -> {nil, nil}
+      {plug, plug_options} -> {plug, plug.init(plug_options)}
+      plug -> {plug, plug.init([])}
     end
   end
 
   defp sock(arg) do
     arg
-    |> Keyword.fetch(:sock)
+    |> Keyword.get(:sock)
     |> case do
-      :error -> {nil, nil}
-      {:ok, {sock, sock_options}} -> {sock, sock.init(sock_options)}
-      {:ok, sock} -> {sock, sock.init([])}
+      nil -> {nil, nil}
+      {sock, sock_options} -> {sock, sock.init(sock_options)}
+      sock -> {sock, sock.init([])}
     end
   end
 

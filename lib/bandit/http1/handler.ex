@@ -9,10 +9,10 @@ defmodule Bandit.HTTP1.Handler do
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   @impl ThousandIsland.Handler
-  def handle_data(data, socket, %{plug: plug} = state) do
+  def handle_data(data, socket, %{plug: plug, sock: sock} = state) do
     with req <- %Adapter{socket: socket, buffer: data},
          {:ok, conn} <- build_conn(req),
-         {:ok, :no_upgrade} <- should_upgrade(conn),
+         {:ok, :no_upgrade} <- should_upgrade(conn, sock),
          {:ok, conn} <- call_plug(conn, plug),
          {:ok, conn} <- commit_response(conn, plug) do
       case keepalive?(conn) do
@@ -49,7 +49,9 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  defp should_upgrade(conn) do
+  defp should_upgrade(_conn, {nil, nil}), do: {:ok, :no_upgrade}
+
+  defp should_upgrade(conn, _sock) do
     case Bandit.WebSocket.Handshake.handshake?(conn) do
       true -> {:ok, :websocket, conn}
       false -> {:ok, :no_upgrade}
