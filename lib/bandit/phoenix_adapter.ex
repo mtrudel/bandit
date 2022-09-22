@@ -41,32 +41,15 @@ defmodule Bandit.PhoenixAdapter do
 
   @doc false
   def child_specs(endpoint, config) do
-    for {scheme, port} <- [http: 4000, https: 4040], opts = config[scheme] do
-      port = :proplists.get_value(:port, opts, port)
+    sock_endpoint = Keyword.get(config, :sock_endpoint)
 
-      unless port do
-        Logger.error(":port for #{scheme} config is nil, cannot start server")
-        raise "aborting due to nil port"
-      end
-
-      ip = :proplists.get_value(:ip, opts, {127, 0, 0, 1})
-      transport_options = :proplists.get_value(:transport_options, opts, [])
+    for {scheme, default_port} <- [http: 4000, https: 4040], opts = config[scheme] do
+      port = Keyword.get(opts, :port, default_port)
+      ip = Keyword.get(opts, :ip, {127, 0, 0, 1})
+      transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
 
-      args = [plug: endpoint, scheme: scheme, options: opts]
-
-      args =
-        if Code.ensure_loaded(Phoenix.SockEndpoint) do
-          args |> Keyword.put(:sock, {Phoenix.SockEndpoint, endpoint})
-        else
-          Logger.warning(
-            "Loaded version of Phoenix does not have Sock support; WebSockets will be unavailable"
-          )
-
-          args
-        end
-
-      args
+      [plug: endpoint, sock: sock_endpoint, scheme: scheme, options: opts]
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end
