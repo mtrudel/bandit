@@ -10,7 +10,7 @@ defmodule Bandit.MixProject do
       deps: deps(),
       dialyzer: dialyzer(),
       name: "Bandit",
-      description: "A pure-Elixir HTTP server built for Plug apps",
+      description: "A pure-Elixir HTTP server built for Plug  & Sock apps",
       source_url: "https://github.com/mtrudel/bandit",
       package: [
         files: ["lib", "test", "mix.exs", "README*", "LICENSE*"],
