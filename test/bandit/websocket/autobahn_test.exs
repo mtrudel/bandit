@@ -13,60 +13,64 @@ defmodule WebsocketAutobahnTest do
       import Plug.Conn
 
       @impl Sock
-      def init(_args) do
+      def sock_init(_args) do
         []
       end
 
       @impl Sock
-      def negotiate(conn, state) do
+      def sock_negotiate(conn, state) do
         {:accept, conn, state, []}
       end
 
       @impl Sock
-      def handle_connection(_socket, state) do
+      def sock_handle_connection(_socket, state) do
         {:continue, state}
       end
 
       @impl Sock
-      def handle_text_frame(text, socket, state) do
+      def sock_handle_text_frame(text, socket, state) do
         send_text_frame(socket, text)
         {:continue, state}
       end
 
       @impl Sock
-      def handle_binary_frame(binary, socket, state) do
+      def sock_handle_binary_frame(binary, socket, state) do
         send_binary_frame(socket, binary)
         {:continue, state}
       end
 
       @impl Sock
-      def handle_ping_frame(_ping, _socket, state) do
+      def sock_handle_ping_frame(_ping, _socket, state) do
         {:continue, state}
       end
 
       @impl Sock
-      def handle_pong_frame(_pong, _socket, state) do
+      def sock_handle_pong_frame(_pong, _socket, state) do
         {:continue, state}
       end
 
       @impl Sock
-      def handle_close(_reason, _socket, _state) do
+      def sock_handle_close(_reason, _socket, _state) do
         :ok
       end
 
       @impl Sock
-      def handle_error(_error, _socket, _state) do
+      def sock_handle_error(_error, _socket, _state) do
         :ok
       end
 
       @impl Sock
-      def handle_timeout(_socket, _state) do
+      def sock_handle_timeout(_socket, _state) do
         :ok
       end
 
       @impl Sock
-      def handle_info(_msg, _socket, state) do
+      def sock_handle_info(_msg, _socket, state) do
         {:continue, state}
+      end
+
+      def init(_args) do
+        []
       end
 
       def call(conn, _) do

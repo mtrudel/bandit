@@ -186,8 +186,8 @@ defmodule Bandit do
     |> Keyword.get(:sock)
     |> case do
       nil -> {nil, nil}
-      {sock, sock_options} -> {sock, sock.init(sock_options)}
-      sock -> {sock, sock.init([])}
+      {sock, sock_options} -> {sock, sock.sock_init(sock_options)}
+      sock -> {sock, sock.sock_init([])}
     end
   end
 

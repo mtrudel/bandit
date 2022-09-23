@@ -24,10 +24,11 @@ defmodule WebSocketServerHelpers do
       end
 
       @impl Sock
-      def init(opts), do: Map.put(opts, :init_opts, :ok)
+      def sock_init(%{} = opts), do: Map.put(opts, :init_opts, :ok)
+      def sock_init(_), do: %{init_opts: :ok}
 
       @impl Sock
-      def negotiate(conn, opts) do
+      def sock_negotiate(conn, opts) do
         conn = Plug.Conn.fetch_query_params(conn)
 
         calls =
@@ -50,7 +51,7 @@ defmodule WebSocketServerHelpers do
       def noop_negotiate(conn, opts), do: {:accept, conn, opts, []}
 
       @impl Sock
-      def handle_connection(socket, opts) do
+      def sock_handle_connection(socket, opts) do
         function = Map.get(opts, :handle_connection)
         apply(__MODULE__, function, [socket, opts])
       end
@@ -58,7 +59,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_connection(_socket, opts), do: {:continue, opts}
 
       @impl Sock
-      def handle_text_frame(data, socket, opts) do
+      def sock_handle_text_frame(data, socket, opts) do
         function = Map.get(opts, :handle_text_frame)
         apply(__MODULE__, function, [data, socket, opts])
       end
@@ -66,7 +67,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_text_frame(_data, _socket, opts), do: {:continue, opts}
 
       @impl Sock
-      def handle_binary_frame(data, socket, opts) do
+      def sock_handle_binary_frame(data, socket, opts) do
         function = Map.get(opts, :handle_binary_frame)
         apply(__MODULE__, function, [data, socket, opts])
       end
@@ -74,7 +75,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_binary_frame(_data, _socket, opts), do: {:continue, opts}
 
       @impl Sock
-      def handle_ping_frame(data, socket, opts) do
+      def sock_handle_ping_frame(data, socket, opts) do
         function = Map.get(opts, :handle_ping_frame)
         apply(__MODULE__, function, [data, socket, opts])
       end
@@ -82,7 +83,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_ping_frame(_data, _socket, opts), do: {:continue, opts}
 
       @impl Sock
-      def handle_pong_frame(data, socket, opts) do
+      def sock_handle_pong_frame(data, socket, opts) do
         function = Map.get(opts, :handle_pong_frame)
         apply(__MODULE__, function, [data, socket, opts])
       end
@@ -90,7 +91,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_pong_frame(_data, _socket, opts), do: {:continue, opts}
 
       @impl Sock
-      def handle_close(reason, socket, opts) do
+      def sock_handle_close(reason, socket, opts) do
         function = Map.get(opts, :handle_close)
         apply(__MODULE__, function, [reason, socket, opts])
       end
@@ -98,7 +99,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_close(_reason, _socket, _opts), do: :ok
 
       @impl Sock
-      def handle_error(reason, socket, opts) do
+      def sock_handle_error(reason, socket, opts) do
         function = Map.get(opts, :handle_error)
         apply(__MODULE__, function, [reason, socket, opts])
       end
@@ -106,7 +107,7 @@ defmodule WebSocketServerHelpers do
       def noop_handle_error(_reason, _socket, _opts), do: :ok
 
       @impl Sock
-      def handle_timeout(socket, opts) do
+      def sock_handle_timeout(socket, opts) do
         function = Map.get(opts, :handle_timeout)
         apply(__MODULE__, function, [socket, opts])
       end
@@ -114,12 +115,16 @@ defmodule WebSocketServerHelpers do
       def noop_handle_timeout(_socket, _opts), do: :ok
 
       @impl Sock
-      def handle_info(msg, socket, opts) do
+      def sock_handle_info(msg, socket, opts) do
         function = Map.get(opts, :handle_info)
         apply(__MODULE__, function, [msg, socket, opts])
       end
 
       def noop_handle_info(_msg, _socket, opts), do: {:continue, opts}
+
+      def init(_args) do
+        []
+      end
 
       def call(conn, _) do
         function = String.to_atom(List.first(conn.path_info))
