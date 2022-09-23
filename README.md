@@ -21,7 +21,7 @@ focus pays dividends in both performance and also in the approachability of the 
 Bandit also emphasizes correctness. Its HTTP/2 implementation scores 100% on the
 [h2spec](https://github.com/summerwind/h2spec) suite in strict mode, and its
 WebSocket implementation scores 100% on the
-[autobahn](https://github.com/crossbario/autobahn-testsuite) test suite.
+[Autobahn](https://github.com/crossbario/autobahn-testsuite) test suite.
 Extensive units tests (90%+ coverage for all non-legacy modules), credo analysis
 and dialyzer coverage round out a test suite that ensures that Bandit is and
 will remain a platform you can count on.
@@ -34,9 +34,9 @@ foundational work that is approachable & understandable by users above it in the
 
 * Implement comprehensive support for HTTP/1.0 through HTTP/2 & WebSockets (and
   beyond) backed by obsessive RFC literacy and automated conformance testing
-* Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug as much as
+* Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug & Sock as much as
   possible, and only interpret requests to the extent necessary to safely manage a connection
-  & fulfill the requirements of supporting Plug
+  & fulfill the requirements of safely supporting protocol correctness
 * Prioritize (in order): correctness, clarity, performance. Seek to remove the mystery of
   infrastructure code by being approachable and easy to understand
 * Become the go-to HTTP & low-level networking stack of choice for the Elixir community by being
@@ -44,28 +44,27 @@ foundational work that is approachable & understandable by users above it in the
 
 ## Project Status
 
-Bandit is still a young project, and much work remains before it is ready for production use. That
-having been said, much progress has been made already. The project is progressing steadily
-towards full Phoenix support, with a phased development plan focusing on one major set of features
-at a time.
-
 As of the current 0.5.x release series, Bandit features the following:
 
 * Complete support for running Phoenix applications (WebSocket support requires a recent version of Phoenix with Sock support enabled)
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
+* Complete support of the [Sock API](https://github.com/mtrudel/sock)
 * Complete server support for HTTP/2 as defined in [RFC
   7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
   [h2spec](https://github.com/summerwind/h2spec) conformance testing
 * Complete server support for HTTP/1.x as defined in [RFC
   2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Complete server support for WebSockets as defined in [RFC
-  6455](https://datatracker.ietf.org/doc/html/rfc6455)
+  6455](https://datatracker.ietf.org/doc/html/rfc6455), comprehensively covered by automated
+  [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing
 * Extremely scalable and performant client handling at a rate up to 5x that of Cowboy for the same
   workload with as-good-or-better memory use
 
-Today, any HTTP(S)-only Phoenix app or Plug app should work with Bandit as a drop-in replacement for
-Cowboy. The roadmap to full Phoenix support and an eventual 1.0 release looks more or less
-like the following:
+Any Phoenix or Plug app should work with Bandit as a drop-in replacement for
+Cowboy; exceptions to this are errors (if you find one, please [file an
+issue!](https://github.com/mtrudel/bandit/issues) That having been said, Bandit
+remains a young project and we're still not at a 1.0 state just yet. The road
+there looks like this following:
 
 * [x] `0.1.x` series: Proof of concept (along with [Thousand
   Island](https://github.com/mtrudel/thousand_island)) sufficient to support
@@ -74,9 +73,10 @@ like the following:
   adapters
 * [x] `0.3.x` series: Implement HTTP/2 adapter
 * [x] `0.4.x` series: Re-implement HTTP/1.x adapter
-* [ ] `0.5.x` series: Implement WebSocket extension
+* [ ] `0.5.x` series: Implement WebSocket extension (in progress!)
 * [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
 * [ ] `0.7.x` series: Bugfixes from a wider release to ensure a solid 1.0
+* [ ] `1.x` series: Ready for general use, without reservation1
 
 ## Using Bandit With Phoenix
 
