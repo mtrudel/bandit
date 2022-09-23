@@ -41,15 +41,14 @@ defmodule Bandit.PhoenixAdapter do
 
   @doc false
   def child_specs(endpoint, config) do
-    sock_endpoint = Keyword.get(config, :sock_endpoint)
-
     for {scheme, default_port} <- [http: 4000, https: 4040], opts = config[scheme] do
       port = Keyword.get(opts, :port, default_port)
       ip = Keyword.get(opts, :ip, {127, 0, 0, 1})
       transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
+      sock = if function_exported?(endpoint, :sock_init, 1), do: endpoint, else: nil
 
-      [plug: endpoint, sock: sock_endpoint, scheme: scheme, options: opts]
+      [plug: endpoint, sock: sock, scheme: scheme, options: opts]
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end
