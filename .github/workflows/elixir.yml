@@ -29,12 +29,12 @@ jobs:
           - elixir:  1.13.4
             otp: 24.3.4.5
           - elixir:  1.13.4
-            otp: 25.0.4
+            otp: 25.1
 
-          - elixir:  1.13.4
+          - elixir:  1.14.0
             otp: 24.3.4.5
-          - elixir:  1.13.4
-            otp: 25.0.4
+          - elixir:  1.14.0
+            otp: 25.1
             lint: true
     steps:
     - uses: actions/checkout@v2
