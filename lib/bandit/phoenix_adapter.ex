@@ -46,7 +46,12 @@ defmodule Bandit.PhoenixAdapter do
       ip = Keyword.get(opts, :ip, {127, 0, 0, 1})
       transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
-      sock = if function_exported?(endpoint, :sock_init, 1), do: endpoint, else: nil
+
+      sock =
+        case Code.ensure_loaded(Phoenix.Endpoint.Sock) do
+          {:module, Phoenix.Endpoint.Sock} -> {Phoenix.Endpoint.Sock, endpoint}
+          _ -> nil
+        end
 
       [plug: endpoint, sock: sock, scheme: scheme, options: opts]
       |> Bandit.child_spec()
@@ -55,5 +60,5 @@ defmodule Bandit.PhoenixAdapter do
   end
 
   defp port_to_integer(port) when is_binary(port), do: String.to_integer(port)
-  defp port_to_integer(port) when is_integer(port), do: port
+  defp(port_to_integer(port) when is_integer(port), do: port)
 end
