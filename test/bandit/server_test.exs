@@ -1,6 +1,6 @@
 defmodule ServerTest do
   use ExUnit.Case, async: true
-  use WebSocketServerHelpers
+  use ServerHelpers
 
   import ExUnit.CaptureLog
 

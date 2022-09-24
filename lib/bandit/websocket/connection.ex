@@ -22,11 +22,11 @@ defmodule Bandit.WebSocket.Connection do
   end
 
   def handle_connection(conn, socket, connection) do
-    case connection.sock.sock_negotiate(conn, connection.sock_state) do
+    case connection.sock.negotiate(conn, connection.sock_state) do
       {:accept, conn, sock_state, opts} ->
         Handshake.send_handshake(conn)
 
-        connection.sock.sock_handle_connection(socket, sock_state)
+        connection.sock.handle_connection(socket, sock_state)
         |> handle_continutation(socket, connection)
         |> case do
           {:continue, connection} -> process_options(connection, opts)
@@ -53,7 +53,7 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
-          connection.sock.sock_handle_text_frame(frame.data, socket, connection.sock_state)
+          connection.sock.handle_text_frame(frame.data, socket, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
           do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
@@ -63,7 +63,7 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | fragment_frame: frame}}
 
       %Frame.Binary{fin: true} = frame ->
-        connection.sock.sock_handle_binary_frame(frame.data, socket, connection.sock_state)
+        connection.sock.handle_binary_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
@@ -107,11 +107,11 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Ping{} = frame ->
         Sock.Socket.send_pong_frame(socket, frame.data)
 
-        connection.sock.sock_handle_ping_frame(frame.data, socket, connection.sock_state)
+        connection.sock.handle_ping_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Pong{} = frame ->
-        connection.sock.sock_handle_pong_frame(frame.data, socket, connection.sock_state)
+        connection.sock.handle_pong_frame(frame.data, socket, connection.sock_state)
         |> handle_continutation(socket, connection)
     end
   end
@@ -122,13 +122,13 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_timeout(socket, connection) do
     if connection.state == :open do
-      connection.sock.sock_handle_timeout(socket, connection.sock_state)
+      connection.sock.handle_timeout(socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, 1002)
     end
   end
 
   def handle_info(msg, socket, connection) do
-    connection.sock.sock_handle_info(msg, socket, connection.sock_state)
+    connection.sock.handle_info(msg, socket, connection.sock_state)
     |> handle_continutation(socket, connection)
   end
 
@@ -148,14 +148,14 @@ defmodule Bandit.WebSocket.Connection do
 
   defp do_connection_close_local(code, socket, connection) do
     if connection.state == :open do
-      connection.sock.sock_handle_close({:local, code}, socket, connection.sock_state)
+      connection.sock.handle_close({:local, code}, socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, code)
     end
   end
 
   defp do_connection_close_remote(code, socket, connection) do
     if connection.state == :open do
-      connection.sock.sock_handle_close({:remote, code || 1005}, socket, connection.sock_state)
+      connection.sock.handle_close({:remote, code || 1005}, socket, connection.sock_state)
 
       # This is a bit of a subtle case, see RFC6455§7.4.1-2
       to_send =
@@ -170,7 +170,7 @@ defmodule Bandit.WebSocket.Connection do
 
   defp do_error(code, reason, socket, connection) do
     if connection.state == :open do
-      connection.sock.sock_handle_error(reason, socket, connection.sock_state)
+      connection.sock.handle_error(reason, socket, connection.sock_state)
       Bandit.WebSocket.Socket.close(socket, code)
     end
 
