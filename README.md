@@ -62,7 +62,7 @@ As of the current 0.5.x release series, Bandit features the following:
 
 Any Phoenix or Plug app should work with Bandit as a drop-in replacement for
 Cowboy; exceptions to this are errors (if you find one, please [file an
-issue!](https://github.com/mtrudel/bandit/issues) That having been said, Bandit
+issue!](https://github.com/mtrudel/bandit/issues)) That having been said, Bandit
 remains a young project and we're still not at a 1.0 state just yet. The road
 there looks like this following:
 
@@ -75,13 +75,13 @@ there looks like this following:
 * [x] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [ ] `0.5.x` series: Implement WebSocket extension (in progress!)
 * [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
-* [ ] `0.7.x` series: Bugfixes from a wider release to ensure a solid 1.0
-* [ ] `1.x` series: Ready for general use, without reservation1
+* [ ] `0.7.x` series: Ready for general use, with a caveat that we're still not 1.0
+* [ ] `1.x` series: Ready for general use, without reservation
 
 ## Using Bandit With Phoenix
 
 As of the 0.5.x branch Bandit supports Phoenix. Phoenix applications which use WebSockets for 
-features such as Channels or LiveView require a recent version of Phoenix with Sock support enabled.
+features such as Channels or LiveView require a recent version of Phoenix with Sock support enabled (the PR for this work is [here](https://github.com/phoenixframework/phoenix/pull/4973)).
 
 Using Bandit to host your Phoenix application couldn't be simpler:
 
@@ -133,7 +133,7 @@ Bandit.start_link(plug: MyApp.MyPlug)
 
 ## Implementation Details
 
-Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x implementation is a work in progress.
+Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x and WebSocket implementations is a work in progress.
 
 ## Contributing
 
@@ -154,7 +154,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, ">= 0.5.3"}
+    {:bandit, ">= 0.5.5"}
   ]
 end
 ```
