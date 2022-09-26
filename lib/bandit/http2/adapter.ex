@@ -150,7 +150,7 @@ defmodule Bandit.HTTP2.Adapter do
 
     headers = [
       {":status", to_string(status)},
-      {"date", Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")} | headers
+      {"date", Bandit.HTTP.date_header()} | headers
     ]
 
     GenServer.call(adapter.connection, {:send_headers, adapter.stream_id, headers, end_stream})

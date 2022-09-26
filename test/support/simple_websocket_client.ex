@@ -27,7 +27,7 @@ defmodule SimpleWebSocketClient do
     \r
     """
 
-    date_length = byte_size("date: #{Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")}\r")
+    date_length = byte_size("date: #{Bandit.HTTP.date_header()}\r")
     {:ok, response} = :gen_tcp.recv(client, 201 + date_length)
 
     unless Regex.match?(expected, response) do
