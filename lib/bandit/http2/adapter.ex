@@ -147,7 +147,11 @@ defmodule Bandit.HTTP2.Adapter do
 
   defp send_headers(adapter, status, headers, end_stream) do
     headers = split_cookies(headers)
-    headers = [{":status", to_string(status)} | headers]
+
+    headers = [
+      {":status", to_string(status)},
+      {"date", Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")} | headers
+    ]
 
     GenServer.call(adapter.connection, {:send_headers, adapter.stream_id, headers, end_stream})
   end

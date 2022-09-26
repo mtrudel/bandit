@@ -289,6 +289,8 @@ defmodule Bandit.HTTP1.Adapter do
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
 
   defp response_header(version, status, headers) do
+    date_header = "date: #{Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")}\r\n"
+
     [
       to_string(version),
       " ",
@@ -296,6 +298,7 @@ defmodule Bandit.HTTP1.Adapter do
       " ",
       reason_for_status(status),
       "\r\n",
+      date_header,
       Enum.map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
       "\r\n"
     ]

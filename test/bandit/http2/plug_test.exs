@@ -118,10 +118,11 @@ defmodule HTTP2PlugTest do
 
     assert response.status == 200
 
-    assert response.headers == [
+    assert [
+             {"date", _date},
              {"cache-control", "max-age=0, private, must-revalidate"},
              {"X-Response-Header", "Response"}
-           ]
+           ] = response.headers
   end
 
   def header_write_test(conn) do

@@ -16,19 +16,23 @@ defmodule SimpleWebSocketClient do
     \r
     """)
 
-    expected = """
+    expected = ~r"""
     HTTP/1.1 101 Switching Protocols\r
+    date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
     content-length: 0\r
     cache-control: max-age=0, private, must-revalidate\r
     upgrade: websocket\r
     connection: Upgrade\r
-    sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r
+    sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=\r
     \r
     """
 
-    {:ok, response} = :gen_tcp.recv(client, byte_size(expected))
+    date_length = byte_size("date: #{Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")}\r")
+    {:ok, response} = :gen_tcp.recv(client, 201 + date_length)
 
-    ^expected = response
+    unless Regex.match?(expected, response) do
+      raise "Invalid handshake response: #{inspect(response)}"
+    end
   end
 
   def connection_closed_for_reading?(client) do

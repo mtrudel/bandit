@@ -19,13 +19,14 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 101 Switching Protocols\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              content-length: 0\r
              cache-control: max-age=0, private, must-revalidate\r
              upgrade: websocket\r
              connection: Upgrade\r
-             sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r
+             sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=\r
              \r
              """
     end
@@ -46,8 +47,9 @@ defmodule WebSocketHTTP1HandshakeTest do
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -69,8 +71,9 @@ defmodule WebSocketHTTP1HandshakeTest do
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.0 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -90,8 +93,9 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -112,8 +116,9 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -134,8 +139,9 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -155,8 +161,9 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -177,8 +184,9 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
+      assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
+             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
