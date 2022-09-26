@@ -21,7 +21,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 101 Switching Protocols\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              content-length: 0\r
              cache-control: max-age=0, private, must-revalidate\r
              upgrade: websocket\r
@@ -49,7 +49,7 @@ defmodule WebSocketHTTP1HandshakeTest do
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -73,7 +73,7 @@ defmodule WebSocketHTTP1HandshakeTest do
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
       assert response =~ ~r"""
              HTTP/1.0 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -95,7 +95,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -118,7 +118,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -141,7 +141,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -163,7 +163,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """
@@ -186,7 +186,7 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert response =~ ~r"""
              HTTP/1.1 204 No Content\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              cache-control: max-age=0, private, must-revalidate\r
              \r
              """

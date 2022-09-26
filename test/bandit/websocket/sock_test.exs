@@ -115,7 +115,7 @@ defmodule WebSocketSockTest do
 
       assert response =~ ~r"""
              HTTP/1.1 499 Unknown Status Code\r
-             date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
              content-length: 10\r
              cache-control: max-age=0, private, must-revalidate\r
              \r

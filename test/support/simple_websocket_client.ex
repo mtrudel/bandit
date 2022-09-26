@@ -18,7 +18,7 @@ defmodule SimpleWebSocketClient do
 
     expected = ~r"""
     HTTP/1.1 101 Switching Protocols\r
-    date: [a-zA-Z]{3}, \d{1,2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
+    date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
     content-length: 0\r
     cache-control: max-age=0, private, must-revalidate\r
     upgrade: websocket\r
