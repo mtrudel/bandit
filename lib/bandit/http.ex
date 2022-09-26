@@ -4,6 +4,6 @@ defmodule Bandit.HTTP do
 
   # Current DateTime formatted for HTTP headers
   def date_header do
-    Calendar.strftime(DateTime.utc_now(), "%a, %-d %b %Y %X GMT")
+    Calendar.strftime(DateTime.utc_now(), "%a, %d %b %Y %X GMT")
   end
 end
