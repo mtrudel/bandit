@@ -23,7 +23,7 @@ defmodule Bandit.MixProject do
   end
 
   def application do
-    [extra_applications: [:logger]]
+    [extra_applications: [:logger], mod: {Bandit.Application, []}]
   end
 
   defp deps do

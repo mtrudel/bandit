@@ -1,18 +1,15 @@
 defmodule Bandit.Clock do
   @moduledoc false
-
-  use GenServer
+  use Task
 
   def start_link(_opts) do
-    GenServer.start_link(__MODULE__, [], name: __MODULE__)
+    Task.start_link(__MODULE__, :init, [])
   end
 
-  @impl GenServer
-  def init(_opts) do
+  def init() do
     __MODULE__ = :ets.new(__MODULE__, [:set, :protected, :named_table, {:read_concurrency, true}])
-    update_header()
-    timer_ref = Process.send_after(self(), :update, 1_000)
-    {:ok, %{timer_ref: timer_ref}}
+
+    run()
   end
 
   @doc """
@@ -22,39 +19,22 @@ defmodule Bandit.Clock do
   the timestamp is newly created for every request
   """
 
-  # def date_header do
-  #   date =
-  #     try do
-  #       :ets.lookup_element(__MODULE__, :date_header, 2)
-  #     rescue
-  #       ArgumentError ->
-  #         get_date_header()
-  #     end
-
-  #   {"date", date}
-  # end
-
   def date_header do
-    date = :ets.lookup_element(__MODULE__, :date_header, 2)
+    date =
+      try do
+        :ets.lookup_element(__MODULE__, :date_header, 2)
+      rescue
+        ArgumentError ->
+          get_date_header()
+      end
 
     {"date", date}
   end
 
-  @impl GenServer
-  def handle_call(:stop, _from, state) do
-    {:stop, :normal, :stopped, state}
-  end
-
-  def handle_call(_req, _from, state) do
-    {:reply, :ignored, state}
-  end
-
-  @impl GenServer
-  def handle_info(:update, %{timer_ref: ref} = state) do
-    Process.cancel_timer(ref)
+  def run do
     update_header()
-    timer_ref = Process.send_after(self(), :update, 1_000)
-    {:noreply, %{state | timer_ref: timer_ref}}
+    Process.sleep(1_000)
+    run()
   end
 
   defp get_date_header, do: Calendar.strftime(DateTime.utc_now(), "%a, %d %b %Y %X GMT")
