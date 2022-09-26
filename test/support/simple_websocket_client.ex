@@ -27,8 +27,7 @@ defmodule SimpleWebSocketClient do
     \r
     """
 
-    date_length = byte_size("date: #{Bandit.HTTP.date_header()}\r")
-    {:ok, response} = :gen_tcp.recv(client, 201 + date_length)
+    {:ok, response} = :gen_tcp.recv(client, 237)
 
     unless Regex.match?(expected, response) do
       raise "Invalid handshake response: #{inspect(response)}"
