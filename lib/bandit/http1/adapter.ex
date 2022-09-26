@@ -289,7 +289,8 @@ defmodule Bandit.HTTP1.Adapter do
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
 
   defp response_header(version, status, headers) do
-    headers = [Bandit.Clock.date_header() | headers]
+    headers = Keyword.put_new_lazy(headers, "date", &Bandit.Clock.date_header/0)
+    # headers = [Bandit.Clock.date_header() | headers]
 
     [
       to_string(version),
