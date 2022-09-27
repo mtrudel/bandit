@@ -253,7 +253,7 @@ defmodule HTTP1RequestTest do
       raise "boom"
     end
 
-    test "returns plug managed date header instead of bandits", context do
+    test "returns user-defined date header instead of bandits", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/date_header")
         |> Finch.request(context[:finch_name])

@@ -131,7 +131,7 @@ defmodule HTTP2PlugTest do
     |> send_resp(200, <<>>)
   end
 
-  test "writing user default date header", context do
+  test "writing user-defined date header", context do
     {:ok, response} =
       Finch.build(:head, context[:base] <> "/date_header_test")
       |> Finch.request(context[:finch_name])
