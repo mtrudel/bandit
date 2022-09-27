@@ -253,6 +253,23 @@ defmodule HTTP1RequestTest do
       raise "boom"
     end
 
+    test "returns plug managed date header instead of bandits", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/date_header")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      assert List.keyfind(response.headers, "date", 0) |> elem(1) ==
+               "Tue, 27 Sep 2022 07:17:32 GMT"
+    end
+
+    def date_header(conn) do
+      conn
+      |> put_resp_header("DaTe", "Tue, 27 Sep 2022 07:17:32 GMT")
+      |> send_resp(200, "OK")
+    end
+
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do
       errors =
         capture_log(fn ->

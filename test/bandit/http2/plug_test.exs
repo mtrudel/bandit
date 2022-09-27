@@ -131,6 +131,25 @@ defmodule HTTP2PlugTest do
     |> send_resp(200, <<>>)
   end
 
+  test "writing user default date header", context do
+    {:ok, response} =
+      Finch.build(:head, context[:base] <> "/date_header_test")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+
+    assert [
+             {"cache-control", "max-age=0, private, must-revalidate"},
+             {"Date", "Tue, 27 Sep 2022 07:17:32 GMT"}
+           ] = response.headers
+  end
+
+  def date_header_test(conn) do
+    conn
+    |> put_resp_header("Date", "Tue, 27 Sep 2022 07:17:32 GMT")
+    |> send_resp(200, <<>>)
+  end
+
   test "sending a body", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/body_test") |> Finch.request(context[:finch_name])

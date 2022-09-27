@@ -2,8 +2,12 @@ defmodule Bandit.HTTP do
   @moduledoc false
   # Implements functions shared by different HTTP versions
 
-  # Current DateTime formatted for HTTP headers
-  def date_header do
-    Calendar.strftime(DateTime.utc_now(), "%a, %d %b %Y %X GMT")
+  @doc """
+  Checks if a header tuple list already contains a date header
+  """
+  def has_date_header?(headers) do
+    Enum.any?(headers, fn {header, _value} ->
+      String.downcase(header) == "date"
+    end)
   end
 end

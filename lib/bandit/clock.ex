@@ -6,7 +6,7 @@ defmodule Bandit.Clock do
     Task.start_link(__MODULE__, :init, [])
   end
 
-  def init() do
+  def init do
     __MODULE__ = :ets.new(__MODULE__, [:set, :protected, :named_table, {:read_concurrency, true}])
 
     run()
