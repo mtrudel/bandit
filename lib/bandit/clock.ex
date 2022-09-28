@@ -5,6 +5,8 @@ defmodule Bandit.Clock do
 
   use Task, restart: :permanent
 
+  require Logger
+
   @doc """
   Returns the current timestamp according to RFC9110 5.6.7.
 
@@ -18,6 +20,7 @@ defmodule Bandit.Clock do
         :ets.lookup_element(__MODULE__, :date_header, 2)
       rescue
         ArgumentError ->
+          Logger.warning("Header timestamp couldn't get fetched from ETS cache.")
           get_date_header()
       end
 
