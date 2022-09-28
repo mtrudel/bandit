@@ -8,7 +8,7 @@ defmodule Bandit.Clock do
   require Logger
 
   @doc """
-  Returns the current timestamp according to RFC9110 5.6.7.
+  Returns the current timestamp according to RFC9110§5.6.7.
 
   If the timestamp doesn't exist in the ETS table or the table doesn't exist
   the timestamp is newly created for every request
