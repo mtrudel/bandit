@@ -270,7 +270,7 @@ defmodule HTTP1RequestTest do
 
     def date_header(conn) do
       conn
-      |> put_resp_header("DaTe", "Tue, 27 Sep 2022 07:17:32 GMT")
+      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
       |> send_resp(200, "OK")
     end
 

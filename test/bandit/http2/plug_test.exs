@@ -143,13 +143,13 @@ defmodule HTTP2PlugTest do
 
     assert [
              {"cache-control", "max-age=0, private, must-revalidate"},
-             {"Date", "Tue, 27 Sep 2022 07:17:32 GMT"}
+             {"date", "Tue, 27 Sep 2022 07:17:32 GMT"}
            ] = response.headers
   end
 
   def date_header_test(conn) do
     conn
-    |> put_resp_header("Date", "Tue, 27 Sep 2022 07:17:32 GMT")
+    |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
     |> send_resp(200, <<>>)
   end
 
