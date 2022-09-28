@@ -290,7 +290,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp response_header(version, status, headers) do
     headers =
-      if Bandit.HTTP.has_date_header?(headers) do
+      if List.keymember?(headers, "date", 0) do
         headers
       else
         [Bandit.Clock.date_header() | headers]
