@@ -1,6 +1,8 @@
 defmodule WebSocketSockTest do
   use WebSocketServerHelpers
 
+  import TestHelpers
+
   setup :http1_websocket_server
 
   describe "option passing" do
@@ -113,14 +115,16 @@ defmodule WebSocketSockTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response =~ ~r"""
-             HTTP/1.1 499 Unknown Status Code\r
-             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
-             content-length: 10\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             Not today
-             """
+      assert [
+               "HTTP/1.1 499 Unknown Status Code",
+               "date: " <> date,
+               "content-length: 10",
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               "Not today\n"
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     def refuse(conn, opts) do

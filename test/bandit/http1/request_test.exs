@@ -5,6 +5,7 @@ defmodule HTTP1RequestTest do
   use FinchHelpers
 
   import ExUnit.CaptureLog
+  import TestHelpers
 
   setup :http_server
   setup :finch_http1_client
@@ -114,12 +115,15 @@ defmodule HTTP1RequestTest do
       :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response =~ ~r"""
-             HTTP/1.0 400 Bad Request\r
-             date: [a-zA-Z]{3}, \d{2} [a-zA-Z]{3} \d{4} \d{2}:\d{2}:\d{2} GMT\r
-             content-length: 0\r
-             \r
-             """
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
   end
 
