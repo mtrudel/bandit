@@ -7,7 +7,8 @@ defmodule ClockTest do
 
     warnings =
       capture_log(fn ->
-        Bandit.Clock.date_header()
+        date = Bandit.Clock.date_header()
+        assert valid_date_header?(date)
       end)
 
     assert warnings =~ "Header timestamp couldn't be fetched from ETS cache"
