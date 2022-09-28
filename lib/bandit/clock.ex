@@ -2,7 +2,8 @@ defmodule Bandit.Clock do
   @moduledoc false
   # Task which updates an ETS table with the current
   # HTTP header timestamp once a second
-  use Task
+
+  use Task, restart: :permanent
 
   @doc """
   Returns the current timestamp according to RFC9110 5.6.7.
