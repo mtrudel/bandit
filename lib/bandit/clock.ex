@@ -20,7 +20,7 @@ defmodule Bandit.Clock do
         :ets.lookup_element(__MODULE__, :date_header, 2)
       rescue
         ArgumentError ->
-          Logger.warning("Header timestamp couldn't get fetched from ETS cache.")
+          Logger.warning("Header timestamp couldn't be fetched from ETS cache")
           get_date_header()
       end
 
