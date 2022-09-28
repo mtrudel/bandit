@@ -10,7 +10,7 @@ defmodule ClockTest do
         Bandit.Clock.date_header()
       end)
 
-    assert warnings =~ "Header timestamp couldn't get fetched from ETS cache."
+    assert warnings =~ "Header timestamp couldn't be fetched from ETS cache"
 
     Application.ensure_all_started(:bandit)
   end
