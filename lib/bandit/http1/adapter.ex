@@ -289,6 +289,13 @@ defmodule Bandit.HTTP1.Adapter do
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
 
   defp response_header(version, status, headers) do
+    headers =
+      if List.keymember?(headers, "date", 0) do
+        headers
+      else
+        [Bandit.Clock.date_header() | headers]
+      end
+
     [
       to_string(version),
       " ",

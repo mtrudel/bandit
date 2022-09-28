@@ -5,6 +5,7 @@ defmodule HTTP2PlugTest do
   use FinchHelpers
 
   import ExUnit.CaptureLog
+  import TestHelpers
 
   setup :https_server
   setup :finch_h2_client
@@ -118,15 +119,37 @@ defmodule HTTP2PlugTest do
 
     assert response.status == 200
 
-    assert response.headers == [
+    assert [
+             {"date", date},
              {"cache-control", "max-age=0, private, must-revalidate"},
              {"X-Response-Header", "Response"}
-           ]
+           ] = response.headers
+
+    assert valid_date_header?(date)
   end
 
   def header_write_test(conn) do
     conn
     |> put_resp_header("X-Response-Header", "Response")
+    |> send_resp(200, <<>>)
+  end
+
+  test "writing user-defined date header", context do
+    {:ok, response} =
+      Finch.build(:head, context[:base] <> "/date_header_test")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+
+    assert [
+             {"cache-control", "max-age=0, private, must-revalidate"},
+             {"date", "Tue, 27 Sep 2022 07:17:32 GMT"}
+           ] = response.headers
+  end
+
+  def date_header_test(conn) do
+    conn
+    |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
     |> send_resp(200, <<>>)
   end
 

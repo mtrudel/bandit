@@ -1,6 +1,8 @@
 defmodule WebSocketHTTP1HandshakeTest do
   use WebSocketServerHelpers
 
+  import TestHelpers
+
   setup :http1_websocket_server
 
   describe "HTTP/1.1 handshake" do
@@ -19,15 +21,19 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 101 Switching Protocols\r
-             content-length: 0\r
-             cache-control: max-age=0, private, must-revalidate\r
-             upgrade: websocket\r
-             connection: Upgrade\r
-             sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 101 Switching Protocols",
+               "date: " <> date,
+               "content-length: 0",
+               "cache-control: max-age=0, private, must-revalidate",
+               "upgrade: websocket",
+               "connection: Upgrade",
+               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept non-GET requests", context do
@@ -46,11 +52,15 @@ defmodule WebSocketHTTP1HandshakeTest do
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept non-HTTP/1.1 requests", context do
@@ -69,11 +79,15 @@ defmodule WebSocketHTTP1HandshakeTest do
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert response == """
-             HTTP/1.0 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.0 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept requests without a host header", context do
@@ -90,11 +104,15 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept non-websocket upgrade requests", context do
@@ -112,11 +130,15 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept non-upgrade requests", context do
@@ -134,11 +156,15 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept requests without a request key", context do
@@ -155,11 +181,15 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
 
     test "does not accept requests without a version of 13", context do
@@ -177,11 +207,15 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.1 204 No Content\r
-             cache-control: max-age=0, private, must-revalidate\r
-             \r
-             """
+      assert [
+               "HTTP/1.1 204 No Content",
+               "date: " <> date,
+               "cache-control: max-age=0, private, must-revalidate",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
   end
 

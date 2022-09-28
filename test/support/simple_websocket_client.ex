@@ -16,19 +16,19 @@ defmodule SimpleWebSocketClient do
     \r
     """)
 
-    expected = """
-    HTTP/1.1 101 Switching Protocols\r
-    content-length: 0\r
-    cache-control: max-age=0, private, must-revalidate\r
-    upgrade: websocket\r
-    connection: Upgrade\r
-    sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r
-    \r
-    """
+    {:ok, response} = :gen_tcp.recv(client, 237)
 
-    {:ok, response} = :gen_tcp.recv(client, byte_size(expected))
-
-    ^expected = response
+    [
+      "HTTP/1.1 101 Switching Protocols",
+      "date: " <> _date,
+      "content-length: 0",
+      "cache-control: max-age=0, private, must-revalidate",
+      "upgrade: websocket",
+      "connection: Upgrade",
+      "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=",
+      "",
+      ""
+    ] = String.split(response, "\r\n")
   end
 
   def connection_closed_for_reading?(client) do

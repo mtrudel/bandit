@@ -69,7 +69,7 @@ defmodule Bandit do
      sock_opts}`. Optional.
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
-  * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the 
+  * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
       * `num_acceptors`: The number of acceptor processes to run. This is mostly a performance

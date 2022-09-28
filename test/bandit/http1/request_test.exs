@@ -5,6 +5,7 @@ defmodule HTTP1RequestTest do
   use FinchHelpers
 
   import ExUnit.CaptureLog
+  import TestHelpers
 
   setup :http_server
   setup :finch_http1_client
@@ -114,11 +115,15 @@ defmodule HTTP1RequestTest do
       :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
-      assert response == """
-             HTTP/1.0 400 Bad Request\r
-             content-length: 0\r
-             \r
-             """
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
     end
   end
 
@@ -250,6 +255,23 @@ defmodule HTTP1RequestTest do
 
     def raise_error(_conn) do
       raise "boom"
+    end
+
+    test "returns user-defined date header instead of bandits", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/date_header")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      assert List.keyfind(response.headers, "date", 0) |> elem(1) ==
+               "Tue, 27 Sep 2022 07:17:32 GMT"
+    end
+
+    def date_header(conn) do
+      conn
+      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
+      |> send_resp(200, "OK")
     end
 
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do
