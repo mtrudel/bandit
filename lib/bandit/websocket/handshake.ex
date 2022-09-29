@@ -8,11 +8,11 @@ defmodule Bandit.WebSocket.Handshake do
     case get_http_protocol(conn) do
       :"HTTP/1.1" ->
         # Cases from RFC6455§4.2.1
-        conn.method == "GET" &&
-          get_req_header(conn, "host") != [] &&
-          header_contains?(conn, "upgrade", "websocket") &&
-          header_contains?(conn, "connection", "upgrade") &&
-          match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key")) &&
+        conn.method == "GET" and
+          get_req_header(conn, "host") != [] and
+          header_contains?(conn, "upgrade", "websocket") and
+          header_contains?(conn, "connection", "upgrade") and
+          match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key")) and
           get_req_header(conn, "sec-websocket-version") == ["13"]
 
       _ ->
@@ -37,8 +37,9 @@ defmodule Bandit.WebSocket.Handshake do
   end
 
   defp header_contains?(conn, field, value) do
-    get_req_header(conn, field)
-    |> Enum.map(&String.downcase/1)
-    |> Enum.member?(String.downcase(value))
+    conn
+    |> get_req_header(field)
+    |> Enum.map(&String.downcase(&1, :ascii))
+    |> Enum.member?(String.downcase(value, :ascii))
   end
 end
