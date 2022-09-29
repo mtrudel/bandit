@@ -124,7 +124,7 @@ defmodule Bandit.HTTP2.Stream do
   # RFC7540§8.1.2 - all headers name fields must be lowercsae
   defp headers_all_lowercase(headers, stream_id) do
     headers
-    |> Enum.all?(fn {key, _value} -> String.downcase(key) == key end)
+    |> Enum.all?(fn {key, _value} -> String.downcase(key, :ascii) == key end)
     |> if do
       :ok
     else

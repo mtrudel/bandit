@@ -86,7 +86,7 @@ defmodule Bandit.HTTP1.Adapter do
         do_read_headers(
           %{req | buffer: rest},
           :httph,
-          [{header |> to_string() |> String.downcase(), to_string(value)} | headers],
+          [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers],
           to_string(method),
           to_string(path)
         )
@@ -106,7 +106,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp should_keepalive?(version, nil), do: version == :"HTTP/1.1"
 
   defp should_keepalive?(version, connection_header) do
-    case String.downcase(connection_header) do
+    case String.downcase(connection_header, :ascii) do
       "keep-alive" -> true
       "close" -> false
       _ -> version == :"HTTP/1.1"
@@ -165,28 +165,25 @@ defmodule Bandit.HTTP1.Adapter do
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
   defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
-    case :binary.match(buffer, "\r\n") do
-      {offset, _} ->
-        <<chunk_size::binary-size(offset), ?\r, ?\n, rest::binary>> = buffer
+    case :binary.split(buffer, "\r\n") do
+      ["0", _] ->
+        {:ok, body, req}
 
-        case String.to_integer(chunk_size, 16) do
-          0 ->
-            {:ok, body, req}
+      [chunk_size, rest] ->
+        chunk_size = String.to_integer(chunk_size, 16)
 
-          chunk_size ->
-            case rest do
-              <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-                do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
+        case rest do
+          <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
+            do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
-              _ ->
-                case grow_buffer(req, chunk_size - byte_size(rest), opts) do
-                  {:ok, req} -> do_read_chunk(req, body, opts)
-                  {:error, reason} -> {:error, reason}
-                end
+          _ ->
+            case grow_buffer(req, chunk_size - byte_size(rest), opts) do
+              {:ok, req} -> do_read_chunk(req, body, opts)
+              {:error, reason} -> {:error, reason}
             end
         end
 
-      :nomatch ->
+      _ ->
         case grow_buffer(req, 0, opts) do
           {:ok, req} -> do_read_chunk(req, body, opts)
           {:error, reason} -> {:error, reason}
