@@ -98,6 +98,10 @@ defmodule Bandit.WebSocket.Frame do
 
   def mask(payload, mask, acc) when is_integer(mask), do: mask(payload, <<mask::32>>, acc)
 
+  def mask(<<h::32, rest::binary>>, <<mask::32>>, acc) do
+    mask(rest, mask, acc <> <<Bitwise.bxor(h, mask)::32>>)
+  end
+
   def mask(<<h::8, rest::binary>>, <<current::8, mask::24>>, acc) do
     mask(rest, <<mask::24, current::8>>, acc <> <<Bitwise.bxor(h, current)::8>>)
   end
