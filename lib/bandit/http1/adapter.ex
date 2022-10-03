@@ -309,6 +309,9 @@ defmodule Bandit.HTTP1.Adapter do
   def inform(_req, _status, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
+  def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
+
+  @impl Plug.Conn.Adapter
   def push(_req, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
