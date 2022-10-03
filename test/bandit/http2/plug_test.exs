@@ -208,6 +208,23 @@ defmodule HTTP2PlugTest do
     |> elem(1)
   end
 
+  describe "upgrade handling" do
+    test "does not update the conn or send any data on unsupported upgrades", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/upgrade_unsupported")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "Not supported"
+    end
+
+    def upgrade_unsupported(conn) do
+      conn
+      |> upgrade_adapter(:unsupported, [])
+      |> send_resp(200, "Not supported")
+    end
+  end
+
   test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
     errors =
       capture_log(fn ->

@@ -129,6 +129,9 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
+  def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
+
+  @impl Plug.Conn.Adapter
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
