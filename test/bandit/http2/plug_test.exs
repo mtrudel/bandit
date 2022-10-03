@@ -440,47 +440,6 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, "Informer")
   end
 
-  test "server push messages", context do
-    socket = SimpleH2Client.setup_connection(context)
-
-    {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_push", context.port)
-
-    expected_headers = [
-      {":method", "GET"},
-      {":scheme", "https"},
-      {":authority", "localhost:#{context.port}"},
-      {":path", "/push_hello_world"},
-      {"accept", "application/octet-stream"},
-      {"x-from", "push"}
-    ]
-
-    assert {:ok, 1, 2, ^expected_headers, _} = SimpleH2Client.recv_push_promise(socket, ctx)
-
-    assert {:ok, 2, false, _, ctx} = SimpleH2Client.recv_headers(socket)
-    assert {:ok, 2, true, "It's a push"} = SimpleH2Client.recv_body(socket)
-
-    assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
-    assert {:ok, 1, true, "Push starter"} = SimpleH2Client.recv_body(socket)
-
-    assert SimpleH2Client.connection_alive?(socket)
-  end
-
-  def send_push(conn) do
-    conn = conn |> push("/push_hello_world", [{"x-from", "push"}])
-    # Let the hello_world response make its way back so we can test in order
-    # This isn't a protocol race (we've already sent the push promise), but this
-    # allows us to write our tests above with assumptions on ordering
-    Process.sleep(100)
-    conn |> send_resp(200, "Push starter")
-  end
-
-  def push_hello_world(conn) do
-    source = get_req_header(conn, "x-from")
-
-    conn
-    |> send_resp(200, "It's a #{source}")
-  end
-
   test "reading HTTP version", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/report_version")

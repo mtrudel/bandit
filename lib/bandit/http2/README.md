@@ -63,14 +63,14 @@ The details of a particular stream are contained within a `Bandit.HTTP2.Stream` 
 `Bandit.HTTP2.StreamCollection` module manages a collection of streams, allowing for the memory
 efficient management of complete & yet unborn streams alongside active ones.
 
-Once a complete header block has been read (or, in the case of push promises, once a push promise
-request has been processed), a `Bandit.HTTP2.StreamTask` is started to manage the actual calling
-of the configured `Plug` module for this server, using the `Bandit.HTTP2.Adapter` module as the
-implementation of the `Plug.Conn.Adapter` behaviour. This adapter uses a simple `receive` pattern to
-listen for messages sent to it from the connection process, a pattern chosen because it allows for
-easy provision of the blocking-style API required by the `Plug.Conn.Adapter` behaviour. Functions
-in the `Bandit.HTTP2.Adapter` behaviour which write data to the client use `GenServer` calls to
-the `Bandit.HTTP2.Handler` module in order to pass data to the connection process.
+Once a complete header block has been read, a `Bandit.HTTP2.StreamTask` is started to manage the
+actual calling of the configured `Plug` module for this server, using the `Bandit.HTTP2.Adapter`
+module as the implementation of the `Plug.Conn.Adapter` behaviour. This adapter uses a simple
+`receive` pattern to listen for messages sent to it from the connection process, a pattern chosen
+because it allows for easy provision of the blocking-style API required by the `Plug.Conn.Adapter`
+behaviour. Functions in the `Bandit.HTTP2.Adapter` behaviour which write data to the client use
+`GenServer` calls to the `Bandit.HTTP2.Handler` module in order to pass data to the connection
+process.
 
 # Testing
 

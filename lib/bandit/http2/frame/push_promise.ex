@@ -65,36 +65,4 @@ defmodule Bandit.HTTP2.Frame.PushPromise do
      {:connection, Errors.protocol_error(),
       "PUSH_PROMISE frame with invalid padding length (RFC7540§6.6)"}}
   end
-
-  defimpl Frame.Serializable do
-    alias Bandit.HTTP2.Frame.{Continuation, PushPromise}
-
-    @end_headers_bit 2
-
-    def serialize(%PushPromise{} = frame, max_frame_size) do
-      fragment_length = IO.iodata_length(frame.fragment)
-      max_fragment_size = max_frame_size - 4
-
-      if fragment_length <= max_fragment_size do
-        [
-          {0x5, set([@end_headers_bit]), frame.stream_id,
-           [<<frame.promised_stream_id::32>>, frame.fragment]}
-        ]
-      else
-        <<this_frame::binary-size(max_fragment_size), rest::binary>> =
-          IO.iodata_to_binary(frame.fragment)
-
-        [
-          {0x5, 0x00, frame.stream_id, <<frame.promised_stream_id::32, this_frame::binary>>}
-          | Frame.Serializable.serialize(
-              %Continuation{
-                stream_id: frame.stream_id,
-                fragment: rest
-              },
-              max_frame_size
-            )
-        ]
-      end
-    end
-  end
 end
