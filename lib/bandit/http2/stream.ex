@@ -86,15 +86,6 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  # RFC7540§5.1.1 - server initiated streams must be even
-  defp stream_id_is_valid_server(stream_id) do
-    if Integer.is_even(stream_id) do
-      :ok
-    else
-      {:error, {:connection, Errors.protocol_error(), "Sending HEADERS with odd stream_id"}}
-    end
-  end
-
   # RFC7540§8.1.2 - all headers name fields must be lowercsae
   defp headers_all_lowercase(headers, stream_id) do
     headers
