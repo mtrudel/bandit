@@ -32,10 +32,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
       {:ok, {0x01, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | header_table_size: value}}}
 
-      {:ok, {0x02, 0x01}}, {:ok, acc} ->
-        {:cont, {:ok, acc}}
-
-      {:ok, {0x02, 0x00}}, {:ok, acc} ->
+      {:ok, {0x02, val}}, {:ok, acc} when val in [0x00, 0x01] ->
         {:cont, {:ok, acc}}
 
       {:ok, {0x02, _value}}, {:ok, _acc} ->
