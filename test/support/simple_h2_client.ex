@@ -116,15 +116,6 @@ defmodule SimpleH2Client do
     end
   end
 
-  def recv_push_promise(socket, ctx \\ HPAX.new(4096)) do
-    {:ok, <<length::24, 5::8, 0x4::8, 0::1, stream_id::31, 0::1, promised_stream_id::31>>} =
-      :ssl.recv(socket, 13)
-
-    {:ok, header_block} = :ssl.recv(socket, length - 4)
-    {:ok, headers, ctx} = HPAX.decode(header_block, ctx)
-    {:ok, stream_id, promised_stream_id, headers, ctx}
-  end
-
   def send_rst_stream(socket, stream_id, error_code) do
     :ssl.send(socket, [<<0, 0, 4, 3, 0, 0::1, stream_id::31>>, <<error_code::32>>])
   end
