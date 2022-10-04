@@ -32,11 +32,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
       {:ok, {0x01, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | header_table_size: value}}}
 
-      {:ok, {0x02, 0x01}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | enable_push: true}}}
-
-      {:ok, {0x02, 0x00}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | enable_push: false}}}
+      {:ok, {0x02, val}}, {:ok, acc} when val in [0x00, 0x01] ->
+        {:cont, {:ok, acc}}
 
       {:ok, {0x02, _value}}, {:ok, _acc} ->
         {:halt, {:error, Errors.protocol_error(), "Invalid enable_push value (RFC7540§6.5)"}}
@@ -109,8 +106,6 @@ defmodule Bandit.HTTP2.Frame.Settings do
         |> Enum.map(fn
           {:header_table_size, 4_096} -> <<>>
           {:header_table_size, value} -> <<0x01::16, value::32>>
-          {:enable_push, true} -> <<>>
-          {:enable_push, false} -> <<0x02::16, 0x00::32>>
           {:max_concurrent_streams, :infinity} -> <<>>
           {:max_concurrent_streams, value} -> <<0x03::16, value::32>>
           {:initial_window_size, 65_535} -> <<>>

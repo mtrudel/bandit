@@ -283,15 +283,6 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  def handle_frame(%Frame.PushPromise{}, socket, connection) do
-    shutdown_connection(
-      Errors.protocol_error(),
-      "Received PUSH_PROMISE (RFC7540§8.2)",
-      socket,
-      connection
-    )
-  end
-
   # Catch-all handler for unknown frame types
 
   def handle_frame(%Frame.Unknown{} = frame, _socket, connection) do
@@ -426,37 +417,6 @@ defmodule Bandit.HTTP2.Connection do
       <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
       {to_send, desired_length, rest}
     end
-  end
-
-  @spec send_push(Stream.stream_id(), Plug.Conn.headers(), Socket.t(), t()) ::
-          {:ok, t()} | {:error, term()}
-  def send_push(stream_id, headers, socket, connection) do
-    with :ok <- can_send_push_promises(connection),
-         :ok <- StreamCollection.can_send_new_push_promise(connection.streams),
-         promised_stream_id <- StreamCollection.next_local_stream_id(connection.streams),
-         {:ok, stream} <- StreamCollection.get_stream(connection.streams, promised_stream_id),
-         {:ok, stream} <- Stream.send_push_headers(stream, headers),
-         enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
-         {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state),
-         :ok <- send_push_promise_frame(stream_id, promised_stream_id, block, socket, connection),
-         {:ok, stream} <- Stream.start_push(stream, headers, connection.peer, connection.plug),
-         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
-    end
-  end
-
-  defp can_send_push_promises(%__MODULE__{remote_settings: %Settings{enable_push: true}}), do: :ok
-  defp can_send_push_promises(_), do: {:error, :client_disabled_push}
-
-  defp send_push_promise_frame(stream_id, promised_stream_id, block, socket, connection) do
-    %Frame.PushPromise{
-      stream_id: stream_id,
-      promised_stream_id: promised_stream_id,
-      fragment: block
-    }
-    |> send_frame(socket, connection)
-
-    :ok
   end
 
   @spec stream_terminated(pid(), term(), Socket.t(), t()) :: {:ok, t()} | {:error, term()}

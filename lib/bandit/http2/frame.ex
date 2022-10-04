@@ -16,7 +16,6 @@ defmodule Bandit.HTTP2.Frame do
           | Frame.Priority.t()
           | Frame.RstStream.t()
           | Frame.Settings.t()
-          | Frame.PushPromise.t()
           | Frame.Ping.t()
           | Frame.Goaway.t()
           | Frame.WindowUpdate.t()

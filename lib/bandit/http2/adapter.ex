@@ -129,15 +129,7 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def push(adapter, path, headers) do
-    headers = split_cookies(headers)
-    headers = [{":path", path} | headers]
-    headers = [{":authority", adapter.uri.authority} | headers]
-    headers = [{":scheme", adapter.uri.scheme} | headers]
-    headers = [{":method", "GET"} | headers]
-
-    GenServer.call(adapter.connection, {:send_push, adapter.stream_id, headers})
-  end
+  def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
   def get_peer_data(%__MODULE__{peer: peer}), do: peer

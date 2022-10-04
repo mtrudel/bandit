@@ -121,27 +121,6 @@ defmodule Bandit.HTTP2.StreamCollection do
     end
   end
 
-  @spec can_send_new_push_promise(t()) :: :ok | {:error, :max_concurrent_streams}
-  def can_send_new_push_promise(collection) do
-    case collection.max_concurrent_streams do
-      :infinity ->
-        :ok
-
-      max_concurrent_streams ->
-        # Only count server-started (ie: push) streams per RFC7540§6.5.2
-        current_push_stream_count =
-          collection.streams
-          |> Map.values()
-          |> Enum.count(&(&1.state in [:open, :remote_closed] && Integer.is_even(&1.stream_id)))
-
-        if max_concurrent_streams > current_push_stream_count do
-          :ok
-        else
-          {:error, :max_concurrent_streams}
-        end
-    end
-  end
-
   @spec next_local_stream_id(t()) :: Stream.stream_id()
   def next_local_stream_id(collection), do: collection.last_local_stream_id + 2
 

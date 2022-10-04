@@ -77,47 +77,12 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 
-  @spec send_push_headers(t(), Plug.Conn.headers()) :: {:ok, t()} | {:error, error}
-  def send_push_headers(%__MODULE__{state: :idle} = stream, headers) do
-    with :ok <- stream_id_is_valid_server(stream.stream_id),
-         :ok <- headers_all_lowercase(headers, stream.stream_id),
-         :ok <- pseudo_headers_all_request(headers, stream.stream_id),
-         :ok <- pseudo_headers_first(headers, stream.stream_id),
-         :ok <- no_connection_headers(headers, stream.stream_id),
-         :ok <- valid_te_header(headers, stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":scheme", stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":method", stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
-         :ok <- non_empty_path(headers, stream.stream_id) do
-      {:ok, %{stream | state: :reserved_local}}
-    else
-      {:error, {:connection, _error_code, error_message}} -> {:error, error_message}
-      {:error, {:stream, _stream_id, _error_code, error_message}} -> {:error, error_message}
-    end
-  end
-
-  @spec start_push(t(), Plug.Conn.headers(), Plug.Conn.Adapter.peer_data(), Bandit.plug()) ::
-          {:ok, t()}
-  def start_push(%__MODULE__{state: :reserved_local} = stream, headers, peer, plug) do
-    {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
-    {:ok, %{stream | state: :remote_closed, pid: pid}}
-  end
-
   # RFC7540§5.1.1 - client initiated streams must be odd
   defp stream_id_is_valid_client(stream_id) do
     if Integer.is_odd(stream_id) do
       :ok
     else
       {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
-    end
-  end
-
-  # RFC7540§5.1.1 - server initiated streams must be even
-  defp stream_id_is_valid_server(stream_id) do
-    if Integer.is_even(stream_id) do
-      :ok
-    else
-      {:error, {:connection, Errors.protocol_error(), "Sending HEADERS with odd stream_id"}}
     end
   end
 

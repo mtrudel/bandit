@@ -129,7 +129,7 @@ defmodule HTTP2FrameSerializationTest do
       frame = %Frame.Settings{ack: false, settings: %Settings{}}
 
       assert Frame.serialize(frame, 16_384) == [
-               [<<0, 0, 0, 4, 0, 0, 0, 0, 0>>, [<<>>, <<>>, <<>>, <<>>, <<>>, <<>>]]
+               [<<0, 0, 0, 4, 0, 0, 0, 0, 0>>, [<<>>, <<>>, <<>>, <<>>, <<>>]]
              ]
     end
 
@@ -138,7 +138,6 @@ defmodule HTTP2FrameSerializationTest do
         ack: false,
         settings: %Settings{
           header_table_size: 1000,
-          enable_push: false,
           max_concurrent_streams: 2000,
           initial_window_size: 3000,
           max_frame_size: 40_000,
@@ -149,9 +148,8 @@ defmodule HTTP2FrameSerializationTest do
       assert Frame.serialize(frame, 16_384) ==
                [
                  [
-                   <<0, 0, 36, 4, 0, 0, 0, 0, 0>>,
+                   <<0, 0, 30, 4, 0, 0, 0, 0, 0>>,
                    [
-                     <<2::16, 0::32>>,
                      <<1::16, 1000::32>>,
                      <<4::16, 3000::32>>,
                      <<3::16, 2000::32>>,
@@ -166,33 +164,6 @@ defmodule HTTP2FrameSerializationTest do
       frame = %Frame.Settings{ack: true, settings: %{}}
 
       assert Frame.serialize(frame, 16_384) == [[<<0, 0, 0, 4, 1, 0, 0, 0, 0>>, <<>>]]
-    end
-  end
-
-  describe "PUSH_PROMISE frames" do
-    test "serializes frames" do
-      frame = %Frame.PushPromise{
-        stream_id: 123,
-        promised_stream_id: 234,
-        fragment: <<1, 2, 3>>
-      }
-
-      assert Frame.serialize(frame, 16_384) == [
-               [<<0, 0, 7, 5, 4, 0, 0, 0, 123>>, [<<0, 0, 0, 234>>, <<1, 2, 3>>]]
-             ]
-    end
-
-    test "serializes frames into multiple size-respecting frames" do
-      frame = %Frame.PushPromise{
-        stream_id: 123,
-        promised_stream_id: 234,
-        fragment: <<1, 2, 3>>
-      }
-
-      assert Frame.serialize(frame, 6) == [
-               [<<0, 0, 6, 5, 0, 0, 0, 0, 123>>, <<0, 0, 0, 234, 1, 2>>],
-               [<<0, 0, 1, 9, 4, 0, 0, 0, 123>>, <<3>>]
-             ]
     end
   end
 
