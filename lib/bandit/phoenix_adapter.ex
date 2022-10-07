@@ -2,9 +2,9 @@ defmodule Bandit.PhoenixAdapter do
   @moduledoc """
   A Bandit adapter for Phoenix.
 
-  WebSocket support requires a version of Phoenix with Sock support. This is currently (Sept 2022)
-  a work in progress. This module will work fine on earlier versions of Phoenix, just without
-  WebSocket support.
+  WebSocket support requires a version of Phoenix with Plug upgrade & Sock support. This is
+  currently (Sept 2022) a work in progress. This module will work fine on earlier versions of
+  Phoenix, just without WebSocket support.
 
   To use this adapter, your project will need to include Bandit as a dependency; see
   https://hex.pm/bandit for details on the currently supported version of Bandit to include. Once
@@ -47,13 +47,7 @@ defmodule Bandit.PhoenixAdapter do
       transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
 
-      sock =
-        case Code.ensure_loaded(Phoenix.Endpoint.Sock) do
-          {:module, Phoenix.Endpoint.Sock} -> {Phoenix.Endpoint.Sock, endpoint}
-          _ -> nil
-        end
-
-      [plug: endpoint, sock: sock, scheme: scheme, options: opts]
+      [plug: endpoint, scheme: scheme, options: opts]
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end

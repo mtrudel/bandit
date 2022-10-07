@@ -14,11 +14,9 @@ defmodule Bandit do
 
   ## Using Bandit With Phoenix
 
-  Note that as of the 0.5.x branch Bandit supports Phoenix applications which use HTTP(S).
-  Phoenix applications which use WebSockets for features such as Channels or LiveView are not yet
-  supported (though this support is coming soon!).
+  Note that as of the 0.5.x branch Bandit supports Phoenix applications.
 
-  That having been said, using Bandit to host your Phoenix application couldn't be simpler:
+  Using Bandit to host your Phoenix application couldn't be simpler:
 
   1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
       ```elixir
@@ -56,17 +54,11 @@ defmodule Bandit do
   filing an issue on the Bandit GitHub project (especially if the error does not occur with
   another HTTP server such as Cowboy).
 
-  ## Using Bandit With Sock Applications
-
-  TBD
-
   ## Config Options
 
   Bandit takes a number of options at startup:
 
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
-  * `sock`: The sock to handle WebSocket connections. Can be specified as `MySock` or `{MySock,
-     sock_opts}`. Optional.
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
@@ -112,9 +104,6 @@ defmodule Bandit do
   @typedoc "A Plug definition"
   @type plug :: {module(), keyword()}
 
-  @typedoc "A Sock definition"
-  @type sock :: {module(), keyword()}
-
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
     %{id: Bandit, start: {__MODULE__, :start_link, [arg]}}
@@ -136,7 +125,6 @@ defmodule Bandit do
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
-    {sock_mod, _} = sock = sock(arg)
 
     {transport_module, extra_transport_options} =
       case scheme do
@@ -144,11 +132,7 @@ defmodule Bandit do
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
-    handler_options = %{
-      plug: plug,
-      sock: sock,
-      handler_module: Bandit.InitialHandler
-    }
+    handler_options = %{plug: plug, handler_module: Bandit.InitialHandler}
 
     options
     |> Keyword.put_new(:read_timeout, 15_000)
@@ -163,7 +147,7 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        Logger.info(info(scheme, plug_mod, sock_mod, pid))
+        Logger.info(info(scheme, plug_mod, pid))
         {:ok, pid}
 
       {:error, _} = error ->
@@ -181,20 +165,9 @@ defmodule Bandit do
     end
   end
 
-  defp sock(arg) do
-    arg
-    |> Keyword.get(:sock)
-    |> case do
-      nil -> {nil, nil}
-      {sock, sock_options} -> {sock, sock.init(sock_options)}
-      sock -> {sock, sock.init([])}
-    end
-  end
-
-  defp info(scheme, plug, sock, pid) do
-    server = "Bandit #{Application.spec(:bandit)[:vsn]}"
-
-    "Running plug: #{inspect(plug)}, sock: #{inspect(sock)} with #{server} at #{bound_address(scheme, pid)}"
+  defp info(scheme, plug, pid) do
+    server_vsn = Application.spec(:bandit)[:vsn]
+    "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
   defp bound_address(scheme, pid) do
