@@ -12,7 +12,8 @@ defmodule Bandit.HTTP1.Adapter do
             body_encoding: nil,
             connection: nil,
             version: nil,
-            keepalive: false
+            keepalive: false,
+            upgrade: nil
 
   alias ThousandIsland.Socket
 
@@ -309,6 +310,8 @@ defmodule Bandit.HTTP1.Adapter do
   def inform(_req, _status, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
+  def upgrade(req, :websocket, opts), do: {:ok, %{req | upgrade: {:websocket, opts}}}
+
   def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter

@@ -312,6 +312,29 @@ defmodule HTTP1RequestTest do
       |> upgrade_adapter(:unsupported, [])
       |> send_resp(200, "Not supported")
     end
+
+    test "errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
+         context do
+      errors =
+        capture_log(fn ->
+          assert {:error, %Mint.TransportError{reason: :closed}} =
+                   Finch.build(:get, context[:base] <> "/upgrade_websocket", [
+                     {"connection", "close"}
+                   ])
+                   |> Finch.request(context[:finch_name])
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "WebSocket upgrade indicated but conn does not indicate a valid handshake"
+    end
+
+    def upgrade_websocket(conn) do
+      # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
+      # calling upgrade_adapter
+      conn
+      |> upgrade_adapter(:websocket, [])
+    end
   end
 
   test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",

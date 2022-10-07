@@ -9,19 +9,22 @@ defmodule Bandit.HTTP1.Handler do
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   @impl ThousandIsland.Handler
-  def handle_data(data, socket, %{plug: plug, sock: sock} = state) do
+  def handle_data(data, socket, %{plug: plug} = state) do
     with req <- %Adapter{socket: socket, buffer: data},
          {:ok, conn} <- build_conn(req),
-         {:ok, :no_upgrade} <- should_upgrade(conn, sock),
          {:ok, conn} <- call_plug(conn, plug),
+         {:ok, :no_upgrade} <- maybe_upgrade(conn),
          {:ok, conn} <- commit_response(conn, plug) do
       case keepalive?(conn) do
         true -> {:continue, state}
         false -> {:close, state}
       end
     else
-      {:error, reason} -> {:error, reason, state}
-      {:ok, :websocket, conn} -> {:switch, Bandit.WebSocket.Handler, Map.put(state, :conn, conn)}
+      {:error, reason} ->
+        {:error, reason, state}
+
+      {:ok, :websocket, upgrade_opts} ->
+        {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}
     end
   end
 
@@ -49,15 +52,6 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  defp should_upgrade(_conn, {nil, nil}), do: {:ok, :no_upgrade}
-
-  defp should_upgrade(conn, _sock) do
-    case Bandit.WebSocket.Handshake.handshake?(conn) do
-      true -> {:ok, :websocket, conn}
-      false -> {:ok, :no_upgrade}
-    end
-  end
-
   defp call_plug(%Plug.Conn{adapter: {Adapter, req}} = conn, {plug, plug_opts}) do
     {:ok, plug.call(conn, plug_opts)}
   rescue
@@ -66,6 +60,25 @@ defmodule Bandit.HTTP1.Handler do
       attempt_to_send_fallback(req, 500)
       reraise(exception, __STACKTRACE__)
   end
+
+  defp maybe_upgrade(
+         %Plug.Conn{
+           state: :upgraded,
+           adapter: {Adapter, %Adapter{upgrade: {:websocket, opts}}}
+         } = conn
+       ) do
+    case Bandit.WebSocket.Handshake.handshake?(conn) do
+      true ->
+        # We can safely unset the state, since we match on :upgraded above
+        Bandit.WebSocket.Handshake.send_handshake(%{conn | state: :unset})
+        {:ok, :websocket, opts}
+
+      false ->
+        {:error, "WebSocket upgrade indicated but conn does not indicate a valid handshake"}
+    end
+  end
+
+  defp maybe_upgrade(_conn), do: {:ok, :no_upgrade}
 
   defp commit_response(conn, plug) do
     case conn do
