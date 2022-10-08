@@ -1,9 +1,33 @@
 defmodule WebSocketHTTP1HandshakeTest do
-  use WebSocketServerHelpers
+  # This is fundamentally a test of the Plug helpers in Bandit.WebSocket.Handshake, so we define
+  # a simple Plug that uses these handshakes to upgrade to a no-op Sock implementation
+
+  use ExUnit.Case, async: true
+  use ServerHelpers
 
   import TestHelpers
 
-  setup :http1_websocket_server
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
+  setup :http_server
+
+  defmodule MyNoopSock do
+    use NoopSock
+  end
+
+  def call(conn, _opts) do
+    conn
+    |> Bandit.WebSocket.Handshake.handshake?()
+    |> case do
+      true ->
+        conn
+        |> Plug.Conn.upgrade_adapter(:websocket, {MyNoopSock, []})
+
+      false ->
+        conn
+        |> Plug.Conn.send_resp(204, <<>>)
+    end
+  end
 
   describe "HTTP/1.1 handshake" do
     test "accepts well formed requests", context do
@@ -217,9 +241,5 @@ defmodule WebSocketHTTP1HandshakeTest do
 
       assert valid_date_header?(date)
     end
-  end
-
-  def websocket_test(conn) do
-    Plug.Conn.send_resp(conn, 204, <<>>)
   end
 end
