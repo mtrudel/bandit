@@ -1,9 +1,7 @@
 defmodule ServerHelpers do
   @moduledoc false
 
-  use ExUnit.CaseTemplate
-
-  using do
+  defmacro __using__(_) do
     quote location: :keep do
       import Plug.Conn
 

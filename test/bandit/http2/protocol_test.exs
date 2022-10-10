@@ -1,6 +1,5 @@
 defmodule HTTP2ProtocolTest do
   use ExUnit.Case, async: true
-
   use ServerHelpers
 
   import Bitwise

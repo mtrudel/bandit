@@ -1,9 +1,7 @@
 defmodule FinchHelpers do
   @moduledoc false
 
-  use ExUnit.CaseTemplate
-
-  using do
+  defmacro __using__(_) do
     quote location: :keep do
       def finch_http1_client(_context), do: finch_for(:http1)
       def finch_h2_client(_context), do: finch_for(:http2)
