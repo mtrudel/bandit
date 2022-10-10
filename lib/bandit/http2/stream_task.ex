@@ -40,12 +40,12 @@ defmodule Bandit.HTTP2.StreamTask do
   # Let the stream task know that body data has arrived from the client. The other half of this
   # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
-  def recv_data(pid, data), do: Process.send(pid, {:data, data}, [])
+  def recv_data(pid, data), do: send(pid, {:data, data})
 
   # Let the stream task know that the client has set the end of stream flag. The other half of
   # this flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
-  def recv_end_of_stream(pid), do: Process.send(pid, :end_stream, [])
+  def recv_end_of_stream(pid), do: send(pid, :end_stream)
 
   # Let the stream task know that the client has reset the stream. This will terminate the
   # stream's handling process
