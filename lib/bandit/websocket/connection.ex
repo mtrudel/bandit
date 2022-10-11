@@ -17,9 +17,9 @@ defmodule Bandit.WebSocket.Connection do
           fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil
         }
 
-  def init(sock, sock_state) do
-    {:ok, sock_state} = sock.init(sock_state)
-    %__MODULE__{sock: sock, sock_state: sock_state}
+  def init(sock, sock_state, socket) do
+    sock.init(sock_state)
+    |> handle_continutation(socket, %__MODULE__{sock: sock, sock_state: sock_state})
   end
 
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do

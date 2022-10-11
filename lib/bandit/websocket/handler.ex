@@ -7,7 +7,7 @@ defmodule Bandit.WebSocket.Handler do
   alias Bandit.WebSocket.{Connection, Frame}
 
   @impl ThousandIsland.Handler
-  def handle_connection(_socket, state) do
+  def handle_connection(socket, state) do
     {sock, sock_opts, connection_opts} =
       case state.upgrade_opts do
         {sock, sock_opts} -> {sock, sock_opts, []}
@@ -17,12 +17,17 @@ defmodule Bandit.WebSocket.Handler do
     state =
       state
       |> Map.take([:handler_module])
-      |> Map.put(:connection, Connection.init(sock, sock_opts))
       |> Map.put(:buffer, <<>>)
 
-    case Keyword.get(connection_opts, :timeout) do
-      nil -> {:continue, state}
-      timeout -> {:continue, state, {:persistent, timeout}}
+    case Connection.init(sock, sock_opts, socket) do
+      {:continue, connection} ->
+        case Keyword.get(connection_opts, :timeout) do
+          nil -> {:continue, Map.put(state, :connection, connection)}
+          timeout -> {:continue, Map.put(state, :connection, connection), {:persistent, timeout}}
+        end
+
+      {:error, reason, connection} ->
+        {:error, reason, state |> Map.put(:connection, connection)}
     end
   end
 

@@ -22,7 +22,7 @@ defmodule WebSocketSockTest do
   end
 
   describe "init" do
-    defmodule InitSock do
+    defmodule InitOKStateSock do
       use NoopSock
       def init(_opts), do: {:ok, :init}
       def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
@@ -30,12 +30,90 @@ defmodule WebSocketSockTest do
 
     test "can return an ok tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, InitSock)
+      SimpleWebSocketClient.http1_handshake(client, InitOKStateSock)
 
-      SimpleWebSocketClient.send_text_frame(client, "")
+      SimpleWebSocketClient.send_text_frame(client, "OK")
       {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
-
       assert result == inspect(:init)
+    end
+
+    defmodule InitPushStateSock do
+      use NoopSock
+      def init(_opts), do: {:push, {:text, "init"}, :init}
+      def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
+    end
+
+    test "can return an push tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPushStateSock)
+
+      # Ignore the frame it pushes us
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(:init)
+    end
+
+    defmodule InitTextSock do
+      use NoopSock
+      def init(_opts), do: {:push, {:text, "TEXT"}, :init}
+    end
+
+    test "can return a text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitTextSock)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule InitBinarySock do
+      use NoopSock
+      def init(_opts), do: {:push, {:binary, "BINARY"}, :init}
+    end
+
+    test "can return a binary frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitBinarySock)
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "BINARY"}
+    end
+
+    defmodule InitPingSock do
+      use NoopSock
+      def init(_opts), do: {:push, {:ping, "PING"}, :init}
+    end
+
+    test "can return a ping frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPingSock)
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "PING"}
+    end
+
+    defmodule InitPongSock do
+      use NoopSock
+      def init(_opts), do: {:push, {:pong, "PONG"}, :init}
+    end
+
+    test "can return a pong frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPongSock)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule InitCloseSock do
+      use NoopSock
+      def init(_opts), do: {:stop, :normal, :init}
+    end
+
+    test "can close a connection by returning a stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseSock)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
   end
 
