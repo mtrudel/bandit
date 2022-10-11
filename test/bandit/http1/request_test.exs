@@ -309,7 +309,7 @@ defmodule HTTP1RequestTest do
 
     def upgrade_unsupported(conn) do
       conn
-      |> upgrade_adapter(:unsupported, [])
+      |> upgrade_adapter(:unsupported, nil)
       |> send_resp(200, "Not supported")
     end
 
@@ -329,11 +329,15 @@ defmodule HTTP1RequestTest do
       assert errors =~ "WebSocket upgrade indicated but conn does not indicate a valid handshake"
     end
 
+    defmodule MyNoopSock do
+      use NoopSock
+    end
+
     def upgrade_websocket(conn) do
       # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
       # calling upgrade_adapter
       conn
-      |> upgrade_adapter(:websocket, [])
+      |> upgrade_adapter(:websocket, {MyNoopSock, []})
     end
   end
 

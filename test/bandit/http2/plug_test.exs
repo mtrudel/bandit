@@ -220,7 +220,7 @@ defmodule HTTP2PlugTest do
 
     def upgrade_unsupported(conn) do
       conn
-      |> upgrade_adapter(:unsupported, [])
+      |> upgrade_adapter(:unsupported, nil)
       |> send_resp(200, "Not supported")
     end
   end

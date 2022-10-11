@@ -5,9 +5,11 @@ defmodule SimpleWebSocketClient do
 
   defdelegate tcp_client(context), to: ClientHelpers
 
-  def http1_handshake(client, query \\ []) do
+  def http1_handshake(client, module, params \\ []) do
+    params = params |> Keyword.put(:sock, module)
+
     :gen_tcp.send(client, """
-    GET /?#{URI.encode_query(query)} HTTP/1.1\r
+    GET /?#{URI.encode_query(params)} HTTP/1.1\r
     Host: server.example.com\r
     Upgrade: websocket\r
     Connection: Upgrade\r
