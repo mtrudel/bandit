@@ -43,9 +43,27 @@ defmodule WebSocketSockTest do
       def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
     end
 
-    test "can return an push tuple and update state", context do
+    test "can return a push tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, InitPushStateSock)
+
+      # Ignore the frame it pushes us
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(:init)
+    end
+
+    defmodule InitReplyStateSock do
+      use NoopSock
+      def init(_opts), do: {:reply, :ok, {:text, "init"}, :init}
+      def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
+    end
+
+    test "can return a reply tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitReplyStateSock)
 
       # Ignore the frame it pushes us
       _ = SimpleWebSocketClient.recv_text_frame(client)
@@ -162,9 +180,31 @@ defmodule WebSocketSockTest do
       assert response == inspect([{"OK", opcode: :text}])
     end
 
-    test "can return an push tuple and update state", context do
+    test "can return a push tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleInStateSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect([{"dump", opcode: :text}])
+    end
+
+    defmodule HandleInReplyStateSock do
+      use NoopSock
+      def init(_opts), do: {:ok, []}
+
+      def handle_in({"dump", opcode: :text} = data, state),
+        do: {:reply, :ok, {:text, inspect(state)}, [data | state]}
+
+      def handle_in(data, state), do: {:ok, [data | state]}
+    end
+
+    test "can return a reply tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInReplyStateSock)
 
       SimpleWebSocketClient.send_text_frame(client, "dump")
       _ = SimpleWebSocketClient.recv_text_frame(client)
@@ -311,9 +351,33 @@ defmodule WebSocketSockTest do
       assert response == inspect([{"OK", opcode: :ping}])
     end
 
-    test "can return an push tuple and update state", context do
+    test "can return a push tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleControlStateSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+      _ = SimpleWebSocketClient.recv_ping_frame(client)
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
+      assert response == inspect([{"dump", opcode: :ping}])
+    end
+
+    defmodule HandleControlReplyStateSock do
+      use NoopSock
+      def init(_opts), do: {:ok, []}
+
+      def handle_control({"dump", opcode: :ping} = data, state),
+        do: {:reply, :ok, {:ping, inspect(state)}, [data | state]}
+
+      def handle_control(data, state), do: {:ok, [data | state]}
+    end
+
+    test "can return a reply tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlReplyStateSock)
 
       SimpleWebSocketClient.send_ping_frame(client, "dump")
       _ = SimpleWebSocketClient.recv_pong_frame(client)
@@ -426,7 +490,7 @@ defmodule WebSocketSockTest do
       assert response == inspect(["OK"])
     end
 
-    test "can return an push tuple and update state", context do
+    test "can return a push tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleInfoStateSock)
 

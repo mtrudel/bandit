@@ -136,6 +136,10 @@ defmodule Bandit.WebSocket.Connection do
       {:ok, sock_state} ->
         {:continue, %{connection | sock_state: sock_state}}
 
+      {:reply, _status, msg, sock_state} ->
+        Socket.send_frame(socket, msg)
+        {:continue, %{connection | sock_state: sock_state}}
+
       {:push, msg, sock_state} ->
         Socket.send_frame(socket, msg)
         {:continue, %{connection | sock_state: sock_state}}
