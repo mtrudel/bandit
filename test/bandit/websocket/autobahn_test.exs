@@ -8,7 +8,7 @@ defmodule WebsocketAutobahnTest do
 
   defmodule EchoSock do
     use NoopSock
-    def handle_in(data, state), do: {:push, data, state}
+    def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
   end
 
   @behaviour Plug

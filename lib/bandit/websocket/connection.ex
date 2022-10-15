@@ -29,7 +29,7 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
-          connection.sock.handle_in({:text, frame.data}, connection.sock_state)
+          connection.sock.handle_in({frame.data, opcode: :text}, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
           do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
@@ -39,7 +39,7 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | fragment_frame: frame}}
 
       %Frame.Binary{fin: true} = frame ->
-        connection.sock.handle_in({:binary, frame.data}, connection.sock_state)
+        connection.sock.handle_in({frame.data, opcode: :binary}, connection.sock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
@@ -88,7 +88,7 @@ defmodule Bandit.WebSocket.Connection do
         Socket.send_frame(socket, {:pong, frame.data})
 
         if function_exported?(connection.sock, :handle_control, 2) do
-          connection.sock.handle_control({:ping, frame.data}, connection.sock_state)
+          connection.sock.handle_control({frame.data, opcode: :ping}, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
           {:continue, connection}
@@ -96,7 +96,7 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Pong{} = frame ->
         if function_exported?(connection.sock, :handle_control, 2) do
-          connection.sock.handle_control({:pong, frame.data}, connection.sock_state)
+          connection.sock.handle_control({frame.data, opcode: :pong}, connection.sock_state)
           |> handle_continutation(socket, connection)
         else
           {:continue, connection}

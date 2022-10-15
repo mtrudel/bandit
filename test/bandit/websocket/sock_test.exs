@@ -120,7 +120,7 @@ defmodule WebSocketSockTest do
   describe "handle_in" do
     defmodule HandleInEchoSock do
       use NoopSock
-      def handle_in(data, state), do: {:push, data, state}
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     end
 
     test "can receive a text frame", context do
@@ -145,7 +145,7 @@ defmodule WebSocketSockTest do
       use NoopSock
       def init(_opts), do: {:ok, []}
 
-      def handle_in({:text, "dump"} = data, state),
+      def handle_in({"dump", opcode: :text} = data, state),
         do: {:push, {:text, inspect(state)}, [data | state]}
 
       def handle_in(data, state), do: {:ok, [data | state]}
@@ -159,7 +159,7 @@ defmodule WebSocketSockTest do
       SimpleWebSocketClient.send_text_frame(client, "dump")
 
       {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
-      assert response == inspect([{:text, "OK"}])
+      assert response == inspect([{"OK", opcode: :text}])
     end
 
     test "can return an push tuple and update state", context do
@@ -171,7 +171,7 @@ defmodule WebSocketSockTest do
       SimpleWebSocketClient.send_text_frame(client, "dump")
 
       {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
-      assert response == inspect([{:text, "dump"}])
+      assert response == inspect([{"dump", opcode: :text}])
     end
 
     defmodule HandleInTextSock do
@@ -249,7 +249,7 @@ defmodule WebSocketSockTest do
   describe "handle_control" do
     defmodule HandleControlNoImplSock do
       use NoopSock
-      def handle_in(data, state), do: {:push, data, state}
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     end
 
     test "callback is optional", context do
@@ -266,7 +266,7 @@ defmodule WebSocketSockTest do
 
     defmodule HandleControlEchoSock do
       use NoopSock
-      def handle_control(data, state), do: {:push, data, state}
+      def handle_control({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     end
 
     test "can receive a ping frame", context do
@@ -292,7 +292,7 @@ defmodule WebSocketSockTest do
       use NoopSock
       def init(_opts), do: {:ok, []}
 
-      def handle_control({:ping, "dump"} = data, state),
+      def handle_control({"dump", opcode: :ping} = data, state),
         do: {:push, {:ping, inspect(state)}, [data | state]}
 
       def handle_control(data, state), do: {:ok, [data | state]}
@@ -308,7 +308,7 @@ defmodule WebSocketSockTest do
       _ = SimpleWebSocketClient.recv_pong_frame(client)
 
       {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
-      assert response == inspect([{:ping, "OK"}])
+      assert response == inspect([{"OK", opcode: :ping}])
     end
 
     test "can return an push tuple and update state", context do
@@ -322,7 +322,7 @@ defmodule WebSocketSockTest do
       _ = SimpleWebSocketClient.recv_pong_frame(client)
 
       {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
-      assert response == inspect([{:ping, "dump"}])
+      assert response == inspect([{"dump", opcode: :ping}])
     end
 
     defmodule HandleControlTextSock do
@@ -544,8 +544,8 @@ defmodule WebSocketSockTest do
 
     defmodule TerminateSock do
       use NoopSock
-      def handle_in({:text, "normal"}, state), do: {:stop, :normal, state}
-      def handle_in({:text, "boom"}, state), do: {:stop, :boom, state}
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
+      def handle_in({"boom", opcode: :text}, state), do: {:stop, :boom, state}
       def terminate(reason, _state), do: WebSocketSockTest.send(reason)
     end
 

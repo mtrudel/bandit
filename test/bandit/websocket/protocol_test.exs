@@ -24,8 +24,8 @@ defmodule WebSocketProtocolTest do
   # These socks are used throughout these tests, so declare them top-level
   defmodule EchoSock do
     use NoopSock
-    def handle_in(data, state), do: {:push, data, state}
-    def handle_control(data, state), do: {:push, data, state}
+    def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
+    def handle_control({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
   end
 
   defmodule TerminateSock do
@@ -190,7 +190,7 @@ defmodule WebSocketProtocolTest do
   describe "server-side connection close" do
     defmodule ServerSideCloseSock do
       use NoopSock
-      def handle_in({:text, "normal"}, state), do: {:stop, :normal, state}
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
@@ -402,7 +402,7 @@ defmodule WebSocketProtocolTest do
 
     defmodule TimeoutCloseSock do
       use NoopSock
-      def handle_in({:text, "normal"}, state), do: {:stop, :normal, state}
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
