@@ -80,13 +80,13 @@ there looks like this following:
 
 ## Using Bandit With Phoenix
 
-As of the 0.5.x branch Bandit supports Phoenix. Phoenix applications which use WebSockets for 
+As of the 0.5.x branch Bandit supports Phoenix. Phoenix applications which use WebSockets for
 features such as Channels or LiveView require a recent version of Phoenix with Sock support enabled (the PR for this work is [here](https://github.com/phoenixframework/phoenix/pull/4973)).
 
 Using Bandit to host your Phoenix application couldn't be simpler:
 
 1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
-    
+
     ```elixir
     {:bandit, ">= 0.5.6"}
     ```
@@ -126,7 +126,7 @@ Bandit takes a number of options at startup, which are described in detail in th
 For less formal usage, you can also start Bandit using the same configuration
 options via the `Bandit.start_link/1` function:
 
-```
+```elixir
 # Start an http server on the default port 4000, serving MyApp.MyPlug
 Bandit.start_link(plug: MyApp.MyPlug)
 ```

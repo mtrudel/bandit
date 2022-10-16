@@ -37,9 +37,10 @@ defmodule Bandit.WebSocket.Handshake do
   end
 
   defp header_contains?(conn, field, value) do
+    value = String.downcase(value, :ascii)
+
     conn
     |> get_req_header(field)
-    |> Enum.map(&String.downcase(&1, :ascii))
-    |> Enum.member?(String.downcase(value, :ascii))
+    |> Enum.any?(&(String.downcase(&1, :ascii) == value))
   end
 end
