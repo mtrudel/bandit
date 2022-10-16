@@ -9,24 +9,15 @@ defmodule WebSocketUpgradeTest do
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
 
-    conn
-    |> Bandit.WebSocket.Handshake.handshake?()
-    |> case do
-      true ->
-        sock = conn.query_params["sock"] |> String.to_atom()
+    sock = conn.query_params["sock"] |> String.to_atom()
 
-        case conn.query_params["timeout"] do
-          nil ->
-            Plug.Conn.upgrade_adapter(conn, :websocket, {sock, :upgrade})
+    connection_opts =
+      case conn.query_params["timeout"] do
+        nil -> []
+        timeout -> [timeout: String.to_integer(timeout)]
+      end
 
-          timeout ->
-            timeout = String.to_integer(timeout)
-            Plug.Conn.upgrade_adapter(conn, :websocket, {sock, :upgrade, timeout: timeout})
-        end
-
-      false ->
-        Plug.Conn.send_resp(conn, 204, <<>>)
-    end
+    Plug.Conn.upgrade_adapter(conn, :websocket, {sock, :upgrade, connection_opts})
   end
 
   defmodule UpgradeSock do
@@ -45,7 +36,7 @@ defmodule WebSocketUpgradeTest do
 
   describe "upgrade support" do
     @tag capture_log: true
-    test "upgrades to a {sock, sock_opts, conn_opts} tuple", context do
+    test "upgrades to a {sock, sock_opts, conn_opts} tuple, respecting options", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, UpgradeSock, timeout: "250")
 

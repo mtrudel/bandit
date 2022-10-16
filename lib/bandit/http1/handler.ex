@@ -74,6 +74,8 @@ defmodule Bandit.HTTP1.Handler do
         {:ok, :websocket, opts}
 
       false ->
+        # We can safely unset the state, since we match on :upgraded above
+        %{conn | state: :unset} |> Plug.Conn.send_resp(400, "Invalid WebSocket Handshake")
         {:error, "WebSocket upgrade indicated but conn does not indicate a valid handshake"}
     end
   end

@@ -313,15 +313,16 @@ defmodule HTTP1RequestTest do
       |> send_resp(200, "Not supported")
     end
 
-    test "errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
          context do
       errors =
         capture_log(fn ->
-          assert {:error, %Mint.TransportError{reason: :closed}} =
-                   Finch.build(:get, context[:base] <> "/upgrade_websocket", [
-                     {"connection", "close"}
-                   ])
-                   |> Finch.request(context[:finch_name])
+          {:ok, response} =
+            Finch.build(:get, context[:base] <> "/upgrade_websocket", [{"connection", "close"}])
+            |> Finch.request(context[:finch_name])
+
+          assert response.status == 400
+          assert response.body == "Invalid WebSocket Handshake"
 
           Process.sleep(100)
         end)
