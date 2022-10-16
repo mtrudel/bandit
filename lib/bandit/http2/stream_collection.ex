@@ -35,15 +35,13 @@ defmodule Bandit.HTTP2.StreamCollection do
     delta = initial_send_window_size - collection.initial_send_window_size
 
     streams =
-      collection.streams
-      |> Enum.map(fn
+      Map.new(collection.streams, fn
         {id, %Stream{state: state} = stream} when state in [:open, :remote_closed] ->
           {id, %{stream | send_window_size: stream.send_window_size + delta}}
 
         {id, stream} ->
           {id, stream}
       end)
-      |> Map.new()
 
     %{collection | streams: streams, initial_send_window_size: initial_send_window_size}
   end
