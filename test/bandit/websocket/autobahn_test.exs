@@ -21,7 +21,7 @@ defmodule WebsocketAutobahnTest do
     conn
     |> Bandit.WebSocket.Handshake.handshake?()
     |> case do
-      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok})
+      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, []})
       false -> Plug.Conn.send_resp(conn, 204, <<>>)
     end
   end

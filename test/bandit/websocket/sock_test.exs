@@ -14,7 +14,7 @@ defmodule WebSocketSockTest do
     |> case do
       true ->
         sock = conn.query_params["sock"] |> String.to_atom()
-        Plug.Conn.upgrade_adapter(conn, :websocket, {sock, []})
+        Plug.Conn.upgrade_adapter(conn, :websocket, {sock, [], []})
 
       false ->
         Plug.Conn.send_resp(conn, 204, <<>>)

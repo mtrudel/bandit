@@ -45,17 +45,6 @@ defmodule WebSocketUpgradeTest do
 
   describe "upgrade support" do
     @tag capture_log: true
-    test "upgrades to a {sock, sock_opts} tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, UpgradeSock)
-
-      SimpleWebSocketClient.send_text_frame(client, "")
-      {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
-
-      assert result == inspect([:upgrade, :init])
-    end
-
-    @tag capture_log: true
     test "upgrades to a {sock, sock_opts, conn_opts} tuple", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, UpgradeSock, timeout: "250")

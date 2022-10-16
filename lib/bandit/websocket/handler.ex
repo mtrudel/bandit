@@ -8,11 +8,7 @@ defmodule Bandit.WebSocket.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    {sock, sock_opts, connection_opts} =
-      case state.upgrade_opts do
-        {sock, sock_opts} -> {sock, sock_opts, []}
-        {sock, sock_opts, connection_opts} -> {sock, sock_opts, connection_opts}
-      end
+    {sock, sock_opts, connection_opts} = state.upgrade_opts
 
     state =
       state
