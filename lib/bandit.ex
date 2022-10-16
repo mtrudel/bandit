@@ -97,6 +97,28 @@ defmodule Bandit do
     Supervisor.start_link(children, opts)
   end
   ```
+
+  ## WebSocket Support
+
+  Bandit supports upgrading HTTP requests to WebSocket connections via 
+  the use of the `Plug.Conn.upgrade_adapter/3` function, called with `:websocket` as the second
+  argument. Applications should validate that the connection represents a valid WebSocket request
+  before calling this function (Bandit will validate the connection as part of the upgrade
+  process, but does not provide any capacity for an application to be notified if the upgrade is
+  not successful). If an application wishes to negotiate WebSocket subprotocols or otherwise set
+  any response headers, it should do so before calling `Plug.Conn.upgrade_adapter/3`.
+
+  The third argument to `Plug.Conn.upgrade_adapter/3` defines the details of how Bandit should 
+  handle the WebSocket connection, and must take the form `{handler, handler_opts,
+  connection_opts}`, where values are as follows:
+
+  * `handler` is a module which implements the `Sock` API
+  * `handler_opts` is an arbitrary term which will be passed as the argument to `c:Sock.init/1`
+  * `connection_opts` is a keyword list which consists of zero or more of the following options:
+    * `timeout`: The number of milliseconds to wait after no client data is received before
+      closing the connection. Defaults to `60_000`
+    * `compress`: Whether or not to attempt negotiation of a compression extension with the
+      client. Defaults to `false`
   """
 
   require Logger
