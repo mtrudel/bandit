@@ -1,7 +1,7 @@
 defprotocol Bandit.WebSocket.Socket do
   @moduledoc false
   #
-  # A protocol adding defining the low-level functionality of a WebSocket
+  # A protocol defining the low-level functionality of a WebSocket
   #
 
   @type frame_type :: :text | :binary | :ping | :pong

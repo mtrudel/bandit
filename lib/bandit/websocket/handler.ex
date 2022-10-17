@@ -23,7 +23,7 @@ defmodule Bandit.WebSocket.Handler do
         end
 
       {:error, reason, connection} ->
-        {:error, reason, state |> Map.put(:connection, connection)}
+        {:error, reason, Map.put(state, :connection, connection)}
     end
   end
 
