@@ -59,6 +59,9 @@ defmodule Bandit do
   Bandit takes a number of options at startup:
 
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
+  * `display_plug`: The plug to use when describing the connection in logs. Useful for situations
+    such as Phoenix code reloading where you have a 'wrapper' plug but wish to refer to the
+    connection by the endpoint name
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
@@ -147,6 +150,7 @@ defmodule Bandit do
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
+    display_plug = Keyword.get(arg, :display_plug, plug_mod)
 
     {transport_module, extra_transport_options} =
       case scheme do
@@ -169,7 +173,7 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        Logger.info(info(scheme, plug_mod, pid))
+        Logger.info(info(scheme, display_plug, pid))
         {:ok, pid}
 
       {:error, _} = error ->

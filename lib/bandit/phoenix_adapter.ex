@@ -47,7 +47,17 @@ defmodule Bandit.PhoenixAdapter do
       transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
 
-      [plug: endpoint, scheme: scheme, options: opts]
+      _ = Code.ensure_loaded?(Phoenix.Endpoint.AttemptCodeReloadPlug)
+
+      plug =
+        if config[:code_reloader] &&
+             function_exported?(Phoenix.Endpoint.AttemptCodeReloadPlug, :call, 2) do
+          {Phoenix.Endpoint.AttemptCodeReloadPlug, {endpoint, []}}
+        else
+          endpoint
+        end
+
+      [plug: plug, display_plug: endpoint, scheme: scheme, options: opts]
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end
