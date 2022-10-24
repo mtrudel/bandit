@@ -9,9 +9,7 @@ defmodule WebSocketProtocolTest do
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
 
-    conn
-    |> Bandit.WebSocket.Handshake.handshake?()
-    |> case do
+    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
       true ->
         sock = conn.query_params["sock"] |> String.to_atom()
         Plug.Conn.upgrade_adapter(conn, :websocket, {sock, conn.params, []})
