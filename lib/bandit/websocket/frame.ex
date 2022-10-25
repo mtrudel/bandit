@@ -17,25 +17,25 @@ defmodule Bandit.WebSocket.Frame do
 
   @spec deserialize(binary()) :: {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
   def deserialize(
-        <<fin::1, rsv::3, opcode::4, 1::1, 127::7, length::64, mask::32,
+        <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
           payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(fin, rsv, opcode, mask, payload, rest)
+    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<fin::1, rsv::3, opcode::4, 1::1, 126::7, length::16, mask::32,
+        <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 126::7, length::16, mask::32,
           payload::binary-size(length), rest::binary>>
       ) do
-    to_frame(fin, rsv, opcode, mask, payload, rest)
+    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
-        <<fin::1, rsv::3, opcode::4, 1::1, length::7, mask::32, payload::binary-size(length),
-          rest::binary>>
+        <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, length::7, mask::32,
+          payload::binary-size(length), rest::binary>>
       )
       when length <= 125 do
-    to_frame(fin, rsv, opcode, mask, payload, rest)
+    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(<<>>) do
@@ -46,23 +46,24 @@ defmodule Bandit.WebSocket.Frame do
     {{:more, msg}, <<>>}
   end
 
-  defp to_frame(_fin, rsv, _opcode, _mask, _payload, rest) when rsv != 0x0 do
+  defp to_frame(_fin, _compressed, rsv, _opcode, _mask, _payload, rest) when rsv != 0x0 do
     {{:error, "Received unsupported RSV flags #{rsv}"}, rest}
   end
 
   # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
-  defp to_frame(fin, 0x0, opcode, mask, payload, rest) do
+  defp to_frame(fin, compressed, 0x0, opcode, mask, payload, rest) do
     fin = fin == 0x1
+    compressed = compressed == 0x1
     unmasked_payload = mask(payload, mask)
 
     opcode
     |> case do
-      0x0 -> Frame.Continuation.deserialize(fin, unmasked_payload)
-      0x1 -> Frame.Text.deserialize(fin, unmasked_payload)
-      0x2 -> Frame.Binary.deserialize(fin, unmasked_payload)
-      0x8 -> Frame.ConnectionClose.deserialize(fin, unmasked_payload)
-      0x9 -> Frame.Ping.deserialize(fin, unmasked_payload)
-      0xA -> Frame.Pong.deserialize(fin, unmasked_payload)
+      0x0 -> Frame.Continuation.deserialize(fin, compressed, unmasked_payload)
+      0x1 -> Frame.Text.deserialize(fin, compressed, unmasked_payload)
+      0x2 -> Frame.Binary.deserialize(fin, compressed, unmasked_payload)
+      0x8 -> Frame.ConnectionClose.deserialize(fin, compressed, unmasked_payload)
+      0x9 -> Frame.Ping.deserialize(fin, compressed, unmasked_payload)
+      0xA -> Frame.Pong.deserialize(fin, compressed, unmasked_payload)
       unknown -> {:error, "unknown opcode #{unknown}"}
     end
     |> case do

@@ -6,17 +6,21 @@ defmodule Bandit.WebSocket.Frame.Ping do
   @typedoc "A WebSocket ping frame"
   @type t :: %__MODULE__{data: binary()}
 
-  @spec deserialize(boolean(), iodata()) :: {:ok, t()} | {:error, term()}
-  def deserialize(true, <<data::binary>>) when byte_size(data) <= 125 do
+  @spec deserialize(boolean(), boolean(), iodata()) :: {:ok, t()} | {:error, term()}
+  def deserialize(true, false, <<data::binary>>) when byte_size(data) <= 125 do
     {:ok, %__MODULE__{data: data}}
   end
 
-  def deserialize(true, _payload) do
+  def deserialize(true, false, _payload) do
     {:error, "Invalid ping payload (RFC6455§5.5.2)"}
   end
 
-  def deserialize(false, _payload) do
+  def deserialize(false, false, _payload) do
     {:error, "Cannot have a fragmented ping frame (RFC6455§5.5.2)"}
+  end
+
+  def deserialize(true, true, _payload) do
+    {:error, "Cannot have a compressed ping frame (RFC7692§6.1)"}
   end
 
   defimpl Bandit.WebSocket.Frame.Serializable do
