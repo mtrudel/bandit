@@ -105,7 +105,7 @@ defmodule HTTP2PlugTest do
   end
 
   def timeout_body_read(conn) do
-    {:more, body, conn} = read_body(conn, read_timeout: 10)
+    {:more, body, conn} = read_body(conn, read_timeout: 100)
     assert body == "A"
     {:ok, body, conn} = read_body(conn)
     assert body == "BC"
