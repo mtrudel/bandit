@@ -7,13 +7,15 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
           server_no_context_takeover: boolean(),
           client_no_context_takeover: boolean(),
           server_max_window_bits: 8..15,
-          client_max_window_bits: 8..15
+          client_max_window_bits: 8..15,
+          inflate_context: :zlib.zstream()
         }
 
   defstruct server_no_context_takeover: false,
             client_no_context_takeover: false,
             server_max_window_bits: 15,
-            client_max_window_bits: 15
+            client_max_window_bits: 15,
+            inflate_context: nil
 
   @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
 
@@ -22,7 +24,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     |> Enum.find_value(&do_negotiate/1)
     |> case do
       nil -> {nil, []}
-      params -> {struct(__MODULE__, params), "permessage-deflate": params}
+      params -> {init(params), "permessage-deflate": params}
     end
   end
 
@@ -77,4 +79,25 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
       end
     end)
   end
+
+  defp init(params) do
+    instance = struct(__MODULE__, params)
+    inflate_context = :zlib.open()
+    :ok = :zlib.inflateInit(inflate_context, -instance.client_max_window_bits)
+    %{instance | inflate_context: inflate_context}
+  end
+
+  def inflate(data, %__MODULE__{} = context) do
+    inflated_data =
+      context.inflate_context
+      |> :zlib.inflate(<<data::binary, 0x00, 0x00, 0xFF, 0xFF>>)
+      |> IO.iodata_to_binary()
+
+    if context.client_no_context_takeover, do: :zlib.inflateReset(context.inflate_context)
+    {:ok, inflated_data, context}
+  rescue
+    e -> {:error, "Error encountered #{inspect(e)}"}
+  end
+
+  def inflate(_data, nil), do: {:error, :no_compress}
 end

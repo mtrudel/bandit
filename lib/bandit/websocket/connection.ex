@@ -2,9 +2,9 @@ defmodule Bandit.WebSocket.Connection do
   @moduledoc false
   # Implementation of a WebSocket lifecycle, implemented using a Socket protocol for communication
 
-  alias Bandit.WebSocket.{Frame, Socket}
+  alias Bandit.WebSocket.{Frame, PerMessageDeflate, Socket}
 
-  defstruct sock: nil, sock_state: nil, state: :open, fragment_frame: nil
+  defstruct sock: nil, sock_state: nil, state: :open, compress: nil, fragment_frame: nil
 
   @typedoc "Conection state"
   @type state :: :open | :closing
@@ -14,18 +14,25 @@ defmodule Bandit.WebSocket.Connection do
           sock: Sock.impl(),
           sock_state: Sock.state(),
           state: state(),
+          compress: PerMessageDeflate.t() | nil,
           fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil
         }
 
-  def init(sock, sock_state, socket) do
-    sock.init(sock_state)
-    |> handle_continutation(socket, %__MODULE__{sock: sock, sock_state: sock_state})
+  # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
+
+  def init(sock, sock_state, connection_opts, socket) do
+    compress = Keyword.get(connection_opts, :compress)
+    instance = %__MODULE__{sock: sock, sock_state: sock_state, compress: compress}
+    sock.init(sock_state) |> handle_continutation(socket, instance)
   end
 
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
     case frame do
       %Frame.Continuation{} ->
         do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
+
+      %Frame.Text{fin: true, compressed: true} = frame ->
+        do_inflate(frame, socket, connection)
 
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
@@ -37,6 +44,9 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Text{fin: false} = frame ->
         {:continue, %{connection | fragment_frame: frame}}
+
+      %Frame.Binary{fin: true, compressed: true} = frame ->
+        do_inflate(frame, socket, connection)
 
       %Frame.Binary{fin: true} = frame ->
         connection.sock.handle_in({frame.data, opcode: :binary}, connection.sock_state)
@@ -164,5 +174,23 @@ defmodule Bandit.WebSocket.Connection do
     end
 
     {:error, reason, %{connection | state: :closing}}
+  end
+
+  defp do_deflate(msg, socket, connection) do
+  end
+
+  defp do_inflate(frame, socket, connection) do
+    case PerMessageDeflate.inflate(frame.data, connection.compress) do
+      {:ok, data, compress} ->
+        frame = %{frame | data: data, compressed: false}
+        connection = %{connection | compress: compress}
+        handle_frame(frame, socket, connection)
+
+      {:error, :no_compress} ->
+        do_error(1002, "Received unexpected compressed frame (RFC6455§5.2)", socket, connection)
+
+      {:error, _reason} ->
+        do_error(1007, "Inflation error", socket, connection)
+    end
   end
 end

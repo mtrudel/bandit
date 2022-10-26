@@ -15,7 +15,7 @@ defmodule Bandit.WebSocket.Handler do
       |> Map.take([:handler_module])
       |> Map.put(:buffer, <<>>)
 
-    case Connection.init(sock, sock_opts, socket) do
+    case Connection.init(sock, sock_opts, connection_opts, socket) do
       {:continue, connection} ->
         case Keyword.get(connection_opts, :timeout) do
           nil -> {:continue, Map.put(state, :connection, connection)}

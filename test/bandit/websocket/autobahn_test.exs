@@ -4,7 +4,7 @@ defmodule WebsocketAutobahnTest do
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   @moduletag :external_conformance
-  @moduletag timeout: 600_000
+  @moduletag timeout: 3_600_000
 
   defmodule EchoSock do
     use NoopSock
@@ -19,7 +19,7 @@ defmodule WebsocketAutobahnTest do
   @impl Plug
   def call(conn, _opts) do
     case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
-      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, []})
+      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, compress: true})
       false -> Plug.Conn.send_resp(conn, 204, <<>>)
     end
   end
