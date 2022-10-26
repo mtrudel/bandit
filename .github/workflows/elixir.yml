@@ -1,6 +1,10 @@
 name: Elixir CI
 
-on: [push, pull_request]
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
 
 env:
   MIX_ENV: test
@@ -21,7 +25,7 @@ jobs:
 
           - elixir:  1.12.3
             otp: 23.3.4
-          - elixir:  1.11.4
+          - elixir:  1.12.3
             otp: 24.3.4.5
 
           - elixir:  1.13.4
