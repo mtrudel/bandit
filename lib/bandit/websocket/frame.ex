@@ -75,7 +75,7 @@ defmodule Bandit.WebSocket.Frame do
   defprotocol Serializable do
     @moduledoc false
 
-    @spec serialize(any()) :: [{Frame.opcode(), boolean(), iodata()}]
+    @spec serialize(any()) :: [{Frame.opcode(), boolean(), boolean(), iodata()}]
     def serialize(frame)
   end
 
@@ -83,10 +83,11 @@ defmodule Bandit.WebSocket.Frame do
   def serialize(frame) do
     frame
     |> Serializable.serialize()
-    |> Enum.map(fn {opcode, fin, payload} ->
+    |> Enum.map(fn {opcode, fin, compressed, payload} ->
       fin = if fin, do: 0x1, else: 0x0
+      compressed = if compressed, do: 0x1, else: 0x0
       mask_and_length = payload |> IO.iodata_length() |> mask_and_length()
-      [<<fin::1, 0x0::3, opcode::4>>, mask_and_length, payload]
+      [<<fin::1, compressed::1, 0x0::2, opcode::4>>, mask_and_length, payload]
     end)
   end
 

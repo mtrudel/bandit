@@ -14,6 +14,6 @@ defmodule Bandit.WebSocket.Frame.Binary do
   defimpl Bandit.WebSocket.Frame.Serializable do
     alias Bandit.WebSocket.Frame.Binary
 
-    def serialize(%Binary{} = frame), do: [{0x2, frame.fin, frame.data}]
+    def serialize(%Binary{} = frame), do: [{0x2, frame.fin, frame.compressed, frame.data}]
   end
 end

@@ -26,6 +26,6 @@ defmodule Bandit.WebSocket.Frame.Pong do
   defimpl Bandit.WebSocket.Frame.Serializable do
     alias Bandit.WebSocket.Frame.Pong
 
-    def serialize(%Pong{} = frame), do: [{0xA, true, frame.data}]
+    def serialize(%Pong{} = frame), do: [{0xA, true, false, frame.data}]
   end
 end

@@ -14,6 +14,6 @@ defmodule Bandit.WebSocket.Frame.Text do
   defimpl Bandit.WebSocket.Frame.Serializable do
     alias Bandit.WebSocket.Frame.Text
 
-    def serialize(%Text{} = frame), do: [{0x1, frame.fin, frame.data}]
+    def serialize(%Text{} = frame), do: [{0x1, frame.fin, frame.compressed, frame.data}]
   end
 end

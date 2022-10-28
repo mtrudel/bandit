@@ -18,6 +18,6 @@ defmodule Bandit.WebSocket.Frame.Continuation do
   defimpl Bandit.WebSocket.Frame.Serializable do
     alias Bandit.WebSocket.Frame.Continuation
 
-    def serialize(%Continuation{} = frame), do: [{0x0, frame.fin, frame.data}]
+    def serialize(%Continuation{} = frame), do: [{0x0, frame.fin, false, frame.data}]
   end
 end

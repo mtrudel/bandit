@@ -41,9 +41,9 @@ defmodule Bandit.WebSocket.Frame.ConnectionClose do
   defimpl Bandit.WebSocket.Frame.Serializable do
     alias Bandit.WebSocket.Frame.ConnectionClose
 
-    def serialize(%ConnectionClose{code: nil}), do: [{0x8, true, <<>>}]
+    def serialize(%ConnectionClose{code: nil}), do: [{0x8, true, false, <<>>}]
 
     def serialize(%ConnectionClose{} = frame),
-      do: [{0x8, true, [<<frame.code::16>>, frame.reason]}]
+      do: [{0x8, true, false, [<<frame.code::16>>, frame.reason]}]
   end
 end
