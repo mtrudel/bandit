@@ -53,8 +53,18 @@ defmodule SimpleWebSocketClient do
     {:ok, body}
   end
 
+  def recv_deflated_text_frame(client) do
+    {:ok, 0xC, 0x1, body} = recv_frame(client)
+    {:ok, body}
+  end
+
   def recv_binary_frame(client) do
     {:ok, 0x8, 0x2, body} = recv_frame(client)
+    {:ok, body}
+  end
+
+  def recv_deflated_binary_frame(client) do
+    {:ok, 0xC, 0x2, body} = recv_frame(client)
     {:ok, body}
   end
 

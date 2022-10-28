@@ -144,60 +144,64 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "compressed frames" do
-    test "correctly decompresses text frames", context do
+    test "correctly decompresses text frames and sends compressed frames back", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
 
-      payload = String.duplicate("a", 1_000)
       deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
-
       SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
 
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
     end
 
-    test "correctly decompresses binary frames", context do
+    test "correctly decompresses binary frames and sends compressed frames back", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
 
-      payload = String.duplicate("a", 1_000)
       deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
-
       SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0xC)
 
-      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, payload}
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
     end
 
     test "correctly decompresses fragmented text frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
 
-      payload = String.duplicate("a", 1_000)
       deflated_payload = <<74, 76, 28, 5>>
       deflated_payload_continuation = <<163, 96, 20, 12>>
       deflated_payload_continuation_2 = <<119, 0, 0>>
-
       SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0x4)
       SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
 
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
     end
 
     test "correctly decompresses fragmented binary frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
 
-      payload = String.duplicate("a", 1_000)
       deflated_payload = <<74, 76, 28, 5>>
       deflated_payload_continuation = <<163, 96, 20, 12>>
       deflated_payload_continuation_2 = <<119, 0, 0>>
-
       SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0x4)
       SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
 
-      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, payload}
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "does not compress ping or pong frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
     end
   end
 

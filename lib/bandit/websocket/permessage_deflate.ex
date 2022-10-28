@@ -8,14 +8,16 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
           client_no_context_takeover: boolean(),
           server_max_window_bits: 8..15,
           client_max_window_bits: 8..15,
-          inflate_context: :zlib.zstream()
+          inflate_context: :zlib.zstream(),
+          deflate_context: :zlib.zstream()
         }
 
   defstruct server_no_context_takeover: false,
             client_no_context_takeover: false,
             server_max_window_bits: 15,
             client_max_window_bits: 15,
-            inflate_context: nil
+            inflate_context: nil,
+            deflate_context: nil
 
   @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
 
@@ -84,7 +86,19 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     instance = struct(__MODULE__, params)
     inflate_context = :zlib.open()
     :ok = :zlib.inflateInit(inflate_context, -instance.client_max_window_bits)
-    %{instance | inflate_context: inflate_context}
+    deflate_context = :zlib.open()
+
+    :ok =
+      :zlib.deflateInit(
+        deflate_context,
+        :default,
+        :deflated,
+        -instance.server_max_window_bits,
+        8,
+        :default
+      )
+
+    %{instance | inflate_context: inflate_context, deflate_context: deflate_context}
   end
 
   def inflate(data, %__MODULE__{} = context) do
@@ -100,4 +114,26 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
   end
 
   def inflate(_data, nil), do: {:error, :no_compress}
+
+  def deflate(data, %__MODULE__{} = context) do
+    deflated_data =
+      context.deflate_context
+      |> :zlib.deflate(data, :sync)
+      |> IO.iodata_to_binary()
+
+    deflated_size = byte_size(deflated_data) - 4
+
+    deflated_data =
+      case deflated_data do
+        <<deflated_data::binary-size(deflated_size), 0x00, 0x00, 0xFF, 0xFF>> -> deflated_data
+        deflated -> deflated
+      end
+
+    if context.server_no_context_takeover, do: :zlib.deflateReset(context.deflate_context)
+    {:ok, deflated_data, context}
+  rescue
+    e -> {:error, "Error encountered #{inspect(e)}"}
+  end
+
+  def deflate(_data, nil), do: {:error, :no_compress}
 end

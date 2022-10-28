@@ -95,7 +95,7 @@ defmodule Bandit.WebSocket.Connection do
         {:close, %{connection | state: :closing}}
 
       %Frame.Ping{} = frame ->
-        Socket.send_frame(socket, {:pong, frame.data})
+        Socket.send_frame(socket, {:pong, frame.data}, false)
 
         if function_exported?(connection.sock, :handle_control, 2) do
           connection.sock.handle_control({frame.data, opcode: :ping}, connection.sock_state)
@@ -147,12 +147,10 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | sock_state: sock_state}}
 
       {:reply, _status, msg, sock_state} ->
-        Socket.send_frame(socket, msg)
-        {:continue, %{connection | sock_state: sock_state}}
+        do_deflate(msg, socket, %{connection | sock_state: sock_state})
 
       {:push, msg, sock_state} ->
-        Socket.send_frame(socket, msg)
-        {:continue, %{connection | sock_state: sock_state}}
+        do_deflate(msg, socket, %{connection | sock_state: sock_state})
 
       {:stop, :normal, sock_state} ->
         if connection.state == :open do
@@ -176,7 +174,24 @@ defmodule Bandit.WebSocket.Connection do
     {:error, reason, %{connection | state: :closing}}
   end
 
-  defp do_deflate(msg, socket, connection) do
+  defp do_deflate({opcode, data} = msg, socket, connection) when opcode in [:text, :binary] do
+    case PerMessageDeflate.deflate(data, connection.compress) do
+      {:ok, data, compress} ->
+        Socket.send_frame(socket, {opcode, data}, true)
+        {:continue, %{connection | compress: compress}}
+
+      {:error, :no_compress} ->
+        Socket.send_frame(socket, msg, false)
+        {:continue, connection}
+
+      {:error, _reason} ->
+        do_error(1007, "Deflation error", socket, connection)
+    end
+  end
+
+  defp do_deflate({opcode, _data} = msg, socket, connection) when opcode in [:ping, :pong] do
+    Socket.send_frame(socket, msg, false)
+    {:continue, connection}
   end
 
   defp do_inflate(frame, socket, connection) do
