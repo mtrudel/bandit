@@ -47,12 +47,11 @@ defmodule Bandit.PhoenixAdapter do
       transport_options = Keyword.get(opts, :transport_options, [])
       opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
 
-      _ = Code.ensure_loaded?(Phoenix.Endpoint.AttemptCodeReloadPlug)
-
       plug =
         if config[:code_reloader] &&
-             function_exported?(Phoenix.Endpoint.AttemptCodeReloadPlug, :call, 2) do
-          {Phoenix.Endpoint.AttemptCodeReloadPlug, {endpoint, []}}
+             Code.ensure_loaded?(Phoenix.Endpoint.SyncCodeReloadPlug) &&
+             function_exported?(Phoenix.Endpoint.SyncCodeReloadPlug, :call, 2) do
+          {Phoenix.Endpoint.SyncCodeReloadPlug, {endpoint, []}}
         else
           endpoint
         end
