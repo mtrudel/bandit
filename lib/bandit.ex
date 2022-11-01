@@ -123,7 +123,7 @@ defmodule Bandit do
   * `connection_opts` is a keyword list which consists of zero or more of the following options:
     * `timeout`: The number of milliseconds to wait after no client data is received before
       closing the connection. Defaults to `60_000`
-    * `compress`: Whether or not to attempt negotiation of a compression extension with the
+    * `compress`: Whether or not to accept negotiation of a compression extension with the
       client. Defaults to `false`
   """
 
