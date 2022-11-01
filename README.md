@@ -80,15 +80,15 @@ there looks like this following:
 
 ## Using Bandit With Phoenix
 
-As of the 0.5.x branch Bandit supports Phoenix. Phoenix applications which use WebSockets for
-features such as Channels or LiveView require a recent version of Phoenix with Sock support enabled (the PR for this work is [here](https://github.com/phoenixframework/phoenix/pull/4973)).
+As of Bandit 0.5.7, Bandit fully supports Phoenix. Phoenix applications which use WebSockets for
+features such as Channels or LiveView require Phoenix 1.7 or later.
 
 Using Bandit to host your Phoenix application couldn't be simpler:
 
 1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
 
     ```elixir
-    {:bandit, ">= 0.5.6"}
+    {:bandit, ">= 0.5.7"}
     ```
 2. Add the following to your endpoint configuration in `config/config.exs`:
 
@@ -160,7 +160,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, ">= 0.5.5"}
+    {:bandit, ">= 0.5.7"}
   ]
 end
 ```

@@ -14,19 +14,22 @@ defmodule Bandit do
 
   ## Using Bandit With Phoenix
 
-  Note that as of the 0.5.x branch Bandit supports Phoenix applications.
+  As of Bandit 0.5.7, Bandit fully supports Phoenix. Phoenix applications which use WebSockets for
+  features such as Channels or LiveView require Phoenix 1.7 or later.
 
   Using Bandit to host your Phoenix application couldn't be simpler:
 
   1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
-      ```elixir
-      {:bandit, ">= 0.5.0"}
-      ```
+    ```elixir
+    {:bandit, ">= 0.5.7"}
+    ```
+
   2. Add the following to your endpoint configuration in `config/config.exs`:
-       ```elixir
-       config :your_app, YourAppWeb.Endpoint,
-         adapter: Bandit.PhoenixAdapter
-       ```
+    ```elixir
+    config :your_app, YourAppWeb.Endpoint,
+      adapter: Bandit.PhoenixAdapter
+    ```
+
   3. That's it! You should now see messages at startup indicating that Phoenix is using Bandit to
   serve your endpoint.
 
