@@ -131,6 +131,12 @@ options via the `Bandit.start_link/1` function:
 Bandit.start_link(plug: MyApp.MyPlug)
 ```
 
+## WebSocket Support
+
+Bandit supports upgrading HTTP requests to WebSocket connections via the use of
+the `Plug.Conn.upgrade_adapter/3` function and the `Sock` API. For details, see the `Bandit`
+documentation.
+
 ## Implementation Details
 
 Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x and WebSocket implementations is a work in progress.

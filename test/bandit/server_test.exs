@@ -9,7 +9,6 @@ defmodule ServerTest do
       capture_log(fn ->
         [
           plug: __MODULE__,
-          sock: __MODULE__,
           options: [port: 0, transport_options: [ip: :loopback]]
         ]
         |> Bandit.child_spec()
@@ -17,6 +16,6 @@ defmodule ServerTest do
       end)
 
     assert logs =~
-             "Running plug: ServerTest, sock: ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 127.0.0.1"
+             "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 127.0.0.1"
   end
 end

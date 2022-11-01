@@ -4,7 +4,7 @@ defmodule Bandit.WebSocket.Frame.ConnectionClose do
   defstruct code: nil, reason: <<>>
 
   @typedoc "A WebSocket status code, or none at all"
-  @type status_code :: Sock.status_code() | nil
+  @type status_code :: non_neg_integer() | nil
 
   @typedoc "A WebSocket connection close frame"
   @type t :: %__MODULE__{code: status_code(), reason: binary()}

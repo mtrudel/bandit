@@ -208,6 +208,29 @@ defmodule HTTP2PlugTest do
     |> elem(1)
   end
 
+  describe "upgrade handling" do
+    test "raises an ArgumentError on unsupported upgrades", context do
+      errors =
+        capture_log(fn ->
+          response =
+            Finch.build(:get, context[:base] <> "/upgrade_unsupported")
+            |> Finch.request(context[:finch_name])
+
+          assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
+                   response
+        end)
+
+      assert errors =~
+               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP2.Adapter"
+    end
+
+    def upgrade_unsupported(conn) do
+      conn
+      |> upgrade_adapter(:unsupported, nil)
+      |> send_resp(200, "Not supported")
+    end
+  end
+
   test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
     errors =
       capture_log(fn ->
