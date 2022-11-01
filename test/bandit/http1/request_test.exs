@@ -298,13 +298,20 @@ defmodule HTTP1RequestTest do
   end
 
   describe "upgrade handling" do
-    test "does not update the conn or send any data on unsupported upgrades", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/upgrade_unsupported", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+    test "raises an ArgumentError on unsupported upgrades", context do
+      errors =
+        capture_log(fn ->
+          {:ok, response} =
+            Finch.build(:get, context[:base] <> "/upgrade_unsupported", [{"connection", "close"}])
+            |> Finch.request(context[:finch_name])
 
-      assert response.status == 200
-      assert response.body == "Not supported"
+          assert response.status == 500
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP1.Adapter"
     end
 
     def upgrade_unsupported(conn) do
