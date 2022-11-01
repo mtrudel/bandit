@@ -2,9 +2,9 @@ defmodule Bandit.PhoenixAdapter do
   @moduledoc """
   A Bandit adapter for Phoenix.
 
-  WebSocket support requires a version of Phoenix with Plug upgrade & Sock support. This is
-  currently (Sept 2022) a work in progress. This module will work fine on earlier versions of
-  Phoenix, just without WebSocket support.
+  WebSocket support requires a version of Phoenix with Plug upgrade support, which is available 
+  as part of Phoenix 1.7 and later. This module will work fine on earlier versions of Phoenix,
+  just without WebSocket support.
 
   To use this adapter, your project will need to include Bandit as a dependency; see
   https://hex.pm/bandit for details on the currently supported version of Bandit to include. Once
@@ -55,6 +55,9 @@ defmodule Bandit.PhoenixAdapter do
         else
           endpoint
         end
+
+      # This should be removed once Phoenix lands Sock support
+      plug = {Bandit.PhoenixWebSocketEnablerPlug, plug}
 
       [plug: plug, display_plug: endpoint, scheme: scheme, options: opts]
       |> Bandit.child_spec()
