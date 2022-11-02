@@ -142,18 +142,18 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 204, "")
     end
 
-    test "writes out a response with no content-length header for 3xx responses", context do
+    test "writes out a response with no content-length header for 304 responses", context do
       {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_301", [{"connection", "close"}])
+        Finch.build(:get, context[:base] <> "/send_304", [{"connection", "close"}])
         |> Finch.request(context[:finch_name])
 
-      assert response.status == 301
+      assert response.status == 304
       assert response.body == ""
       assert is_nil(List.keyfind(response.headers, "content-length", 0))
     end
 
-    def send_301(conn) do
-      send_resp(conn, 301, "")
+    def send_304(conn) do
+      send_resp(conn, 304, "")
     end
 
     test "writes out a response with zero content-length for 200 responses", context do
@@ -168,6 +168,20 @@ defmodule HTTP1RequestTest do
 
     def send_200(conn) do
       send_resp(conn, 200, "")
+    end
+
+    test "writes out a response with zero content-length for 301 responses", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_301")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 301
+      assert response.body == ""
+      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
+    end
+
+    def send_301(conn) do
+      send_resp(conn, 301, "")
     end
 
     test "writes out a response with zero content-length for 401 responses", context do

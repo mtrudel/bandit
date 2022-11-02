@@ -237,8 +237,9 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   # Per RFC2616§4.{3,4}
+  defp add_content_length?(status) when status in 100..199, do: false
   defp add_content_length?(204), do: false
-  defp add_content_length?(status) when status in 300..399, do: false
+  defp add_content_length?(304), do: false
   defp add_content_length?(_), do: true
 
   @impl Plug.Conn.Adapter

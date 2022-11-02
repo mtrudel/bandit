@@ -48,7 +48,6 @@ defmodule WebSocketHTTP1HandshakeTest do
       assert [
                "HTTP/1.1 101 Switching Protocols",
                "date: " <> date,
-               "content-length: 0",
                "cache-control: max-age=0, private, must-revalidate",
                "upgrade: websocket",
                "connection: Upgrade",

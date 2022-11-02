@@ -18,12 +18,11 @@ defmodule SimpleWebSocketClient do
     \r
     """)
 
-    {:ok, response} = :gen_tcp.recv(client, 237)
+    {:ok, response} = :gen_tcp.recv(client, 218)
 
     [
       "HTTP/1.1 101 Switching Protocols",
       "date: " <> _date,
-      "content-length: 0",
       "cache-control: max-age=0, private, must-revalidate",
       "upgrade: websocket",
       "connection: Upgrade",
