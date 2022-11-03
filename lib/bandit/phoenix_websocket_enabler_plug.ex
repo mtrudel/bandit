@@ -1,6 +1,6 @@
 defmodule Bandit.PhoenixWebSocketEnablerPlug do
   @moduledoc false
-  # This module is temporary, and should be removed once Phoenix lands Sock support
+  # This module is temporary, and should be removed once Phoenix lands WebSock support
   # See https://github.com/phoenixframework/phoenix/pull/5030#issuecomment-1298291845
 
   @behaviour Plug

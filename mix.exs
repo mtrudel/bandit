@@ -10,7 +10,7 @@ defmodule Bandit.MixProject do
       deps: deps(),
       dialyzer: dialyzer(),
       name: "Bandit",
-      description: "A pure-Elixir HTTP server built for Plug & Sock apps",
+      description: "A pure-Elixir HTTP server built for Plug & WebSock apps",
       source_url: "https://github.com/mtrudel/bandit",
       package: [
         files: ["lib", "test", "mix.exs", "README*", "LICENSE*"],
@@ -30,7 +30,7 @@ defmodule Bandit.MixProject do
     [
       {:thousand_island, "~> 0.5.10"},
       {:plug, "~> 1.14"},
-      {:sock, "~> 0.3.0"},
+      {:websock, "~> 0.4.2"},
       {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.8", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},

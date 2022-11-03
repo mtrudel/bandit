@@ -4,15 +4,15 @@ defmodule Bandit.WebSocket.Connection do
 
   alias Bandit.WebSocket.{Frame, PerMessageDeflate, Socket}
 
-  defstruct sock: nil, sock_state: nil, state: :open, compress: nil, fragment_frame: nil
+  defstruct websock: nil, websock_state: nil, state: :open, compress: nil, fragment_frame: nil
 
   @typedoc "Conection state"
   @type state :: :open | :closing
 
   @typedoc "Encapsulates the state of a WebSocket connection"
   @type t :: %__MODULE__{
-          sock: Sock.impl(),
-          sock_state: Sock.state(),
+          websock: WebSock.impl(),
+          websock_state: WebSock.state(),
           state: state(),
           compress: PerMessageDeflate.t() | nil,
           fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil
@@ -20,10 +20,10 @@ defmodule Bandit.WebSocket.Connection do
 
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
 
-  def init(sock, sock_state, connection_opts, socket) do
+  def init(websock, websock_state, connection_opts, socket) do
     compress = Keyword.get(connection_opts, :compress)
-    instance = %__MODULE__{sock: sock, sock_state: sock_state, compress: compress}
-    sock.init(sock_state) |> handle_continutation(socket, instance)
+    instance = %__MODULE__{websock: websock, websock_state: websock_state, compress: compress}
+    websock.init(websock_state) |> handle_continutation(socket, instance)
   end
 
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
@@ -36,7 +36,7 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Text{fin: true} = frame ->
         if String.valid?(frame.data) do
-          connection.sock.handle_in({frame.data, opcode: :text}, connection.sock_state)
+          connection.websock.handle_in({frame.data, opcode: :text}, connection.websock_state)
           |> handle_continutation(socket, connection)
         else
           do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
@@ -49,7 +49,7 @@ defmodule Bandit.WebSocket.Connection do
         do_inflate(frame, socket, connection)
 
       %Frame.Binary{fin: true} = frame ->
-        connection.sock.handle_in({frame.data, opcode: :binary}, connection.sock_state)
+        connection.websock.handle_in({frame.data, opcode: :binary}, connection.websock_state)
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
@@ -88,7 +88,7 @@ defmodule Bandit.WebSocket.Connection do
     case frame do
       %Frame.ConnectionClose{} = frame ->
         if connection.state == :open do
-          connection.sock.terminate(:remote, connection.sock_state)
+          connection.websock.terminate(:remote, connection.websock_state)
           Socket.close(socket, reply_code(frame.code))
         end
 
@@ -97,16 +97,16 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Ping{} = frame ->
         Socket.send_frame(socket, {:pong, frame.data}, false)
 
-        if function_exported?(connection.sock, :handle_control, 2) do
-          connection.sock.handle_control({frame.data, opcode: :ping}, connection.sock_state)
+        if function_exported?(connection.websock, :handle_control, 2) do
+          connection.websock.handle_control({frame.data, opcode: :ping}, connection.websock_state)
           |> handle_continutation(socket, connection)
         else
           {:continue, connection}
         end
 
       %Frame.Pong{} = frame ->
-        if function_exported?(connection.sock, :handle_control, 2) do
-          connection.sock.handle_control({frame.data, opcode: :pong}, connection.sock_state)
+        if function_exported?(connection.websock, :handle_control, 2) do
+          connection.websock.handle_control({frame.data, opcode: :pong}, connection.websock_state)
           |> handle_continutation(socket, connection)
         else
           {:continue, connection}
@@ -122,7 +122,7 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_shutdown(socket, connection) do
     if connection.state == :open do
-      connection.sock.terminate(:shutdown, connection.sock_state)
+      connection.websock.terminate(:shutdown, connection.websock_state)
       Socket.close(socket, 1001)
     end
   end
@@ -131,43 +131,43 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_timeout(socket, connection) do
     if connection.state == :open do
-      connection.sock.terminate(:timeout, connection.sock_state)
+      connection.websock.terminate(:timeout, connection.websock_state)
       Socket.close(socket, 1002)
     end
   end
 
   def handle_info(msg, socket, connection) do
-    connection.sock.handle_info(msg, connection.sock_state)
+    connection.websock.handle_info(msg, connection.websock_state)
     |> handle_continutation(socket, connection)
   end
 
   defp handle_continutation(continutation, socket, connection) do
     case continutation do
-      {:ok, sock_state} ->
-        {:continue, %{connection | sock_state: sock_state}}
+      {:ok, websock_state} ->
+        {:continue, %{connection | websock_state: websock_state}}
 
-      {:reply, _status, msg, sock_state} ->
-        do_deflate(msg, socket, %{connection | sock_state: sock_state})
+      {:reply, _status, msg, websock_state} ->
+        do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
-      {:push, msg, sock_state} ->
-        do_deflate(msg, socket, %{connection | sock_state: sock_state})
+      {:push, msg, websock_state} ->
+        do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
-      {:stop, :normal, sock_state} ->
+      {:stop, :normal, websock_state} ->
         if connection.state == :open do
-          connection.sock.terminate(:normal, connection.sock_state)
+          connection.websock.terminate(:normal, connection.websock_state)
           Socket.close(socket, 1000)
         end
 
-        {:continue, %{connection | sock_state: sock_state, state: :closing}}
+        {:continue, %{connection | websock_state: websock_state, state: :closing}}
 
-      {:stop, reason, sock_state} ->
-        do_error(1011, reason, socket, %{connection | sock_state: sock_state})
+      {:stop, reason, websock_state} ->
+        do_error(1011, reason, socket, %{connection | websock_state: websock_state})
     end
   end
 
   defp do_error(code, reason, socket, connection) do
     if connection.state == :open do
-      connection.sock.terminate({:error, reason}, connection.sock_state)
+      connection.websock.terminate({:error, reason}, connection.websock_state)
       Socket.close(socket, code)
     end
 

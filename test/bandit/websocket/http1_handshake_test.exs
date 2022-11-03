@@ -1,6 +1,6 @@
 defmodule WebSocketHTTP1HandshakeTest do
   # This is fundamentally a test of the Plug helpers in Bandit.WebSocket.Handshake, so we define
-  # a simple Plug that uses these handshakes to upgrade to a no-op Sock implementation
+  # a simple Plug that uses these handshakes to upgrade to a no-op WebSock implementation
 
   use ExUnit.Case, async: true
   use ServerHelpers
@@ -11,8 +11,8 @@ defmodule WebSocketHTTP1HandshakeTest do
 
   setup :http_server
 
-  defmodule MyNoopSock do
-    use NoopSock
+  defmodule MyNoopWebSock do
+    use NoopWebSock
   end
 
   def call(conn, _opts) do
@@ -21,7 +21,7 @@ defmodule WebSocketHTTP1HandshakeTest do
         opts = if List.first(conn.path_info) == "compress", do: [compress: true], else: []
 
         conn
-        |> Plug.Conn.upgrade_adapter(:websocket, {MyNoopSock, [], opts})
+        |> Plug.Conn.upgrade_adapter(:websocket, {MyNoopWebSock, [], opts})
 
       false ->
         conn

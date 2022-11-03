@@ -1,9 +1,9 @@
-defmodule NoopSock do
+defmodule NoopWebSock do
   @moduledoc false
 
   defmacro __using__(_) do
     quote do
-      @behaviour Sock
+      @behaviour WebSock
 
       @impl true
       def init(arg), do: {:ok, arg}

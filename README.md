@@ -4,7 +4,7 @@
 [![Docs](https://img.shields.io/badge/api-docs-green.svg?style=flat)](https://hexdocs.pm/bandit)
 [![Hex.pm](https://img.shields.io/hexpm/v/bandit.svg?style=flat&color=blue)](https://hex.pm/packages/bandit)
 
-Bandit is an HTTP server for Plug and Sock apps.
+Bandit is an HTTP server for Plug and WebSock apps.
 
 Bandit is written entirely in Elixir and is built atop [Thousand
 Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x and HTTP/2 clients over
@@ -34,7 +34,7 @@ foundational work that is approachable & understandable by users above it in the
 
 * Implement comprehensive support for HTTP/1.0 through HTTP/2 & WebSockets (and
   beyond) backed by obsessive RFC literacy and automated conformance testing
-* Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug & Sock as much as
+* Aim for minimal internal policy and HTTP-level configuration. Delegate to Plug & WebSock as much as
   possible, and only interpret requests to the extent necessary to safely manage a connection
   & fulfill the requirements of safely supporting protocol correctness
 * Prioritize (in order): correctness, clarity, performance. Seek to remove the mystery of
@@ -46,9 +46,9 @@ foundational work that is approachable & understandable by users above it in the
 
 As of the current 0.5.x release series, Bandit features the following:
 
-* Complete support for running Phoenix applications (WebSocket support requires a recent version of Phoenix with Sock support enabled)
+* Complete support for running Phoenix applications (WebSocket support requires a recent version of Phoenix with WebSock support enabled)
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
-* Complete support of the [Sock API](https://github.com/mtrudel/sock)
+* Complete support of the [WebSock API](https://github.com/mtrudel/websock)
 * Complete server support for HTTP/2 as defined in [RFC
   7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
   [h2spec](https://github.com/summerwind/h2spec) conformance testing
@@ -137,7 +137,7 @@ Bandit.start_link(plug: MyApp.MyPlug)
 ## WebSocket Support
 
 Bandit supports upgrading HTTP requests to WebSocket connections via the use of
-the `Plug.Conn.upgrade_adapter/3` function and the `Sock` API. For details, see the `Bandit`
+the `Plug.Conn.upgrade_adapter/3` function and the `WebSock` API. For details, see the `Bandit`
 documentation.
 
 ## Implementation Details

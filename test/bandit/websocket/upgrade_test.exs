@@ -9,7 +9,7 @@ defmodule WebSocketUpgradeTest do
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
 
-    sock = conn.query_params["sock"] |> String.to_atom()
+    websock = conn.query_params["websock"] |> String.to_atom()
 
     connection_opts =
       case conn.query_params["timeout"] do
@@ -17,11 +17,11 @@ defmodule WebSocketUpgradeTest do
         timeout -> [timeout: String.to_integer(timeout)]
       end
 
-    Plug.Conn.upgrade_adapter(conn, :websocket, {sock, :upgrade, connection_opts})
+    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, :upgrade, connection_opts})
   end
 
-  defmodule UpgradeSock do
-    use NoopSock
+  defmodule UpgradeWebSock do
+    use NoopWebSock
     def init(opts), do: {:ok, [opts, :init]}
     def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
     def terminate(reason, _state), do: WebSocketUpgradeTest.send(reason)
@@ -36,9 +36,9 @@ defmodule WebSocketUpgradeTest do
 
   describe "upgrade support" do
     @tag capture_log: true
-    test "upgrades to a {sock, sock_opts, conn_opts} tuple, respecting options", context do
+    test "upgrades to a {websock, websock_opts, conn_opts} tuple, respecting options", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, UpgradeSock, timeout: "250")
+      SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock, timeout: "250")
 
       SimpleWebSocketClient.send_text_frame(client, "")
       {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)

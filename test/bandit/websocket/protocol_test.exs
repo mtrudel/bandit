@@ -11,24 +11,24 @@ defmodule WebSocketProtocolTest do
 
     case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
       true ->
-        sock = conn.query_params["sock"] |> String.to_atom()
+        websock = conn.query_params["websock"] |> String.to_atom()
         compress = conn.query_params["compress"]
-        Plug.Conn.upgrade_adapter(conn, :websocket, {sock, conn.params, compress: compress})
+        Plug.Conn.upgrade_adapter(conn, :websocket, {websock, conn.params, compress: compress})
 
       false ->
         Plug.Conn.send_resp(conn, 204, <<>>)
     end
   end
 
-  # These socks are used throughout these tests, so declare them top-level
-  defmodule EchoSock do
-    use NoopSock
+  # These websocks are used throughout these tests, so declare them top-level
+  defmodule EchoWebSock do
+    use NoopWebSock
     def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     def handle_control({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
   end
 
-  defmodule TerminateSock do
-    use NoopSock
+  defmodule TerminateWebSock do
+    use NoopWebSock
     def terminate(reason, _state), do: WebSocketProtocolTest.send(reason)
   end
 
@@ -42,7 +42,7 @@ defmodule WebSocketProtocolTest do
   describe "packet-level frame splitting / merging" do
     test "it should handle cases where the frames arrives in small chunks", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       # Send text frame one byte at a time
       (<<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK")
@@ -58,7 +58,7 @@ defmodule WebSocketProtocolTest do
     test "it should handle cases where a full and partial frame arrive in the same packet",
          context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       # Send one and a half frames
       :gen_tcp.send(client, <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4>>)
@@ -72,7 +72,7 @@ defmodule WebSocketProtocolTest do
 
     test "it should handle cases where multiple frames arrive in the same packet", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       # Send two text frames at once one byte at a time
       :gen_tcp.send(
@@ -88,7 +88,7 @@ defmodule WebSocketProtocolTest do
   describe "s/m/l frame sizes" do
     test "small (7 bit) frames are received properly", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
@@ -97,7 +97,7 @@ defmodule WebSocketProtocolTest do
 
     test "mid-sized (16 bit) frames are received properly", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       payload = String.duplicate("a", 1_000)
       SimpleWebSocketClient.send_text_frame(client, payload)
@@ -107,7 +107,7 @@ defmodule WebSocketProtocolTest do
 
     test "large-sized (64 bit) frames are received properly", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       payload = String.duplicate("a", 100_000)
       SimpleWebSocketClient.send_text_frame(client, payload)
@@ -118,7 +118,7 @@ defmodule WebSocketProtocolTest do
   describe "frame fragmentation" do
     test "handle_in is called once when fragmented text frames are sent", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       payload = String.duplicate("a", 1_000)
       SimpleWebSocketClient.send_text_frame(client, payload, 0x0)
@@ -131,7 +131,7 @@ defmodule WebSocketProtocolTest do
 
     test "handle_in is called once when fragmented binary frames are sent", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       payload = String.duplicate("a", 1_000)
       SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
@@ -146,7 +146,7 @@ defmodule WebSocketProtocolTest do
   describe "compressed frames" do
     test "correctly decompresses text frames and sends compressed frames back", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
 
       deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
       SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
@@ -156,7 +156,7 @@ defmodule WebSocketProtocolTest do
 
     test "correctly decompresses binary frames and sends compressed frames back", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
 
       deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
       SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0xC)
@@ -166,7 +166,7 @@ defmodule WebSocketProtocolTest do
 
     test "correctly decompresses fragmented text frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
 
       deflated_payload = <<74, 76, 28, 5>>
       deflated_payload_continuation = <<163, 96, 20, 12>>
@@ -181,7 +181,7 @@ defmodule WebSocketProtocolTest do
 
     test "correctly decompresses fragmented binary frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
 
       deflated_payload = <<74, 76, 28, 5>>
       deflated_payload_continuation = <<163, 96, 20, 12>>
@@ -196,7 +196,7 @@ defmodule WebSocketProtocolTest do
 
     test "does not compress ping or pong frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
 
       SimpleWebSocketClient.send_ping_frame(client, "OK")
 
@@ -208,7 +208,7 @@ defmodule WebSocketProtocolTest do
   describe "ping frames" do
     test "send a pong per RFC6455§5.5.2", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       SimpleWebSocketClient.send_ping_frame(client, "OK")
 
@@ -218,7 +218,7 @@ defmodule WebSocketProtocolTest do
 
     test "are processed when interleaved with continuation frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
       SimpleWebSocketClient.send_ping_frame(client, "OK")
@@ -235,7 +235,7 @@ defmodule WebSocketProtocolTest do
   describe "pong frames" do
     test "are processed when interleaved with continuation frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoSock)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
       SimpleWebSocketClient.send_pong_frame(client, "OK")
@@ -249,22 +249,22 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "server-side connection close" do
-    defmodule ServerSideCloseSock do
-      use NoopSock
+    defmodule ServerSideCloseWebSock do
+      use NoopWebSock
       def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
     test "server does a proper shutdown handshake when closing a connection", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, ServerSideCloseSock)
+      SimpleWebSocketClient.http1_handshake(client, ServerSideCloseWebSock)
 
       # Find out the server process pid
       SimpleWebSocketClient.send_text_frame(client, "whoami")
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
 
-      # Get the sock to tell bandit to shut down
+      # Get the websock to tell bandit to shut down
       SimpleWebSocketClient.send_text_frame(client, "normal")
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
@@ -285,14 +285,14 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "client-side connection close" do
-    defmodule ClientSideCloseSock do
-      use NoopSock
+    defmodule ClientSideCloseWebSock do
+      use NoopWebSock
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
     test "returns a corresponding connection close frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseSock)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
 
       # Find out the server process pid
       SimpleWebSocketClient.send_text_frame(client, "whoami")
@@ -313,14 +313,14 @@ defmodule WebSocketProtocolTest do
 
     test "client closes are are processed when interleaved with continuation frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseSock)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
 
       # Find out the server process pid
       SimpleWebSocketClient.send_text_frame(client, "whoami")
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
 
-      # Note that we don't expect this to send back a pid since it won't make it to the Sock
+      # Note that we don't expect this to send back a pid since it won't make it to the WebSock
       SimpleWebSocketClient.send_text_frame(client, "whoami", 0x0)
 
       # Close the connection from the client
@@ -340,7 +340,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 on an unexpected continuation frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       # This is not allowed by RFC6455§5.4
       SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
@@ -358,7 +358,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 on a text frame during continuation", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
       # This is not allowed by RFC6455§5.4
@@ -376,7 +376,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 on a binary frame during continuation", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
       # This is not allowed by RFC6455§5.4
@@ -395,7 +395,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 on a compressed frame when deflate not negotiated", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
       SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
@@ -413,7 +413,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1007 on a malformed compressed frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock, [], true)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
 
       deflated_payload = <<1, 2, 3>>
       SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
@@ -431,7 +431,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1007 on a non UTF-8 text frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
 
@@ -448,7 +448,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1007 on fragmented non UTF-8 text frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
@@ -468,7 +468,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 if no frames sent at all", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       # Get the error that terminate saw, to ensure we're closing for the expected reason
       assert_receive :timeout, 1500
@@ -483,7 +483,7 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server sends a 1002 on timeout between frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
@@ -497,8 +497,8 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
-    defmodule TimeoutCloseSock do
-      use NoopSock
+    defmodule TimeoutCloseWebSock do
+      use NoopWebSock
       def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
@@ -506,14 +506,14 @@ defmodule WebSocketProtocolTest do
     @tag capture_log: true
     test "server times out waiting for client connection close", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TimeoutCloseSock)
+      SimpleWebSocketClient.http1_handshake(client, TimeoutCloseWebSock)
 
       # Find out the server process pid
       SimpleWebSocketClient.send_text_frame(client, "whoami")
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
 
-      # Get the sock to tell bandit to shut down
+      # Get the websock to tell bandit to shut down
       SimpleWebSocketClient.send_text_frame(client, "normal")
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2

@@ -351,15 +351,15 @@ defmodule HTTP1RequestTest do
       assert errors =~ "Not a valid WebSocket upgrade request"
     end
 
-    defmodule MyNoopSock do
-      use NoopSock
+    defmodule MyNoopWebSock do
+      use NoopWebSock
     end
 
     def upgrade_websocket(conn) do
       # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
       # calling upgrade_adapter
       conn
-      |> upgrade_adapter(:websocket, {MyNoopSock, [], []})
+      |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
     end
   end
 

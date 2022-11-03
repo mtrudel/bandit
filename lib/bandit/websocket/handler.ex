@@ -8,14 +8,14 @@ defmodule Bandit.WebSocket.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    {sock, sock_opts, connection_opts} = state.upgrade_opts
+    {websock, websock_opts, connection_opts} = state.upgrade_opts
 
     state =
       state
       |> Map.take([:handler_module])
       |> Map.put(:buffer, <<>>)
 
-    case Connection.init(sock, sock_opts, connection_opts, socket) do
+    case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->
         case Keyword.get(connection_opts, :timeout) do
           nil -> {:continue, Map.put(state, :connection, connection)}

@@ -64,13 +64,14 @@ defmodule Bandit.HTTP1.Handler do
   defp maybe_upgrade(
          %Plug.Conn{
            state: :upgraded,
-           adapter: {Adapter, %Adapter{upgrade: {:websocket, {sock, sock_opts, connection_opts}}}}
+           adapter:
+             {Adapter, %Adapter{upgrade: {:websocket, {websock, websock_opts, connection_opts}}}}
          } = conn
        ) do
     # We can safely unset the state, since we match on :upgraded above
     case Bandit.WebSocket.Handshake.handshake(%{conn | state: :unset}, connection_opts) do
       {:ok, connection_opts} ->
-        {:ok, :websocket, {sock, sock_opts, connection_opts}}
+        {:ok, :websocket, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
         %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)

@@ -6,8 +6,8 @@ defmodule WebsocketAutobahnTest do
   @moduletag :external_conformance
   @moduletag timeout: 3_600_000
 
-  defmodule EchoSock do
-    use NoopSock
+  defmodule EchoWebSock do
+    use NoopWebSock
     def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
   end
 
@@ -19,7 +19,7 @@ defmodule WebsocketAutobahnTest do
   @impl Plug
   def call(conn, _opts) do
     case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
-      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, compress: true})
+      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoWebSock, :ok, compress: true})
       false -> Plug.Conn.send_resp(conn, 204, <<>>)
     end
   end

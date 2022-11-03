@@ -56,7 +56,7 @@ defmodule Bandit.PhoenixAdapter do
           endpoint
         end
 
-      # This should be removed once Phoenix lands Sock support
+      # This should be removed once Phoenix lands WebSock support
       plug = {Bandit.PhoenixWebSocketEnablerPlug, plug}
 
       [plug: plug, display_plug: endpoint, scheme: scheme, options: opts]

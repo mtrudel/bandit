@@ -6,7 +6,7 @@ defmodule SimpleWebSocketClient do
   defdelegate tcp_client(context), to: ClientHelpers
 
   def http1_handshake(client, module, params \\ [], deflate \\ false) do
-    params = Keyword.put(params, :sock, module)
+    params = Keyword.put(params, :websock, module)
     params = if deflate, do: Keyword.put(params, :compress, "true"), else: params
     extensions = if deflate, do: "Sec-WebSocket-Extensions: permessage-deflate\r\n", else: ""
 
