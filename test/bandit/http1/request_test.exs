@@ -343,12 +343,12 @@ defmodule HTTP1RequestTest do
             |> Finch.request(context[:finch_name])
 
           assert response.status == 400
-          assert response.body == "Invalid WebSocket Handshake"
+          assert response.body == "Not a valid WebSocket upgrade request"
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "WebSocket upgrade indicated but conn does not indicate a valid handshake"
+      assert errors =~ "Not a valid WebSocket upgrade request"
     end
 
     defmodule MyNoopSock do
@@ -359,7 +359,7 @@ defmodule HTTP1RequestTest do
       # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
       # calling upgrade_adapter
       conn
-      |> upgrade_adapter(:websocket, {MyNoopSock, []})
+      |> upgrade_adapter(:websocket, {MyNoopSock, [], []})
     end
   end
 

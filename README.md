@@ -56,7 +56,9 @@ As of the current 0.5.x release series, Bandit features the following:
   2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Complete server support for WebSockets as defined in [RFC
   6455](https://datatracker.ietf.org/doc/html/rfc6455), comprehensively covered by automated
-  [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing
+  [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing. Per-message
+  compression as defined in [RFC 7692](https://datatracker.ietf.org/doc/html/rfc7692) is also
+  supported
 * Extremely scalable and performant client handling at a rate up to 5x that of Cowboy for the same
   workload with as-good-or-better memory use
 
@@ -74,8 +76,9 @@ there looks like this following:
 * [x] `0.3.x` series: Implement HTTP/2 adapter
 * [x] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [ ] `0.5.x` series: Implement WebSocket extension (in progress!)
-* [ ] `0.6.x` series: Enhance startup options, complete & revise documentation & tests
-* [ ] `0.7.x` series: Ready for general use, with a caveat that we're still not 1.0
+* [ ] `0.6.x` series: Comprehensive performance optimization & telemetry coverage
+* [ ] `0.7.x` series: Enhance startup options, general quality-of-life issues
+* [ ] `0.8.x` series: Bake-in. Ready for general use, with a caveat that we're still not 1.0
 * [ ] `1.x` series: Ready for general use, without reservation
 
 ## Using Bandit With Phoenix

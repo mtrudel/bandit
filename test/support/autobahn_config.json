@@ -1,10 +1,7 @@
 {
-	"options": {"failByDrop": false},
 	"outdir": "./reports/servers",
 
-	"servers": [{"agent": "bandit", "url": "ws://host.docker.internal:4000", "options": {"version": 18}}],
-
 	"cases": ["*"],
-	"exclude-cases": ["12.*", "13.*"],
+	"exclude-cases": [],
 	"exclude-agent-cases": {}
 }

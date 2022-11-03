@@ -9,12 +9,11 @@ defmodule WebSocketProtocolTest do
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
 
-    conn
-    |> Bandit.WebSocket.Handshake.handshake?()
-    |> case do
+    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
       true ->
         sock = conn.query_params["sock"] |> String.to_atom()
-        Plug.Conn.upgrade_adapter(conn, :websocket, {sock, conn.params, []})
+        compress = conn.query_params["compress"]
+        Plug.Conn.upgrade_adapter(conn, :websocket, {sock, conn.params, compress: compress})
 
       false ->
         Plug.Conn.send_resp(conn, 204, <<>>)
@@ -141,6 +140,68 @@ defmodule WebSocketProtocolTest do
 
       expected_payload = String.duplicate(payload, 3)
       assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
+    end
+  end
+
+  describe "compressed frames" do
+    test "correctly decompresses text frames and sends compressed frames back", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses binary frames and sends compressed frames back", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses fragmented text frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5>>
+      deflated_payload_continuation = <<163, 96, 20, 12>>
+      deflated_payload_continuation_2 = <<119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0x4)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses fragmented binary frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5>>
+      deflated_payload_continuation = <<163, 96, 20, 12>>
+      deflated_payload_continuation_2 = <<119, 0, 0>>
+      SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0x4)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "does not compress ping or pong frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoSock, [], true)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
     end
   end
 
@@ -326,6 +387,42 @@ defmodule WebSocketProtocolTest do
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1002 on a compressed frame when deflate not negotiated", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateSock)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    @tag capture_log: true
+    test "server sends a 1007 on a malformed compressed frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateSock, [], true)
+
+      deflated_payload = <<1, 2, 3>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive {:error, "Inflation error"}
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)

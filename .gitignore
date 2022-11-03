@@ -26,4 +26,4 @@ bandit-*.tar
 /priv/plts/
 
 # Ignore autobahn reports
-/test/support/autobahn_reports
+/autobahn_reports

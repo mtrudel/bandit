@@ -1,10 +1,10 @@
 defmodule WebsocketAutobahnTest do
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   @moduletag :external_conformance
-  @moduletag timeout: 600_000
+  @moduletag timeout: 3_600_000
 
   defmodule EchoSock do
     use NoopSock
@@ -18,20 +18,23 @@ defmodule WebsocketAutobahnTest do
 
   @impl Plug
   def call(conn, _opts) do
-    conn
-    |> Bandit.WebSocket.Handshake.handshake?()
-    |> case do
-      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, []})
+    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
+      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoSock, :ok, compress: true})
       false -> Plug.Conn.send_resp(conn, 204, <<>>)
     end
   end
 
   @tag capture_log: true
   test "autobahn test suite" do
-    # We need to be on port 4000, so start server with a handmade spec
-    Bandit.child_spec(plug: __MODULE__) |> start_supervised!()
+    # We can't use ServerHelpers since we need to bind on all interfaces
+    {:ok, server_pid} =
+      [plug: __MODULE__, options: [port: 0]]
+      |> Bandit.child_spec()
+      |> start_supervised()
 
-    {_, 0} =
+    {:ok, %{port: port}} = ThousandIsland.listener_info(server_pid)
+
+    output =
       System.cmd(
         "docker",
         [
@@ -40,25 +43,29 @@ defmodule WebsocketAutobahnTest do
           "-v",
           "#{Path.join(__DIR__, "../../support/autobahn_config.json")}:/fuzzingclient.json",
           "-v",
-          "#{Path.join(__DIR__, "../../support/autobahn_reports")}:/reports"
+          "#{Path.join(__DIR__, "../../../autobahn_reports")}:/reports"
         ] ++
-          cmds() ++
+          extra_args() ++
           [
             "--name",
             "fuzzingclient",
             "crossbario/autobahn-testsuite",
             "wstest",
             "--mode",
-            "fuzzingclient"
+            "fuzzingclient",
+            "-w",
+            "ws://host.docker.internal:#{port}"
           ],
         stderr_to_stdout: true
       )
 
+    assert {_, 0} = output
+
     failures =
-      Path.join(__DIR__, "../../support/autobahn_reports/servers/index.json")
+      Path.join(__DIR__, "../../../autobahn_reports/servers/index.json")
       |> File.read!()
       |> Jason.decode!()
-      |> Map.get("bandit")
+      |> Map.get("UnknownServer")
       |> Enum.map(fn {test_case, %{"behavior" => res, "behaviorClose" => res_close}} ->
         {test_case, res, res_close}
       end)
@@ -68,16 +75,13 @@ defmodule WebsocketAutobahnTest do
       end)
       |> Enum.sort_by(fn {code, _, _} -> code end)
 
-    assert failures == []
+    assert [] = failures
   end
 
-  if :os.type() == {:unix, :linux} do
-    defp cmds do
-      ["--add-host=host.docker.internal:host-gateway"]
-    end
-  else
-    defp cmds do
-      []
+  defp extra_args do
+    case :os.type() do
+      {:unix, :linux} -> ["--add-host=host.docker.internal:host-gateway"]
+      _ -> []
     end
   end
 end

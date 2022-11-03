@@ -64,6 +64,14 @@ defmodule WebSocketFrameSerializationTest do
   end
 
   describe "TEXT frames" do
+    test "serializes frames with fin and per-message compressed bits clear" do
+      frame = %Frame.Text{fin: false, data: String.duplicate("a", 125)}
+
+      assert Frame.serialize(frame) == [
+               [<<0x0::1, 0x0::3, 0x1::4>>, <<0::1, 125::7>>, frame.data]
+             ]
+    end
+
     test "serializes frames with fin bit set" do
       frame = %Frame.Text{fin: true, data: String.duplicate("a", 125)}
 
@@ -72,16 +80,24 @@ defmodule WebSocketFrameSerializationTest do
              ]
     end
 
-    test "serializes frames with fin bit clear" do
-      frame = %Frame.Text{fin: false, data: String.duplicate("a", 125)}
+    test "serializes frames with per-message compressed bit set" do
+      frame = %Frame.Text{compressed: true, data: String.duplicate("a", 125)}
 
       assert Frame.serialize(frame) == [
-               [<<0x0::1, 0x0::3, 0x1::4>>, <<0::1, 125::7>>, frame.data]
+               [<<0x0::1, 0x1::1, 0x0::2, 0x1::4>>, <<0::1, 125::7>>, frame.data]
              ]
     end
   end
 
   describe "BINARY frames" do
+    test "serializes frames with fin and per-message compressed bits clear" do
+      frame = %Frame.Binary{fin: false, data: String.duplicate("a", 125)}
+
+      assert Frame.serialize(frame) == [
+               [<<0x0::1, 0x0::3, 0x2::4>>, <<0::1, 125::7>>, frame.data]
+             ]
+    end
+
     test "serializes frames with fin bit set" do
       frame = %Frame.Binary{fin: true, data: String.duplicate("a", 125)}
 
@@ -90,11 +106,11 @@ defmodule WebSocketFrameSerializationTest do
              ]
     end
 
-    test "serializes frames with fin bit clear" do
-      frame = %Frame.Binary{fin: false, data: String.duplicate("a", 125)}
+    test "serializes frames with per-message compressed bit set" do
+      frame = %Frame.Binary{compressed: true, data: String.duplicate("a", 125)}
 
       assert Frame.serialize(frame) == [
-               [<<0x0::1, 0x0::3, 0x2::4>>, <<0::1, 125::7>>, frame.data]
+               [<<0x0::1, 0x1::1, 0x0::2, 0x2::4>>, <<0::1, 125::7>>, frame.data]
              ]
     end
   end
