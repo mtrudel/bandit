@@ -71,7 +71,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
   end
 
   # This is where we finally determine which parameters to accept. Note that we don't convert to
-  # atoms until this stage to avoid potential atom exhausiotn
+  # atoms until this stage to avoid potential atom exhaustion
   defp resolve_params(params) do
     @valid_params
     |> Enum.flat_map(fn param_name ->
@@ -85,7 +85,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
   defp init(params) do
     instance = struct(__MODULE__, params)
     inflate_context = :zlib.open()
-    :ok = :zlib.inflateInit(inflate_context, -instance.client_max_window_bits)
+    :ok = :zlib.inflateInit(inflate_context, fix_bits(-instance.client_max_window_bits))
     deflate_context = :zlib.open()
 
     :ok =
@@ -93,13 +93,19 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
         deflate_context,
         :default,
         :deflated,
-        -instance.server_max_window_bits,
+        fix_bits(-instance.server_max_window_bits),
         8,
         :default
       )
 
     %{instance | inflate_context: inflate_context, deflate_context: deflate_context}
   end
+
+  # https://www.erlang.org/doc/man/zlib.html#deflateInit-6
+  defp fix_bits(-8), do: -9
+  defp fix_bits(other), do: other
+
+  # Note that we pass back the context to the caller even though it is unmodified locally
 
   def inflate(data, %__MODULE__{} = context) do
     inflated_data =
