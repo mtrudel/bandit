@@ -10,6 +10,10 @@ defmodule Bandit.WebSocket.Handler do
   def handle_connection(socket, state) do
     {websock, websock_opts, connection_opts} = state.upgrade_opts
 
+    connection_opts
+    |> Keyword.take([:fullsweep_after])
+    |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
+
     state =
       state
       |> Map.take([:handler_module])
