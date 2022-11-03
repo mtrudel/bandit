@@ -174,6 +174,13 @@ defmodule Bandit.WebSocket.Connection do
     {:error, reason, %{connection | state: :closing}}
   end
 
+  defp do_deflate(msgs, socket, connection) when is_list(msgs) do
+    Enum.reduce(msgs, {:continue, connection}, fn
+      msg, {:continue, connection} -> do_deflate(msg, socket, connection)
+      _msg, other -> other
+    end)
+  end
+
   defp do_deflate({opcode, data} = msg, socket, connection) when opcode in [:text, :binary] do
     case PerMessageDeflate.deflate(data, connection.compress) do
       {:ok, data, compress} ->

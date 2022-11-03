@@ -119,6 +119,19 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
     end
 
+    defmodule InitListWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], :init}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitListWebSock)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
     defmodule InitCloseWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, :normal, :init}
@@ -266,6 +279,21 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule HandleInListWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInListWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
     end
 
     defmodule HandleInCloseWebSock do
@@ -447,6 +475,22 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
     end
 
+    defmodule HandleControlListWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlListWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
     defmodule HandleControlCloseWebSock do
       use NoopWebSock
       def handle_control(_data, state), do: {:stop, :normal, state}
@@ -574,6 +618,25 @@ defmodule WebSocketWebSockTest do
       Process.send(pid, "OK", [])
 
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule HandleInfoListWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoListWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
     end
 
     defmodule HandleInfoCloseWebSock do

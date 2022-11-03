@@ -30,7 +30,7 @@ defmodule Bandit.MixProject do
     [
       {:thousand_island, "~> 0.5.10"},
       {:plug, "~> 1.14"},
-      {:websock, "~> 0.4.2"},
+      {:websock, "~> 0.4.3"},
       {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.8", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
