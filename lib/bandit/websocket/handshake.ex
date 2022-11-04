@@ -116,6 +116,7 @@ defmodule Bandit.WebSocket.Handshake do
 
     conn
     |> get_req_header(field)
+    |> Enum.flat_map(&Plug.Conn.Utils.list/1)
     |> Enum.any?(&(String.downcase(&1, :ascii) == value))
   end
 end

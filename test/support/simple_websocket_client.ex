@@ -14,7 +14,7 @@ defmodule SimpleWebSocketClient do
     GET /?#{URI.encode_query(params)} HTTP/1.1\r
     Host: server.example.com\r
     Upgrade: websocket\r
-    Connection: Upgrade\r
+    Connection: keep-alive, Upgrade\r
     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
     Sec-WebSocket-Version: 13\r
     #{extensions}
