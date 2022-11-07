@@ -7,8 +7,9 @@
 Bandit is an HTTP server for Plug and WebSock apps.
 
 Bandit is written entirely in Elixir and is built atop [Thousand
-Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x and HTTP/2 clients over
-both HTTP and HTTPS. It is written with correctness, clarity & performance as fundamental goals. It was introduced at [ElixirConf 2021](https://www.youtube.com/watch?v=ZLjWyanLHuk).
+Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x,
+HTTP/2 and WebSocket clients over both HTTP and HTTPS. It is written with
+correctness, clarity & performance as fundamental goals.
 
 In [recent performance
 tests](https://github.com/mtrudel/network_benchmark/blob/0b18a9b299b9619c38d2a70ab967831565121d65/benchmarks-09-2021.pdf),
@@ -22,9 +23,9 @@ Bandit also emphasizes correctness. Its HTTP/2 implementation scores 100% on the
 [h2spec](https://github.com/summerwind/h2spec) suite in strict mode, and its
 WebSocket implementation scores 100% on the
 [Autobahn](https://github.com/crossbario/autobahn-testsuite) test suite.
-Extensive units tests (90%+ coverage for all non-legacy modules), credo analysis
-and dialyzer coverage round out a test suite that ensures that Bandit is and
-will remain a platform you can count on.
+Extensive test coverage, strict credo analysis and dialyzer coverage round out
+a test suite that ensures that Bandit is and will remain a platform you can
+count on.
 
 Lastly, Bandit exists to demystify the lower layers of infrastructure code. In a world where
 The New Thing is nearly always adding abstraction on top of abstraction, it's important to have
@@ -44,14 +45,16 @@ foundational work that is approachable & understandable by users above it in the
 
 ## Project Status
 
-* Complete support for running Phoenix applications (WebSocket support requires a recent version of Phoenix with WebSock support enabled)
+* Complete support for running
+  [Phoenix](https://github.com/phoenixframework/phoenix) applications (WebSocket
+  support requires Phoenix 1.7+)
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
 * Complete support of the [WebSock API](https://github.com/mtrudel/websock)
+* Complete server support for HTTP/1.x as defined in [RFC
+  2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Complete server support for HTTP/2 as defined in [RFC
   7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
   [h2spec](https://github.com/summerwind/h2spec) conformance testing
-* Complete server support for HTTP/1.x as defined in [RFC
-  2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Complete server support for WebSockets as defined in [RFC
   6455](https://datatracker.ietf.org/doc/html/rfc6455), comprehensively covered by automated
   [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing. Per-message
@@ -106,14 +109,10 @@ Using Bandit to host your own Plug is very straightforward. Assuming you have a 
 implemented already, you can host it within Bandit by adding something similar to the following
 to your application's `Application.start/2` function:
 
-Usage of Bandit is very straightforward. Assuming you have a Plug module implemented already, you can
-host it within Bandit by adding something similar to the following to your application's
-`Application.start/2` function:
-
 ```elixir
 def start(_type, _args) do
   children = [
-    {Bandit, plug: MyApp.MyPlug, scheme: :http, options: [port: 4000]}
+    {Bandit, plug: MyApp.MyPlug}
   ]
 
   opts = [strategy: :one_for_one, name: MyApp.Supervisor]

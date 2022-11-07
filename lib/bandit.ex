@@ -51,8 +51,8 @@ defmodule Bandit do
   ```
 
   For details about writing Plug based applications, consult the excellent [Plug
-  documentation](https://hexdocs.pm/plug/) for plenty of examples & tips to get started. Note that
-  while Bandit supports the complete Plug API & should work correctly with any Plug-based
+  documentation](https://hexdocs.pm/plug/) for plenty of examples & tips to get started.
+  Bandit supports the complete Plug API & should work correctly with any Plug-based
   application. If you encounter errors using Bandit your Plug app, please do get in touch by
   filing an issue on the Bandit GitHub project (especially if the error does not occur with
   another HTTP server such as Cowboy).
