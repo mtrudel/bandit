@@ -49,7 +49,7 @@ foundational work that is approachable & understandable by users above it in the
   [Phoenix](https://github.com/phoenixframework/phoenix) applications (WebSocket
   support requires Phoenix 1.7+)
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
-* Complete support of the [WebSock API](https://github.com/mtrudel/websock)
+* Complete support of the [WebSock API](https://github.com/phoenixframework/websock)
 * Complete server support for HTTP/1.x as defined in [RFC
   2616](https://datatracker.ietf.org/doc/html/rfc2616)
 * Complete server support for HTTP/2 as defined in [RFC

@@ -5,7 +5,7 @@ defmodule Bandit do
   As an HTTP server, Bandit's primary goal is to act as 'glue' between client connections managed
   by [Thousand Island](https://github.com/mtrudel/thousand_island) and application code defined
   via the [Plug](https://github.com/elixir-plug/plug) and/or
-  [WebSock](https://github.com/mtrudel/websock) APIs. As such there really isn't a whole lot of
+  [WebSock](https://github.com/phoenixframework/websock) APIs. As such there really isn't a whole lot of
   user-visible surface area to Bandit, and as a consequence the API documentation presented here
   is somewhat sparse. This is by design! Bandit is intended to 'just work' in almost all cases;
   the only thought users typically have to put into Bandit comes in the choice of which options (if
