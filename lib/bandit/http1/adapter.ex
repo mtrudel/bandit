@@ -121,10 +121,7 @@ defmodule Bandit.HTTP1.Adapter do
   # Unwrap different path returned by :erlang.decode_packet/3
   defp resolve_path({:abs_path, _path} = path, _method), do: {:ok, path}
   defp resolve_path({:absoluteURI, _scheme, _host, _port, _path} = path, _method), do: {:ok, path}
-
-  # Normally an OPTIONS request with `*` as path translates to an URL without any path or trailing slash
-  # Since Plug.Router matching MUST HAVE a path, we map it to `/*`
-  defp resolve_path(:*, 'OPTIONS'), do: {:ok, {:abs_path, '/*'}}
+  defp resolve_path(:*, :OPTIONS), do: {:ok, {:options, :*}}
 
   defp resolve_path({:scheme, _scheme, _path}, 'CONNECT'),
     do: {:error, "CONNECT is not supported"}

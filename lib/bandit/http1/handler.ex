@@ -64,6 +64,11 @@ defmodule Bandit.HTTP1.Handler do
   defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, port, path}),
     do: URI.parse("#{scheme}://#{host}:#{port}#{path}")
 
+  defp build_uri(scheme, host, {:options, :*}) do
+    URI.parse("#{scheme}://#{host}/*")
+    |> Map.put(:path, "*")
+  end
+
   defp call_plug(%Plug.Conn{adapter: {Adapter, req}} = conn, {plug, plug_opts}) do
     {:ok, plug.call(conn, plug_opts)}
   rescue
