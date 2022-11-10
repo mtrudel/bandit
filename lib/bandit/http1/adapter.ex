@@ -72,7 +72,7 @@ defmodule Bandit.HTTP1.Adapter do
 
       {:ok, {:http_request, method, path, version}, rest} ->
         with {:ok, version} <- get_version(version),
-          path <- resolve_path(path) do
+             {:ok, path} <- resolve_path(path, method) do
           do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
         end
 
@@ -82,7 +82,7 @@ defmodule Bandit.HTTP1.Adapter do
           :httph,
           [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers],
           to_string(method),
-          to_string(path)
+          path
         )
 
       {:ok, :http_eoh, rest} ->
@@ -118,23 +118,21 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp resolve_path(path) do
-    path
-    |> get_path()
-    |> maybe_add_leading_slash()
-  end
-
   # Unwrap different path returned by :erlang.decode_packet/3
-  defp get_path({:abs_path, path}), do: path
-  defp get_path({:absoluteURI, _scheme, _host, _port, path}), do: path
-  defp get_path({:scheme, _scheme, path}), do: path
-  defp get_path(:*), do: '/*'
-  defp get_path(path), do: path
+  defp resolve_path({:abs_path, _path} = path, _method), do: {:ok, path}
+  defp resolve_path({:absoluteURI, _scheme, _host, _port, _path} = path, _method), do: {:ok, path}
 
-  # If the path contains no '/' the URL construction will fail
-  # This assures a leading slash for all paths
-  defp maybe_add_leading_slash([?/ | _rest] = path), do: path
-  defp maybe_add_leading_slash(path), do: [?/ | path]
+  # Normally an OPTIONS request with `*` as path translates to an URL without any path or trailing slash
+  # Since Plug.Router matching MUST HAVE a path, we map it to `/*`
+  defp resolve_path(:*, 'OPTIONS'), do: {:ok, {:abs_path, '/*'}}
+
+  defp resolve_path({:scheme, _scheme, _path}, 'CONNECT'),
+    do: {:error, "CONNECT is not supported"}
+
+  defp resolve_path(_path, _method),
+    do:
+      {:error,
+       "Not supported. Path must be an absolute path, an absolute URI or `*` for a global OPTIONS request."}
 
   ##############
   # Body Reading

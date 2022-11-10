@@ -145,50 +145,51 @@ defmodule HTTP1RequestTest do
       assert valid_date_header?(date)
     end
 
-    test "handles non-absolute path correctly", context do
+    @tag capture_log: true
+    test "returns 400 if a non-absolute path is send", context do
       client = ClientHelpers.tcp_client(context)
 
-      :gen_tcp.send(client, "GET ./..//non_absolute_path HTTP/1.0\r\n\r\n")
+      :gen_tcp.send(client, "GET ./../non_absolute_path HTTP/1.0\r\nHost: localhost\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       assert [
-               "HTTP/1.0 200 OK",
+               "HTTP/1.0 400 Bad Request",
                "date: " <> date,
-               "content-length: 0"
-               | _rest
+               "content-length: 0",
+               "",
+               ""
              ] = String.split(response, "\r\n")
 
       assert valid_date_header?(date)
     end
 
-    def non_absolute_path(conn) do
-      send_resp(conn, 200, "")
-    end
-
-    test "handles path without a leading slash correctly", context do
+    @tag capture_log: true
+    test "returns 400 if path has no leading slash", context do
       client = ClientHelpers.tcp_client(context)
 
-      :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\n\r\n")
+      :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\nHost: localhost\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       assert [
-               "HTTP/1.0 200 OK",
+               "HTTP/1.0 400 Bad Request",
                "date: " <> date,
-               "content-length: 0"
-               | _rest
+               "content-length: 0",
+               "",
+               ""
              ] = String.split(response, "\r\n")
 
       assert valid_date_header?(date)
     end
 
-    def path_without_leading_slash(conn) do
-      send_resp(conn, 200, "")
-    end
-
+    @tag capture_log: true
     test "handle absoluteURI as path correctly", context do
       client = ClientHelpers.tcp_client(context)
 
-      :gen_tcp.send(client, "GET #{context[:base]}/absolute_url_path HTTP/1.0\r\n\r\n")
+      :gen_tcp.send(
+        client,
+        "GET http://example-host.com:1337/absolute_uri_path HTTP/1.0\r\nHost: localhost\r\n\r\n"
+      )
+
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       assert [
@@ -201,28 +202,29 @@ defmodule HTTP1RequestTest do
       assert valid_date_header?(date)
     end
 
-    def absolute_url_path(conn) do
+    def absolute_uri_path(conn) do
+      assert conn.host == "example-host.com"
+      assert conn.port == 1337
+      assert conn.path_info == ["absolute_uri_path"]
       send_resp(conn, 200, "")
     end
 
-    test "handle schemeURI as path correctly", context do
+    @tag capture_log: true
+    test "returns 400 for authority-form / CONNECT requests", context do
       client = ClientHelpers.tcp_client(context)
 
-      :gen_tcp.send(client, "GET http:scheme_url_path HTTP/1.0\r\n\r\n")
+      :gen_tcp.send(client, "CONNECT www.example.com:80 HTTP/1.0\r\nHost: localhost\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
       assert [
-               "HTTP/1.0 200 OK",
+               "HTTP/1.0 400 Bad Request",
                "date: " <> date,
-               "content-length: 0"
-               | _rest
+               "content-length: 0",
+               "",
+               ""
              ] = String.split(response, "\r\n")
 
       assert valid_date_header?(date)
-    end
-
-    def scheme_url_path(conn) do
-      send_resp(conn, 200, "")
     end
   end
 

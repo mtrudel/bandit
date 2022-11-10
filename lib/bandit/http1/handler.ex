@@ -39,7 +39,9 @@ defmodule Bandit.HTTP1.Handler do
         # Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
         {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
         scheme = if Adapter.secure?(req), do: :https, else: :http
-        uri = URI.parse("#{scheme}://#{host}#{path}")
+
+        uri = build_uri(scheme, host, path)
+
         {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
 
       {:error, :timeout} ->
@@ -51,6 +53,16 @@ defmodule Bandit.HTTP1.Handler do
         {:error, reason}
     end
   end
+
+  # Build URI dependent on path type
+  defp build_uri(scheme, host, {:abs_path, path}),
+    do: URI.parse("#{scheme}://#{host}#{path}")
+
+  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, :undefined, path}),
+    do: URI.parse("#{scheme}://#{host}#{path}")
+
+  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, port, path}),
+    do: URI.parse("#{scheme}://#{host}:#{port}#{path}")
 
   defp call_plug(%Plug.Conn{adapter: {Adapter, req}} = conn, {plug, plug_opts}) do
     {:ok, plug.call(conn, plug_opts)}
