@@ -150,7 +150,7 @@ progress moving in the same direction.
 All contributors must agree and adhere to the project's [Code of
 Conduct](https://github.com/mtrudel/bandit/blob/main/CODE_OF_CONDUCT.md).
 
-Security disclosures should be sent privately to mat@geeky.net.
+Security disclosures should be handled per Bandit's published [security policy](https://github.com/mtrudel/bandit/blob/main/SECURITY.md).
 
 ## Installation
 
