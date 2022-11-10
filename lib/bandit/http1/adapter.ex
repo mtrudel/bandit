@@ -75,13 +75,19 @@ defmodule Bandit.HTTP1.Adapter do
         end
 
       {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        version =
-          case version do
-            {1, 1} -> :"HTTP/1.1"
-            {1, 0} -> :"HTTP/1.0"
-          end
+        case get_version(version) do
+          {:ok, version} ->
+            do_read_headers(
+              %{req | buffer: rest, version: version},
+              :httph,
+              headers,
+              method,
+              path
+            )
 
-        do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
+          {:error, reason} ->
+            {:error, reason}
+        end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
         do_read_headers(
@@ -113,6 +119,10 @@ defmodule Bandit.HTTP1.Adapter do
       _ -> version == :"HTTP/1.1"
     end
   end
+
+  defp get_version({1, 1}), do: {:ok, :"HTTP/1.1"}
+  defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
+  defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
   defp get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do

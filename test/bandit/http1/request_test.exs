@@ -125,6 +125,25 @@ defmodule HTTP1RequestTest do
 
       assert valid_date_header?(date)
     end
+
+    @tag capture_log: true
+    test "returns a 400 if the request has an invalid http version", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET /some_request_path\r\n")
+
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
   end
 
   describe "response handling" do
