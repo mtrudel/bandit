@@ -26,41 +26,38 @@ defmodule Bandit.HTTP1.Adapter do
   ################
 
   def read_headers(req) do
-    case do_read_headers(req) do
-      {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} ->
-        body_size = get_header(headers, "content-length")
-        body_encoding = get_header(headers, "transfer-encoding")
-        connection = get_header(headers, "connection")
-        keepalive = should_keepalive?(version, connection)
+    with {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} <-
+           do_read_headers(req) do
+      body_size = get_header(headers, "content-length")
+      body_encoding = get_header(headers, "transfer-encoding")
+      connection = get_header(headers, "connection")
+      keepalive = should_keepalive?(version, connection)
 
-        case {body_size, body_encoding} do
-          {nil, nil} ->
-            {:ok, headers, method, path,
-             %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+      case {body_size, body_encoding} do
+        {nil, nil} ->
+          {:ok, headers, method, path,
+           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-          {body_size, nil} ->
-            {:ok, headers, method, path,
-             %{
-               req
-               | state: :headers_read,
-                 body_size: String.to_integer(body_size) - byte_size(buffer),
-                 connection: connection,
-                 keepalive: keepalive
-             }}
+        {body_size, nil} ->
+          {:ok, headers, method, path,
+           %{
+             req
+             | state: :headers_read,
+               body_size: String.to_integer(body_size) - byte_size(buffer),
+               connection: connection,
+               keepalive: keepalive
+           }}
 
-          {_, body_encoding} ->
-            {:ok, headers, method, path,
-             %{
-               req
-               | state: :headers_read,
-                 body_encoding: body_encoding,
-                 connection: connection,
-                 keepalive: keepalive
-             }}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+        {_, body_encoding} ->
+          {:ok, headers, method, path,
+           %{
+             req
+             | state: :headers_read,
+               body_encoding: body_encoding,
+               connection: connection,
+               keepalive: keepalive
+           }}
+      end
     end
   end
 
@@ -69,24 +66,13 @@ defmodule Bandit.HTTP1.Adapter do
   defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
-        case grow_buffer(req, 0) do
-          {:ok, req} -> do_read_headers(req, type, headers, method, path)
-          {:error, reason} -> {:error, reason}
+        with {:ok, req} <- grow_buffer(req, 0) do
+          do_read_headers(req, type, headers, method, path)
         end
 
       {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        case get_version(version) do
-          {:ok, version} ->
-            do_read_headers(
-              %{req | buffer: rest, version: version},
-              :httph,
-              headers,
-              method,
-              path
-            )
-
-          {:error, reason} ->
-            {:error, reason}
+        with {:ok, version} <- get_version(version) do
+          do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
         end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
@@ -146,25 +132,20 @@ defmodule Bandit.HTTP1.Adapter do
       when is_number(body_size) do
     to_read = min(body_size, Keyword.get(opts, :length, 8_000_000))
 
-    case grow_buffer(req, to_read, opts) do
-      {:ok, %__MODULE__{buffer: buffer} = req} ->
-        remaining_bytes = body_size - byte_size(buffer)
+    with {:ok, %__MODULE__{buffer: buffer} = req} <- grow_buffer(req, to_read, opts) do
+      remaining_bytes = body_size - byte_size(buffer)
 
-        if remaining_bytes > 0 do
-          {:more, buffer, %{req | buffer: <<>>, body_size: remaining_bytes}}
-        else
-          {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      if remaining_bytes > 0 do
+        {:more, buffer, %{req | buffer: <<>>, body_size: remaining_bytes}}
+      else
+        {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+      end
     end
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
-    case do_read_chunk(req, <<>>, opts) do
-      {:ok, body, req} -> {:ok, IO.iodata_to_binary(body), req}
-      other -> other
+    with {:ok, body, req} <- do_read_chunk(req, <<>>, opts) do
+      {:ok, IO.iodata_to_binary(body), req}
     end
   end
 
@@ -188,16 +169,14 @@ defmodule Bandit.HTTP1.Adapter do
             do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
           _ ->
-            case grow_buffer(req, chunk_size - byte_size(rest), opts) do
-              {:ok, req} -> do_read_chunk(req, body, opts)
-              {:error, reason} -> {:error, reason}
+            with {:ok, req} <- grow_buffer(req, chunk_size - byte_size(rest), opts) do
+              do_read_chunk(req, body, opts)
             end
         end
 
       _ ->
-        case grow_buffer(req, 0, opts) do
-          {:ok, req} -> do_read_chunk(req, body, opts)
-          {:error, reason} -> {:error, reason}
+        with {:ok, req} <- grow_buffer(req, 0, opts) do
+          do_read_chunk(req, body, opts)
         end
     end
   end
@@ -210,18 +189,14 @@ defmodule Bandit.HTTP1.Adapter do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
 
-    case Socket.recv(socket, read_size, read_timeout) do
-      {:ok, chunk} ->
-        remaining_bytes = to_read - byte_size(chunk)
+    with {:ok, chunk} <- Socket.recv(socket, read_size, read_timeout) do
+      remaining_bytes = to_read - byte_size(chunk)
 
-        if remaining_bytes > 0 do
-          grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
-        else
-          {:ok, %{req | buffer: buffer <> chunk}}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      if remaining_bytes > 0 do
+        grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
+      else
+        {:ok, %{req | buffer: buffer <> chunk}}
+      end
     end
   end
 
