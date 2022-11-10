@@ -46,12 +46,13 @@ defmodule ServerHelpers do
 
       def call(conn, []) do
         function =
-          conn.path_info
-          |> Enum.filter(fn path ->
-            path != ".." and path != "." and not String.starts_with?(path, "localhost:")
-          end)
-          |> List.first()
-          |> String.to_existing_atom()
+          if conn.path_info == ["*"] do
+            :global_options
+          else
+            conn.path_info
+            |> List.first()
+            |> String.to_existing_atom()
+          end
 
         apply(__MODULE__, function, [conn])
       end

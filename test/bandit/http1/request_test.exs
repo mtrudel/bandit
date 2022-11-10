@@ -210,6 +210,33 @@ defmodule HTTP1RequestTest do
     end
 
     @tag capture_log: true
+    test "handle global OPTIONS request correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "OPTIONS * HTTP/1.0\r\nHost: localhost\r\n\r\n"
+      )
+
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def global_options(conn) do
+      assert conn.request_path == "*"
+      assert conn.path_info == ["*"]
+      send_resp(conn, 200, "")
+    end
+
+    @tag capture_log: true
     test "returns 400 for authority-form / CONNECT requests", context do
       client = ClientHelpers.tcp_client(context)
 
