@@ -144,6 +144,86 @@ defmodule HTTP1RequestTest do
 
       assert valid_date_header?(date)
     end
+
+    test "handles non-absolute path correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET ./..//non_absolute_path HTTP/1.0\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def non_absolute_path(conn) do
+      send_resp(conn, 200, "")
+    end
+
+    test "handles path without a leading slash correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def path_without_leading_slash(conn) do
+      send_resp(conn, 200, "")
+    end
+
+    test "handle absoluteURI as path correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET #{context[:base]}/absolute_url_path HTTP/1.0\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def absolute_url_path(conn) do
+      send_resp(conn, 200, "")
+    end
+
+    test "handle schemeURI as path correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET http:scheme_url_path HTTP/1.0\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def scheme_url_path(conn) do
+      send_resp(conn, 200, "")
+    end
   end
 
   describe "response handling" do

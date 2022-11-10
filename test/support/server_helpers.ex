@@ -45,7 +45,14 @@ defmodule ServerHelpers do
       end
 
       def call(conn, []) do
-        function = String.to_atom(List.first(conn.path_info))
+        function =
+          conn.path_info
+          |> Enum.filter(fn path ->
+            path != ".." and path != "." and not String.starts_with?(path, "localhost:")
+          end)
+          |> List.first()
+          |> String.to_existing_atom()
+
         apply(__MODULE__, function, [conn])
       end
 

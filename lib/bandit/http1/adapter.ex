@@ -70,8 +70,9 @@ defmodule Bandit.HTTP1.Adapter do
           do_read_headers(req, type, headers, method, path)
         end
 
-      {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        with {:ok, version} <- get_version(version) do
+      {:ok, {:http_request, method, path, version}, rest} ->
+        with {:ok, version} <- get_version(version),
+          path <- resolve_path(path) do
           do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
         end
 
@@ -116,6 +117,23 @@ defmodule Bandit.HTTP1.Adapter do
       nil -> default
     end
   end
+
+  defp resolve_path(path) do
+    path
+    |> get_path()
+    |> maybe_add_leading_slash()
+  end
+
+  # Unwrap different path returned by :erlang.decode_packet/3
+  defp get_path({:abs_path, path}), do: path
+  defp get_path({:absoluteURI, _scheme, _host, _port, path}), do: path
+  defp get_path({:scheme, _scheme, path}), do: path
+  defp get_path(path), do: path
+
+  # If the path contains no '/' the URL construction will fail
+  # This assures a leading slash for all paths
+  defp maybe_add_leading_slash([?/ | _rest] = path), do: path
+  defp maybe_add_leading_slash(path), do: [?/ | path]
 
   ##############
   # Body Reading
