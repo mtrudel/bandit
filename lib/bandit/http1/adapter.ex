@@ -128,6 +128,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp get_path({:abs_path, path}), do: path
   defp get_path({:absoluteURI, _scheme, _host, _port, path}), do: path
   defp get_path({:scheme, _scheme, path}), do: path
+  defp get_path(:*), do: '/*'
   defp get_path(path), do: path
 
   # If the path contains no '/' the URL construction will fail
