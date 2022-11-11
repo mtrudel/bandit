@@ -64,7 +64,7 @@ defmodule Bandit.HTTP1.Handler do
   defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, port, path}),
     do: URI.parse("#{scheme}://#{host}:#{port}#{path}")
 
-  defp build_uri(scheme, host, {:options, :*}) do
+  defp build_uri(scheme, host, :*) do
     URI.parse("#{scheme}://#{host}/*")
     |> Map.put(:path, "*")
   end

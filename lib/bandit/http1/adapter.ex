@@ -72,7 +72,7 @@ defmodule Bandit.HTTP1.Adapter do
 
       {:ok, {:http_request, method, path, version}, rest} ->
         with {:ok, version} <- get_version(version),
-             {:ok, path} <- resolve_path(path, method) do
+             {:ok, path} <- resolve_path(path) do
           do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
         end
 
@@ -119,14 +119,14 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   # Unwrap different path returned by :erlang.decode_packet/3
-  defp resolve_path({:abs_path, _path} = path, _method), do: {:ok, path}
-  defp resolve_path({:absoluteURI, _scheme, _host, _port, _path} = path, _method), do: {:ok, path}
-  defp resolve_path(:*, :OPTIONS), do: {:ok, {:options, :*}}
+  defp resolve_path({:abs_path, _path} = path), do: {:ok, path}
+  defp resolve_path({:absoluteURI, _scheme, _host, _port, _path} = path), do: {:ok, path}
+  defp resolve_path(:*), do: {:ok, :*}
 
-  defp resolve_path({:scheme, _scheme, _path}, 'CONNECT'),
-    do: {:error, "CONNECT is not supported"}
+  defp resolve_path({:scheme, _scheme, _path}),
+    do: {:error, "schemeURI is not supported"}
 
-  defp resolve_path(_path, _method),
+  defp resolve_path(_path),
     do:
       {:error,
        "Not supported. Path must be an absolute path, an absolute URI or `*` for a global OPTIONS request."}
