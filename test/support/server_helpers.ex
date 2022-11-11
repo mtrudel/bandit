@@ -45,15 +45,7 @@ defmodule ServerHelpers do
       end
 
       def call(conn, []) do
-        function =
-          if conn.path_info == ["*"] do
-            :global_options
-          else
-            conn.path_info
-            |> List.first()
-            |> String.to_existing_atom()
-          end
-
+        function = String.to_atom(List.first(conn.path_info))
         apply(__MODULE__, function, [conn])
       end
 

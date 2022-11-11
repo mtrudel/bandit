@@ -230,7 +230,7 @@ defmodule HTTP1RequestTest do
       assert valid_date_header?(date)
     end
 
-    def global_options(conn) do
+    def unquote(:*)(conn) do
       assert conn.request_path == "*"
       assert conn.path_info == ["*"]
       send_resp(conn, 200, "")
