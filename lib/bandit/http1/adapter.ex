@@ -129,7 +129,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp resolve_path(_path),
     do:
       {:error,
-       "Not supported. Path must be an absolute path, an absolute URI or `*` for a global OPTIONS request."}
+       "Not supported. Path must be an absolute path, an absolute URI or `*` request."}
 
   ##############
   # Body Reading
