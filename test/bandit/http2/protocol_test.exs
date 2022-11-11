@@ -269,7 +269,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/large_headers", context.port)
 
-      random_string = for _ <- 1..60_000, into: "", do: <<Enum.random('0123456789abcdef')>>
+      random_string = for _ <- 1..60_000, into: "", do: <<Enum.random(~c"0123456789abcdef")>>
       <<to_send::binary-size(16_384), rest::binary>> = random_string
       SimpleH2Client.send_body(socket, 1, false, to_send)
 
