@@ -26,7 +26,8 @@ defmodule Bandit.HTTP1.Adapter do
   ################
 
   def read_headers(req) do
-    with {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} <-
+    with {:ok, headers, method, request_target,
+          %__MODULE__{version: version, buffer: buffer} = req} <-
            do_read_headers(req) do
       body_size = get_header(headers, "content-length")
       body_encoding = get_header(headers, "transfer-encoding")
@@ -35,11 +36,11 @@ defmodule Bandit.HTTP1.Adapter do
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, path,
+          {:ok, headers, method, request_target,
            %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
         {body_size, nil} ->
-          {:ok, headers, method, path,
+          {:ok, headers, method, request_target,
            %{
              req
              | state: :headers_read,
@@ -49,7 +50,7 @@ defmodule Bandit.HTTP1.Adapter do
            }}
 
         {_, body_encoding} ->
-          {:ok, headers, method, path,
+          {:ok, headers, method, request_target,
            %{
              req
              | state: :headers_read,
@@ -61,32 +62,29 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
+  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil)
 
-  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
+  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
         with {:ok, req} <- grow_buffer(req, 0) do
-          do_read_headers(req, type, headers, method, path)
+          do_read_headers(req, type, headers, method, request_target)
         end
 
-      {:ok, {:http_request, method, path, version}, rest} ->
+      {:ok, {:http_request, method, request_target, version}, rest} ->
         with {:ok, version} <- get_version(version),
-             {:ok, path} <- resolve_path(path) do
-          do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
+             {:ok, request_target} <- resolve_request_target(request_target),
+             req <- %{req | buffer: rest, version: version} do
+          do_read_headers(req, :httph, headers, method, request_target)
         end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
-        do_read_headers(
-          %{req | buffer: rest},
-          :httph,
-          [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers],
-          to_string(method),
-          path
-        )
+        req = %{req | buffer: rest}
+        headers = [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers]
+        do_read_headers(req, :httph, headers, to_string(method), request_target)
 
       {:ok, :http_eoh, rest} ->
-        {:ok, headers, method, path, %{req | state: :headers_read, buffer: rest}}
+        {:ok, headers, method, request_target, %{req | state: :headers_read, buffer: rest}}
 
       {:ok, {:http_error, _reason}, _rest} ->
         {:error, :invalid_request}
@@ -118,16 +116,19 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  # Unwrap different path returned by :erlang.decode_packet/3
-  defp resolve_path({:abs_path, _path} = path), do: {:ok, path}
-  defp resolve_path({:absoluteURI, _scheme, _host, _port, _path} = path), do: {:ok, path}
-  defp resolve_path(:*), do: {:ok, :*}
+  # Unwrap different request_targets returned by :erlang.decode_packet/3
+  defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
 
-  defp resolve_path({:scheme, _scheme, _path}),
+  defp resolve_request_target({:absoluteURI, _scheme, _host, _port, _path} = requeast_target),
+    do: {:ok, requeast_target}
+
+  defp resolve_request_target(:*), do: {:ok, :*}
+
+  defp resolve_request_target({:scheme, _scheme, _path}),
     do: {:error, "schemeURI is not supported"}
 
-  defp resolve_path(_path),
-    do: {:error, "Not supported. Path must be an absolute path, an absolute URI or `*` request."}
+  defp resolve_request_target(_request_target),
+    do: {:error, "Unsupported request target (RFC9112§3.2)"}
 
   ##############
   # Body Reading

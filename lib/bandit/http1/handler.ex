@@ -30,7 +30,7 @@ defmodule Bandit.HTTP1.Handler do
 
   defp build_conn(req) do
     case Adapter.read_headers(req) do
-      {:ok, headers, method, path, req} ->
+      {:ok, headers, method, request_target, req} ->
         %{address: remote_ip} = Adapter.get_peer_data(req)
 
         # Parse a string to build a URI struct. This is quite a hack. In general, canonicalizing
@@ -40,7 +40,7 @@ defmodule Bandit.HTTP1.Handler do
         {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
         scheme = if Adapter.secure?(req), do: :https, else: :http
 
-        uri = build_uri(scheme, host, path)
+        uri = build_uri(scheme, host, request_target)
 
         {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
 
@@ -54,7 +54,7 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  # Build URI dependent on path type
+  # Build URI dependent on request target type
   defp build_uri(scheme, host, {:abs_path, path}),
     do: URI.parse("#{scheme}://#{host}#{path}")
 
