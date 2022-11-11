@@ -127,9 +127,7 @@ defmodule Bandit.HTTP1.Adapter do
     do: {:error, "schemeURI is not supported"}
 
   defp resolve_path(_path),
-    do:
-      {:error,
-       "Not supported. Path must be an absolute path, an absolute URI or `*` request."}
+    do: {:error, "Not supported. Path must be an absolute path, an absolute URI or `*` request."}
 
   ##############
   # Body Reading
