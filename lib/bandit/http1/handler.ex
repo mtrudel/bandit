@@ -30,7 +30,7 @@ defmodule Bandit.HTTP1.Handler do
 
   defp build_conn(req) do
     case Adapter.read_headers(req) do
-      {:ok, headers, method, path, req} ->
+      {:ok, headers, method, request_target, req} ->
         %{address: remote_ip} = Adapter.get_peer_data(req)
 
         # Parse a string to build a URI struct. This is quite a hack. In general, canonicalizing
@@ -39,7 +39,9 @@ defmodule Bandit.HTTP1.Handler do
         # Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
         {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
         scheme = if Adapter.secure?(req), do: :https, else: :http
-        uri = URI.parse("#{scheme}://#{host}#{path}")
+
+        uri = build_uri(scheme, host, request_target)
+
         {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
 
       {:error, :timeout} ->
@@ -50,6 +52,21 @@ defmodule Bandit.HTTP1.Handler do
         attempt_to_send_fallback(req, 400)
         {:error, reason}
     end
+  end
+
+  # Build URI dependent on request target type
+  defp build_uri(scheme, host, {:abs_path, path}),
+    do: URI.parse("#{scheme}://#{host}#{path}")
+
+  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, :undefined, path}),
+    do: URI.parse("#{scheme}://#{host}#{path}")
+
+  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, port, path}),
+    do: URI.parse("#{scheme}://#{host}:#{port}#{path}")
+
+  defp build_uri(scheme, host, :*) do
+    URI.parse("#{scheme}://#{host}/*")
+    |> Map.put(:path, "*")
   end
 
   defp call_plug(%Plug.Conn{adapter: {Adapter, req}} = conn, {plug, plug_opts}) do

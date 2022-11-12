@@ -144,6 +144,115 @@ defmodule HTTP1RequestTest do
 
       assert valid_date_header?(date)
     end
+
+    @tag capture_log: true
+    test "returns 400 if a non-absolute path is send", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET ./../non_absolute_path HTTP/1.0\r\nHost: localhost\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    @tag capture_log: true
+    test "returns 400 if path has no leading slash", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\nHost: localhost\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    @tag capture_log: true
+    test "handle absoluteURI as path correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "GET http://example-host.com:1337/absolute_uri_path HTTP/1.0\r\nHost: localhost\r\n\r\n"
+      )
+
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def absolute_uri_path(conn) do
+      assert conn.host == "example-host.com"
+      assert conn.port == 1337
+      assert conn.path_info == ["absolute_uri_path"]
+      send_resp(conn, 200, "")
+    end
+
+    @tag capture_log: true
+    test "handle global OPTIONS request correctly", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "OPTIONS * HTTP/1.0\r\nHost: localhost\r\n\r\n"
+      )
+
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 200 OK",
+               "date: " <> date,
+               "content-length: 0"
+               | _rest
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
+
+    def unquote(:*)(conn) do
+      assert conn.request_path == "*"
+      assert conn.path_info == ["*"]
+      send_resp(conn, 200, "")
+    end
+
+    @tag capture_log: true
+    test "returns 400 for authority-form / CONNECT requests", context do
+      client = ClientHelpers.tcp_client(context)
+
+      :gen_tcp.send(client, "CONNECT www.example.com:80 HTTP/1.0\r\nHost: localhost\r\n\r\n")
+      {:ok, response} = :gen_tcp.recv(client, 0)
+
+      assert [
+               "HTTP/1.0 400 Bad Request",
+               "date: " <> date,
+               "content-length: 0",
+               "",
+               ""
+             ] = String.split(response, "\r\n")
+
+      assert valid_date_header?(date)
+    end
   end
 
   describe "response handling" do
