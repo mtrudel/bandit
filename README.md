@@ -103,6 +103,9 @@ Using Bandit to host your Phoenix application couldn't be simpler:
 3. That's it! You should now see messages at startup indicating that Phoenix is using Bandit to
 serve your endpoint.
 
+For more details about how to configure Bandit within Phoenix, consult the
+[Bandit.PhoenixAdapter](https://hexdocs.pm/bandit/Bandit.PhoenixAdapter.html) documentation.
+
 ## Using Bandit With Plug Applications
 
 Using Bandit to host your own Plug is very straightforward. Assuming you have a Plug module

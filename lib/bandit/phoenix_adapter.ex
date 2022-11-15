@@ -18,20 +18,27 @@ defmodule Bandit.PhoenixAdapter do
 
   ## Endpoint configuration
 
-  This adapter uses the following endpoint configuration:
+  Configuring Bandit within your Phoenix app is done in largely the same way as configuration for
+  Cowboy works. For the most part, your existing configuration within your `/config/*.exs` files
+  will work unchanged, although some of the more exotic options are different. Bandit supports the
+  following parameters within the `:http` and `:https` parameters:
 
     * `:http`: the configuration for the HTTP server. Accepts the following options:
-      * `port`: The port to run on. Defaults to 4000
-      * `ip`: The address to bind to. Can be specified as `{127, 0, 0, 1}`, or using `{:local,
-        path}` to bind to a Unix domain socket. Defaults to {127, 0, 0, 1}.
+      * `port`: The port to run on. Defaults to 4000. Note that if a Unix domain socket is
+        specified in the `ip` option, the value of `port` **must** be `0`.
+      * `ip`: The address to bind to. Can be specified as a 4-element tuple such as `{127, 0, 0, 1}`
+        for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
+        to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.TCP`
     
       Defaults to `false`, which will cause Bandit to not start an HTTP server.
 
     * `:https`: the configuration for the HTTPS server. Accepts the following options:
-      * `port`: The port to run on. Defaults to 4040
-      * `ip`: The address to bind to. Can be specified as `{127, 0, 0, 1}`, or using `{:local,
-        path}` to bind to a Unix domain socket. Defaults to {127, 0, 0, 1}.
+      * `port`: The port to run on. Defaults to 4040. Note that if a Unix domain socket is
+        specified in the `ip` option, the value of `port` **must** be `0`.
+      * `ip`: The address to bind to. Can be specified as a 4-element tuple such as `{127, 0, 0, 1}`
+        for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
+        to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.SSL`
     
       Defaults to `false`, which will cause Bandit to not start an HTTPS server.
@@ -43,9 +50,9 @@ defmodule Bandit.PhoenixAdapter do
   def child_specs(endpoint, config) do
     for {scheme, default_port} <- [http: 4000, https: 4040], opts = config[scheme] do
       port = Keyword.get(opts, :port, default_port)
-      ip = Keyword.get(opts, :ip, {127, 0, 0, 1})
+      ip_opt = Keyword.take(opts, [:ip])
       transport_options = Keyword.get(opts, :transport_options, [])
-      opts = [port: port_to_integer(port), transport_options: [ip: ip] ++ transport_options]
+      opts = [port: port_to_integer(port), transport_options: ip_opt ++ transport_options]
 
       plug =
         if config[:code_reloader] &&
