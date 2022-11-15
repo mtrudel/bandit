@@ -32,7 +32,7 @@ jobs:
             otp: 24.3.4.5
           - elixir:  1.14.0
             otp: 25.1
-            lint: true
+            primary: true
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
@@ -66,22 +66,22 @@ jobs:
         mix deps.compile
 
     - name: Check for unused dependencies
-      if: matrix.lint
+      if: matrix.primary
       run: mix deps.unlock --check-unused
 
     - name: Check formatting
-      if: matrix.lint
+      if: matrix.primary
       run: mix format --check-formatted
 
     - name: Run credo
-      if: matrix.lint
+      if: matrix.primary
       run: mix credo --strict
 
     - name: Compile code
       run: mix compile --warnings-as-errors
 
     - name: Retrieve PLT cache
-      if: matrix.lint
+      if: matrix.primary
       uses: actions/cache@v3
       id: plt-cache
       with:
@@ -90,13 +90,13 @@ jobs:
         restore-keys: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-plts-
 
     - name: Create PLTs
-      if: steps.plt-cache.outputs.cache-hit != 'true' && matrix.lint
+      if: matrix.primary && steps.plt-cache.outputs.cache-hit != 'true'
       run: |
         mkdir -p priv/plts
         mix dialyzer --plt
 
     - name: Run dialyzer
-      if: matrix.lint
+      if: matrix.primary
       run: mix dialyzer --no-check
 
     - name: Run tests
