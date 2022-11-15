@@ -8,7 +8,7 @@ defmodule Bandit.HTTP1.Adapter do
   defstruct state: :new,
             socket: nil,
             buffer: <<>>,
-            body_size: nil,
+            body_remaining: nil,
             body_encoding: nil,
             connection: nil,
             version: nil,
@@ -44,7 +44,7 @@ defmodule Bandit.HTTP1.Adapter do
            %{
              req
              | state: :headers_read,
-               body_size: String.to_integer(body_size) - byte_size(buffer),
+               body_remaining: String.to_integer(body_size) - byte_size(buffer),
                connection: connection,
                keepalive: keepalive
            }}
@@ -67,7 +67,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
-        with {:ok, req} <- grow_buffer(req, 0) do
+        with {:ok, req, _} <- grow_buffer(req, 0) do
           do_read_headers(req, type, headers, method, request_target)
         end
 
@@ -119,8 +119,8 @@ defmodule Bandit.HTTP1.Adapter do
   # Unwrap different request_targets returned by :erlang.decode_packet/3
   defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
 
-  defp resolve_request_target({:absoluteURI, _scheme, _host, _port, _path} = requeast_target),
-    do: {:ok, requeast_target}
+  defp resolve_request_target({:absoluteURI, _scheme, _host, _port, _path} = request_target),
+    do: {:ok, request_target}
 
   defp resolve_request_target(:*), do: {:ok, :*}
 
@@ -137,21 +137,34 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
 
-  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
-    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+  def read_req_body(
+        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
+        _opts
+      ) do
+    {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, body_size: body_size} = req, opts)
-      when is_number(body_size) do
-    to_read = min(body_size, Keyword.get(opts, :length, 8_000_000))
+  def read_req_body(
+        %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
+        opts
+      )
+      when is_number(body_remaining) do
+    max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
 
-    with {:ok, %__MODULE__{buffer: buffer} = req} <- grow_buffer(req, to_read, opts) do
-      remaining_bytes = body_size - byte_size(buffer)
+    if byte_size(buffer) >= max_desired_bytes do
+      <<to_return::binary-size(max_desired_bytes), rest::binary>> = buffer
+      {:more, to_return, %{req | buffer: rest}}
+    else
+      to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
 
-      if remaining_bytes > 0 do
-        {:more, buffer, %{req | buffer: <<>>, body_size: remaining_bytes}}
-      else
-        {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+      with {:ok, %__MODULE__{buffer: buffer} = req, bytes_read} <- grow_buffer(req, to_read, opts) do
+        remaining_bytes = body_remaining - bytes_read
+
+        if remaining_bytes > 0 do
+          {:more, buffer, %{req | buffer: <<>>, body_remaining: remaining_bytes}}
+        else
+          {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_remaining: 0}}
+        end
       end
     end
   end
@@ -182,13 +195,13 @@ defmodule Bandit.HTTP1.Adapter do
             do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
           _ ->
-            with {:ok, req} <- grow_buffer(req, chunk_size - byte_size(rest), opts) do
+            with {:ok, req, _} <- grow_buffer(req, chunk_size - byte_size(rest), opts) do
               do_read_chunk(req, body, opts)
             end
         end
 
       _ ->
-        with {:ok, req} <- grow_buffer(req, 0, opts) do
+        with {:ok, req, _} <- grow_buffer(req, 0, opts) do
           do_read_chunk(req, body, opts)
         end
     end
@@ -198,17 +211,18 @@ defmodule Bandit.HTTP1.Adapter do
   # Internal Reading
   ##################
 
-  defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts \\ []) do
+  defp grow_buffer(%__MODULE__{} = req, to_read, opts \\ [], bytes_read \\ 0) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
 
-    with {:ok, chunk} <- Socket.recv(socket, read_size, read_timeout) do
+    with {:ok, chunk} <- Socket.recv(req.socket, read_size, read_timeout) do
       remaining_bytes = to_read - byte_size(chunk)
+      bytes_read = bytes_read + byte_size(chunk)
 
       if remaining_bytes > 0 do
-        grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
+        grow_buffer(%{req | buffer: req.buffer <> chunk}, remaining_bytes, opts, bytes_read)
       else
-        {:ok, %{req | buffer: buffer <> chunk}}
+        {:ok, %{req | buffer: req.buffer <> chunk}, bytes_read}
       end
     end
   end

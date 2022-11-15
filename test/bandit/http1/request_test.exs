@@ -70,6 +70,30 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+    test "reads a content-length encoded body properly when more of it arrives than we want to read",
+         context do
+      {:ok, response} =
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_big_body",
+          [{"connection", "close"}],
+          String.duplicate("a", 8_000_000)
+        )
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def expect_big_body(conn) do
+      assert Plug.Conn.get_req_header(conn, "content-length") == ["8000000"]
+      {:more, body, conn} = Plug.Conn.read_body(conn, length: 1000)
+      assert body == String.duplicate("a", 1000)
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("a", 8_000_000 - 1000)
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a chunked body properly", context do
       stream = Stream.repeatedly(fn -> String.duplicate("a", 1_000_000) end) |> Stream.take(8)
 
