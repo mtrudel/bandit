@@ -16,22 +16,22 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - elixir:  1.12.3
-            otp: 23.3.4
-          - elixir:  1.12.3
-            otp: 24.3.4.5
+          - elixir:  1.12.x
+            otp: 23.x
+          - elixir:  1.12.x
+            otp: 24.x
 
-          - elixir:  1.13.4
-            otp: 23.3.4
-          - elixir:  1.13.4
-            otp: 24.3.4.5
-          - elixir:  1.13.4
-            otp: 25.1
+          - elixir:  1.13.x
+            otp: 23.x
+          - elixir:  1.13.x
+            otp: 24.x
+          - elixir:  1.13.x
+            otp: 25.x
 
-          - elixir:  1.14.0
-            otp: 24.3.4.5
-          - elixir:  1.14.0
-            otp: 25.1
+          - elixir:  1.14.x
+            otp: 24.x
+          - elixir:  1.14.x
+            otp: 25.x
             primary: true
     steps:
     - name: Checkout code
