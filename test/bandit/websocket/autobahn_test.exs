@@ -34,6 +34,24 @@ defmodule WebsocketAutobahnTest do
 
     {:ok, %{port: port}} = ThousandIsland.listener_info(server_pid)
 
+    random_string = :rand.uniform(0x100000000) |> Integer.to_string(36) |> String.downcase()
+    tmp_path = Path.join(System.tmp_dir!(), "autobahn-#{random_string}")
+    File.mkdir_p(Path.join(tmp_path, "reports"))
+
+    Path.join(tmp_path, "fuzzingclient.json")
+    |> File.open!([:write, :utf8], fn file ->
+      IO.write(
+        file,
+        %{
+          outdir: "./reports",
+          cases: (System.get_env("AUTOBAHN_CASES") || "*") |> String.split(","),
+          "exclude-cases": (System.get_env("AUTOBAHN_EXCLUDE_CASES") || "") |> String.split(","),
+          "exclude-agent-cases": %{}
+        }
+        |> Jason.encode!()
+      )
+    end)
+
     output =
       System.cmd(
         "docker",
@@ -41,9 +59,9 @@ defmodule WebsocketAutobahnTest do
           "run",
           "--rm",
           "-v",
-          "#{Path.join(__DIR__, "../../support/autobahn_config.json")}:/fuzzingclient.json",
+          "#{Path.join(tmp_path, "fuzzingclient.json")}:/fuzzingclient.json",
           "-v",
-          "#{Path.join(__DIR__, "../../../autobahn_reports")}:/reports"
+          "#{Path.join(tmp_path, "reports")}:/reports"
         ] ++
           extra_args() ++
           [
@@ -62,7 +80,7 @@ defmodule WebsocketAutobahnTest do
     assert {_, 0} = output
 
     failures =
-      Path.join(__DIR__, "../../../autobahn_reports/servers/index.json")
+      Path.join(tmp_path, "reports/index.json")
       |> File.read!()
       |> Jason.decode!()
       |> Map.get("UnknownServer")
@@ -74,6 +92,8 @@ defmodule WebsocketAutobahnTest do
           (res_close == "OK" or res_close == "INFORMATIONAL")
       end)
       |> Enum.sort_by(fn {code, _, _} -> code end)
+
+    File.rmdir(tmp_path)
 
     assert [] = failures
   end
