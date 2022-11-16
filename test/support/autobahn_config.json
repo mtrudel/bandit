@@ -1,7 +1,0 @@
-{
-	"outdir": "./reports/servers",
-
-	"cases": ["*"],
-	"exclude-cases": [],
-	"exclude-agent-cases": {}
-}
