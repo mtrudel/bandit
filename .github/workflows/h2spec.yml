@@ -1,0 +1,53 @@
+name: Run h2spec
+
+on:
+  workflow_call:
+    inputs:
+      elixirs:
+        type: string
+        default: "[\"1.14.x\"]"
+      erlangs:
+        type: string
+        default: "[\"25.x\"]"
+
+env:
+  MIX_ENV: test
+
+jobs:
+  h2spec:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        elixir: ${{ fromJSON(inputs.elixirs) }}
+        otp: ${{ fromJSON(inputs.erlangs) }}
+        exclude:
+          - elixir: 1.12.x
+            otp: 25.x
+          - elixir: 1.14.x
+            otp: 23.x
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+    - name: Disable compile warnings
+      run: echo "::remove-matcher owner=elixir-mixCompileWarning::"
+    - name: Retrieve mix dependencies cache
+      uses: actions/cache@v3
+      id: mix-cache
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-
+    - name: Install mix dependencies
+      if: steps.mix-cache.outputs.cache-hit != 'true'
+      run: |
+        mix deps.get
+    - name: Run h2spec test
+      run: mix test --only external_conformance test/bandit/http2/h2spec_test.exs
