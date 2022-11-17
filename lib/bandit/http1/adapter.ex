@@ -33,33 +33,34 @@ defmodule Bandit.HTTP1.Adapter do
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
 
-      case {get_content_length(headers), body_encoding} do
-        {{:error, reason}, _body_encoding} ->
-          {:error, reason}
+      if is_nil(body_encoding) do
+        case get_content_length(headers) do
+          {:ok, nil} ->
+            {:ok, headers, method, request_target,
+             %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-        {{:ok, nil}, nil} ->
-          {:ok, headers, method, request_target,
-           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+          {:ok, body_size} ->
+            {:ok, headers, method, request_target,
+             %{
+               req
+               | state: :headers_read,
+                 body_remaining: body_size - byte_size(buffer),
+                 connection: connection,
+                 keepalive: keepalive
+             }}
 
-        {{:ok, body_size}, nil} ->
-          {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_remaining: body_size - byte_size(buffer),
-               connection: connection,
-               keepalive: keepalive
-           }}
-
-        {_, body_encoding} ->
-          {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_encoding: body_encoding,
-               connection: connection,
-               keepalive: keepalive
-           }}
+          error ->
+            error
+        end
+      else
+        {:ok, headers, method, request_target,
+         %{
+           req
+           | state: :headers_read,
+             body_encoding: body_encoding,
+             connection: connection,
+             keepalive: keepalive
+         }}
       end
     end
   end
