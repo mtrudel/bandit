@@ -12,10 +12,6 @@ jobs:
     if: contains(github.event.pull_request.labels.*.name, 'benchmark')
     runs-on: ubuntu-latest
     steps:
-    - name: Dump GitHub context
-      env:
-        GITHUB_CONTEXT: ${{ toJson(github) }}
-      run: echo "$GITHUB_CONTEXT"
     - name: Install nghttp2
       run: sudo apt-get install nghttp2
     - name: Checkout code
