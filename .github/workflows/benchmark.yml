@@ -30,7 +30,7 @@ jobs:
     - name: Install mix dependencies
       run: mix deps.get
     - name: Run benchmark against main
-      run: mix benchmark.compare bandit@${{ github.base_ref }} bandit@${{ github.head_ref }}
+      run: mix benchmark.compare bandit@${{ github.event.pull_request.base.sha }} bandit@${{ github.event.pull_request.head.sha }}
     - name: Upload results file
       uses: actions/upload-artifact@v3
       with:
