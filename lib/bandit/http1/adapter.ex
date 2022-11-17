@@ -29,21 +29,19 @@ defmodule Bandit.HTTP1.Adapter do
     with {:ok, headers, method, request_target,
           %__MODULE__{version: version, buffer: buffer} = req} <-
            do_read_headers(req) do
-      body_size = get_header(headers, "content-length")
-      body_size = if body_size, do: String.to_integer(body_size), else: body_size
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
 
-      case {body_size, body_encoding} do
-        {nil, nil} ->
+      case {get_content_length(headers), body_encoding} do
+        {{:error, reason}, _body_encoding} ->
+          {:error, reason}
+
+        {{:ok, nil}, nil} ->
           {:ok, headers, method, request_target,
            %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-        {body_size, nil} when body_size < 0 ->
-          {:error, "invalid negative content-length header (RFC9110§8.6)"}
-
-        {body_size, nil} ->
+        {{:ok, body_size}, nil} ->
           {:ok, headers, method, request_target,
            %{
              req
@@ -113,7 +111,22 @@ defmodule Bandit.HTTP1.Adapter do
   defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
   defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
-  def get_header(headers, header, default \\ nil) do
+  defp get_content_length(headers) do
+    with {_, value} <- List.keyfind(headers, "content-length", 0),
+         [length] <- Enum.uniq(Plug.Conn.Utils.list(value)),
+         length <- String.to_integer(length) do
+      if length >= 0 do
+        {:ok, length}
+      else
+        {:error, "invalid negative content-length header (RFC9110§8.6)"}
+      end
+    else
+      nil -> {:ok, nil}
+      _ -> {:error, "invalid content-length (RFC9112§6.3"}
+    end
+  end
+
+  defp get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> default

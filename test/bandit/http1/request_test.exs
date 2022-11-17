@@ -329,6 +329,27 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+    test "reads a content-length with multiple content-lengths encoded body properly", context do
+      {:ok, response} =
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_body_with_multiple_content_length",
+          [{"connection", "close"}, {"content-length", "8000000,8000000,8000000"}],
+          String.duplicate("a", 8_000_000)
+        )
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def expect_body_with_multiple_content_length(conn) do
+      assert Plug.Conn.get_req_header(conn, "content-length") == ["8000000,8000000,8000000"]
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("a", 8_000_000)
+      send_resp(conn, 200, "OK")
+    end
+
     @tag capture_log: true
     test "rejects a request with neagtive content-length", context do
       {:ok, response} =
