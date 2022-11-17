@@ -138,9 +138,10 @@ defmodule Bandit.HTTP1.Adapter do
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
 
   def read_req_body(
-        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
+        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: body_remaining} = req,
         _opts
-      ) do
+      )
+      when body_remaining <= 0 do
     {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
   end
 
