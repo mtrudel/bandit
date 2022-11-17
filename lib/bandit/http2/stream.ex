@@ -50,7 +50,7 @@ defmodule Bandit.HTTP2.Stream do
       when state in [:open, :local_closed] do
     with :ok <- no_pseudo_headers(trailers, stream.stream_id) do
       # These are actually trailers, which Plug doesn't support. Log and ignore
-      Logger.warn("Ignoring trailers on stream #{stream.stream_id}: #{inspect(trailers)}")
+      Logger.warning("Ignoring trailers on stream #{stream.stream_id}: #{inspect(trailers)}")
 
       {:ok, stream}
     end
@@ -348,13 +348,13 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
-    Logger.warn("Stream #{stream.stream_id} was killed by bandit (#{reason})")
+    Logger.warning("Stream #{stream.stream_id} was killed by bandit (#{reason})")
 
     {:ok, %{stream | state: :closed, pid: nil}, nil}
   end
 
   def stream_terminated(%__MODULE__{} = stream, :normal) do
-    Logger.warn("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
+    Logger.warning("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
 
     {:ok, %{stream | state: :closed, pid: nil}, Errors.no_error()}
   end

@@ -4,13 +4,13 @@ defmodule Bandit.MixProject do
   def project do
     [
       app: :bandit,
-      version: "0.5.6",
+      version: "0.6.0",
       elixir: "~> 1.11",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       dialyzer: dialyzer(),
       name: "Bandit",
-      description: "A pure-Elixir HTTP server built for Plug  & Sock apps",
+      description: "A pure-Elixir HTTP server built for Plug & WebSock apps",
       source_url: "https://github.com/mtrudel/bandit",
       package: [
         files: ["lib", "test", "mix.exs", "README*", "LICENSE*"],
@@ -29,8 +29,8 @@ defmodule Bandit.MixProject do
   defp deps do
     [
       {:thousand_island, "~> 0.5.10"},
-      {:sock, "~> 0.2.5"},
-      {:plug, "~> 1.13"},
+      {:plug, "~> 1.14"},
+      {:websock, "~> 0.4.3"},
       {:hpax, "~> 0.1.1"},
       {:finch, "~> 0.8", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},

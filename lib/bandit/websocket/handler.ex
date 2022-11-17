@@ -1,7 +1,6 @@
 defmodule Bandit.WebSocket.Handler do
   @moduledoc false
-  # A WebSocket handler conforming to RFC6455. As a Handler, this works with raw
-  # ThousandIsland Sockets and supports HTTP/1.1-sourced WebSocket connections
+  # A WebSocket handler conforming to RFC6455, structured as a ThousandIsland.Handler
 
   use ThousandIsland.Handler
 
@@ -9,21 +8,27 @@ defmodule Bandit.WebSocket.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    connection = Connection.init(state.sock)
+    {websock, websock_opts, connection_opts} = state.upgrade_opts
 
-    Connection.handle_connection(state.conn, socket, connection)
-    |> case do
-      {:continue, connection} -> {:continue, update_state(state, connection)}
-      {:continue, connection, timeout} -> {:continue, update_state(state, connection), timeout}
-      {:close, _} -> {:close, state}
+    connection_opts
+    |> Keyword.take([:fullsweep_after])
+    |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
+
+    state =
+      state
+      |> Map.take([:handler_module])
+      |> Map.put(:buffer, <<>>)
+
+    case Connection.init(websock, websock_opts, connection_opts, socket) do
+      {:continue, connection} ->
+        case Keyword.get(connection_opts, :timeout) do
+          nil -> {:continue, Map.put(state, :connection, connection)}
+          timeout -> {:continue, Map.put(state, :connection, connection), {:persistent, timeout}}
+        end
+
+      {:error, reason, connection} ->
+        {:error, reason, Map.put(state, :connection, connection)}
     end
-  end
-
-  defp update_state(state, connection) do
-    state
-    |> Map.drop([:conn, :plug])
-    |> Map.put(:connection, connection)
-    |> Map.put(:buffer, <<>>)
   end
 
   @impl ThousandIsland.Handler

@@ -1,0 +1,72 @@
+name: Run autobahn
+
+on:
+  workflow_call:
+    inputs:
+      elixirs:
+        type: string
+        default: "[\"1.14.x\"]"
+      erlangs:
+        type: string
+        default: "[\"25.x\"]"
+
+env:
+  MIX_ENV: test
+
+jobs:
+  autobahn:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        elixir: ${{ fromJSON(inputs.elixirs) }}
+        otp: ${{ fromJSON(inputs.erlangs) }}
+        case: 
+          - "1.*,2.*,3.*,4.*,5.*,6.*,7.*,8.*,10.*"
+          - "9.1.*"
+          - "9.2.*"
+          - "9.3.*"
+          - "12.1.*"
+          - "12.2.*"
+          - "12.3.*"
+          - "12.4.*"
+          - "12.5.*"
+          - "13.1.*"
+          - "13.2.*"
+          - "13.3.*"
+          - "13.4.*"
+          - "13.5.*"
+          - "13.6.*"
+          - "13.7.*"
+        exclude:
+          - elixir: 1.12.x
+            otp: 25.x
+          - elixir: 1.14.x
+            otp: 23.x
+    env:
+      AUTOBAHN_CASES: ${{ matrix.case }}
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: ${{ matrix.elixir }}
+        otp-version: ${{ matrix.otp }}
+    - name: Disable compile warnings
+      run: echo "::remove-matcher owner=elixir-mixCompileWarning::"
+    - name: Retrieve mix dependencies cache
+      uses: actions/cache@v3
+      id: mix-cache
+      with:
+        path: |
+          deps
+          _build
+        key: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-${{ hashFiles('**/mix.lock') }}
+        restore-keys: ${{ runner.os }}-${{ matrix.otp }}-${{ matrix.elixir }}-mix-
+    - name: Install mix dependencies
+      if: steps.mix-cache.outputs.cache-hit != 'true'
+      run: |
+        mix deps.get
+    - name: Run Autobahn test
+      run: mix test --only external_conformance test/bandit/websocket/autobahn_test.exs

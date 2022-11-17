@@ -1,871 +1,734 @@
-defmodule WebSocketSockTest do
-  use WebSocketServerHelpers
+defmodule WebSocketWebSockTest do
+  use ExUnit.Case, async: true
+  use ServerHelpers
 
-  import TestHelpers
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
-  setup :http1_websocket_server
+  setup :http_server
 
-  describe "option passing" do
-    test "options are collected from static config, init, negotiate, and handle_* calls",
-         context do
+  def call(conn, _opts) do
+    conn = Plug.Conn.fetch_query_params(conn)
+
+    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
+      true ->
+        websock = conn.query_params["websock"] |> String.to_atom()
+        Plug.Conn.upgrade_adapter(conn, :websocket, {websock, [], []})
+
+      false ->
+        Plug.Conn.send_resp(conn, 204, <<>>)
+    end
+  end
+
+  describe "init" do
+    defmodule InitOKStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, :init}
+      def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
+    end
+
+    test "can return an ok tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitOKStateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_connection: :add_opts,
-        handle_text_frame: :add_and_echo_opts
-      )
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
+      assert result == inspect(:init)
+    end
 
-      SimpleWebSocketClient.send_text_frame(client, "OK 1")
+    defmodule InitPushStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, {:text, "init"}, :init}
+      def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
+    end
 
+    test "can return a push tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPushStateWebSock)
+
+      # Ignore the frame it pushes us
       _ = SimpleWebSocketClient.recv_text_frame(client)
 
-      SimpleWebSocketClient.send_text_frame(client, "OK 2")
-
-      expected =
-        inspect(%{
-          negotiate: :noop_negotiate,
-          handle_connection: :add_opts,
-          handle_text_frame: :add_and_echo_opts,
-          handle_binary_frame: :noop_handle_binary_frame,
-          handle_ping_frame: :noop_handle_ping_frame,
-          handle_pong_frame: :noop_handle_pong_frame,
-          handle_close: :noop_handle_close,
-          handle_error: :noop_handle_error,
-          handle_timeout: :noop_handle_timeout,
-          handle_info: :noop_handle_info,
-          startup_opts: :ok,
-          init_opts: :ok,
-          handle_connection_opts: :ok,
-          handle_text_frame_opts: ["OK 2", "OK 1"]
-        })
-
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, expected}
-    end
-
-    def add_opts(_socket, opts) do
-      {:continue, Map.put(opts, :handle_connection_opts, :ok)}
-    end
-
-    def add_and_echo_opts(data, socket, opts) do
-      opts = Map.update(opts, :handle_text_frame_opts, [data], &[data | &1])
-      Sock.Socket.send_text_frame(socket, inspect(opts))
-      {:continue, opts}
-    end
-  end
-
-  describe "negotiate" do
-    test "can accept a connection to begin its life as a websocket", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, negotiate: :accept, handle_connection: :ok)
-
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-    end
-
-    def accept(conn, opts) do
-      {:accept, conn, opts, []}
-    end
-
-    def ok(socket, opts) do
-      Sock.Socket.send_text_frame(socket, "OK")
-      {:continue, opts}
-    end
-
-    @tag capture_log: true
-    test "can specify a timeout option", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        negotiate: :short_timeout,
-        handle_timeout: :send_text_on_timeout
-      )
-
-      # Send a frame to ensure that whatever timeout we set is persistent
       SimpleWebSocketClient.send_text_frame(client, "OK")
-
-      # Wait long enough for things to timeout
-      Process.sleep(100)
-
-      # Make sure that sock.handle_timeout is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TIMEOUT"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(:init)
     end
 
-    def short_timeout(conn, opts) do
-      {:accept, conn, opts, timeout: 50}
+    defmodule InitReplyStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:reply, :ok, {:text, "init"}, :init}
+      def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
     end
 
-    test "can refuse a connection to send it back as an HTTP response", context do
+    test "can return a reply tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitReplyStateWebSock)
 
-      :gen_tcp.send(client, """
-      GET /?#{URI.encode_query(negotiate: :refuse)} HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      # Ignore the frame it pushes us
+      _ = SimpleWebSocketClient.recv_text_frame(client)
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 499 Unknown Status Code",
-               "date: " <> date,
-               "content-length: 10",
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               "Not today\n"
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(:init)
     end
 
-    def refuse(conn, opts) do
-      conn = Plug.Conn.resp(conn, 499, "Not today\n")
-      {:refuse, conn, opts}
+    defmodule InitTextWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, {:text, "TEXT"}, :init}
     end
-  end
 
-  describe "handle_connection" do
-    test "can interact with the socket at connection time", context do
+    test "can return a text frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_connection: :ok)
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+      SimpleWebSocketClient.http1_handshake(client, InitTextWebSock)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
     end
 
-    test "can close a connection by returning a close tuple", context do
+    defmodule InitBinaryWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, {:binary, "BINARY"}, :init}
+    end
+
+    test "can return a binary frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_connection: :close)
+      SimpleWebSocketClient.http1_handshake(client, InitBinaryWebSock)
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "BINARY"}
+    end
+
+    defmodule InitPingWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, {:ping, "PING"}, :init}
+    end
+
+    test "can return a ping frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPingWebSock)
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "PING"}
+    end
+
+    defmodule InitPongWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, {:pong, "PONG"}, :init}
+    end
+
+    test "can return a pong frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitPongWebSock)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule InitListWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], :init}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitListWebSock)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule InitCloseWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:stop, :normal, :init}
+    end
+
+    test "can close a connection by returning a stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseWebSock)
+
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
-
-    def close(_socket, opts) do
-      {:close, opts}
-    end
   end
 
-  describe "frame splitting / merging" do
-    test "it should handle cases where the frames arrives in small chunks", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
-
-      # Send text frame one byte at a time
-      (<<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK")
-      |> Stream.unfold(fn
-        <<>> -> nil
-        <<byte::binary-size(1), rest::binary>> -> {byte, rest}
-      end)
-      |> Enum.each(fn byte -> :gen_tcp.send(client, byte) end)
-
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+  describe "handle_in" do
+    defmodule HandleInEchoWebSock do
+      use NoopWebSock
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     end
 
-    test "it should handle cases where a full and partial frame arrive in the same packet",
-         context do
+    test "can receive a text frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInEchoWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
-
-      # Send one and a half frames
-      :gen_tcp.send(client, <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4>>)
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-
-      # Now send the rest of the second frame
-      :gen_tcp.send(client, <<1::1, 2::7, 0::32>> <> "OK")
-
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-    end
-
-    test "it should handle cases where multiple frames arrive in the same packet", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
-
-      # Send two text frames at once one byte at a time
-      :gen_tcp.send(
-        client,
-        <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK"
-      )
-
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-    end
-  end
-
-  describe "handle_text_frame" do
-    test "is called when small (7 bit) text frames are sent", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
       SimpleWebSocketClient.send_text_frame(client, "OK")
+
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
 
-    test "is called when mid-sized (16 bit) text frames are sent", context do
-      payload = String.duplicate("a", 1_000)
+    test "can receive a bianry frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
+      SimpleWebSocketClient.http1_handshake(client, HandleInEchoWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, payload)
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
-    end
-
-    test "is called when large-sized (64 bit) text frames are sent", context do
-      payload = String.duplicate("a", 100_000)
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
-
-      SimpleWebSocketClient.send_text_frame(client, payload)
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
-    end
-
-    test "is called when fragmented text frames are sent", context do
-      payload = String.duplicate("a", 1_000)
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :echo_text_frame)
-
-      SimpleWebSocketClient.send_text_frame(client, payload, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, payload)
-
-      expected_payload = String.duplicate(payload, 3)
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, expected_payload}
-    end
-
-    def echo_text_frame(data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, data)
-      {:continue, opts}
-    end
-
-    test "can close a connection by returning a close tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_text_frame: :close_text_frame)
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    def close_text_frame(_data, _socket, opts) do
-      {:close, opts}
-    end
-  end
-
-  describe "handle_binary_frame" do
-    test "is called when small (7 bit) binary frames are sent", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :echo_binary_frame)
       SimpleWebSocketClient.send_binary_frame(client, "OK")
+
       assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "OK"}
     end
 
-    test "is called when mid-sized (16 bit) binary frames are sent", context do
-      payload = String.duplicate("a", 1_000)
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :echo_binary_frame)
+    defmodule HandleInStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, []}
 
-      SimpleWebSocketClient.send_binary_frame(client, payload)
-      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, payload}
+      def handle_in({"dump", opcode: :text} = data, state),
+        do: {:push, {:text, inspect(state)}, [data | state]}
+
+      def handle_in(data, state), do: {:ok, [data | state]}
     end
 
-    test "is called when large-sized (64 bit) binary frames are sent", context do
-      payload = String.duplicate("a", 100_000)
+    test "can return an ok tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :echo_binary_frame)
+      SimpleWebSocketClient.http1_handshake(client, HandleInStateWebSock)
 
-      SimpleWebSocketClient.send_binary_frame(client, payload)
-      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, payload}
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect([{"OK", opcode: :text}])
     end
 
-    test "is called when fragmented binary frames are sent", context do
-      payload = String.duplicate("a", 1_000)
+    test "can return a push tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :echo_binary_frame)
+      SimpleWebSocketClient.http1_handshake(client, HandleInStateWebSock)
 
-      SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, payload)
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+      SimpleWebSocketClient.send_text_frame(client, "dump")
 
-      expected_payload = String.duplicate(payload, 3)
-      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect([{"dump", opcode: :text}])
     end
 
-    def echo_binary_frame(data, socket, opts) do
-      Sock.Socket.send_binary_frame(socket, data)
-      {:continue, opts}
+    defmodule HandleInReplyStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, []}
+
+      def handle_in({"dump", opcode: :text} = data, state),
+        do: {:reply, :ok, {:text, inspect(state)}, [data | state]}
+
+      def handle_in(data, state), do: {:ok, [data | state]}
     end
 
-    test "can close a connection by returning a close tuple", context do
+    test "can return a reply tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_binary_frame: :close_binary_frame)
-      SimpleWebSocketClient.send_binary_frame(client, "OK")
+      SimpleWebSocketClient.http1_handshake(client, HandleInReplyStateWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+      SimpleWebSocketClient.send_text_frame(client, "dump")
+
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect([{"dump", opcode: :text}])
+    end
+
+    defmodule HandleInTextWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, "TEXT"}, state}
+    end
+
+    test "can return a text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInTextWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleInBinaryWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:binary, "BINARY"}, state}
+    end
+
+    test "can return a binary frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInBinaryWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "BINARY"}
+    end
+
+    defmodule HandleInPingWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:ping, "PING"}, state}
+    end
+
+    test "can return a ping frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInPingWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "PING"}
+    end
+
+    defmodule HandleInPongWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:pong, "PONG"}, state}
+    end
+
+    test "can return a pong frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInPongWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule HandleInListWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInListWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleInCloseWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:stop, :normal, state}
+    end
+
+    test "can close a connection by returning a stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInCloseWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
-
-    def close_binary_frame(_data, _socket, opts) do
-      {:close, opts}
-    end
   end
 
-  describe "handle_ping_frame" do
-    test "sends a pong per RFC6455§5.5.2", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client)
-      SimpleWebSocketClient.send_ping_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+  describe "handle_control" do
+    defmodule HandleControlNoImplWebSock do
+      use NoopWebSock
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
     end
 
-    test "is called when ping frames are sent", context do
+    test "callback is optional", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_ping_frame: :echo_ping_frame)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlNoImplWebSock)
+
       SimpleWebSocketClient.send_ping_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_pong_frame(client)
+
+      # Test that the connection is still alive
+      SimpleWebSocketClient.send_text_frame(client, "OK")
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
 
-    test "is processed when interleaved with continuation frames", context do
+    defmodule HandleControlEchoWebSock do
+      use NoopWebSock
+      def handle_control({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
+    end
+
+    test "can receive a ping frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlEchoWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :echo_text_frame,
-        handle_ping_frame: :echo_ping_frame
-      )
-
-      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
       SimpleWebSocketClient.send_ping_frame(client, "OK")
-      SimpleWebSocketClient.send_continuation_frame(client, "CD")
-      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
     end
 
-    def echo_ping_frame(data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, data)
-      {:continue, opts}
-    end
-  end
-
-  describe "handle_pong_frame" do
-    test "is called when pong frames are sent", context do
+    test "can receive a pong frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, handle_pong_frame: :echo_pong_frame)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlEchoWebSock)
+
       SimpleWebSocketClient.send_pong_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
     end
 
-    test "is processed when interleaved with continuation frames", context do
+    defmodule HandleControlStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, []}
+
+      def handle_control({"dump", opcode: :ping} = data, state),
+        do: {:push, {:ping, inspect(state)}, [data | state]}
+
+      def handle_control(data, state), do: {:ok, [data | state]}
+    end
+
+    test "can return an ok tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlStateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :echo_text_frame,
-        handle_pong_frame: :echo_pong_frame
-      )
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
 
-      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
-      SimpleWebSocketClient.send_pong_frame(client, "OK")
-      SimpleWebSocketClient.send_continuation_frame(client, "CD")
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
+      {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
+      assert response == inspect([{"OK", opcode: :ping}])
     end
 
-    def echo_pong_frame(data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, data)
-      {:continue, opts}
+    test "can return a push tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlStateWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+      _ = SimpleWebSocketClient.recv_ping_frame(client)
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
+      assert response == inspect([{"dump", opcode: :ping}])
+    end
+
+    defmodule HandleControlReplyStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, []}
+
+      def handle_control({"dump", opcode: :ping} = data, state),
+        do: {:reply, :ok, {:ping, inspect(state)}, [data | state]}
+
+      def handle_control(data, state), do: {:ok, [data | state]}
+    end
+
+    test "can return a reply tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlReplyStateWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+      _ = SimpleWebSocketClient.recv_ping_frame(client)
+      SimpleWebSocketClient.send_ping_frame(client, "dump")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      {:ok, response} = SimpleWebSocketClient.recv_ping_frame(client)
+      assert response == inspect([{"dump", opcode: :ping}])
+    end
+
+    defmodule HandleControlTextWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, {:text, "TEXT"}, state}
+    end
+
+    test "can return a text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlTextWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleControlBinaryWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, {:binary, "BINARY"}, state}
+    end
+
+    test "can return a binary frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlBinaryWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "BINARY"}
+    end
+
+    defmodule HandleControlPingWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, {:ping, "PING"}, state}
+    end
+
+    test "can return a ping frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlPingWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "PING"}
+    end
+
+    defmodule HandleControlPongWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, {:pong, "PONG"}, state}
+    end
+
+    test "can return a pong frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlPongWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule HandleControlListWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlListWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleControlCloseWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:stop, :normal, state}
+    end
+
+    test "can close a connection by returning a stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
   end
 
   describe "handle_info" do
-    test "is called when messages are sent to the process", context do
+    defmodule HandleInfoStateWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:ok, []}
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info("dump" = data, state), do: {:push, {:text, inspect(state)}, [data | state]}
+      def handle_info(data, state), do: {:ok, [data | state]}
+    end
+
+    test "can return an ok tuple and update state", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoStateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :send_self_message,
-        handle_info: :echo_message
-      )
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
 
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+      Process.send(pid, "OK", [])
+      Process.send(pid, "dump", [])
+
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(["OK"])
     end
 
-    def send_self_message(data, _socket, opts) do
-      Process.send(self(), data, [])
-      {:continue, opts}
+    test "can return a push tuple and update state", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoStateWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      Process.send(pid, "dump", [])
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+      Process.send(pid, "dump", [])
+
+      {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
+      assert response == inspect(["dump"])
     end
 
-    def echo_message(msg, socket, opts) do
-      Sock.Socket.send_text_frame(socket, msg)
-      {:continue, opts}
+    defmodule HandleInfoTextWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, {:text, "TEXT"}, state}
+    end
+
+    test "can return a text frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoTextWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleInfoBinaryWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, {:binary, "BINARY"}, state}
+    end
+
+    test "can return a binary frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoBinaryWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "BINARY"}
+    end
+
+    defmodule HandleInfoPingWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, {:ping, "PING"}, state}
+    end
+
+    test "can return a ping frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoPingWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "PING"}
+    end
+
+    defmodule HandleInfoPongWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, {:pong, "PONG"}, state}
+    end
+
+    test "can return a pong frame", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoPongWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+    end
+
+    defmodule HandleInfoListWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:push, [{:pong, "PONG"}, {:text, "TEXT"}], state}
+    end
+
+    test "can return a list of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoListWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "PONG"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TEXT"}
+    end
+
+    defmodule HandleInfoCloseWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:stop, :normal, state}
+    end
+
+    test "can close a connection by returning a stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
   end
 
-  describe "server-side connection close" do
-    test "server shuts down connection with a 1000 on a close tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_close,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
-      assert Process.alive?(pid)
-
-      # Now send our half of the handshake and verify that the server has shut down
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-      Process.sleep(100)
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    def pid_text_frame_and_close(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:close, opts}
-    end
-
-    def send_text_on_close(reason, socket, _opts) do
-      Sock.Socket.send_text_frame(socket, inspect(reason))
+  describe "terminate" do
+    setup do
+      Process.register(self(), __MODULE__)
       :ok
     end
 
-    test "server shuts down connection with a 1000 on close tuple from handle_info", context do
+    def send(msg), do: send(__MODULE__, msg)
+
+    defmodule TerminateWebSock do
+      use NoopWebSock
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
+      def handle_in({"boom", opcode: :text}, state), do: {:stop, :boom, state}
+      def terminate(reason, _state), do: WebSocketWebSockTest.send(reason)
+    end
+
+    test "is called with :normal on a normal connection shutdown", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_send_self_message,
-        handle_info: :echo_message_and_close,
-        handle_close: :send_text_on_close
-      )
+      # Get the websock to tell bandit to shut down
+      SimpleWebSocketClient.send_text_frame(client, "normal")
 
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_info is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
-      assert Process.alive?(pid)
-
-      # Now send our half of the handshake and verify that the server has shut down
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-      Process.sleep(100)
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      assert_receive :normal
     end
 
-    def pid_text_frame_and_send_self_message(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      Process.send(self(), "OK", [])
-      {:continue, opts}
-    end
-
-    def echo_message_and_close(msg, socket, opts) do
-      Sock.Socket.send_text_frame(socket, msg)
-      {:close, opts}
-    end
-
-    test "server shuts down connection with a 1001 on clean shut down", context do
+    @tag capture_log: true
+    test "is called with {:error, reason} on an error connection shutdown", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client, handle_close: :send_text_on_close)
+      # Get the websock to tell bandit to shut down
+      SimpleWebSocketClient.send_text_frame(client, "boom")
+
+      assert_receive {:error, :boom}
+    end
+
+    test "is called with :shutdown on a server shutdown", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       # Shut the server down in an orderly manner
       ThousandIsland.stop(context.server_pid)
 
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1001}"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1001::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      assert_receive :shutdown
     end
-  end
 
-  describe "client-side connection close" do
-    test "returns a corresponding connection close frame and calls the sock callback", context do
+    test "is called with :remote on a normal remote shutdown", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the server pid and ensure it's alive
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      assert Process.alive?(pid)
-
-      # Close the connection from the client
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
 
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:remote, 1000}"}
-
-      # Now ensure that we see the server's half of the shutdown handshake
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
+      assert_receive :remote
     end
 
-    test "is processed when interleaved with continuation frames", context do
+    test "is called with {:error, reason} on a protocol error", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the server pid and ensure it's alive
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      assert Process.alive?(pid)
-
-      # Note that we don't expect this to send back a pid since it won't make it to the Sock
-      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
-
-      # Close the connection from the client
-      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:remote, 1000}"}
-
-      # Now ensure that we see the server's half of the shutdown handshake
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
-    end
-
-    def pid_text_frame(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:continue, opts}
-    end
-  end
-
-  describe "error handling" do
-    @tag capture_log: true
-    test "calls sock callback and closes websocket on error tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :return_error,
-        handle_error: :send_text_on_error
-      )
-
-      # Get the sock to tell bandit to return an error. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "nope"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "calls sock callback and closes websocket on error tuple from handle_info", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :send_self_message,
-        handle_info: :return_error,
-        handle_error: :send_text_on_error
-      )
-
-      # Get the sock to tell bandit to return an error. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "nope"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    def return_error(_data, socket, opts) do
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:error, "nope", opts}
-    end
-
-    def send_text_on_error(reason, socket, _opts) do
-      Sock.Socket.send_text_frame(socket, reason)
-      :ok
-    end
-
-    test "an abnormal socket close calls sock callback", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_send_message_on_close,
-        handle_error: :send_message_on_error
-      )
-
-      # Get the server pid and ensure it's alive
-      my_pid = self() |> :erlang.pid_to_list() |> to_string()
-      SimpleWebSocketClient.send_text_frame(client, my_pid)
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      assert Process.alive?(pid)
-
-      # Close the client connection abnormally
       :gen_tcp.close(client)
 
-      # Make sure that sock.handle_error is called
-      assert_receive "Reason closed"
-
-      # Now ensure that we do not see a connection close frame from the server
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-
-      # Wait a bit and validate that the server is closed
-      Process.sleep(100)
-      refute Process.alive?(pid)
-    end
-
-    def pid_text_frame_and_send_message_on_close(data, socket, opts) do
-      their_pid = data |> String.to_charlist() |> :erlang.list_to_pid()
-      Sock.Socket.send_text_frame(socket, :erlang.pid_to_list(self()))
-      {:continue, Map.put(opts, :their_pid, their_pid)}
-    end
-
-    def send_message_on_error(reason, _socket, opts) do
-      Process.send(opts[:their_pid], "Reason #{reason}", [])
-      :ok
+      assert_receive {:error, :closed}
     end
 
     @tag capture_log: true
-    test "server sends a 1002 on an unexpected continuation frame", context do
+    test "is called with :timeout on a timeout", context do
       client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected continuation frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1002 on a text frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected text frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1002 on a binary frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received unexpected binary frame (RFC6455§5.4)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1007 on a non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1007 on fragmented non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_error: :send_text_on_error)
-
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
-
-      # Make sure that sock.handle_error is called
-      assert SimpleWebSocketClient.recv_text_frame(client) ==
-               {:ok, "Received non UTF-8 text frame (RFC6455§8.1)"}
-
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-  end
-
-  describe "timeout conditions" do
-    @tag capture_log: true
-    test "server sends a 1002 and calls the sock callback if no frames sent", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_timeout: :send_text_on_timeout)
-
-      # Wait long enough for things to timeout
-      Process.sleep(1000)
-
-      # Make sure that sock.handle_timeout is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TIMEOUT"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    @tag capture_log: true
-    test "server sends a 1002 and calls the sock callback on timeout between frames",
-         context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client, handle_timeout: :send_text_on_timeout)
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-
-      # Wait long enough for things to timeout
-      Process.sleep(1000)
-
-      # Make sure that sock.handle_timeout is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "TIMEOUT"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-    end
-
-    def send_text_on_timeout(socket, _opts) do
-      Sock.Socket.send_text_frame(socket, "TIMEOUT")
-      :ok
-    end
-
-    @tag capture_log: true
-    test "server times out waiting for client connection close", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-
-      SimpleWebSocketClient.http1_handshake(client,
-        handle_text_frame: :pid_text_frame_and_close,
-        handle_close: :send_text_on_close
-      )
-
-      # Get the sock to tell bandit to shut down. It will send us its pid first
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-
-      # Make sure that sock.handle_close is called
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "{:local, 1000}"}
-
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
-
-      # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
-      assert Process.alive?(pid)
-
-      # Now wait for the server to timeout
-      Process.sleep(1500)
-
-      # Verify that the server has shut down
-      refute Process.alive?(pid)
-
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      assert_receive :timeout, 1500
     end
   end
 end

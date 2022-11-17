@@ -8,11 +8,12 @@ defmodule Bandit.HTTP1.Adapter do
   defstruct state: :new,
             socket: nil,
             buffer: <<>>,
-            body_size: nil,
+            body_remaining: nil,
             body_encoding: nil,
             connection: nil,
             version: nil,
-            keepalive: false
+            keepalive: false,
+            upgrade: nil
 
   alias ThousandIsland.Socket
 
@@ -25,74 +26,65 @@ defmodule Bandit.HTTP1.Adapter do
   ################
 
   def read_headers(req) do
-    case do_read_headers(req) do
-      {:ok, headers, method, path, %__MODULE__{version: version, buffer: buffer} = req} ->
-        body_size = get_header(headers, "content-length")
-        body_encoding = get_header(headers, "transfer-encoding")
-        connection = get_header(headers, "connection")
-        keepalive = should_keepalive?(version, connection)
+    with {:ok, headers, method, request_target,
+          %__MODULE__{version: version, buffer: buffer} = req} <-
+           do_read_headers(req) do
+      body_size = get_header(headers, "content-length")
+      body_encoding = get_header(headers, "transfer-encoding")
+      connection = get_header(headers, "connection")
+      keepalive = should_keepalive?(version, connection)
 
-        case {body_size, body_encoding} do
-          {nil, nil} ->
-            {:ok, headers, method, path,
-             %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+      case {body_size, body_encoding} do
+        {nil, nil} ->
+          {:ok, headers, method, request_target,
+           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-          {body_size, nil} ->
-            {:ok, headers, method, path,
-             %{
-               req
-               | state: :headers_read,
-                 body_size: String.to_integer(body_size) - byte_size(buffer),
-                 connection: connection,
-                 keepalive: keepalive
-             }}
+        {body_size, nil} ->
+          {:ok, headers, method, request_target,
+           %{
+             req
+             | state: :headers_read,
+               body_remaining: String.to_integer(body_size) - byte_size(buffer),
+               connection: connection,
+               keepalive: keepalive
+           }}
 
-          {_, body_encoding} ->
-            {:ok, headers, method, path,
-             %{
-               req
-               | state: :headers_read,
-                 body_encoding: body_encoding,
-                 connection: connection,
-                 keepalive: keepalive
-             }}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+        {_, body_encoding} ->
+          {:ok, headers, method, request_target,
+           %{
+             req
+             | state: :headers_read,
+               body_encoding: body_encoding,
+               connection: connection,
+               keepalive: keepalive
+           }}
+      end
     end
   end
 
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, path \\ nil)
+  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil)
 
-  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, path) do
+  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
-        case grow_buffer(req, 0) do
-          {:ok, req} -> do_read_headers(req, type, headers, method, path)
-          {:error, reason} -> {:error, reason}
+        with {:ok, req, _} <- grow_buffer(req, 0) do
+          do_read_headers(req, type, headers, method, request_target)
         end
 
-      {:ok, {:http_request, method, {:abs_path, path}, version}, rest} ->
-        version =
-          case version do
-            {1, 1} -> :"HTTP/1.1"
-            {1, 0} -> :"HTTP/1.0"
-          end
-
-        do_read_headers(%{req | buffer: rest, version: version}, :httph, headers, method, path)
+      {:ok, {:http_request, method, request_target, version}, rest} ->
+        with {:ok, version} <- get_version(version),
+             {:ok, request_target} <- resolve_request_target(request_target),
+             req <- %{req | buffer: rest, version: version} do
+          do_read_headers(req, :httph, headers, method, request_target)
+        end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
-        do_read_headers(
-          %{req | buffer: rest},
-          :httph,
-          [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers],
-          to_string(method),
-          to_string(path)
-        )
+        req = %{req | buffer: rest}
+        headers = [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers]
+        do_read_headers(req, :httph, headers, to_string(method), request_target)
 
       {:ok, :http_eoh, rest} ->
-        {:ok, headers, method, path, %{req | state: :headers_read, buffer: rest}}
+        {:ok, headers, method, request_target, %{req | state: :headers_read, buffer: rest}}
 
       {:ok, {:http_error, _reason}, _rest} ->
         {:error, :invalid_request}
@@ -113,12 +105,30 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
+  defp get_version({1, 1}), do: {:ok, :"HTTP/1.1"}
+  defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
+  defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
+
   defp get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> default
     end
   end
+
+  # Unwrap different request_targets returned by :erlang.decode_packet/3
+  defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
+
+  defp resolve_request_target({:absoluteURI, _scheme, _host, _port, _path} = request_target),
+    do: {:ok, request_target}
+
+  defp resolve_request_target(:*), do: {:ok, :*}
+
+  defp resolve_request_target({:scheme, _scheme, _path}),
+    do: {:error, "schemeURI is not supported"}
+
+  defp resolve_request_target(_request_target),
+    do: {:error, "Unsupported request target (RFC9112§3.2)"}
 
   ##############
   # Body Reading
@@ -127,33 +137,41 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
 
-  def read_req_body(%__MODULE__{state: :headers_read, buffer: buffer, body_size: 0} = req, _opts) do
-    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+  def read_req_body(
+        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
+        _opts
+      ) do
+    {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, body_size: body_size} = req, opts)
-      when is_number(body_size) do
-    to_read = min(body_size, Keyword.get(opts, :length, 8_000_000))
+  def read_req_body(
+        %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
+        opts
+      )
+      when is_number(body_remaining) do
+    max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
 
-    case grow_buffer(req, to_read, opts) do
-      {:ok, %__MODULE__{buffer: buffer} = req} ->
-        remaining_bytes = body_size - byte_size(buffer)
+    if byte_size(buffer) >= max_desired_bytes do
+      <<to_return::binary-size(max_desired_bytes), rest::binary>> = buffer
+      {:more, to_return, %{req | buffer: rest}}
+    else
+      to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
+
+      with {:ok, %__MODULE__{buffer: buffer} = req, bytes_read} <- grow_buffer(req, to_read, opts) do
+        remaining_bytes = body_remaining - bytes_read
 
         if remaining_bytes > 0 do
-          {:more, buffer, %{req | buffer: <<>>, body_size: remaining_bytes}}
+          {:more, buffer, %{req | buffer: <<>>, body_remaining: remaining_bytes}}
         else
-          {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_size: 0}}
+          {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_remaining: 0}}
         end
-
-      {:error, reason} ->
-        {:error, reason}
+      end
     end
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
-    case do_read_chunk(req, <<>>, opts) do
-      {:ok, body, req} -> {:ok, IO.iodata_to_binary(body), req}
-      other -> other
+    with {:ok, body, req} <- do_read_chunk(req, <<>>, opts) do
+      {:ok, IO.iodata_to_binary(body), req}
     end
   end
 
@@ -177,16 +195,14 @@ defmodule Bandit.HTTP1.Adapter do
             do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
           _ ->
-            case grow_buffer(req, chunk_size - byte_size(rest), opts) do
-              {:ok, req} -> do_read_chunk(req, body, opts)
-              {:error, reason} -> {:error, reason}
+            with {:ok, req, _} <- grow_buffer(req, chunk_size - byte_size(rest), opts) do
+              do_read_chunk(req, body, opts)
             end
         end
 
       _ ->
-        case grow_buffer(req, 0, opts) do
-          {:ok, req} -> do_read_chunk(req, body, opts)
-          {:error, reason} -> {:error, reason}
+        with {:ok, req, _} <- grow_buffer(req, 0, opts) do
+          do_read_chunk(req, body, opts)
         end
     end
   end
@@ -195,22 +211,19 @@ defmodule Bandit.HTTP1.Adapter do
   # Internal Reading
   ##################
 
-  defp grow_buffer(%__MODULE__{socket: socket, buffer: buffer} = req, to_read, opts \\ []) do
+  defp grow_buffer(%__MODULE__{} = req, to_read, opts \\ [], bytes_read \\ 0) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
 
-    case Socket.recv(socket, read_size, read_timeout) do
-      {:ok, chunk} ->
-        remaining_bytes = to_read - byte_size(chunk)
+    with {:ok, chunk} <- Socket.recv(req.socket, read_size, read_timeout) do
+      remaining_bytes = to_read - byte_size(chunk)
+      bytes_read = bytes_read + byte_size(chunk)
 
-        if remaining_bytes > 0 do
-          grow_buffer(%{req | buffer: buffer <> chunk}, remaining_bytes, opts)
-        else
-          {:ok, %{req | buffer: buffer <> chunk}}
-        end
-
-      {:error, reason} ->
-        {:error, reason}
+      if remaining_bytes > 0 do
+        grow_buffer(%{req | buffer: req.buffer <> chunk}, remaining_bytes, opts, bytes_read)
+      else
+        {:ok, %{req | buffer: req.buffer <> chunk}, bytes_read}
+      end
     end
   end
 
@@ -236,8 +249,9 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   # Per RFC2616§4.{3,4}
+  defp add_content_length?(status) when status in 100..199, do: false
   defp add_content_length?(204), do: false
-  defp add_content_length?(status) when status in 300..399, do: false
+  defp add_content_length?(304), do: false
   defp add_content_length?(_), do: true
 
   @impl Plug.Conn.Adapter
@@ -307,6 +321,11 @@ defmodule Bandit.HTTP1.Adapter do
 
   @impl Plug.Conn.Adapter
   def inform(_req, _status, _headers), do: {:error, :not_supported}
+
+  @impl Plug.Conn.Adapter
+  def upgrade(req, :websocket, opts), do: {:ok, %{req | upgrade: {:websocket, opts}}}
+
+  def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
   def push(_req, _path, _headers), do: {:error, :not_supported}

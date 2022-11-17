@@ -1,10 +1,12 @@
 defmodule Bandit.WebSocket.Handshake do
   @moduledoc false
-  # Functions to support WebSocket handshaking as described in RFC6455§4.2
+  # Functions to support WebSocket handshaking as described in RFC6455§4.2 & RFC7692
 
   import Plug.Conn
 
-  def handshake?(%Plug.Conn{} = conn) do
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
+  def valid_upgrade?(%Plug.Conn{} = conn) do
     case get_http_protocol(conn) do
       :"HTTP/1.1" ->
         # Cases from RFC6455§4.2.1
@@ -20,7 +22,58 @@ defmodule Bandit.WebSocket.Handshake do
     end
   end
 
-  def send_handshake(%Plug.Conn{} = conn) do
+  def handshake(%Plug.Conn{} = conn, opts) do
+    if valid_upgrade?(conn) do
+      do_handshake(conn, opts)
+    else
+      {:error, "Not a valid WebSocket upgrade request"}
+    end
+  end
+
+  defp do_handshake(conn, opts) do
+    requested_extensions = requested_extensions(conn)
+
+    {negotiated_params, returned_data} =
+      if Keyword.get(opts, :compress) do
+        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions)
+      else
+        {nil, []}
+      end
+
+    send_handshake(conn, returned_data)
+    {:ok, Keyword.put(opts, :compress, negotiated_params)}
+  end
+
+  defp requested_extensions(%Plug.Conn{} = conn) do
+    conn
+    |> get_req_header("sec-websocket-extensions")
+    |> Enum.flat_map(&Plug.Conn.Utils.list/1)
+    |> Enum.map(fn extension ->
+      [name | params] =
+        extension
+        |> String.split(";", trim: true)
+        |> Enum.map(&String.trim/1)
+
+      params = split_params(params)
+
+      {name, params}
+    end)
+  end
+
+  defp split_params(params) do
+    params
+    |> Enum.map(fn param ->
+      param
+      |> String.split("=", trim: true)
+      |> Enum.map(&String.trim/1)
+      |> case do
+        [key, value] -> {key, value}
+        [key] -> {key, true}
+      end
+    end)
+  end
+
+  defp send_handshake(%Plug.Conn{} = conn, extensions) do
     # Taken from RFC6455§4.2.2/5. Note that we can take for granted the existence of the
     # sec-websocket-key header in the request, since we check for it in the handshake? call above
     [client_key] = get_req_header(conn, "sec-websocket-key")
@@ -33,13 +86,37 @@ defmodule Bandit.WebSocket.Handshake do
     |> put_resp_header("upgrade", "websocket")
     |> put_resp_header("connection", "Upgrade")
     |> put_resp_header("sec-websocket-accept", server_key)
+    |> put_websocket_extension_header(extensions)
     |> send_resp()
   end
 
+  defp put_websocket_extension_header(conn, []), do: conn
+
+  defp put_websocket_extension_header(conn, extensions) do
+    extensions =
+      extensions
+      |> Enum.map_join(",", fn {extension, params} ->
+        params =
+          params
+          |> Enum.flat_map(fn
+            {_param, false} -> []
+            {param, true} -> [to_string(param)]
+            {param, value} -> [to_string(param) <> "=" <> to_string(value)]
+          end)
+
+        [to_string(extension) | params]
+        |> Enum.join(";")
+      end)
+
+    put_resp_header(conn, "sec-websocket-extensions", extensions)
+  end
+
   defp header_contains?(conn, field, value) do
+    value = String.downcase(value, :ascii)
+
     conn
     |> get_req_header(field)
-    |> Enum.map(&String.downcase(&1, :ascii))
-    |> Enum.member?(String.downcase(value, :ascii))
+    |> Enum.flat_map(&Plug.Conn.Utils.list/1)
+    |> Enum.any?(&(String.downcase(&1, :ascii) == value))
   end
 end

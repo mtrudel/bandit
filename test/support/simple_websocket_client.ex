@@ -5,30 +5,39 @@ defmodule SimpleWebSocketClient do
 
   defdelegate tcp_client(context), to: ClientHelpers
 
-  def http1_handshake(client, query \\ []) do
+  def http1_handshake(client, module, params \\ [], deflate \\ false) do
+    params = Keyword.put(params, :websock, module)
+    params = if deflate, do: Keyword.put(params, :compress, "true"), else: params
+    extensions = if deflate, do: "Sec-WebSocket-Extensions: permessage-deflate\r\n", else: ""
+
     :gen_tcp.send(client, """
-    GET /?#{URI.encode_query(query)} HTTP/1.1\r
+    GET /?#{URI.encode_query(params)} HTTP/1.1\r
     Host: server.example.com\r
     Upgrade: websocket\r
-    Connection: Upgrade\r
+    Connection: keep-alive, Upgrade\r
     Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
     Sec-WebSocket-Version: 13\r
+    #{extensions}
     \r
     """)
 
-    {:ok, response} = :gen_tcp.recv(client, 237)
+    {:ok, response} = :gen_tcp.recv(client, 216)
 
     [
       "HTTP/1.1 101 Switching Protocols",
       "date: " <> _date,
-      "content-length: 0",
       "cache-control: max-age=0, private, must-revalidate",
       "upgrade: websocket",
       "connection: Upgrade",
       "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=",
-      "",
       ""
     ] = String.split(response, "\r\n")
+
+    if deflate do
+      {:ok, "sec-websocket-extensions: permessage-deflate\r\n"} = :gen_tcp.recv(client, 46)
+    end
+
+    {:ok, "\r\n"} = :gen_tcp.recv(client, 2)
   end
 
   def connection_closed_for_reading?(client) do
@@ -44,8 +53,18 @@ defmodule SimpleWebSocketClient do
     {:ok, body}
   end
 
+  def recv_deflated_text_frame(client) do
+    {:ok, 0xC, 0x1, body} = recv_frame(client)
+    {:ok, body}
+  end
+
   def recv_binary_frame(client) do
     {:ok, 0x8, 0x2, body} = recv_frame(client)
+    {:ok, body}
+  end
+
+  def recv_deflated_binary_frame(client) do
+    {:ok, 0xC, 0x2, body} = recv_frame(client)
     {:ok, body}
   end
 
