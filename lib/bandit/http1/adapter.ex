@@ -30,12 +30,13 @@ defmodule Bandit.HTTP1.Adapter do
           %__MODULE__{version: version, buffer: buffer} = req} <-
            do_read_headers(req) do
       body_size = get_header(headers, "content-length")
+      body_size = if body_size, do: String.to_integer(body_size), else: body_size
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
 
       case {body_size, body_encoding} do
-        {nil, nil} ->
+        {body_size, nil} when is_nil(body_size) or body_size <= 0 ->
           {:ok, headers, method, request_target,
            %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
@@ -44,7 +45,7 @@ defmodule Bandit.HTTP1.Adapter do
            %{
              req
              | state: :headers_read,
-               body_remaining: String.to_integer(body_size) - byte_size(buffer),
+               body_remaining: body_size - byte_size(buffer),
                connection: connection,
                keepalive: keepalive
            }}

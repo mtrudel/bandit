@@ -329,6 +329,27 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+    test "reads a neagtive content-length properly", context do
+      {:ok, response} =
+        Finch.build(
+          :post,
+          context[:base] <> "/negative_content_length",
+          [{"content-length", "-321"}, {"connection", "close"}],
+          String.duplicate("a", 8_000_000)
+        )
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def negative_content_length(conn) do
+      assert Plug.Conn.get_req_header(conn, "content-length") == ["-321"]
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == <<>>
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a content-length encoded body properly when more of it arrives than we want to read",
          context do
       {:ok, response} =
