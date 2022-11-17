@@ -1,0 +1,37 @@
+name: Benchmark
+
+on: 
+  pull_request:
+    types: [ opened, reopened, synchronize, labeled ]
+
+env:
+  MIX_ENV: test
+
+jobs:
+  benchmark:
+    if: contains(github.event.pull_request.labels.*.name, 'benchmark')
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install nghttp2
+      run: sudo apt-get install nghttp2
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with: 
+        repository: mtrudel/benchmark
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: 1.14.x
+        otp-version: 25.1
+    - name: Install mix dependencies
+      run: mix deps.get
+    - name: Run benchmark against main
+      run: mix benchmark.compare bandit@${{ github.base_ref }} bandit@${{ github.head_ref }}
+    - name: Upload results file
+      uses: actions/upload-artifact@v3
+      with:
+        name: http-benchmark.csv
+        path: http-benchmark.csv
+    - name: Record summary output
+      id: summary
+      run: cat http-summary.md >> $GITHUB_STEP_SUMMARY
