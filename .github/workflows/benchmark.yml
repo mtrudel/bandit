@@ -26,7 +26,7 @@ jobs:
     - name: Install mix dependencies
       run: mix deps.get
     - name: Run benchmark against main
-      run: mix benchmark.compare bandit@${{ github.event.pull_request.base.sha }} bandit@${{ github.event.pull_request.head.sha }}
+      run: mix benchmark.compare bandit@${{ github.event.pull_request.base.repo.git.clone_url }}@${{ github.event.pull_request.base.ref }} bandit@${{ github.event.pull_request.base.repo.git.clone_url }}@${{ github.event.pull_request.head.sha }}
     - name: Upload results file
       uses: actions/upload-artifact@v3
       with:
