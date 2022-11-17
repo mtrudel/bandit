@@ -33,34 +33,37 @@ defmodule Bandit.HTTP1.Adapter do
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
 
-      if is_nil(body_encoding) do
-        case get_content_length(headers) do
-          {:ok, nil} ->
-            {:ok, headers, method, request_target,
-             %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+      case {get_content_length(headers), body_encoding} do
+        {{:ok, nil}, nil} ->
+          {:ok, headers, method, request_target,
+           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-          {:ok, body_size} ->
-            {:ok, headers, method, request_target,
-             %{
-               req
-               | state: :headers_read,
-                 body_remaining: body_size - byte_size(buffer),
-                 connection: connection,
-                 keepalive: keepalive
-             }}
+        {{:ok, body_size}, nil} ->
+          {:ok, headers, method, request_target,
+           %{
+             req
+             | state: :headers_read,
+               body_remaining: body_size - byte_size(buffer),
+               connection: connection,
+               keepalive: keepalive
+           }}
 
-          error ->
-            error
-        end
-      else
-        {:ok, headers, method, request_target,
-         %{
-           req
-           | state: :headers_read,
-             body_encoding: body_encoding,
-             connection: connection,
-             keepalive: keepalive
-         }}
+        {{:error, reason}, nil} ->
+          {:error, reason}
+
+        {{:ok, nil}, body_encoding} ->
+          {:ok, headers, method, request_target,
+           %{
+             req
+             | state: :headers_read,
+               body_encoding: body_encoding,
+               connection: connection,
+               keepalive: keepalive
+           }}
+
+        {_content_length, _body_encoding} ->
+          {:error,
+           "request cannot contain 'content-length' and 'transfer-encpding' (RFC9112§6.3.3)"}
       end
     end
   end
@@ -123,7 +126,7 @@ defmodule Bandit.HTTP1.Adapter do
       end
     else
       nil -> {:ok, nil}
-      _ -> {:error, "invalid content-length (RFC9112§6.3"}
+      _ -> {:error, "invalid content-length header (RFC9112§6.3.5"}
     end
   end
 
