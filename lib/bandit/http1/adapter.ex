@@ -36,9 +36,12 @@ defmodule Bandit.HTTP1.Adapter do
       keepalive = should_keepalive?(version, connection)
 
       case {body_size, body_encoding} do
-        {body_size, nil} when is_nil(body_size) or body_size <= 0 ->
+        {nil, nil} ->
           {:ok, headers, method, request_target,
            %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+
+        {body_size, nil} when body_size < 0 ->
+          {:error, "invalid negative content-length header (RFC9110§8.6)"}
 
         {body_size, nil} ->
           {:ok, headers, method, request_target,
