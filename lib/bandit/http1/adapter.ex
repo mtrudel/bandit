@@ -16,6 +16,7 @@ defmodule Bandit.HTTP1.Adapter do
             upgrade: nil
 
   alias ThousandIsland.Socket
+  alias Plug.Conn.Utils, as: PlugUtils
 
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
@@ -117,7 +118,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp get_content_length(headers) do
     with {_, value} <- List.keyfind(headers, "content-length", 0),
-         [length] <- Enum.uniq(Plug.Conn.Utils.list(value)),
+         [length] <- Enum.uniq(PlugUtils.list(value)),
          length <- String.to_integer(length) do
       if length >= 0 do
         {:ok, length}
