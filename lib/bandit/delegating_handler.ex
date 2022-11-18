@@ -54,11 +54,6 @@ defmodule Bandit.DelegatingHandler do
     handler_module.handle_info(msg, state)
   end
 
-  @impl GenServer
-  def terminate(reason, %{handler_module: handler_module} = state) do
-    handler_module.terminate(reason, state)
-  end
-
   defp handle_bandit_continuation(continuation, socket) do
     case continuation do
       {:switch, next_handler, state} ->
