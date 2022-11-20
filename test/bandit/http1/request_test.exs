@@ -5,12 +5,78 @@ defmodule HTTP1RequestTest do
   use FinchHelpers
 
   import ExUnit.CaptureLog
-  import TestHelpers
 
   setup :http_server
   setup :finch_http1_client
 
-  describe "request handling" do
+  describe "request line" do
+    @tag capture_log: true
+    test "returns a 400 if the request cannot be parsed", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag capture_log: true
+    test "returns a 400 if the request has an invalid http version", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"], "0.9")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag capture_log: true
+    test "returns 400 if a non-absolute path is send", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag capture_log: true
+    test "returns 400 if path has no leading slash", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "handle absoluteURI as path correctly", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://example-host.com:1337/absolute_uri_path", [
+        "host: example-host.com:1337"
+      ])
+
+      assert {:ok, "200 OK", _headers, "absolute_uri_path"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def absolute_uri_path(conn) do
+      assert conn.host == "example-host.com"
+      assert conn.port == 1337
+      assert conn.path_info == ["absolute_uri_path"]
+      send_resp(conn, 200, "absolute_uri_path")
+    end
+
+    @tag capture_log: true
+    test "handle global OPTIONS request correctly", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "OPTIONS", "*", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "options"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def unquote(:*)(conn) do
+      assert conn.request_path == "*"
+      assert conn.path_info == ["*"]
+      send_resp(conn, 200, "options")
+    end
+
+    @tag capture_log: true
+    test "returns 400 for authority-form / CONNECT requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "request headers" do
     test "reads headers properly", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/expect_headers/a//b/c?abc=def", [
@@ -33,7 +99,9 @@ defmodule HTTP1RequestTest do
       # make iodata explicit
       send_resp(conn, 200, ["O", "K"])
     end
+  end
 
+  describe "request body" do
     test "reads a zero length body properly", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/expect_no_body", [{"connection", "close"}])
@@ -131,155 +199,91 @@ defmodule HTTP1RequestTest do
       assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
       conn |> send_resp(200, body)
     end
+  end
 
-    @tag capture_log: true
-    test "returns a 400 if the request cannot be parsed", context do
-      client = ClientHelpers.tcp_client(context)
+  describe "upgrade handling" do
+    test "raises an ArgumentError on unsupported upgrades", context do
+      errors =
+        capture_log(fn ->
+          {:ok, response} =
+            Finch.build(:get, context[:base] <> "/upgrade_unsupported", [{"connection", "close"}])
+            |> Finch.request(context[:finch_name])
 
-      :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
-      {:ok, response} = :gen_tcp.recv(client, 0)
+          assert response.status == 500
 
-      assert [
-               "HTTP/1.0 400 Bad Request",
-               "date: " <> date,
-               "content-length: 0",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+          Process.sleep(100)
+        end)
 
-      assert valid_date_header?(date)
+      assert errors =~
+               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP1.Adapter"
     end
 
-    @tag capture_log: true
-    test "returns a 400 if the request has an invalid http version", context do
-      client = ClientHelpers.tcp_client(context)
-
-      :gen_tcp.send(client, "GET /some_request_path\r\n")
-
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.0 400 Bad Request",
-               "date: " <> date,
-               "content-length: 0",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+    def upgrade_unsupported(conn) do
+      conn
+      |> upgrade_adapter(:unsupported, nil)
+      |> send_resp(200, "Not supported")
     end
 
-    @tag capture_log: true
-    test "returns 400 if a non-absolute path is send", context do
-      client = ClientHelpers.tcp_client(context)
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
+         context do
+      errors =
+        capture_log(fn ->
+          {:ok, response} =
+            Finch.build(:get, context[:base] <> "/upgrade_websocket", [{"connection", "close"}])
+            |> Finch.request(context[:finch_name])
 
-      :gen_tcp.send(client, "GET ./../non_absolute_path HTTP/1.0\r\nHost: localhost\r\n")
-      {:ok, response} = :gen_tcp.recv(client, 0)
+          assert response.status == 400
+          assert response.body == "Not a valid WebSocket upgrade request"
 
-      assert [
-               "HTTP/1.0 400 Bad Request",
-               "date: " <> date,
-               "content-length: 0",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+          Process.sleep(100)
+        end)
 
-      assert valid_date_header?(date)
+      assert errors =~ "Not a valid WebSocket upgrade request"
     end
 
-    @tag capture_log: true
-    test "returns 400 if path has no leading slash", context do
-      client = ClientHelpers.tcp_client(context)
-
-      :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\nHost: localhost\r\n\r\n")
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.0 400 Bad Request",
-               "date: " <> date,
-               "content-length: 0",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+    defmodule MyNoopWebSock do
+      use NoopWebSock
     end
 
-    @tag capture_log: true
-    test "handle absoluteURI as path correctly", context do
-      client = ClientHelpers.tcp_client(context)
-
-      :gen_tcp.send(
-        client,
-        "GET http://example-host.com:1337/absolute_uri_path HTTP/1.0\r\nHost: localhost\r\n\r\n"
-      )
-
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.0 200 OK",
-               "date: " <> date,
-               "content-length: 0"
-               | _rest
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
-    end
-
-    def absolute_uri_path(conn) do
-      assert conn.host == "example-host.com"
-      assert conn.port == 1337
-      assert conn.path_info == ["absolute_uri_path"]
-      send_resp(conn, 200, "")
-    end
-
-    @tag capture_log: true
-    test "handle global OPTIONS request correctly", context do
-      client = ClientHelpers.tcp_client(context)
-
-      :gen_tcp.send(
-        client,
-        "OPTIONS * HTTP/1.0\r\nHost: localhost\r\n\r\n"
-      )
-
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.0 200 OK",
-               "date: " <> date,
-               "content-length: 0"
-               | _rest
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
-    end
-
-    def unquote(:*)(conn) do
-      assert conn.request_path == "*"
-      assert conn.path_info == ["*"]
-      send_resp(conn, 200, "")
-    end
-
-    @tag capture_log: true
-    test "returns 400 for authority-form / CONNECT requests", context do
-      client = ClientHelpers.tcp_client(context)
-
-      :gen_tcp.send(client, "CONNECT www.example.com:80 HTTP/1.0\r\nHost: localhost\r\n\r\n")
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.0 400 Bad Request",
-               "date: " <> date,
-               "content-length: 0",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+    def upgrade_websocket(conn) do
+      # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
+      # calling upgrade_adapter
+      conn
+      |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
     end
   end
 
-  describe "response handling" do
+  describe "response headers" do
+    test "writes out a response with a valid date header", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_200")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      assert TestHelpers.valid_date_header?(date)
+    end
+
+    test "returns user-defined date header instead of internal version", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/date_header")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      assert date == "Tue, 27 Sep 2022 07:17:32 GMT"
+    end
+
+    def date_header(conn) do
+      conn
+      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
+      |> send_resp(200, "OK")
+    end
+  end
+
+  describe "response body" do
     test "writes out a response with no content-length header for 204 responses", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
@@ -409,7 +413,9 @@ defmodule HTTP1RequestTest do
         String.to_integer(conn.params["length"])
       )
     end
+  end
 
+  describe "abnormal handler processes" do
     @tag capture_log: true
     test "returns a 500 if the plug raises an exception", context do
       {:ok, response} =
@@ -421,23 +427,6 @@ defmodule HTTP1RequestTest do
 
     def raise_error(_conn) do
       raise "boom"
-    end
-
-    test "returns user-defined date header instead of bandits", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/date_header")
-        |> Finch.request(context[:finch_name])
-
-      assert response.status == 200
-
-      assert List.keyfind(response.headers, "date", 0) |> elem(1) ==
-               "Tue, 27 Sep 2022 07:17:32 GMT"
-    end
-
-    def date_header(conn) do
-      conn
-      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
-      |> send_resp(200, "OK")
     end
 
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do
@@ -460,58 +449,6 @@ defmodule HTTP1RequestTest do
     def spawn_child(conn) do
       spawn_link(fn -> exit(:normal) end)
       send_resp(conn, 204, "")
-    end
-  end
-
-  describe "upgrade handling" do
-    test "raises an ArgumentError on unsupported upgrades", context do
-      errors =
-        capture_log(fn ->
-          {:ok, response} =
-            Finch.build(:get, context[:base] <> "/upgrade_unsupported", [{"connection", "close"}])
-            |> Finch.request(context[:finch_name])
-
-          assert response.status == 500
-
-          Process.sleep(100)
-        end)
-
-      assert errors =~
-               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP1.Adapter"
-    end
-
-    def upgrade_unsupported(conn) do
-      conn
-      |> upgrade_adapter(:unsupported, nil)
-      |> send_resp(200, "Not supported")
-    end
-
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
-         context do
-      errors =
-        capture_log(fn ->
-          {:ok, response} =
-            Finch.build(:get, context[:base] <> "/upgrade_websocket", [{"connection", "close"}])
-            |> Finch.request(context[:finch_name])
-
-          assert response.status == 400
-          assert response.body == "Not a valid WebSocket upgrade request"
-
-          Process.sleep(100)
-        end)
-
-      assert errors =~ "Not a valid WebSocket upgrade request"
-    end
-
-    defmodule MyNoopWebSock do
-      use NoopWebSock
-    end
-
-    def upgrade_websocket(conn) do
-      # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
-      # calling upgrade_adapter
-      conn
-      |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
     end
   end
 

@@ -5,8 +5,6 @@ defmodule WebSocketHTTP1HandshakeTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  import TestHelpers
-
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   setup :http_server
@@ -31,583 +29,392 @@ defmodule WebSocketHTTP1HandshakeTest do
 
   describe "HTTP/1.1 handshake" do
     test "accepts well formed requests", context do
-      client = SimpleWebSocketClient.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
     end
 
     test "does not accept non-GET requests", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      POST / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "POST", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept non-HTTP/1.1 requests", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.0\r
-      Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/",
+        [
+          "Host: server.example.com",
+          "Upgrade: WeBsOcKeT",
+          "Connection: UpGrAdE",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ],
+        "1.0"
+      )
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      # Assert that we receive an HTTP response from Plug (ie: we do not upgrade)
-      assert [
-               "HTTP/1.0 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept requests without a host header", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept non-websocket upgrade requests", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: bogus\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: bogus",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept non-upgrade requests", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: close\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: close",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept requests without a request key", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: bogus\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Version: 13\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Version: 13"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "does not accept requests without a version of 13", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: websocket\r
-      Connection: Upgrade\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 12\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 12"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
-
-      assert [
-               "HTTP/1.1 204 No Content",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
     test "negotiates permessage-deflate if so configured", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      assert Keyword.get(headers, :"sec-websocket-extensions") == "permessage-deflate"
     end
 
     test "negotiates permessage-deflate empty client_max_window_bits parameter", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;client_max_window_bits=15",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;client_max_window_bits=15"
     end
 
     test "negotiates permessage-deflate numeric client_max_window_bits parameter", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits=12\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits=12"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      V
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;client_max_window_bits=12",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;client_max_window_bits=12"
     end
 
     test "negotiates permessage-deflate numeric server_max_window_bits parameter", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;server_max_window_bits=12\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;server_max_window_bits=12"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;server_max_window_bits=12",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;server_max_window_bits=12"
     end
 
     test "negotiates permessage-deflate server_no_context_takeover parameter", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;server_no_context_takeover\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;server_no_context_takeover"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;server_no_context_takeover",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;server_no_context_takeover"
     end
 
     test "negotiates permessage-deflate client_no_context_takeover parameter", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;client_no_context_takeover"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;client_no_context_takeover",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;client_no_context_takeover"
     end
 
     test "falls back to later permessage-deflate offers", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate;server_max_window_bits=99,permessage-deflate;client_max_window_bits\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;server_max_window_bits=99,permessage-deflate;client_max_window_bits"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "sec-websocket-extensions: permessage-deflate;client_max_window_bits=15",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
 
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :"sec-websocket-extensions") ==
+               "permessage-deflate;client_max_window_bits=15"
     end
 
     test "does not negotiate permessage-deflate if not configured", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET / HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
     test "does not negotiate unknown extensions", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: not-a-real-extension\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: not-a-real-extension"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
     test "does not negotiate permessage-deflate if the client sends invalid options", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate; this_is_not_an_option\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate; this_is_not_an_option"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
     test "does not negotiate permessage-deflate if the client sends repeat option values",
          context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits; client_max_window_bits\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;client_max_window_bits;client_max_window_bits"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
     test "does not negotiate permessage-deflate if the client sends invalid option values",
          context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      :gen_tcp.send(client, """
-      GET /compress HTTP/1.1\r
-      Host: server.example.com\r
-      Upgrade: WeBsOcKeT\r
-      Connection: UpGrAdE\r
-      Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-      Sec-WebSocket-Version: 13\r
-      Sec-WebSocket-Extensions: permessage-deflate; server_max_window_bits\r
-      \r
-      """)
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;server_max_window_bits"
+      ])
 
-      {:ok, response} = :gen_tcp.recv(client, 0)
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert [
-               "HTTP/1.1 101 Switching Protocols",
-               "date: " <> date,
-               "cache-control: max-age=0, private, must-revalidate",
-               "upgrade: websocket",
-               "connection: Upgrade",
-               "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=",
-               "",
-               ""
-             ] = String.split(response, "\r\n")
-
-      assert valid_date_header?(date)
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
     end
   end
 end
