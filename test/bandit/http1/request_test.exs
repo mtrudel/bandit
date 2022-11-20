@@ -13,8 +13,7 @@ defmodule HTTP1RequestTest do
   describe "request line" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
-      client = ClientHelpers.tcp_client(context)
-
+      client = SimpleHTTP1Client.tcp_client(context)
       :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
 
@@ -31,8 +30,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns a 400 if the request has an invalid http version", context do
-      client = ClientHelpers.tcp_client(context)
-
+      client = SimpleHTTP1Client.tcp_client(context)
       :gen_tcp.send(client, "GET /some_request_path\r\n")
 
       {:ok, response} = :gen_tcp.recv(client, 0)
@@ -50,7 +48,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns 400 if a non-absolute path is send", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
       :gen_tcp.send(client, "GET ./../non_absolute_path HTTP/1.0\r\nHost: localhost\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
@@ -68,7 +66,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns 400 if path has no leading slash", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
       :gen_tcp.send(client, "GET path_without_leading_slash HTTP/1.0\r\nHost: localhost\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)
@@ -85,7 +83,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "handle absoluteURI as path correctly", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
       :gen_tcp.send(
         client,
@@ -113,7 +111,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "handle global OPTIONS request correctly", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
       :gen_tcp.send(
         client,
@@ -140,7 +138,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns 400 for authority-form / CONNECT requests", context do
-      client = ClientHelpers.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
       :gen_tcp.send(client, "CONNECT www.example.com:80 HTTP/1.0\r\nHost: localhost\r\n\r\n")
       {:ok, response} = :gen_tcp.recv(client, 0)

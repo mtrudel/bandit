@@ -1,4 +1,4 @@
-defmodule ClientHelpers do
+defmodule SimpleHTTP1Client do
   @moduledoc false
 
   def tcp_client(context) do

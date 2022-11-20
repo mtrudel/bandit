@@ -3,7 +3,7 @@ defmodule SimpleWebSocketClient do
 
   alias Bandit.WebSocket.Frame
 
-  defdelegate tcp_client(context), to: ClientHelpers
+  defdelegate tcp_client(context), to: SimpleHTTP1Client
 
   def http1_handshake(client, module, params \\ [], deflate \\ false) do
     params = Keyword.put(params, :websock, module)

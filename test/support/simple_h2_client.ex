@@ -3,7 +3,7 @@ defmodule SimpleH2Client do
 
   import Bitwise
 
-  def tls_client(context), do: ClientHelpers.tls_client(context, ["h2"])
+  def tls_client(context), do: SimpleHTTP1Client.tls_client(context, ["h2"])
 
   def setup_connection(context) do
     socket = tls_client(context)
