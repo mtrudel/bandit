@@ -1,4 +1,3 @@
-Path.wildcard(Path.join(__DIR__, "support/*.{ex,exs}")) |> Enum.each(&Code.require_file/1)
 ExUnit.start(exclude: :external_conformance)
 
 # Capture all logs so we're able to assert on logging done at info level in tests
