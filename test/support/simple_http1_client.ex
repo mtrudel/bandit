@@ -19,4 +19,45 @@ defmodule SimpleHTTP1Client do
 
     socket
   end
+
+  def send(socket, verb, request_target, headers \\ [], version \\ "1.1") do
+    :gen_tcp.send(socket, "#{verb} #{request_target} HTTP/#{version}\r\n")
+    Enum.each(headers, &:gen_tcp.send(socket, &1 <> "\r\n"))
+    :gen_tcp.send(socket, "\r\n")
+  end
+
+  def recv_reply(socket) do
+    {:ok, response} = :gen_tcp.recv(socket, 0)
+    [status_line | headers] = String.split(response, "\r\n")
+    <<_version::binary-size(8), " ", status::binary>> = status_line
+    {headers, rest} = Enum.split_while(headers, &(&1 != ""))
+
+    headers =
+      Enum.map(headers, fn header ->
+        [key, value] = String.split(header, ":", parts: 2)
+        {String.to_atom(key), String.trim(value)}
+      end)
+
+    rest = rest |> Enum.drop(1) |> Enum.join("\r\n")
+
+    body =
+      headers
+      |> Keyword.get(:"content-length")
+      |> case do
+        nil ->
+          rest
+
+        value ->
+          case String.to_integer(value) - byte_size(rest) do
+            0 ->
+              rest
+
+            pending ->
+              {:ok, response} = :gen_tcp.recv(socket, pending)
+              rest <> response
+          end
+      end
+
+    {:ok, status, headers, body}
+  end
 end

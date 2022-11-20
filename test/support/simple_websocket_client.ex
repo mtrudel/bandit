@@ -8,19 +8,22 @@ defmodule SimpleWebSocketClient do
   def http1_handshake(client, module, params \\ [], deflate \\ false) do
     params = Keyword.put(params, :websock, module)
     params = if deflate, do: Keyword.put(params, :compress, "true"), else: params
-    extensions = if deflate, do: "Sec-WebSocket-Extensions: permessage-deflate\r\n", else: ""
+    extension_header = if deflate, do: ["Sec-WebSocket-Extensions: permessage-deflate"], else: []
 
-    :gen_tcp.send(client, """
-    GET /?#{URI.encode_query(params)} HTTP/1.1\r
-    Host: server.example.com\r
-    Upgrade: websocket\r
-    Connection: keep-alive, Upgrade\r
-    Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r
-    Sec-WebSocket-Version: 13\r
-    #{extensions}
-    \r
-    """)
+    SimpleHTTP1Client.send(
+      client,
+      "GET",
+      "/?#{URI.encode_query(params)}",
+      [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ] ++ extension_header
+    )
 
+    # Because we don't want to consume any more than our headers, we can't use SimpleHTTP1Client
     {:ok, response} = :gen_tcp.recv(client, 216)
 
     [
