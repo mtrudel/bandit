@@ -253,7 +253,37 @@ defmodule HTTP1RequestTest do
     end
   end
 
-  describe "response handling" do
+  describe "response headers" do
+    test "writes out a response with a valid date header", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_200")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      assert TestHelpers.valid_date_header?(date)
+    end
+
+    test "returns user-defined date header instead of internal version", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/date_header")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+
+      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      assert date == "Tue, 27 Sep 2022 07:17:32 GMT"
+    end
+
+    def date_header(conn) do
+      conn
+      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
+      |> send_resp(200, "OK")
+    end
+  end
+
+  describe "response body" do
     test "writes out a response with no content-length header for 204 responses", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
@@ -382,23 +412,6 @@ defmodule HTTP1RequestTest do
         String.to_integer(conn.params["offset"]),
         String.to_integer(conn.params["length"])
       )
-    end
-
-    test "returns user-defined date header instead of internal version", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/date_header")
-        |> Finch.request(context[:finch_name])
-
-      assert response.status == 200
-
-      assert List.keyfind(response.headers, "date", 0) |> elem(1) ==
-               "Tue, 27 Sep 2022 07:17:32 GMT"
-    end
-
-    def date_header(conn) do
-      conn
-      |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
-      |> send_resp(200, "OK")
     end
   end
 
