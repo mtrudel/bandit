@@ -3,7 +3,6 @@ defmodule HTTP2ProtocolTest do
   use ServerHelpers
 
   import Bitwise
-  import TestHelpers
 
   setup :https_server
 
@@ -230,17 +229,8 @@ defmodule HTTP2ProtocolTest do
   describe "HEADERS frames" do
     test "sends end of stream headers when there is no body", context do
       socket = SimpleH2Client.setup_connection(context)
-
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
-
-      assert {:ok, 1, true,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
+      assert {:ok, 1, true, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
     end
 
     def no_body_response(conn) do
@@ -251,16 +241,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
-
-      assert {:ok, 1, false,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
-
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"})
     end
 
@@ -304,12 +285,10 @@ defmodule HTTP2ProtocolTest do
 
       assert [
                {":status", "200"},
-               {"date", date},
+               {"date", _date},
                {"cache-control", "max-age=0, private, must-revalidate"},
                {"giant", ^random_string}
              ] = headers
-
-      assert valid_date_header?(date)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
@@ -331,15 +310,7 @@ defmodule HTTP2ProtocolTest do
       # Send unadorned headers
       :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
-      assert {:ok, 1, false,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
-
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -354,15 +325,7 @@ defmodule HTTP2ProtocolTest do
         headers
       ])
 
-      assert {:ok, 1, false,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
-
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -378,15 +341,7 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert {:ok, 1, false,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
-
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -402,15 +357,7 @@ defmodule HTTP2ProtocolTest do
         <<1, 2, 3, 4>>
       ])
 
-      assert {:ok, 1, false,
-              [
-                {":status", "200"},
-                {"date", date},
-                {"cache-control", "max-age=0, private, must-revalidate"}
-              ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
-
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -447,11 +394,9 @@ defmodule HTTP2ProtocolTest do
       assert {:ok, 1, false,
               [
                 {":status", "200"},
-                {"date", date},
+                {"date", _date},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
       assert SimpleH2Client.connection_alive?(socket)
@@ -799,14 +744,12 @@ defmodule HTTP2ProtocolTest do
       assert {:ok, 1, false,
               [
                 {":status", "200"},
-                {"date", date},
+                {"date", _date},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"cookie", "a=b"},
                 {"cookie", "c=d"},
                 {"cookie", "e=f"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
@@ -823,11 +766,9 @@ defmodule HTTP2ProtocolTest do
       {:ok, 1, false,
        [
          {":status", "200"},
-         {"date", date},
+         {"date", _date},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], ctx} = SimpleH2Client.recv_headers(socket)
-
-      assert valid_date_header?(date)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
@@ -841,11 +782,9 @@ defmodule HTTP2ProtocolTest do
       {:ok, 3, false,
        [
          {":status", "200"},
-         {"date", date},
+         {"date", _date},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], _ctx} = SimpleH2Client.recv_headers(socket, ctx)
-
-      assert valid_date_header?(date)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
