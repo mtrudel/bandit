@@ -9,11 +9,11 @@ defmodule HTTP1RequestTest do
   setup :http_server
   setup :finch_http1_client
 
-  describe "request line" do
+  describe "invalid requests" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
       client = SimpleHTTP1Client.tcp_client(context)
-      :gen_tcp.send(client, "GET / HTTP/1.0\r\nGARBAGE\r\n\r\n")
+      :gen_tcp.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
@@ -22,6 +22,112 @@ defmodule HTTP1RequestTest do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"], "0.9")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "origin-form request target (RFC9112§3.2.1)" do
+    test "derives scheme from underlying transport", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["scheme"] == "http"
+    end
+
+    test "derives host from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    @tag capture_log: true
+    test "returns 400 if no host header set in HTTP/1.1", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components")
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "sets a blank host if no host header set in HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [], "1.0")
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == ""
+    end
+
+    test "derives port from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:1234"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
+    @tag capture_log: true
+    test "returns 400 if port cannot be parsed from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:-1234"])
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "derives port from underlying transport if no port specified in host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == context[:port]
+    end
+
+    test "derives port from underlying transport if no host header set in HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [], "1.0")
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == context[:port]
+    end
+
+    test "sets path and query string properly when no query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "sets path and query string properly when query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components?a=b", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "ignores fragment when no query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components#nope", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "ignores fragment when query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components?a=b#nope", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "handles query strings with question mark characters in them", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components?a=b?c=d", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b?c=d"
+    end
+
+    def echo_components(conn) do
+      send_resp(
+        conn,
+        200,
+        conn |> Map.take([:scheme, :host, :port, :path_info, :query_string]) |> Jason.encode!()
+      )
     end
 
     @tag capture_log: true
@@ -37,42 +143,127 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
+  end
 
-    test "handle absoluteURI as path correctly", context do
+  describe "absolute-form request target (RFC9112§3.2.2)" do
+    test "derives scheme from underlying transport", context do
       client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "http://example-host.com:1337/absolute_uri_path", [
-        "host: example-host.com:1337"
-      ])
-
-      assert {:ok, "200 OK", _headers, "absolute_uri_path"} = SimpleHTTP1Client.recv_reply(client)
-    end
-
-    def absolute_uri_path(conn) do
-      assert conn.host == "example-host.com"
-      assert conn.port == 1337
-      assert conn.path_info == ["absolute_uri_path"]
-      send_resp(conn, 200, "absolute_uri_path")
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components")
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["scheme"] == "http"
     end
 
     @tag capture_log: true
-    test "handle global OPTIONS request correctly", context do
+    test "returns 400 if URI scheme does not match the transport", context do
       client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "OPTIONS", "*", ["host: localhost"])
-      assert {:ok, "200 OK", _headers, "options"} = SimpleHTTP1Client.recv_reply(client)
+      SimpleHTTP1Client.send(client, "GET", "https://banana/echo_components")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    def unquote(:*)(conn) do
-      assert conn.request_path == "*"
-      assert conn.path_info == ["*"]
-      send_resp(conn, 200, "options")
+    test "derives host from the URI, even if it differs from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", ["host: orange"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "banana"
     end
 
+    @tag capture_log: true
+    test "does not require a host header set in HTTP/1.1 (RFC9112§3.2.2)", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components")
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    test "derives port from the URI, even if it differs from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana:1234/echo_components", [
+        "host: banana:2345"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
+    test "derives port from underlying transport if no port specified in the URI", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == context[:port]
+    end
+
+    test "sets path and query string properly when no query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "sets path and query string properly when query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components?a=b", ["host: banana"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "ignores fragment when no query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components#nope", ["host: banana"])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "ignores fragment when query string is present", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components?a=b#nope", [
+        "host: banana"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "handles query strings with question mark characters in them", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components?a=b?c=d", [
+        "host: banana"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b?c=d"
+    end
+  end
+
+  describe "authority-form request target (RFC9112§3.2.3)" do
     @tag capture_log: true
     test "returns 400 for authority-form / CONNECT requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "asterisk-form request target (RFC9112§3.2.4)" do
+    @tag capture_log: true
+    test "parse global OPTIONS path correctly", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "OPTIONS", "*", ["host: localhost:1234"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["path_info"] == ["*"]
+    end
+
+    def unquote(:*)(conn) do
+      echo_components(conn)
     end
   end
 

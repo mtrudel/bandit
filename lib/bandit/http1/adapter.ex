@@ -109,7 +109,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
   defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
-  defp get_header(headers, header, default \\ nil) do
+  def get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> default

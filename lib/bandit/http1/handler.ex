@@ -29,21 +29,14 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp build_conn(req) do
-    case Adapter.read_headers(req) do
-      {:ok, headers, method, request_target, req} ->
-        %{address: remote_ip} = Adapter.get_peer_data(req)
-
-        # Parse a string to build a URI struct. This is quite a hack. In general, canonicalizing
-        # URIs is a delicate process & rather than building a half-baked implementation here it's
-        # better to leave a simple and ugly hack in place so that future improvements are obvious.
-        # Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
-        {"host", host} = List.keyfind(headers, "host", 0, {"host", nil})
-        scheme = if Adapter.secure?(req), do: :https, else: :http
-
-        uri = build_uri(scheme, host, request_target)
-
-        {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
-
+    with {:ok, headers, method, request_target, req} <- Adapter.read_headers(req),
+         {:ok, scheme} <- determine_scheme(request_target, req),
+         {:ok, host, port} <- determine_host_and_port(request_target, headers, req),
+         {:ok, path, query} <- determine_path_and_query(request_target),
+         uri <- %URI{scheme: scheme, host: host, port: port, path: path, query: query},
+         %{address: remote_ip} <- Adapter.get_peer_data(req) do
+      {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
+    else
       {:error, :timeout} ->
         attempt_to_send_fallback(req, 408)
         {:error, "timeout reading request"}
@@ -54,19 +47,73 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  # Build URI dependent on request target type
-  defp build_uri(scheme, host, {:abs_path, path}),
-    do: URI.parse("#{scheme}://#{host}#{path}")
+  defp determine_scheme({:absoluteURI, scheme, _, _, _}, req) do
+    case {Adapter.secure?(req), scheme} do
+      {true, :https} -> {:ok, "https"}
+      {false, :http} -> {:ok, "http"}
+      _ -> {:error, "request target scheme does not agree with transport"}
+    end
+  end
 
-  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, :undefined, path}),
-    do: URI.parse("#{scheme}://#{host}#{path}")
+  defp determine_scheme(_request_target, req) do
+    if Adapter.secure?(req), do: {:ok, "https"}, else: {:ok, "http"}
+  end
 
-  defp build_uri(_scheme, _host, {:absoluteURI, scheme, host, port, path}),
-    do: URI.parse("#{scheme}://#{host}:#{port}#{path}")
+  defp determine_host_and_port({:absoluteURI, _, host, port, _}, _headers, req) do
+    case port do
+      :undefined -> {:ok, to_string(host), Adapter.get_local_data(req)[:port]}
+      port -> {:ok, to_string(host), port}
+    end
+  end
 
-  defp build_uri(scheme, host, :*) do
-    URI.parse("#{scheme}://#{host}/*")
-    |> Map.put(:path, "*")
+  defp determine_host_and_port(_request_target, headers, req) do
+    with host_header when is_binary(host_header) <- Adapter.get_header(headers, "host"),
+         {:ok, host, port} <- parse_host_header(host_header) do
+      case port do
+        :undefined -> {:ok, host, Adapter.get_local_data(req)[:port]}
+        port -> {:ok, host, port}
+      end
+    else
+      nil ->
+        case req.version do
+          :"HTTP/1.0" -> {:ok, "", Adapter.get_local_data(req)[:port]}
+          _ -> {:error, "No host header"}
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp parse_host_header(host_header) do
+    host_header
+    |> :binary.split(":")
+    |> case do
+      [host, port] ->
+        case Integer.parse(port) do
+          {port, ""} when port > 0 -> {:ok, host, port}
+          _ -> {:error, "Host header contains invalid port"}
+        end
+
+      [host] ->
+        {:ok, host, :undefined}
+    end
+  end
+
+  defp determine_path_and_query({:abs_path, path}), do: split_path(path)
+  defp determine_path_and_query({:absoluteURI, _, _, _, path}), do: split_path(path)
+  defp determine_path_and_query(:*), do: {:ok, "*", nil}
+
+  defp split_path(path) do
+    path
+    |> to_string()
+    |> :binary.split("#")
+    |> hd()
+    |> :binary.split("?")
+    |> case do
+      [path, query] -> {:ok, path, query}
+      [path] -> {:ok, path, nil}
+    end
   end
 
   defp call_plug(%Plug.Conn{adapter: {Adapter, req}} = conn, {plug, plug_opts}) do
