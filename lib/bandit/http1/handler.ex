@@ -32,9 +32,9 @@ defmodule Bandit.HTTP1.Handler do
     with {:ok, headers, method, request_target, req} <- Adapter.read_headers(req),
          {:ok, scheme} <- determine_scheme(request_target, req),
          {:ok, host, port} <- determine_host_and_port(request_target, headers, req),
-         {:ok, path, query} <- determine_path_and_query(request_target),
-         uri <- %URI{scheme: scheme, host: host, port: port, path: path, query: query},
-         %{address: remote_ip} <- Adapter.get_peer_data(req) do
+         {:ok, path, query} <- determine_path_and_query(request_target) do
+      uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
+      %{address: remote_ip} = Adapter.get_peer_data(req)
       {:ok, Plug.Conn.Adapter.conn({Adapter, req}, method, uri, remote_ip, headers)}
     else
       {:error, :timeout} ->
