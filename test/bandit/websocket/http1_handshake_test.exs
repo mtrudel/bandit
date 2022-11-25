@@ -84,12 +84,18 @@ defmodule WebSocketHTTP1HandshakeTest do
     test "does not accept requests without a host header", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", "/", [
-        "Upgrade: WeBsOcKeT",
-        "Connection: UpGrAdE",
-        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-        "Sec-WebSocket-Version: 13"
-      ])
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/",
+        [
+          "Upgrade: WeBsOcKeT",
+          "Connection: UpGrAdE",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ],
+        "1.0"
+      )
 
       assert {:ok, "204 No Content", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
