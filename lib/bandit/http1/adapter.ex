@@ -94,25 +94,20 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  # If we do not have a connection header, then keep alive iff we're running on HTTP/1.1
-  defp should_keepalive?(version, nil), do: version == :"HTTP/1.1"
-
-  defp should_keepalive?(version, connection_header) do
-    case String.downcase(connection_header, :ascii) do
-      "keep-alive" -> true
-      "close" -> false
-      _ -> version == :"HTTP/1.1"
-    end
-  end
+  # `close` & `keep-alive` always means what they say, otherwise keepalive if we're on HTTP/1.1
+  defp should_keepalive?(_, "close"), do: false
+  defp should_keepalive?(_, "keep-alive"), do: true
+  defp should_keepalive?(:"HTTP/1.1", _), do: true
+  defp should_keepalive?(_, _), do: false
 
   defp get_version({1, 1}), do: {:ok, :"HTTP/1.1"}
   defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
   defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
-  def get_header(headers, header, default \\ nil) do
+  def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
-      nil -> default
+      nil -> nil
     end
   end
 
