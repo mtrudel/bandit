@@ -27,8 +27,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   def read_headers(req) do
     with {:ok, headers, method, request_target,
-          %__MODULE__{version: version, buffer: buffer} = req} <-
-           do_read_headers(req) do
+          %__MODULE__{version: version, buffer: buffer} = req} <- do_read_headers(req) do
       body_size = get_header(headers, "content-length")
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
@@ -62,12 +61,15 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
+  @dialyzer {:no_improper_lists, do_read_headers: 5}
   defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil)
 
   defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
     case :erlang.decode_packet(type, buffer, []) do
       {:more, _len} ->
-        with {:ok, req, _} <- grow_buffer(req, 0) do
+        with {:ok, iodata} <- read(req.socket, 0) do
+          # decode_packet expects a binary, so convert it to one
+          req = %{req | buffer: IO.iodata_to_binary([req.buffer | iodata])}
           do_read_headers(req, type, headers, method, request_target)
         end
 
@@ -139,6 +141,7 @@ defmodule Bandit.HTTP1.Adapter do
     {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
   end
 
+  @dialyzer {:no_improper_lists, read_req_body: 2}
   def read_req_body(
         %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
         opts
@@ -152,13 +155,14 @@ defmodule Bandit.HTTP1.Adapter do
     else
       to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
 
-      with {:ok, %__MODULE__{buffer: buffer} = req, bytes_read} <- grow_buffer(req, to_read, opts) do
-        remaining_bytes = body_remaining - bytes_read
+      with {:ok, iodata} <- read(req.socket, to_read, opts) do
+        result = IO.iodata_to_binary([buffer | iodata])
+        body_remaining = body_remaining - IO.iodata_length(iodata)
 
-        if remaining_bytes > 0 do
-          {:more, buffer, %{req | buffer: <<>>, body_remaining: remaining_bytes}}
+        if body_remaining > 0 do
+          {:more, result, %{req | buffer: <<>>, body_remaining: body_remaining}}
         else
-          {:ok, buffer, %{req | state: :body_read, buffer: <<>>, body_remaining: 0}}
+          {:ok, result, %{req | state: :body_read, buffer: <<>>, body_remaining: 0}}
         end
       end
     end
@@ -177,10 +181,11 @@ defmodule Bandit.HTTP1.Adapter do
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
+  @dialyzer {:no_improper_lists, do_read_chunk: 3}
   defp do_read_chunk(%__MODULE__{buffer: buffer} = req, body, opts) do
     case :binary.split(buffer, "\r\n") do
       ["0", _] ->
-        {:ok, body, req}
+        {:ok, IO.iodata_to_binary(body), req}
 
       [chunk_size, rest] ->
         chunk_size = String.to_integer(chunk_size, 16)
@@ -190,13 +195,15 @@ defmodule Bandit.HTTP1.Adapter do
             do_read_chunk(%{req | buffer: rest}, [body, next_chunk], opts)
 
           _ ->
-            with {:ok, req, _} <- grow_buffer(req, chunk_size - byte_size(rest), opts) do
+            with {:ok, iodata} <- read(req.socket, chunk_size - byte_size(rest), opts) do
+              req = %{req | buffer: IO.iodata_to_binary([req.buffer | iodata])}
               do_read_chunk(req, body, opts)
             end
         end
 
       _ ->
-        with {:ok, req, _} <- grow_buffer(req, 0, opts) do
+        with {:ok, iodata} <- read(req.socket, 0, opts) do
+          req = %{req | buffer: IO.iodata_to_binary([req.buffer | iodata])}
           do_read_chunk(req, body, opts)
         end
     end
@@ -206,18 +213,19 @@ defmodule Bandit.HTTP1.Adapter do
   # Internal Reading
   ##################
 
-  defp grow_buffer(%__MODULE__{} = req, to_read, opts \\ [], bytes_read \\ 0) do
+  @dialyzer {:no_improper_lists, read: 5}
+  defp read(socket, to_read, opts \\ [], bytes_read \\ 0, already_read \\ []) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
 
-    with {:ok, chunk} <- Socket.recv(req.socket, read_size, read_timeout) do
+    with {:ok, chunk} <- Socket.recv(socket, read_size, read_timeout) do
       remaining_bytes = to_read - byte_size(chunk)
       bytes_read = bytes_read + byte_size(chunk)
 
       if remaining_bytes > 0 do
-        grow_buffer(%{req | buffer: req.buffer <> chunk}, remaining_bytes, opts, bytes_read)
+        read(socket, remaining_bytes, opts, bytes_read, [already_read | chunk])
       else
-        {:ok, %{req | buffer: req.buffer <> chunk}, bytes_read}
+        {:ok, [already_read | chunk]}
       end
     end
   end
