@@ -20,6 +20,7 @@ defmodule Bandit.HTTP1.Adapter do
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
   # credo:disable-for-this-file Credo.Check.Refactor.Nesting
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   ################
   # Header Reading
