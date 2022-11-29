@@ -3,6 +3,17 @@ name: Manual Benchmark
 on: 
   workflow_dispatch:
     inputs:
+      profile:
+        description: Which profile of test to run
+        required: true
+        default: '--normal'
+        type: choice
+        options: 
+        - '--normal'
+        - '--tiny'
+        - '--huge'
+        - '--normal_bigfile'
+        - '--huge_bigfile'
       baseline_server:
         description: Which server to use as baseline
         required: true
@@ -51,7 +62,7 @@ jobs:
     - name: Compile code
       run: mix compile
     - name: Run benchmark
-      run: mix benchmark.compare ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
+      run: mix benchmark.compare ${{ inputs.profile }} ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
     - name: Upload results file
       uses: actions/upload-artifact@v3
       with:
