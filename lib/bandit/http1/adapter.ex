@@ -16,7 +16,6 @@ defmodule Bandit.HTTP1.Adapter do
             upgrade: nil
 
   alias ThousandIsland.Socket
-  alias Plug.Conn.Utils, as: PlugUtils
 
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
   # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
@@ -29,17 +28,18 @@ defmodule Bandit.HTTP1.Adapter do
   def read_headers(req) do
     with {:ok, headers, method, request_target,
           %__MODULE__{version: version, buffer: buffer} = req} <-
-           do_read_headers(req) do
+           do_read_headers(req),
+         {:ok, body_size} <- get_content_length(headers) do
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
 
-      case {get_content_length(headers), body_encoding} do
-        {{:ok, nil}, nil} ->
+      case {body_size, body_encoding} do
+        {nil, nil} ->
           {:ok, headers, method, request_target,
            %{req | state: :no_body, connection: connection, keepalive: keepalive}}
 
-        {{:ok, body_size}, nil} ->
+        {body_size, nil} ->
           {:ok, headers, method, request_target,
            %{
              req
@@ -49,10 +49,7 @@ defmodule Bandit.HTTP1.Adapter do
                keepalive: keepalive
            }}
 
-        {{:error, reason}, nil} ->
-          {:error, reason}
-
-        {{:ok, nil}, body_encoding} ->
+        {nil, body_encoding} ->
           {:ok, headers, method, request_target,
            %{
              req
@@ -118,8 +115,8 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp get_content_length(headers) do
     with {_, value} <- List.keyfind(headers, "content-length", 0),
-         [length] <- Enum.uniq(PlugUtils.list(value)),
-         length <- String.to_integer(length) do
+         [length] <- Enum.uniq(Plug.Conn.Utils.list(value)),
+         {length, ""} <- Integer.parse(length) do
       if length >= 0 do
         {:ok, length}
       else
@@ -131,7 +128,7 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp get_header(headers, header, default \\ nil) do
+  def get_header(headers, header, default \\ nil) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> default
@@ -160,10 +157,9 @@ defmodule Bandit.HTTP1.Adapter do
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
 
   def read_req_body(
-        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: body_remaining} = req,
+        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
         _opts
-      )
-      when body_remaining <= 0 do
+      ) do
     {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
   end
 
