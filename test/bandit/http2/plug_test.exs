@@ -417,7 +417,7 @@ defmodule HTTP2PlugTest do
   end
 
   def blocking_test(conn) do
-    data = String.duplicate("a", 10_000)
+    data = String.duplicate("0123456789", 1_000)
 
     start_time = System.monotonic_time(:millisecond)
 

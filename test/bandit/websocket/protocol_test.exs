@@ -99,7 +99,7 @@ defmodule WebSocketProtocolTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-      payload = String.duplicate("a", 1_000)
+      payload = String.duplicate("0123456789", 1_000)
       SimpleWebSocketClient.send_text_frame(client, payload)
 
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
@@ -109,7 +109,7 @@ defmodule WebSocketProtocolTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-      payload = String.duplicate("a", 100_000)
+      payload = String.duplicate("0123456789", 100_000)
       SimpleWebSocketClient.send_text_frame(client, payload)
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
     end
@@ -120,7 +120,7 @@ defmodule WebSocketProtocolTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-      payload = String.duplicate("a", 1_000)
+      payload = String.duplicate("0123456789", 1_000)
       SimpleWebSocketClient.send_text_frame(client, payload, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, payload)
@@ -133,7 +133,7 @@ defmodule WebSocketProtocolTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-      payload = String.duplicate("a", 1_000)
+      payload = String.duplicate("0123456789", 1_000)
       SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
       SimpleWebSocketClient.send_continuation_frame(client, payload)
