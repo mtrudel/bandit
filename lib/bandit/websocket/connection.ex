@@ -127,6 +127,9 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
+  def handle_error({:protocol, reason}, socket, connection),
+    do: do_error(1002, reason, socket, connection)
+
   def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
 
   def handle_timeout(socket, connection) do
