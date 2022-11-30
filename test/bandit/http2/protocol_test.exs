@@ -1002,7 +1002,8 @@ defmodule HTTP2ProtocolTest do
       # Send 2^16 - 1 chunks of 2^14 bytes to end up just shy of expecting a
       # window update (we expect one when our window goes below 2^30).
       iters = (1 <<< 16) - 1
-      chunk = String.duplicate("a", 1 <<< 14)
+      # Our duplicated string is 2^3 bytes long, so dupe is 2^11 times to get 2^14 bytes
+      chunk = String.duplicate("01234567", 1 <<< 11)
 
       for _n <- 1..iters do
         SimpleH2Client.send_body(socket, 1, false, chunk)
@@ -1055,10 +1056,10 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_window_update(socket, 1, 1_000_000)
 
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 100))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("b", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("c", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("e", 100))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
@@ -1066,18 +1067,18 @@ defmodule HTTP2ProtocolTest do
 
       # Expect 65_535 bytes as that is our initial connection window
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("b", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("c", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("d", 16_383)}
 
       # Grow the connection window by 100 and observe that we get 100 more bytes
       SimpleH2Client.send_window_update(socket, 0, 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "d" <> String.duplicate("e", 99)}
 
       # Grow the connection window by another 100 and observe that we get the rest of the response
       # Also note that we receive end_of_stream here
       SimpleH2Client.send_window_update(socket, 0, 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "a"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "e"}
     end
 
     test "respects the remaining space in the stream's send window", context do
@@ -1089,10 +1090,10 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_window_update(socket, 0, 1_000_000)
 
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 100))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("b", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("c", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("e", 100))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
@@ -1100,18 +1101,18 @@ defmodule HTTP2ProtocolTest do
 
       # Expect 65_535 bytes as that is our initial stream window
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("b", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("c", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("d", 16_383)}
 
       # Grow the stream window by 100 and observe that we get 100 more bytes
       SimpleH2Client.send_window_update(socket, 1, 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "d" <> String.duplicate("e", 99)}
 
       # Grow the stream window by another 100 and observe that we get the rest of the response
       # Also note that we receive end_of_stream here
       SimpleH2Client.send_window_update(socket, 1, 100)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "a"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "e"}
     end
 
     test "respects both stream and connection windows in complex scenarios", context do
@@ -1120,10 +1121,10 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
 
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 99))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("b", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("c", 16_384))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_384))
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("e", 99))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
@@ -1132,18 +1133,18 @@ defmodule HTTP2ProtocolTest do
 
       # Expect 65_535 bytes as that is our initial connection window
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 16_383)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("b", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("c", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("d", 16_383)}
 
       # Start a second stream and observe that it gets blocked right away
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
 
-      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 3, false, String.duplicate("a", 16_384))
-      SimpleH2Client.send_body(socket, 3, true, String.duplicate("a", 99))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("A", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("B", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("C", 16_384))
+      SimpleH2Client.send_body(socket, 3, false, String.duplicate("D", 16_384))
+      SimpleH2Client.send_body(socket, 3, true, String.duplicate("E", 99))
 
       assert {:ok, 3, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
@@ -1151,10 +1152,10 @@ defmodule HTTP2ProtocolTest do
       # Grow the connection window by 65_535 and observe that we get bytes on 3
       # since 1 is blocked on its stream window
       SimpleH2Client.send_window_update(socket, 0, 65_535)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_384)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 16_383)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("A", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("B", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("C", 16_384)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("D", 16_383)}
 
       # Grow the stream windows such that we expect to see 100 bytes from 1 and 50 bytes from
       # 3 (note that 1 is queued at a higher priority than 3 due to FIFO ordering) Also note that
@@ -1162,12 +1163,12 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_window_update(socket, 3, 100)
       SimpleH2Client.send_window_update(socket, 1, 100)
       SimpleH2Client.send_window_update(socket, 0, 150)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 100)}
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("a", 50)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "d" <> String.duplicate("e", 99)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, "D" <> String.duplicate("E", 49)}
 
       # Finally grow our connection window and verify we get the last of stream 3
       SimpleH2Client.send_window_update(socket, 0, 50)
-      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, String.duplicate("a", 50)}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, String.duplicate("E", 50)}
     end
 
     test "updates new stream send windows based on SETTINGS frames", context do

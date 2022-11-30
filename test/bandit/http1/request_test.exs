@@ -314,7 +314,7 @@ defmodule HTTP1RequestTest do
           :post,
           context[:base] <> "/expect_body",
           [{"connection", "close"}],
-          String.duplicate("a", 8_000_000)
+          String.duplicate("0123456789", 800_000)
         )
         |> Finch.request(context[:finch_name])
 
@@ -325,7 +325,7 @@ defmodule HTTP1RequestTest do
     def expect_body(conn) do
       assert Plug.Conn.get_req_header(conn, "content-length") == ["8000000"]
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body == String.duplicate("a", 8_000_000)
+      assert body == String.duplicate("0123456789", 800_000)
       send_resp(conn, 200, "OK")
     end
 
@@ -371,7 +371,7 @@ defmodule HTTP1RequestTest do
           :post,
           context[:base] <> "/expect_big_body",
           [{"connection", "close"}],
-          String.duplicate("a", 8_000_000)
+          String.duplicate("0123456789", 800_000)
         )
         |> Finch.request(context[:finch_name])
 
@@ -382,14 +382,16 @@ defmodule HTTP1RequestTest do
     def expect_big_body(conn) do
       assert Plug.Conn.get_req_header(conn, "content-length") == ["8000000"]
       {:more, body, conn} = Plug.Conn.read_body(conn, length: 1000)
-      assert body == String.duplicate("a", 1000)
+      assert body == String.duplicate("0123456789", 100)
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body == String.duplicate("a", 8_000_000 - 1000)
+      assert body == String.duplicate("0123456789", 800_000 - 100)
       send_resp(conn, 200, "OK")
     end
 
     test "reads a chunked body properly", context do
-      stream = Stream.repeatedly(fn -> String.duplicate("a", 1_000_000) end) |> Stream.take(8)
+      stream =
+        Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
+        |> Stream.take(8)
 
       {:ok, response} =
         Finch.build(
@@ -407,7 +409,7 @@ defmodule HTTP1RequestTest do
     def expect_chunked_body(conn) do
       assert Plug.Conn.get_req_header(conn, "transfer-encoding") == ["chunked"]
       {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body == String.duplicate("a", 8_000_000)
+      assert body == String.duplicate("0123456789", 800_000)
       send_resp(conn, 200, "OK")
     end
 
