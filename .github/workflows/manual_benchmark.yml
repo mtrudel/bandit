@@ -39,6 +39,8 @@ on:
         required: true
         default: 'main'
 
+run-name: ${{ inputs.test_server }}@${{ inputs.test_version }} vs ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} (${{ inputs.profile }})
+
 env:
   MIX_ENV: test
 
