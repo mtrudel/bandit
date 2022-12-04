@@ -10,7 +10,6 @@ defmodule Bandit.HTTP1.Adapter do
             buffer: <<>>,
             body_remaining: nil,
             body_encoding: nil,
-            connection: nil,
             version: nil,
             keepalive: false,
             upgrade: nil
@@ -35,8 +34,7 @@ defmodule Bandit.HTTP1.Adapter do
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, request_target,
-           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+          {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
 
         {body_size, nil} ->
           {:ok, headers, method, request_target,
@@ -44,7 +42,6 @@ defmodule Bandit.HTTP1.Adapter do
              req
              | state: :headers_read,
                body_remaining: String.to_integer(body_size) - byte_size(buffer),
-               connection: connection,
                keepalive: keepalive
            }}
 
@@ -54,7 +51,6 @@ defmodule Bandit.HTTP1.Adapter do
              req
              | state: :headers_read,
                body_encoding: body_encoding,
-               connection: connection,
                keepalive: keepalive
            }}
       end
