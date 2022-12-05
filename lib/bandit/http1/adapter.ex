@@ -21,35 +21,25 @@ defmodule Bandit.HTTP1.Adapter do
   ################
 
   def read_headers(req) do
-    with {:ok, headers, method, request_target,
-          %__MODULE__{version: version, buffer: buffer} = req} <-
-           do_read_headers(req),
+    with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
          {:ok, body_size} <- get_content_length(headers) do
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
-      keepalive = should_keepalive?(version, connection)
+      keepalive = should_keepalive?(req.version, connection)
 
       case {body_size, body_encoding} do
         {nil, nil} ->
           {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
 
         {body_size, nil} ->
+          body_remaining = body_size - byte_size(req.buffer)
+
           {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_remaining: body_size - byte_size(buffer),
-               keepalive: keepalive
-           }}
+           %{req | state: :headers_read, body_remaining: body_remaining, keepalive: keepalive}}
 
         {nil, body_encoding} ->
           {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_encoding: body_encoding,
-               keepalive: keepalive
-           }}
+           %{req | state: :headers_read, body_encoding: body_encoding, keepalive: keepalive}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -59,10 +49,8 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @dialyzer {:no_improper_lists, do_read_headers: 5}
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil)
-
-  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
-    case :erlang.decode_packet(type, buffer, []) do
+  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil) do
+    case :erlang.decode_packet(type, req.buffer, []) do
       {:more, _len} ->
         with {:ok, iodata} <- read(req.socket, 0) do
           # decode_packet expects a binary, so convert it to one

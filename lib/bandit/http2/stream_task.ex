@@ -22,13 +22,11 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
-  alias Bandit.HTTP2.{Adapter, Errors, Stream}
-
   # A stream process can be created only once we have a stream id & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
           pid(),
-          Stream.stream_id(),
+          Bandit.HTTP2.Stream.stream_id(),
           Plug.Conn.headers(),
           Plug.Conn.Adapter.peer_data(),
           Bandit.plug()
@@ -49,12 +47,12 @@ defmodule Bandit.HTTP2.StreamTask do
 
   # Let the stream task know that the client has reset the stream. This will terminate the
   # stream's handling process
-  @spec recv_rst_stream(pid(), Errors.error_code()) :: true
+  @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   @spec run(
           pid(),
-          Stream.stream_id(),
+          Bandit.HTTP2.Stream.stream_id(),
           Plug.Conn.headers(),
           Plug.Conn.Adapter.peer_data(),
           Bandit.plug()
@@ -65,7 +63,8 @@ defmodule Bandit.HTTP2.StreamTask do
     uri = uri(headers)
 
     # Build an Adapter struct and call the actual underlying Plug module
-    {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
+    {Bandit.HTTP2.Adapter,
+     %Bandit.HTTP2.Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
     |> Plug.Conn.Adapter.conn(method(headers), uri, peer.address, headers)
     |> plug.call(plug_opts)
     |> case do
