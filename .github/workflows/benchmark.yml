@@ -28,7 +28,7 @@ jobs:
     - name: Compile code
       run: mix compile
     - name: Run benchmark against base branch
-      run: mix benchmark.compare bandit@${{ github.event.pull_request.base.repo.clone_url }}@${{ github.event.pull_request.base.ref }} bandit@${{ github.event.pull_request.head.repo.clone_url }}@${{ github.event.pull_request.head.sha }}
+      run: mix benchmark bandit@${{ github.event.pull_request.base.repo.clone_url }}@${{ github.event.pull_request.base.ref }} bandit@${{ github.event.pull_request.head.repo.clone_url }}@${{ github.event.pull_request.head.sha }}
     - name: Upload results file
       uses: actions/upload-artifact@v3
       with:

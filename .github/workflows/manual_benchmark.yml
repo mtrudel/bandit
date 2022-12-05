@@ -6,14 +6,21 @@ on:
       profile:
         description: Which profile of test to run
         required: true
-        default: '--normal'
+        default: 'normal'
         type: choice
         options: 
-        - '--normal'
-        - '--tiny'
-        - '--huge'
-        - '--normal_bigfile'
-        - '--huge_bigfile'
+        - 'normal'
+        - 'tiny'
+        - 'huge'
+      protocol:
+        description: Which protocol to test
+        required: true
+        default: 'http/1.1,h2c'
+        type: choice
+        options: 
+        - 'http/1.1,h2c'
+        - 'http/1.1'
+        - 'h2c'
       baseline_server:
         description: Which server to use as baseline
         required: true
@@ -39,6 +46,8 @@ on:
         required: true
         default: 'main'
 
+run-name: ${{ inputs.test_server }}@${{ inputs.test_version }} vs ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} (${{ inputs.profile }})
+
 env:
   MIX_ENV: test
 
@@ -62,7 +71,7 @@ jobs:
     - name: Compile code
       run: mix compile
     - name: Run benchmark
-      run: mix benchmark.compare ${{ inputs.profile }} ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
+      run: mix benchmark --profile ${{ inputs.profile }} --protocol ${{ inputs.protocol }} ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
     - name: Upload results file
       uses: actions/upload-artifact@v3
       with:

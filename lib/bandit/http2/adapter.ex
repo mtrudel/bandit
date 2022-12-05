@@ -26,34 +26,30 @@ defmodule Bandit.HTTP2.Adapter do
   def read_req_body(%__MODULE__{} = adapter, opts) do
     timeout = Keyword.get(opts, :read_timeout, 15_000)
     length = Keyword.get(opts, :length, 8_000_000)
+    do_read_req_body(adapter, timeout, length, [])
+  end
 
-    # Repeatedly stream messages from the Connection process using the bare `receive` primitive
-    # and reduce this stream down based on their content (or on a timeout condition on receive)
-    Stream.repeatedly(fn ->
-      receive do
-        msg -> msg
-      after
-        timeout -> :timeout
-      end
-    end)
-    |> Enum.reduce_while([], fn
-      {:data, data}, acc ->
-        if byte_size(data) + IO.iodata_length(acc) <= length do
-          {:cont, [data | acc]}
+  defp do_read_req_body(adapter, timeout, remaining_length, acc) do
+    receive do
+      {:data, data} ->
+        acc = [data | acc]
+        remaining_length = remaining_length - byte_size(data)
+
+        if remaining_length >= 0 do
+          do_read_req_body(adapter, timeout, remaining_length, acc)
         else
-          {:halt, {:more, [data | acc], adapter}}
+          {:more, wrap_req_body(acc), adapter}
         end
 
-      :end_stream, acc ->
-        {:halt, {:ok, acc, %{adapter | end_stream: true}}}
-
-      :timeout, acc ->
-        {:halt, {:more, acc, adapter}}
-    end)
-    |> case do
-      {:ok, body, adapter} -> {:ok, body |> Enum.reverse() |> IO.iodata_to_binary(), adapter}
-      {:more, body, adapter} -> {:more, body |> Enum.reverse() |> IO.iodata_to_binary(), adapter}
+      :end_stream ->
+        {:ok, wrap_req_body(acc), %{adapter | end_stream: true}}
+    after
+      timeout -> {:more, wrap_req_body(acc), adapter}
     end
+  end
+
+  defp wrap_req_body(data) do
+    data |> Enum.reverse() |> IO.iodata_to_binary()
   end
 
   @impl Plug.Conn.Adapter

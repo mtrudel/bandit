@@ -10,16 +10,10 @@ defmodule Bandit.HTTP1.Adapter do
             buffer: <<>>,
             body_remaining: nil,
             body_encoding: nil,
-            connection: nil,
             version: nil,
             keepalive: false,
             upgrade: nil
 
-  alias ThousandIsland.Socket
-
-  # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
-  # credo:disable-for-this-file Credo.Check.Refactor.CondStatements
-  # credo:disable-for-this-file Credo.Check.Refactor.Nesting
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   ################
@@ -37,8 +31,7 @@ defmodule Bandit.HTTP1.Adapter do
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, request_target,
-           %{req | state: :no_body, connection: connection, keepalive: keepalive}}
+          {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
 
         {body_size, nil} ->
           {:ok, headers, method, request_target,
@@ -46,7 +39,6 @@ defmodule Bandit.HTTP1.Adapter do
              req
              | state: :headers_read,
                body_remaining: body_size - byte_size(buffer),
-               connection: connection,
                keepalive: keepalive
            }}
 
@@ -56,7 +48,6 @@ defmodule Bandit.HTTP1.Adapter do
              req
              | state: :headers_read,
                body_encoding: body_encoding,
-               connection: connection,
                keepalive: keepalive
            }}
 
@@ -247,7 +238,7 @@ defmodule Bandit.HTTP1.Adapter do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
 
-    with {:ok, chunk} <- Socket.recv(socket, read_size, read_timeout) do
+    with {:ok, chunk} <- ThousandIsland.Socket.recv(socket, read_size, read_timeout) do
       remaining_bytes = to_read - byte_size(chunk)
       bytes_read = bytes_read + byte_size(chunk)
 
@@ -276,7 +267,7 @@ defmodule Bandit.HTTP1.Adapter do
       end
 
     header_io_data = response_header(version, status, headers)
-    Socket.send(socket, [header_io_data, response])
+    ThousandIsland.Socket.send(socket, [header_io_data, response])
     {:ok, nil, %{req | state: :sent}}
   end
 
@@ -305,8 +296,8 @@ defmodule Bandit.HTTP1.Adapter do
 
     if offset + length <= size do
       headers = [{"content-length", length |> to_string()} | headers]
-      Socket.send(socket, response_header(version, status, headers))
-      Socket.sendfile(socket, path, offset, length)
+      ThousandIsland.Socket.send(socket, response_header(version, status, headers))
+      ThousandIsland.Socket.sendfile(socket, path, offset, length)
 
       {:ok, nil, %{req | state: :sent}}
     else
@@ -318,14 +309,14 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{socket: socket, version: version} = req, status, headers) do
     headers = [{"transfer-encoding", "chunked"} | headers]
-    Socket.send(socket, response_header(version, status, headers))
+    ThousandIsland.Socket.send(socket, response_header(version, status, headers))
     {:ok, nil, %{req | state: :chunking_out}}
   end
 
   @impl Plug.Conn.Adapter
   def chunk(%__MODULE__{socket: socket}, chunk) do
-    byte_size = chunk |> byte_size() |> Integer.to_string(16)
-    Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
+    byte_size = chunk |> IO.iodata_length() |> Integer.to_string(16)
+    ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
     :ok
   end
 
@@ -363,11 +354,11 @@ defmodule Bandit.HTTP1.Adapter do
   def push(_req, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{socket: socket}), do: Socket.peer_info(socket)
+  def get_peer_data(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.peer_info(socket)
 
-  def get_local_data(%__MODULE__{socket: socket}), do: Socket.local_info(socket)
+  def get_local_data(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.local_info(socket)
 
-  def secure?(%__MODULE__{socket: socket}), do: Socket.secure?(socket)
+  def secure?(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.secure?(socket)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
