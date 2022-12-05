@@ -329,6 +329,7 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+    # Success case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     test "reads a content-length with multiple content-lengths encoded body properly", context do
       {:ok, response} =
         Finch.build(
@@ -348,6 +349,21 @@ defmodule HTTP1RequestTest do
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert body == String.duplicate("a", 8_000_000)
       send_resp(conn, 200, "OK")
+    end
+
+    # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    @tag capture_log: true
+    test "rejects a request with non-matching multiple content lengths", context do
+      {:ok, response} =
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_body_with_multiple_content_length",
+          [{"connection", "close"}, {"content-length", "8000000,8000001,8000000"}],
+          String.duplicate("a", 8_000_000)
+        )
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 400
     end
 
     @tag capture_log: true
