@@ -14,14 +14,17 @@ defmodule Bandit.HTTP1.Adapter do
             keepalive: false,
             upgrade: nil
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
   ################
   # Header Reading
   ################
 
   def read_headers(req) do
     with {:ok, headers, method, request_target,
-          %__MODULE__{version: version, buffer: buffer} = req} <- do_read_headers(req) do
-      body_size = get_header(headers, "content-length")
+          %__MODULE__{version: version, buffer: buffer} = req} <-
+           do_read_headers(req),
+         {:ok, body_size} <- get_content_length(headers) do
       body_encoding = get_header(headers, "transfer-encoding")
       connection = get_header(headers, "connection")
       keepalive = should_keepalive?(version, connection)
@@ -35,11 +38,11 @@ defmodule Bandit.HTTP1.Adapter do
            %{
              req
              | state: :headers_read,
-               body_remaining: String.to_integer(body_size) - byte_size(buffer),
+               body_remaining: body_size - byte_size(buffer),
                keepalive: keepalive
            }}
 
-        {_, body_encoding} ->
+        {nil, body_encoding} ->
           {:ok, headers, method, request_target,
            %{
              req
@@ -47,6 +50,10 @@ defmodule Bandit.HTTP1.Adapter do
                body_encoding: body_encoding,
                keepalive: keepalive
            }}
+
+        {_content_length, _body_encoding} ->
+          {:error,
+           "request cannot contain 'content-length' and 'transfer-encpding' (RFC9112§6.3.3)"}
       end
     end
   end
@@ -96,12 +103,35 @@ defmodule Bandit.HTTP1.Adapter do
   defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
   defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
+  defp get_content_length(headers) do
+    with {_, value} <- List.keyfind(headers, "content-length", 0),
+         {:ok, length} <- enforce_unique_value(Plug.Conn.Utils.list(value)),
+         {length, ""} <- Integer.parse(length) do
+      if length >= 0 do
+        {:ok, length}
+      else
+        {:error, "invalid negative content-length header (RFC9110§8.6)"}
+      end
+    else
+      nil -> {:ok, nil}
+      error -> error
+    end
+  end
+
   def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
       nil -> nil
     end
   end
+
+  defp enforce_unique_value([value]), do: {:ok, value}
+  defp enforce_unique_value([value | rest]), do: enforce_unique_value(rest, value)
+  defp enforce_unique_value([], value), do: {:ok, value}
+  defp enforce_unique_value([value | rest], value), do: enforce_unique_value(rest, value)
+
+  defp enforce_unique_value(_values, _value),
+    do: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
   # Unwrap different request_targets returned by :erlang.decode_packet/3
   defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
