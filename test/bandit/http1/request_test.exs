@@ -354,12 +354,13 @@ defmodule HTTP1RequestTest do
     # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     @tag capture_log: true
     test "rejects a request with non-matching multiple content lengths", context do
+      # Use a smaller body size to avoid raciness in reading the response
       {:ok, response} =
         Finch.build(
           :post,
           context[:base] <> "/expect_body_with_multiple_content_length",
-          [{"connection", "close"}, {"content-length", "8000000,8000001,8000000"}],
-          String.duplicate("a", 8_000_000)
+          [{"connection", "close"}, {"content-length", "8000,8001,8000"}],
+          String.duplicate("a", 8_000)
         )
         |> Finch.request(context[:finch_name])
 
