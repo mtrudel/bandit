@@ -131,7 +131,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp enforce_unique_value([value | rest], value), do: enforce_unique_value(rest, value)
 
   defp enforce_unique_value(_values, _value),
-    do: {:error, "invalid content-length header (RFC9112§6.3.5"}
+    do: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
   # Unwrap different request_targets returned by :erlang.decode_packet/3
   defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
