@@ -133,6 +133,9 @@ defmodule Bandit.HTTP1.Adapter do
         rest
         |> Plug.Conn.Utils.list()
         |> enforce_unique_value(to_string(length), length)
+
+      :error ->
+        {:error, "invalid content-length header (RFC9112§6.3.5)"}
     end
   end
 
