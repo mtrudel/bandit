@@ -105,8 +105,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp get_content_length(headers) do
     with {_, value} <- List.keyfind(headers, "content-length", 0),
-         {:ok, length} <- enforce_unique_value(Plug.Conn.Utils.list(value)),
-         {length, ""} <- Integer.parse(length) do
+         {:ok, length} <- parse_content_length(value) do
       if length >= 0 do
         {:ok, length}
       else
@@ -125,12 +124,24 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  defp enforce_unique_value([value]), do: {:ok, value}
-  defp enforce_unique_value([value | rest]), do: enforce_unique_value(rest, value)
-  defp enforce_unique_value([], value), do: {:ok, value}
-  defp enforce_unique_value([value | rest], value), do: enforce_unique_value(rest, value)
+  def parse_content_length(value) do
+    case Integer.parse(value) do
+      {length, ""} ->
+        {:ok, length}
 
-  defp enforce_unique_value(_values, _value),
+      {length, rest} ->
+        rest
+        |> Plug.Conn.Utils.list()
+        |> enforce_unique_value(to_string(length), length)
+    end
+  end
+
+  defp enforce_unique_value([], _str, value), do: {:ok, value}
+
+  defp enforce_unique_value([value | rest], value, int),
+    do: enforce_unique_value(rest, value, int)
+
+  defp enforce_unique_value(_values, _value, _int_value),
     do: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
   # Unwrap different request_targets returned by :erlang.decode_packet/3
