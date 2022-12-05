@@ -124,7 +124,7 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  def parse_content_length(value) do
+  defp parse_content_length(value) do
     case Integer.parse(value) do
       {length, ""} ->
         {:ok, length}
