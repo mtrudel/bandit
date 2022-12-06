@@ -381,6 +381,20 @@ defmodule HTTP1RequestTest do
       assert response.status == 400
     end
 
+    @tag capture_log: true
+    test "rejects a request with non-integer content length", context do
+      {:ok, response} =
+        Finch.build(
+          :post,
+          context[:base] <> "/expect_body_with_multiple_content_length",
+          [{"connection", "close"}, {"content-length", "foo"}],
+          String.duplicate("a", 8_000)
+        )
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 400
+    end
+
     test "reads a content-length encoded body properly when more of it arrives than we want to read",
          context do
       {:ok, response} =
