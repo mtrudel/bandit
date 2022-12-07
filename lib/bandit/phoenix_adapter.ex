@@ -2,7 +2,7 @@ defmodule Bandit.PhoenixAdapter do
   @moduledoc """
   A Bandit adapter for Phoenix.
 
-  WebSocket support requires a version of Phoenix with Plug upgrade support, which is available 
+  WebSocket support requires a version of Phoenix with Plug upgrade support, which is available
   as part of Phoenix 1.7 and later. This module will work fine on earlier versions of Phoenix,
   just without WebSocket support.
 
@@ -30,7 +30,7 @@ defmodule Bandit.PhoenixAdapter do
         for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
         to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.TCP`
-    
+
       Defaults to `false`, which will cause Bandit to not start an HTTP server.
 
     * `:https`: the configuration for the HTTPS server. Accepts the following options:
@@ -40,7 +40,7 @@ defmodule Bandit.PhoenixAdapter do
         for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
         to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.SSL`
-    
+
       Defaults to `false`, which will cause Bandit to not start an HTTPS server.
   """
 
@@ -70,5 +70,5 @@ defmodule Bandit.PhoenixAdapter do
   end
 
   defp port_to_integer(port) when is_binary(port), do: String.to_integer(port)
-  defp(port_to_integer(port) when is_integer(port), do: port)
+  defp port_to_integer(port) when is_integer(port), do: port
 end
