@@ -177,7 +177,7 @@ defmodule Bandit do
     |> Keyword.update(
       :transport_options,
       extra_transport_options,
-      &Keyword.merge(&1, extra_transport_options)
+      &(&1 ++ extra_transport_options)
     )
     |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
     |> Keyword.put(:handler_options, handler_options)
