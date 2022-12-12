@@ -168,6 +168,89 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OKOK"}
     end
 
+    # Success case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    test "reads a content-length with multiple content-lengths encoded body properly", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/expect_body_with_multiple_content_length"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "8000,8000,8000"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def expect_body_with_multiple_content_length(conn) do
+      assert Plug.Conn.get_req_header(conn, "content-length") == ["8000,8000,8000"]
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("a", 8_000)
+      send_resp(conn, 200, "OK")
+    end
+
+    # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    @tag capture_log: true
+    test "returns a stream error if content length contains non-matching values", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/expect_body_with_multiple_content_length"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "8000,8001,8000"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    @tag capture_log: true
+    test "returns a stream error if sent content-length is negative", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "-321"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    @tag capture_log: true
+    test "returns a stream error if sent content length is non-integer", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "foo"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
     @tag capture_log: true
     test "returns a stream error if sent content-length doesn't match sent data", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -490,6 +573,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
     end
 
+    @tag capture_log: true
     test "returns a stream error if sent headers with uppercase names", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -503,6 +587,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if sent headers with invalid pseudo headers", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -519,6 +604,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if sent headers with response pseudo headers", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -535,6 +621,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if pseudo headers appear after regular ones", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -551,6 +638,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns an error if (almost) any hop-by-hop headers are present", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -583,6 +671,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, true)
     end
 
+    @tag capture_log: true
     test "returns an error if TE header is present with a value other than trailers", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -599,6 +688,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if :method pseudo header is missing", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -613,6 +703,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if multiple :method pseudo headers are received", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -629,6 +720,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if :scheme pseudo header is missing", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -643,6 +735,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if multiple :scheme pseudo headers are received", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -659,6 +752,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if :path pseudo header is missing", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -673,6 +767,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if multiple :path pseudo headers are received", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -689,6 +784,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
+    @tag capture_log: true
     test "returns a stream error if :path pseudo headers is empty", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1269,6 +1365,478 @@ defmodule HTTP2ProtocolTest do
       :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+    end
+  end
+
+  describe "origin-form request target (no :authority header, RFC7540§8.1.2.3)" do
+    test "derives scheme from :scheme pseudo header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["scheme"] == "https"
+    end
+
+    @tag capture_log: true
+    test "resets stream if scheme does not match transport", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "http"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "derives host from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    @tag capture_log: true
+    test "resets stream if no host header set", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "derives port from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:1234"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
+    @tag capture_log: true
+    test "resets stream if port cannot be parsed from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:-1234"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "derives port from underlying transport if no port specified in host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["port"] == context.port
+    end
+
+    test "sets path and query string properly when no query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "sets path and query string properly when query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "ignores fragment when no query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components#nope"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "ignores fragment when query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b#nope"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "handles query strings with question mark characters in them", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b?c=d"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b?c=d"
+    end
+
+    def echo_components(conn) do
+      send_resp(
+        conn,
+        200,
+        conn |> Map.take([:scheme, :host, :port, :path_info, :query_string]) |> Jason.encode!()
+      )
+    end
+
+    @tag capture_log: true
+    test "returns stream error if a non-absolute path is send", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/../non_absolute_path"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    @tag capture_log: true
+    test "returns stream error if path has no leading slash", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "path_without_leading_slash"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+  end
+
+  describe "absolute-form request target (with :authority header, RFC9112§3.2.2)" do
+    test "derives scheme from :scheme pseudo header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["scheme"] == "https"
+    end
+
+    @tag capture_log: true
+    test "resets stream if scheme does not match transport", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "http"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    test "derives host from :authority header, even if it differs from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"},
+        {"host", "orange:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    test "derives port from host header, even if it differs from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "banana:1234"},
+        {"host", "banana:2345"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
+    test "derives port from underlying transport if no port specified in host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "banana"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["port"] == context.port
+    end
+
+    test "sets path and query string properly when no query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "sets path and query string properly when query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "ignores fragment when no query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components#nope"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == ""
+    end
+
+    test "ignores fragment when query string is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b#nope"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b"
+    end
+
+    test "handles query strings with question mark characters in them", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components?a=b?c=d"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["echo_components"]
+      assert Jason.decode!(body)["query_string"] == "a=b?c=d"
+    end
+
+    @tag capture_log: true
+    test "returns stream error if a non-absolute path is send", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/../non_absolute_path"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+
+    @tag capture_log: true
+    test "returns stream error if path has no leading slash", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "path_without_leading_slash"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+    end
+  end
+
+  describe "asterisk-form request target (RFC7540§8.1.2.3 & RFC9112§3.2.4)" do
+    @tag capture_log: true
+    test "parse global OPTIONS path correctly", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "OPTIONS"},
+        {":path", "*"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["path_info"] == ["*"]
+    end
+
+    def unquote(:*)(conn) do
+      echo_components(conn)
     end
   end
 end

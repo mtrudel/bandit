@@ -178,8 +178,9 @@ defmodule Bandit.HTTP2.Connection do
          {:hpack, {:ok, headers, recv_hpack_state}} <-
            {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         peer <- Socket.peer_info(socket),
-         {:ok, stream} <- Stream.recv_headers(stream, headers, end_stream, peer, connection.plug),
+         transport_info <- build_transport_info(socket),
+         {:ok, stream} <-
+           Stream.recv_headers(stream, transport_info, headers, end_stream, connection.plug),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
@@ -286,6 +287,11 @@ defmodule Bandit.HTTP2.Connection do
     Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})")
 
     {:continue, connection}
+  end
+
+  defp build_transport_info(socket) do
+    {ThousandIsland.Socket.secure?(socket), ThousandIsland.Socket.local_info(socket),
+     ThousandIsland.Socket.peer_info(socket)}
   end
 
   # Shared logic to send any pending frames upon adjustment of our send window

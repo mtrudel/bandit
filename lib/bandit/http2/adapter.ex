@@ -6,15 +6,14 @@ defmodule Bandit.HTTP2.Adapter do
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false, uri: nil
+  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           connection: Bandit.HTTP2.Connection.t(),
           peer: Plug.Conn.Adapter.peer_data(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
-          end_stream: boolean(),
-          uri: URI.t()
+          end_stream: boolean()
         }
 
   # As described in the header documentation for the `Bandit.HTTP2.StreamTask` module, we
@@ -140,10 +139,10 @@ defmodule Bandit.HTTP2.Adapter do
     headers = split_cookies(headers)
 
     headers =
-      if List.keymember?(headers, "date", 0) do
-        headers
-      else
+      if is_nil(Bandit.Headers.get_header(headers, "date")) do
         [Bandit.Clock.date_header() | headers]
+      else
+        headers
       end
 
     headers = [{":status", to_string(status)} | headers]

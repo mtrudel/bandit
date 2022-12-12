@@ -20,6 +20,8 @@ defmodule Bandit.HTTP2.Stream do
             send_window_size: nil,
             pending_content_length: nil
 
+  defmodule StreamError, do: defexception([:message])
+
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
 
@@ -41,12 +43,12 @@ defmodule Bandit.HTTP2.Stream do
 
   @spec recv_headers(
           t(),
+          Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
           boolean,
-          Plug.Conn.Adapter.peer_data(),
           Bandit.plug()
         ) :: {:ok, t()} | {:error, Connection.error()} | {:error, error()}
-  def recv_headers(%__MODULE__{state: state} = stream, trailers, true, _peer, _plug)
+  def recv_headers(%__MODULE__{state: state} = stream, _transport_info, trailers, true, _plug)
       when state in [:open, :local_closed] do
     with :ok <- no_pseudo_headers(trailers, stream.stream_id) do
       # These are actually trailers, which Plug doesn't support. Log and ignore
@@ -56,24 +58,16 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  def recv_headers(%__MODULE__{state: :idle} = stream, headers, _end_stream, peer, plug) do
+  def recv_headers(%__MODULE__{state: :idle} = stream, transport_info, headers, _end_stream, plug) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         :ok <- headers_all_lowercase(headers, stream.stream_id),
-         :ok <- pseudo_headers_all_request(headers, stream.stream_id),
-         :ok <- pseudo_headers_first(headers, stream.stream_id),
-         :ok <- no_connection_headers(headers, stream.stream_id),
-         :ok <- valid_te_header(headers, stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":scheme", stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":method", stream.stream_id),
-         :ok <- exactly_one_instance_of(headers, ":path", stream.stream_id),
-         :ok <- non_empty_path(headers, stream.stream_id),
-         expected_content_length <- expected_content_length(headers) do
-      {:ok, pid} = StreamTask.start_link(self(), stream.stream_id, headers, peer, plug)
-      {:ok, %{stream | state: :open, pid: pid, pending_content_length: expected_content_length}}
+         {:ok, content_length} <- get_content_length(headers, stream.stream_id),
+         {:ok, pid} <-
+           StreamTask.start_link(self(), stream.stream_id, transport_info, headers, plug) do
+      {:ok, %{stream | state: :open, pid: pid, pending_content_length: content_length}}
     end
   end
 
-  def recv_headers(%__MODULE__{}, _headers, _end_stream, _peer, _plug) do
+  def recv_headers(%__MODULE__{}, _transport_info, _headers, _end_stream, _plug) do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 
@@ -86,114 +80,21 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  # RFC7540§8.1.2 - all headers name fields must be lowercsae
-  defp headers_all_lowercase(headers, stream_id) do
-    headers
-    |> Enum.all?(fn {key, _value} -> String.downcase(key, :ascii) == key end)
-    |> if do
-      :ok
-    else
-      {:error, {:stream, stream_id, Errors.protocol_error(), "Received uppercase header"}}
-    end
-  end
-
-  # RFC7540§8.1.2.1 - only request pseudo headers may appear
-  defp pseudo_headers_all_request(headers, stream_id) do
-    headers
-    |> Enum.all?(fn
-      {":" <> key, _value} -> key in ~w[method scheme authority path]
-      {_key, _value} -> true
-    end)
-    |> if do
-      :ok
-    else
-      {:error, {:stream, stream_id, Errors.protocol_error(), "Received invalid pseudo header"}}
+  # RFC7540§8.1.2.6 - content length must be valid
+  defp get_content_length(headers, stream_id) do
+    case Bandit.Headers.get_content_length(headers) do
+      {:ok, content_length} -> {:ok, content_length}
+      {:error, reason} -> {:error, {:stream, stream_id, Errors.protocol_error(), reason}}
     end
   end
 
   # RFC7540§8.1.2.1 - pseudo headers must appear first
   defp no_pseudo_headers(headers, stream_id) do
-    headers
-    |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
-    |> if do
+    if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end) do
       {:error,
        {:stream, stream_id, Errors.protocol_error(), "Received trailers with pseudo headers"}}
     else
       :ok
-    end
-  end
-
-  # RFC7540§8.1.2.2 - pseudo headers must appear first
-  defp pseudo_headers_first(headers, stream_id) do
-    headers
-    |> Enum.drop_while(fn {key, _value} -> String.starts_with?(key, ":") end)
-    |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
-    |> if do
-      {:error,
-       {:stream, stream_id, Errors.protocol_error(), "Received pseudo headers after regular one"}}
-    else
-      :ok
-    end
-  end
-
-  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
-  # Note that we do not filter out the TE header here, since it is allowed in
-  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
-  defp no_connection_headers(headers, stream_id) do
-    headers
-    |> Enum.any?(fn {key, _value} ->
-      key in ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
-    end)
-    |> if do
-      {:error,
-       {:stream, stream_id, Errors.protocol_error(), "Received connection-specific header"}}
-    else
-      :ok
-    end
-  end
-
-  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
-  defp valid_te_header(headers, stream_id) do
-    case List.keyfind(headers, "te", 0) do
-      nil ->
-        :ok
-
-      {_, "trailers"} ->
-        :ok
-
-      _ ->
-        {:error, {:stream, stream_id, Errors.protocol_error(), "Received invalid TE header"}}
-    end
-  end
-
-  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
-  defp exactly_one_instance_of(headers, header, stream_id) do
-    headers
-    |> Enum.count(fn {key, _value} -> key == header end)
-    |> case do
-      1 ->
-        :ok
-
-      _ ->
-        {:error, {:stream, stream_id, Errors.protocol_error(), "Expected 1 #{header} headers"}}
-    end
-  end
-
-  # RFC7540§8.1.2.3 :path must not be empty
-  defp non_empty_path(headers, stream_id) do
-    case List.keyfind(headers, ":path", 0) do
-      {_, ""} ->
-        {:error, {:stream, stream_id, Errors.protocol_error(), "Received empty :path"}}
-
-      _ ->
-        :ok
-    end
-  end
-
-  defp expected_content_length(headers) do
-    case List.keyfind(headers, "content-length", 0) do
-      nil -> nil
-      {_, content_length} -> String.to_integer(content_length)
     end
   end
 
@@ -349,19 +250,21 @@ defmodule Bandit.HTTP2.Stream do
 
   def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
     Logger.warning("Stream #{stream.stream_id} was killed by bandit (#{reason})")
-
     {:ok, %{stream | state: :closed, pid: nil}, nil}
+  end
+
+  def stream_terminated(%__MODULE__{} = stream, {%StreamError{} = error, _}) do
+    Logger.warning("Stream #{stream.stream_id} encountered a stream error (#{inspect(error)})")
+    {:ok, %{stream | state: :closed, pid: nil}, Errors.protocol_error()}
   end
 
   def stream_terminated(%__MODULE__{} = stream, :normal) do
     Logger.warning("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
-
     {:ok, %{stream | state: :closed, pid: nil}, Errors.no_error()}
   end
 
   def stream_terminated(%__MODULE__{} = stream, reason) do
     Logger.error("Task for stream #{stream.stream_id} crashed with #{inspect(reason)}")
-
     {:ok, %{stream | state: :closed, pid: nil}, Errors.internal_error()}
   end
 end
