@@ -4,7 +4,7 @@ defmodule Bandit.HTTP2.Connection do
 
   require Logger
 
-  alias ThousandIsland.{Handler, Socket, Transport}
+  alias ThousandIsland.{Handler, Socket}
 
   alias Bandit.HTTP2.{
     Connection,
@@ -25,7 +25,6 @@ defmodule Bandit.HTTP2.Connection do
             recv_window_size: 65_535,
             streams: %StreamCollection{},
             pending_sends: [],
-            peer: nil,
             plug: nil
 
   @typedoc "A description of a connection error"
@@ -42,14 +41,12 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: StreamCollection.t(),
           pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
-          peer: Transport.socket_info(),
           plug: Bandit.plug()
         }
 
   @spec init(Socket.t(), Bandit.plug()) :: {:ok, t()}
   def init(socket, plug) do
-    peer = Socket.peer_info(socket)
-    connection = %__MODULE__{plug: plug, peer: peer}
+    connection = %__MODULE__{plug: plug}
     # Send SETTINGS frame per RFC7540§3.5
     %Frame.Settings{ack: false, settings: connection.local_settings}
     |> send_frame(socket, connection)
@@ -181,8 +178,8 @@ defmodule Bandit.HTTP2.Connection do
          {:hpack, {:ok, headers, recv_hpack_state}} <-
            {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         {:ok, stream} <-
-           Stream.recv_headers(stream, headers, end_stream, connection.peer, connection.plug),
+         peer <- Socket.peer_info(socket),
+         {:ok, stream} <- Stream.recv_headers(stream, headers, end_stream, peer, connection.plug),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
