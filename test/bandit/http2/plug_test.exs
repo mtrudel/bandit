@@ -23,6 +23,20 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, <<>>)
   end
 
+  test "request headers do not include pseudo headers", context do
+    {:ok, response} =
+      Finch.build(:head, context[:base] <> "/no_pseudo_header")
+      |> Finch.request(context[:finch_name])
+
+    assert response.status == 200
+  end
+
+  def no_pseudo_header(conn) do
+    assert get_req_header(conn, ":scheme") == []
+
+    conn |> send_resp(200, <<>>)
+  end
+
   test "reading request body when there is no body sent", context do
     {:ok, response} =
       Finch.build(:head, context[:base] <> "/empty_body_read")

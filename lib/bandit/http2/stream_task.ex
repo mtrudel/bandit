@@ -50,96 +50,26 @@ defmodule Bandit.HTTP2.StreamTask do
   @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
-  def run(connection, stream_id, transport_info, headers, plug) do
+  def run(connection, stream_id, transport_info, all_headers, plug) do
     with {_, _, peer} <- transport_info,
-         :ok <- headers_all_lowercase(headers),
-         :ok <- pseudo_headers_all_request(headers),
-         :ok <- pseudo_headers_first(headers),
-         :ok <- no_connection_headers(headers),
-         :ok <- valid_te_header(headers),
-         :ok <- exactly_one_instance_of(headers, ":scheme"),
-         :ok <- exactly_one_instance_of(headers, ":method"),
-         :ok <- exactly_one_instance_of(headers, ":path"),
-         method <- Bandit.Headers.get_header(headers, ":method"),
-         {:ok, request_target} <- build_request_target(headers),
+         {:ok, request_target} <- build_request_target(all_headers),
          req <- %Bandit.HTTP2.Adapter{connection: connection, peer: peer, stream_id: stream_id},
          mod_and_req <- {Bandit.HTTP2.Adapter, req},
+         {:ok, pseudo_headers, headers} <- split_headers(all_headers),
+         :ok <- pseudo_headers_all_request(pseudo_headers),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":method"),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":path"),
+         method <- Bandit.Headers.get_header(pseudo_headers, ":method"),
+         :ok <- headers_all_lowercase(headers),
+         :ok <- no_connection_headers(headers),
+         :ok <- valid_te_header(headers),
          headers <- combine_cookie_crumbs(headers),
          {:ok, _} <-
            Bandit.Pipeline.run(mod_and_req, transport_info, method, request_target, headers, plug) do
       :ok
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason
-    end
-  end
-
-  # RFC7540§8.1.2 - all headers name fields must be lowercsae
-  defp headers_all_lowercase(headers) do
-    if Enum.all?(headers, fn {key, _value} -> String.downcase(key, :ascii) == key end) do
-      :ok
-    else
-      {:error, "Received uppercase header"}
-    end
-  end
-
-  # RFC7540§8.1.2.1 - only request pseudo headers may appear
-  defp pseudo_headers_all_request(headers) do
-    headers
-    |> Enum.all?(fn
-      {":" <> key, _value} -> key in ~w[method scheme authority path]
-      {_key, _value} -> true
-    end)
-    |> if do
-      :ok
-    else
-      {:error, "Received invalid pseudo header"}
-    end
-  end
-
-  # RFC7540§8.1.2.2 - pseudo headers must appear first
-  defp pseudo_headers_first(headers) do
-    headers
-    |> Enum.drop_while(fn {key, _value} -> String.starts_with?(key, ":") end)
-    |> Enum.any?(fn {key, _value} -> String.starts_with?(key, ":") end)
-    |> if do
-      {:error, "Received pseudo headers after regular one"}
-    else
-      :ok
-    end
-  end
-
-  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
-  # Note that we do not filter out the TE header here, since it is allowed in
-  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
-  defp no_connection_headers(headers) do
-    headers
-    |> Enum.any?(fn {key, _value} ->
-      key in ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
-    end)
-    |> if do
-      {:error, "Received connection-specific header"}
-    else
-      :ok
-    end
-  end
-
-  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
-  defp valid_te_header(headers) do
-    if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
-      do: :ok,
-      else: {:error, "Received invalid TE header"}
-  end
-
-  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
-  defp exactly_one_instance_of(headers, header) do
-    headers
-    |> Enum.count(fn {key, _value} -> key == header end)
-    |> case do
-      1 ->
-        :ok
-
-      _ ->
-        {:error, "Expected 1 #{header} headers"}
     end
   end
 
@@ -158,35 +88,86 @@ defmodule Bandit.HTTP2.StreamTask do
     end
   end
 
-  # RFC7540§8.1.2.3
+  # RFC7540§8.1.2.3 - path should be non-empty and absolute
   defp get_path(headers) do
     headers
     |> Bandit.Headers.get_header(":path")
     |> case do
-      nil ->
-        {:error, "Received empty :path"}
-
-      "*" ->
-        {:ok, :*}
-
-      "/" <> _ = path ->
-        if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])) do
-          {:ok, path}
-        else
-          {:error, "Path contains dot segment"}
-        end
-
-      _ ->
-        {:error, "Path does not start with /"}
+      nil -> {:error, "Received empty :path"}
+      "*" -> {:ok, :*}
+      "/" <> _ = path -> split_path(path)
+      _ -> {:error, "Path does not start with /"}
     end
+  end
+
+  # RFC7540§8.1.2.3 - path should match the path-absolute production from RFC3986
+  defp split_path(path) do
+    if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
+      do: {:ok, path},
+      else: {:error, "Path contains dot segment"}
+  end
+
+  # RFC7540§8.1.2.2 - pseudo headers must appear first
+  defp split_headers(headers) do
+    {pseudo_headers, headers} =
+      Enum.split_while(headers, fn {key, _value} -> String.starts_with?(key, ":") end)
+
+    if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
+      do: {:error, "Received pseudo headers after regular one"},
+      else: {:ok, pseudo_headers, headers}
+  end
+
+  # RFC7540§8.1.2.1 - only request pseudo headers may appear
+  defp pseudo_headers_all_request(headers) do
+    if Enum.any?(headers, fn {key, _value} -> key not in ~w[:method :scheme :authority :path] end),
+      do: {:error, "Received invalid pseudo header"},
+      else: :ok
+  end
+
+  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
+  defp exactly_one_instance_of(headers, header) do
+    headers
+    |> Enum.count(fn {key, _value} -> key == header end)
+    |> case do
+      1 -> :ok
+      _ -> {:error, "Expected 1 #{header} headers"}
+    end
+  end
+
+  # RFC7540§8.1.2 - all headers name fields must be lowercsae
+  defp headers_all_lowercase(headers) do
+    if Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
+      do: :ok,
+      else: {:error, "Received uppercase header"}
+  end
+
+  defp lowercase?(<<char, _rest::bits>>) when char >= ?A and char <= ?Z, do: false
+  defp lowercase?(<<_char, rest::bits>>), do: lowercase?(rest)
+  defp lowercase?(<<>>), do: true
+
+  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
+  # Note that we do not filter out the TE header here, since it is allowed in
+  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
+  defp no_connection_headers(headers) do
+    connection_headers =
+      ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
+
+    if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
+      do: {:error, "Received connection-specific header"},
+      else: :ok
+  end
+
+  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
+  defp valid_te_header(headers) do
+    if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
+      do: :ok,
+      else: {:error, "Received invalid TE header"}
   end
 
   # Per RFC7540§8.1.2.5
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
-
     combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
-
     [{"cookie", combined_cookie} | other_headers]
   end
 end
