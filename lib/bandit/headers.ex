@@ -27,23 +27,19 @@ defmodule Bandit.Headers do
   end
 
   def get_content_length(headers) do
-    with value when not is_nil(value) <- get_header(headers, "content-length"),
-         {:ok, length} <- parse_content_length(value) do
-      if length >= 0 do
-        {:ok, length}
-      else
-        {:error, "invalid negative content-length header (RFC9110§8.6)"}
-      end
-    else
+    case get_header(headers, "content-length") do
       nil -> {:ok, nil}
-      error -> error
+      value -> parse_content_length(value)
     end
   end
 
   defp parse_content_length(value) do
     case Integer.parse(value) do
-      {length, ""} ->
+      {length, ""} when length >= 0 ->
         {:ok, length}
+
+      {_length, ""} ->
+        {:error, "invalid negative content-length header (RFC9110§8.6)"}
 
       {length, rest} ->
         rest
