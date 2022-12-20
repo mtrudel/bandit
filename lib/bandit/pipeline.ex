@@ -19,7 +19,7 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers(),
           Bandit.plug()
         ) ::
-          {:ok, Plug.Conn.adapter()} | {:error, term()}
+          {:ok, Plug.Conn.adapter()} | {:ok, :websocket, tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
          {:ok, conn} <- call_plug(conn, plug),
