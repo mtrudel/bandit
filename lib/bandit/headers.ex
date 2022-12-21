@@ -42,20 +42,16 @@ defmodule Bandit.Headers do
         {:error, "invalid negative content-length header (RFC9110§8.6)"}
 
       {length, rest} ->
-        rest
-        |> Plug.Conn.Utils.list()
-        |> enforce_unique_value(to_string(length), length)
+        if rest |> Plug.Conn.Utils.list() |> all?(to_string(length)),
+          do: {:ok, length},
+          else: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
       :error ->
         {:error, "invalid content-length header (RFC9112§6.3.5)"}
     end
   end
 
-  defp enforce_unique_value([], _str, value), do: {:ok, value}
-
-  defp enforce_unique_value([value | rest], value, int),
-    do: enforce_unique_value(rest, value, int)
-
-  defp enforce_unique_value(_values, _value, _int_value),
-    do: {:error, "invalid content-length header (RFC9112§6.3.5)"}
+  defp all?([value | rest], value), do: all?(rest, value)
+  defp all?([], _str), do: true
+  defp all?(_values, _value), do: false
 end
