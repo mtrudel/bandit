@@ -1,5 +1,7 @@
 defmodule Bandit.Pipeline do
   @moduledoc false
+  # Provides a common pipeline for HTTP/1.1 and h2 adapters, factoring together shared
+  # functionality relating to `Plug.Conn` management
 
   @type transport_info ::
           {boolean(), ThousandIsland.Transport.socket_info(),
