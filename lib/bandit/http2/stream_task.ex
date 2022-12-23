@@ -22,19 +22,17 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
-  alias Bandit.HTTP2.{Adapter, Errors, Stream}
-
   # A stream process can be created only once we have a stream id & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
           pid(),
-          Stream.stream_id(),
+          Bandit.HTTP2.Stream.stream_id(),
+          Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
-          Plug.Conn.Adapter.peer_data(),
           Bandit.plug()
         ) :: {:ok, pid()}
-  def start_link(connection, stream_id, headers, peer, plug) do
-    Task.start_link(__MODULE__, :run, [connection, stream_id, headers, peer, plug])
+  def start_link(connection, stream_id, transport_info, headers, plug) do
+    Task.start_link(__MODULE__, :run, [connection, stream_id, transport_info, headers, plug])
   end
 
   # Let the stream task know that body data has arrived from the client. The other half of this
@@ -49,73 +47,127 @@ defmodule Bandit.HTTP2.StreamTask do
 
   # Let the stream task know that the client has reset the stream. This will terminate the
   # stream's handling process
-  @spec recv_rst_stream(pid(), Errors.error_code()) :: true
+  @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
-  @spec run(
-          pid(),
-          Stream.stream_id(),
-          Plug.Conn.headers(),
-          Plug.Conn.Adapter.peer_data(),
-          Bandit.plug()
-        ) ::
-          any()
-  def run(connection, stream_id, headers, peer, {plug, plug_opts}) do
-    headers = combine_cookie_crumbs(headers)
-    uri = uri(headers)
-
-    # Build an Adapter struct and call the actual underlying Plug module
-    {Adapter, %Adapter{connection: connection, peer: peer, stream_id: stream_id, uri: uri}}
-    |> Plug.Conn.Adapter.conn(method(headers), uri, peer.address, headers)
-    |> plug.call(plug_opts)
-    |> case do
-      %Plug.Conn{state: :unset} ->
-        raise(Plug.Conn.NotSentError)
-
-      %Plug.Conn{state: :set} = conn ->
-        Plug.Conn.send_resp(conn)
-
-      %Plug.Conn{state: :chunked, adapter: {adapter_mod, req}} = conn ->
-        adapter_mod.chunk(req, "")
-        conn
-
-      %Plug.Conn{} = conn ->
-        conn
-
-      _ = conn ->
-        raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(conn)}")
+  def run(connection, stream_id, transport_info, all_headers, plug) do
+    with {_, _, peer} <- transport_info,
+         {:ok, request_target} <- build_request_target(all_headers),
+         req <- %Bandit.HTTP2.Adapter{connection: connection, peer: peer, stream_id: stream_id},
+         mod_and_req <- {Bandit.HTTP2.Adapter, req},
+         {:ok, pseudo_headers, headers} <- split_headers(all_headers),
+         :ok <- pseudo_headers_all_request(pseudo_headers),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":method"),
+         :ok <- exactly_one_instance_of(pseudo_headers, ":path"),
+         method <- Bandit.Headers.get_header(pseudo_headers, ":method"),
+         :ok <- headers_all_lowercase(headers),
+         :ok <- no_connection_headers(headers),
+         :ok <- valid_te_header(headers),
+         headers <- combine_cookie_crumbs(headers),
+         {:ok, _} <-
+           Bandit.Pipeline.run(mod_and_req, transport_info, method, request_target, headers, plug) do
+      :ok
+    else
+      {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason
     end
+  end
+
+  defp build_request_target(headers) do
+    with scheme <- Bandit.Headers.get_header(headers, ":scheme"),
+         {:ok, host, port} <- get_host_and_port(headers),
+         {:ok, path} <- get_path(headers) do
+      {:ok, {scheme, host, port, path}}
+    end
+  end
+
+  defp get_host_and_port(headers) do
+    case Bandit.Headers.get_header(headers, ":authority") do
+      authority when not is_nil(authority) -> Bandit.Headers.parse_hostlike_header(authority)
+      nil -> {:ok, nil, nil}
+    end
+  end
+
+  # RFC7540§8.1.2.3 - path should be non-empty and absolute
+  defp get_path(headers) do
+    headers
+    |> Bandit.Headers.get_header(":path")
+    |> case do
+      nil -> {:error, "Received empty :path"}
+      "*" -> {:ok, :*}
+      "/" <> _ = path -> split_path(path)
+      _ -> {:error, "Path does not start with /"}
+    end
+  end
+
+  # RFC7540§8.1.2.3 - path should match the path-absolute production from RFC3986
+  defp split_path(path) do
+    if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
+      do: {:ok, path},
+      else: {:error, "Path contains dot segment"}
+  end
+
+  # RFC7540§8.1.2.2 - pseudo headers must appear first
+  defp split_headers(headers) do
+    {pseudo_headers, headers} =
+      Enum.split_while(headers, fn {key, _value} -> String.starts_with?(key, ":") end)
+
+    if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
+      do: {:error, "Received pseudo headers after regular one"},
+      else: {:ok, pseudo_headers, headers}
+  end
+
+  # RFC7540§8.1.2.1 - only request pseudo headers may appear
+  defp pseudo_headers_all_request(headers) do
+    if Enum.any?(headers, fn {key, _value} -> key not in ~w[:method :scheme :authority :path] end),
+      do: {:error, "Received invalid pseudo header"},
+      else: :ok
+  end
+
+  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
+  defp exactly_one_instance_of(headers, header) do
+    headers
+    |> Enum.count(fn {key, _value} -> key == header end)
+    |> case do
+      1 -> :ok
+      _ -> {:error, "Expected 1 #{header} headers"}
+    end
+  end
+
+  # RFC7540§8.1.2 - all headers name fields must be lowercsae
+  defp headers_all_lowercase(headers) do
+    if Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
+      do: :ok,
+      else: {:error, "Received uppercase header"}
+  end
+
+  defp lowercase?(<<char, _rest::bits>>) when char >= ?A and char <= ?Z, do: false
+  defp lowercase?(<<_char, rest::bits>>), do: lowercase?(rest)
+  defp lowercase?(<<>>), do: true
+
+  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
+  # Note that we do not filter out the TE header here, since it is allowed in
+  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
+  defp no_connection_headers(headers) do
+    connection_headers =
+      ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
+
+    if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
+      do: {:error, "Received connection-specific header"},
+      else: :ok
+  end
+
+  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
+  defp valid_te_header(headers) do
+    if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
+      do: :ok,
+      else: {:error, "Received invalid TE header"}
   end
 
   # Per RFC7540§8.1.2.5
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
-
     combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
-
     [{"cookie", combined_cookie} | other_headers]
-  end
-
-  defp method(headers), do: get_header(headers, ":method")
-
-  defp uri(headers) do
-    scheme = get_header(headers, ":scheme")
-    authority = get_header(headers, ":authority")
-    path = get_header(headers, ":path")
-
-    # Parse a string to build a URI struct. This is quite a hack and isn't tolerant
-    # of requests proxied from an HTTP/1.1 client (RFC7540§8.1.2.3 specifies that
-    # :authority MUST NOT be set in this case). In general, canonicalizing URIs is
-    # a delicate process & rather than building a half-baked implementation here it's
-    # better to leave a simple and ugly hack in place so that future improvements are
-    # obvious. Future paths here are discussed at https://github.com/elixir-plug/plug/issues/948)
-    URI.parse(scheme <> "://" <> authority <> path)
-  end
-
-  defp get_header(headers, header, default \\ nil) do
-    case List.keyfind(headers, header, 0) do
-      {_, value} -> value
-      nil -> default
-    end
   end
 end

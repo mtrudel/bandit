@@ -520,7 +520,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
 
-      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      date = Bandit.Headers.get_header(response.headers, "date")
       assert TestHelpers.valid_date_header?(date)
     end
 
@@ -531,7 +531,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
 
-      date = List.keyfind(response.headers, "date", 0) |> elem(1)
+      date = Bandit.Headers.get_header(response.headers, "date")
       assert date == "Tue, 27 Sep 2022 07:17:32 GMT"
     end
 
@@ -550,7 +550,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 204
       assert response.body == ""
-      assert is_nil(List.keyfind(response.headers, "content-length", 0))
+      assert is_nil(Bandit.Headers.get_header(response.headers, "content-length"))
     end
 
     def send_204(conn) do
@@ -564,7 +564,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 304
       assert response.body == ""
-      assert is_nil(List.keyfind(response.headers, "content-length", 0))
+      assert is_nil(Bandit.Headers.get_header(response.headers, "content-length"))
     end
 
     def send_304(conn) do
@@ -578,7 +578,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == ""
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
     end
 
     def send_200(conn) do
@@ -592,7 +592,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 301
       assert response.body == ""
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
     end
 
     def send_301(conn) do
@@ -606,7 +606,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 401
       assert response.body == ""
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "0"}
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
     end
 
     def send_401(conn) do
@@ -621,8 +621,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert response.body == "OK"
 
-      assert List.keyfind(response.headers, "transfer-encoding", 0) ==
-               {"transfer-encoding", "chunked"}
+      assert Bandit.Headers.get_header(response.headers, "transfer-encoding") == "chunked"
     end
 
     def send_chunked_200(conn) do
@@ -641,7 +640,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == "ABCDEF"
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "6"}
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "6"
     end
 
     def send_full_file(conn) do
@@ -658,7 +657,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == "BCD"
-      assert List.keyfind(response.headers, "content-length", 0) == {"content-length", "3"}
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "3"
     end
 
     def send_file(conn) do
@@ -686,6 +685,32 @@ defmodule HTTP1RequestTest do
 
     def raise_error(_conn) do
       raise "boom"
+    end
+
+    @tag capture_log: true
+    test "returns a 500 if the plug does not return anything", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/noop")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 500
+    end
+
+    def noop(conn) do
+      conn
+    end
+
+    @tag capture_log: true
+    test "returns a 500 if the plug does not return a conn", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/return_garbage")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 500
+    end
+
+    def return_garbage(_conn) do
+      :nope
     end
 
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do

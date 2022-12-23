@@ -21,35 +21,25 @@ defmodule Bandit.HTTP1.Adapter do
   ################
 
   def read_headers(req) do
-    with {:ok, headers, method, request_target,
-          %__MODULE__{version: version, buffer: buffer} = req} <-
-           do_read_headers(req),
-         {:ok, body_size} <- get_content_length(headers) do
-      body_encoding = get_header(headers, "transfer-encoding")
-      connection = get_header(headers, "connection")
-      keepalive = should_keepalive?(version, connection)
+    with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
+         {:ok, body_size} <- Bandit.Headers.get_content_length(headers) do
+      body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
+      connection = Bandit.Headers.get_header(headers, "connection")
+      keepalive = should_keepalive?(req.version, connection)
 
       case {body_size, body_encoding} do
         {nil, nil} ->
           {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
 
         {body_size, nil} ->
+          body_remaining = body_size - byte_size(req.buffer)
+
           {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_remaining: body_size - byte_size(buffer),
-               keepalive: keepalive
-           }}
+           %{req | state: :headers_read, body_remaining: body_remaining, keepalive: keepalive}}
 
         {nil, body_encoding} ->
           {:ok, headers, method, request_target,
-           %{
-             req
-             | state: :headers_read,
-               body_encoding: body_encoding,
-               keepalive: keepalive
-           }}
+           %{req | state: :headers_read, body_encoding: body_encoding, keepalive: keepalive}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -59,10 +49,8 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @dialyzer {:no_improper_lists, do_read_headers: 5}
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil)
-
-  defp do_read_headers(%__MODULE__{buffer: buffer} = req, type, headers, method, request_target) do
-    case :erlang.decode_packet(type, buffer, []) do
+  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil) do
+    case :erlang.decode_packet(type, req.buffer, []) do
       {:more, _len} ->
         with {:ok, iodata} <- read(req.socket, 0) do
           # decode_packet expects a binary, so convert it to one
@@ -103,57 +91,16 @@ defmodule Bandit.HTTP1.Adapter do
   defp get_version({1, 0}), do: {:ok, :"HTTP/1.0"}
   defp get_version(other), do: {:error, "invalid HTTP version: #{inspect(other)}"}
 
-  defp get_content_length(headers) do
-    with {_, value} <- List.keyfind(headers, "content-length", 0),
-         {:ok, length} <- parse_content_length(value) do
-      if length >= 0 do
-        {:ok, length}
-      else
-        {:error, "invalid negative content-length header (RFC9110§8.6)"}
-      end
-    else
-      nil -> {:ok, nil}
-      error -> error
-    end
-  end
-
-  def get_header(headers, header) do
-    case List.keyfind(headers, header, 0) do
-      {_, value} -> value
-      nil -> nil
-    end
-  end
-
-  defp parse_content_length(value) do
-    case Integer.parse(value) do
-      {length, ""} ->
-        {:ok, length}
-
-      {length, rest} ->
-        rest
-        |> Plug.Conn.Utils.list()
-        |> enforce_unique_value(to_string(length), length)
-
-      :error ->
-        {:error, "invalid content-length header (RFC9112§6.3.5)"}
-    end
-  end
-
-  defp enforce_unique_value([], _str, value), do: {:ok, value}
-
-  defp enforce_unique_value([value | rest], value, int),
-    do: enforce_unique_value(rest, value, int)
-
-  defp enforce_unique_value(_values, _value, _int_value),
-    do: {:error, "invalid content-length header (RFC9112§6.3.5)"}
-
   # Unwrap different request_targets returned by :erlang.decode_packet/3
-  defp resolve_request_target({:abs_path, _path} = request_target), do: {:ok, request_target}
+  defp resolve_request_target({:abs_path, path}), do: {:ok, {nil, nil, nil, path}}
 
-  defp resolve_request_target({:absoluteURI, _scheme, _host, _port, _path} = request_target),
-    do: {:ok, request_target}
+  defp resolve_request_target({:absoluteURI, scheme, host, :undefined, path}),
+    do: {:ok, {to_string(scheme), host, nil, path}}
 
-  defp resolve_request_target(:*), do: {:ok, :*}
+  defp resolve_request_target({:absoluteURI, scheme, host, port, path}),
+    do: {:ok, {to_string(scheme), host, port, path}}
+
+  defp resolve_request_target(:*), do: {:ok, {nil, nil, nil, :*}}
 
   defp resolve_request_target({:scheme, _scheme, _path}),
     do: {:error, "schemeURI is not supported"}
@@ -338,10 +285,10 @@ defmodule Bandit.HTTP1.Adapter do
 
   defp response_header(version, status, headers) do
     headers =
-      if List.keymember?(headers, "date", 0) do
-        headers
-      else
+      if is_nil(Bandit.Headers.get_header(headers, "date")) do
         [Bandit.Clock.date_header() | headers]
+      else
+        headers
       end
 
     [
