@@ -68,7 +68,7 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_call({:send_data, stream_id, data, end_stream}, {pid, _tag} = from, {socket, state}) do
-    # It's possible that this send could not complete syncronously if we do not have enough space
+    # It's possible that this send could not complete synchronously if we do not have enough space
     # in either/both our connection or stream send windows. In this case Connection.send_data will
     # return false as the second value of its result tuple, signaling that we should `:no_reply`
     # to the caller. If/when the send window(s) are enlarged by the client and the data in the

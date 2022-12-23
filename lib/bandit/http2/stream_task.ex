@@ -1,7 +1,7 @@
 defmodule Bandit.HTTP2.StreamTask do
   @moduledoc false
   # This Task is where an actual Plug is executed, within the context of an HTTP/2 stream. There
-  # is a bit of split responsiblity between this module and the `Bandit.HTTP2.Adapter` module
+  # is a bit of split responsibility between this module and the `Bandit.HTTP2.Adapter` module
   # which merits explanation:
   #
   # Broadly, this module is responsible for the execution of a Plug and does so within a Task
