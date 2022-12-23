@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.StreamCollection do
             last_remote_stream_id: 0,
             streams: %{}
 
-  @typedoc "A collection of Stream structs, accessisble by id or pid"
+  @typedoc "A collection of Stream structs, accessible by id or pid"
   @type t :: %__MODULE__{
           initial_recv_window_size: non_neg_integer(),
           initial_send_window_size: non_neg_integer(),

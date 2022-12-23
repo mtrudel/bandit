@@ -368,7 +368,7 @@ defmodule HTTP1RequestTest do
     end
 
     @tag capture_log: true
-    test "rejects a request with neagtive content-length", context do
+    test "rejects a request with negative content-length", context do
       {:ok, response} =
         Finch.build(
           :post,

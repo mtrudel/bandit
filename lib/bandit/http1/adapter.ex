@@ -53,7 +53,7 @@ defmodule Bandit.HTTP1.Adapter do
 
         {_content_length, _body_encoding} ->
           {:error,
-           "request cannot contain 'content-length' and 'transfer-encpding' (RFC9112§6.3.3)"}
+           "request cannot contain 'content-length' and 'transfer-encoding' (RFC9112§6.3.3)"}
       end
     end
   end

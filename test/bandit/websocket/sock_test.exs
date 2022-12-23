@@ -161,7 +161,7 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
 
-    test "can receive a bianry frame", context do
+    test "can receive a binary frame", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleInEchoWebSock)
 

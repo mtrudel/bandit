@@ -6,7 +6,7 @@ defmodule Bandit.WebSocket.Connection do
 
   defstruct websock: nil, websock_state: nil, state: :open, compress: nil, fragment_frame: nil
 
-  @typedoc "Conection state"
+  @typedoc "Connection state"
   @type state :: :open | :closing
 
   @typedoc "Encapsulates the state of a WebSocket connection"
