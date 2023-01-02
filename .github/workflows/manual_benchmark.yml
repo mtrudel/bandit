@@ -15,12 +15,13 @@ on:
       protocol:
         description: Which protocol to test
         required: true
-        default: 'http/1.1,h2c'
+        default: 'http/1.1,h2c,ws'
         type: choice
         options: 
-        - 'http/1.1,h2c'
+        - 'http/1.1,h2c,ws'
         - 'http/1.1'
         - 'h2c'
+        - 'ws'
       baseline_server:
         description: Which server to use as baseline
         required: true
