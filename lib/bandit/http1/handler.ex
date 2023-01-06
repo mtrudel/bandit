@@ -26,11 +26,11 @@ defmodule Bandit.HTTP1.Handler do
       else
         {:error, :timeout} ->
           attempt_to_send_fallback(req, 408)
-          {:error, "timeout reading request"}
+          {:error, "timeout reading request", state}
 
         {:error, reason} ->
           attempt_to_send_fallback(req, 400)
-          {:error, reason}
+          {:error, reason, state}
 
         {:ok, :websocket, upgrade_opts} ->
           {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}

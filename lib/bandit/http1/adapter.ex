@@ -73,8 +73,8 @@ defmodule Bandit.HTTP1.Adapter do
       {:ok, :http_eoh, rest} ->
         {:ok, headers, method, request_target, %{req | state: :headers_read, buffer: rest}}
 
-      {:ok, {:http_error, _reason}, _rest} ->
-        {:error, :invalid_request}
+      {:ok, {:http_error, reason}, _rest} ->
+        {:error, reason}
 
       {:error, reason} ->
         {:error, reason}
