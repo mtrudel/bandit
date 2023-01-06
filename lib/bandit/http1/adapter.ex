@@ -49,7 +49,13 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @dialyzer {:no_improper_lists, do_read_headers: 5}
-  defp do_read_headers(req, type \\ :http, headers \\ [], method \\ nil, request_target \\ nil) do
+  defp do_read_headers(
+         req,
+         type \\ :http_bin,
+         headers \\ [],
+         method \\ nil,
+         request_target \\ nil
+       ) do
     case :erlang.decode_packet(type, req.buffer, []) do
       {:more, _len} ->
         with {:ok, iodata} <- read(req.socket, 0) do
@@ -62,13 +68,13 @@ defmodule Bandit.HTTP1.Adapter do
         with {:ok, version} <- get_version(version),
              {:ok, request_target} <- resolve_request_target(request_target),
              req <- %{req | buffer: rest, version: version} do
-          do_read_headers(req, :httph, headers, method, request_target)
+          do_read_headers(req, :httph_bin, headers, method, request_target)
         end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
         req = %{req | buffer: rest}
-        headers = [{header |> to_string() |> String.downcase(:ascii), to_string(value)} | headers]
-        do_read_headers(req, :httph, headers, to_string(method), request_target)
+        headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
+        do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
 
       {:ok, :http_eoh, rest} ->
         {:ok, headers, method, request_target, %{req | state: :headers_read, buffer: rest}}
