@@ -142,7 +142,7 @@ defmodule Bandit do
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
-    %{id: Bandit, start: {__MODULE__, :start_link, [arg]}}
+    %{id: make_ref(), start: {__MODULE__, :start_link, [arg]}}
   end
 
   @doc """
