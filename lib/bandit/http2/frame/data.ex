@@ -64,8 +64,7 @@ defmodule Bandit.HTTP2.Frame.Data do
         flags = if frame.end_stream, do: [@end_stream_bit], else: []
         [{0x0, set(flags), frame.stream_id, frame.data}]
       else
-        <<this_frame::binary-size(max_frame_size), rest::binary>> =
-          IO.iodata_to_binary(frame.data)
+        {this_frame, rest} = Bandit.IO.split_iodata(frame.data, max_frame_size)
 
         [
           {0x0, 0x00, frame.stream_id, this_frame}

@@ -125,8 +125,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
       if fragment_length <= max_frame_size do
         [{0x1, set([@end_headers_bit | flags]), frame.stream_id, frame.fragment}]
       else
-        <<this_frame::binary-size(max_frame_size), rest::binary>> =
-          IO.iodata_to_binary(frame.fragment)
+        {this_frame, rest} = Bandit.IO.split_iodata(frame.fragment, max_frame_size)
 
         [
           {0x1, set(flags), frame.stream_id, this_frame}

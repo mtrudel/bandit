@@ -402,7 +402,7 @@ defmodule Bandit.HTTP2.Connection do
         |> send_frame(socket, connection)
       end
 
-      if byte_size(rest) == 0 do
+      if IO.iodata_length(rest) == 0 do
         {:ok, true, %{connection | streams: streams}}
       else
         pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
@@ -417,7 +417,7 @@ defmodule Bandit.HTTP2.Connection do
     if data_length <= desired_length do
       {data, data_length, <<>>}
     else
-      <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
+      {to_send, rest} = Bandit.IO.split_iodata(data, desired_length)
       {to_send, desired_length, rest}
     end
   end
