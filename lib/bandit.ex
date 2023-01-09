@@ -128,8 +128,8 @@ defmodule Bandit do
       closing the connection. Defaults to `60_000`
     * `compress`: Whether or not to accept negotiation of a compression extension with the
       client. Defaults to `false`
-    * `:fullsweep_after` - the maximum number of garbage collections
-      before forcing a fullsweep of the socket process. You can set it to `0` to force more
+    * `fullsweep_after`: The maximum number of garbage collections
+      before forcing a full sweep of the socket process. You can set it to `0` to force more
       frequent cleanups of your websocket transport processes. Setting this option requires
       Erlang/OTP 24
 
