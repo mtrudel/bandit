@@ -6,6 +6,8 @@ defmodule Bandit.InitialHandler do
 
   use ThousandIsland.Handler
 
+  require Logger
+
   # Attempts to guess the protocol in use, returning the applicable next handler and any
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   @impl ThousandIsland.Handler
@@ -25,7 +27,8 @@ defmodule Bandit.InitialHandler do
         {:switch, Bandit.HTTP1.Handler, data, state}
 
       _other ->
-        {:error, "Could not determine a protocol", state}
+        Logger.warning("Could not determine a protocol")
+        {:close, state}
     end
   end
 
