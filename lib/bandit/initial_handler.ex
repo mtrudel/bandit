@@ -14,6 +14,10 @@ defmodule Bandit.InitialHandler do
   def handle_connection(socket, state) do
     {alpn_protocol(socket), sniff_wire(socket)}
     |> case do
+      {_, :likely_tls} ->
+        Logger.warning("Connection that looks like TLS received on a clear channel")
+        {:close, state}
+
       {Bandit.HTTP2.Handler, Bandit.HTTP2.Handler} ->
         {:switch, Bandit.HTTP2.Handler, state}
 
@@ -50,6 +54,7 @@ defmodule Bandit.InitialHandler do
   defp sniff_wire(socket) do
     case ThousandIsland.Socket.recv(socket, 24) do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} -> Bandit.HTTP2.Handler
+      {:ok, <<22::8, 3::8, minor::8, _::binary>>} when minor in [1, 3] -> :likely_tls
       {:ok, data} -> {:no_match, data}
       {:error, error} -> {:error, error}
     end
