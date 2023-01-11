@@ -1,5 +1,11 @@
 # Changelog for 0.6.x
 
+## 0.6.6 (11 Jan 2023)
+
+### Enhancements
+
+* Log useful message when a TLS connection is made to plaintext server (#74)
+
 ## 0.6.5 (10 Jan 2023)
 
 ### Enhancements
