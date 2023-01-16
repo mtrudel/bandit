@@ -95,18 +95,28 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length) when length <= 65_535, do: <<0::1, 126::7, length::16>>
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
+  @mask_size 512
+
   # Note that masking is an involution, so we don't need a separate unmask function
   def mask(payload, mask) do
     payload
-    |> do_mask(<<mask::32>>, [])
+    |> do_mask(String.duplicate(<<mask::32>>, div(@mask_size, 32)), [])
     |> IO.iodata_to_binary()
   end
 
-  defp do_mask(<<h::32, rest::binary>>, <<int_mask::32>> = mask, acc) do
+  defp do_mask(
+         <<h::unquote(@mask_size), rest::binary>>,
+         <<int_mask::unquote(@mask_size)>> = mask,
+         acc
+       ) do
+    do_mask(rest, mask, [acc, <<Bitwise.bxor(h, int_mask)::unquote(@mask_size)>>])
+  end
+
+  defp do_mask(<<h::32, rest::binary>>, <<int_mask::32, _mask_rest::binary>> = mask, acc) do
     do_mask(rest, mask, [acc, <<Bitwise.bxor(h, int_mask)::32>>])
   end
 
-  defp do_mask(<<h::8, rest::binary>>, <<current::8, mask::24>>, acc) do
+  defp do_mask(<<h::8, rest::binary>>, <<current::8, mask::24, _mask_rest::binary>>, acc) do
     do_mask(rest, <<mask::24, current::8>>, [acc, <<Bitwise.bxor(h, current)::8>>])
   end
 
