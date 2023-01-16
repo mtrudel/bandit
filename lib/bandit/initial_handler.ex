@@ -31,7 +31,6 @@ defmodule Bandit.InitialHandler do
         {:switch, Bandit.HTTP1.Handler, data, state}
 
       _other ->
-        Logger.warning("Could not determine a protocol")
         {:close, state}
     end
   end
