@@ -1,5 +1,16 @@
 # Changelog for 0.6.x
 
+## 0.6.7 (17 Jan 2023)
+
+### Enhancements
+
+* Remove logging entirely when client connections do not contain a valid protocol
+* Refactor WebSocket support for about a 20% performance lift
+
+### Bug Fixes
+
+* Add `nodelay` option to test suite to fix artificially slow WebSocket perf tests
+
 ## 0.6.6 (11 Jan 2023)
 
 ### Enhancements
