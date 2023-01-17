@@ -101,9 +101,15 @@ defmodule Bandit.WebSocket.Frame do
   @mask_size 512
 
   # Note that masking is an involution, so we don't need a separate unmask function
-  def mask(payload, mask) do
+  def mask(payload, mask) when bit_size(payload) >= @mask_size do
     payload
     |> do_mask(String.duplicate(<<mask::32>>, div(@mask_size, 32)), [])
+    |> IO.iodata_to_binary()
+  end
+
+  def mask(payload, mask) do
+    payload
+    |> do_mask(<<mask::32>>, [])
     |> IO.iodata_to_binary()
   end
 
