@@ -2,7 +2,8 @@ defmodule SimpleHTTP1Client do
   @moduledoc false
 
   def tcp_client(context) do
-    {:ok, socket} = :gen_tcp.connect(~c"localhost", context[:port], active: false, mode: :binary)
+    {:ok, socket} =
+      :gen_tcp.connect(~c"localhost", context[:port], active: false, mode: :binary, nodelay: true)
 
     socket
   end
@@ -12,6 +13,7 @@ defmodule SimpleHTTP1Client do
       :ssl.connect(~c"localhost", context[:port],
         active: false,
         mode: :binary,
+        nodelay: true,
         verify: :verify_peer,
         cacertfile: Path.join(__DIR__, "../support/ca.pem"),
         alpn_advertised_protocols: protocols

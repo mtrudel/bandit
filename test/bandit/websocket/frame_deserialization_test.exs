@@ -20,6 +20,26 @@ defmodule WebSocketFrameDeserializationTest do
   end
 
   describe "frame size" do
+    test "parses 2 byte frames" do
+      payload = String.duplicate("a", 2)
+      masked_payload = Frame.mask(payload, 1234)
+
+      frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 2::7, 1234::32, masked_payload::binary>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
+    end
+
+    test "parses 10 byte frames" do
+      payload = String.duplicate("a", 10)
+      masked_payload = Frame.mask(payload, 1234)
+
+      frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 10::7, 1234::32, masked_payload::binary>>
+
+      assert Frame.deserialize(frame) ==
+               {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
+    end
+
     test "parses frames up to 125 bytes" do
       payload = String.duplicate("a", 125)
       masked_payload = Frame.mask(payload, 1234)

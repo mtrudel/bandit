@@ -64,12 +64,12 @@ defmodule Bandit.WebSocket.Connection do
       when not is_nil(fragment_frame) do
     case frame do
       %Frame.Continuation{fin: true} = frame ->
-        data = connection.fragment_frame.data <> frame.data
+        data = IO.iodata_to_binary([connection.fragment_frame.data | frame.data])
         frame = %{connection.fragment_frame | fin: true, data: data}
         handle_frame(frame, socket, %{connection | fragment_frame: nil})
 
       %Frame.Continuation{fin: false} = frame ->
-        data = connection.fragment_frame.data <> frame.data
+        data = [connection.fragment_frame.data | frame.data]
         frame = %{connection.fragment_frame | fin: true, data: data}
         {:continue, %{connection | fragment_frame: frame}}
 
