@@ -173,6 +173,7 @@ defmodule Bandit do
 
     options
     |> Keyword.put_new(:read_timeout, 15_000)
+    |> Keyword.put_new(:num_acceptors, 100)
     |> Keyword.put_new(:transport_module, transport_module)
     |> Keyword.update(
       :transport_options,
