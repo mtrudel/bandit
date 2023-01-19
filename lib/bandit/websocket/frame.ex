@@ -95,7 +95,6 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length) when length <= 65_535, do: <<0::1, 126::7, length::16>>
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
-  @compile {:inline, mask: 2, do_mask: 3}
   # Masking is done @mask_size bits at a time until there is less than that number of bits left.
   # We then go 32 bits at a time until there is less than 32 bits left. We then go 8 bits at
   # a time. This yields some significant perforamnce gains for only marginally more complexity
