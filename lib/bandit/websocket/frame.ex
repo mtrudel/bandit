@@ -104,12 +104,14 @@ defmodule Bandit.WebSocket.Frame do
   def mask(payload, mask) when bit_size(payload) >= @mask_size do
     payload
     |> do_mask(String.duplicate(<<mask::32>>, div(@mask_size, 32)), [])
+    |> Enum.reverse()
     |> IO.iodata_to_binary()
   end
 
   def mask(payload, mask) do
     payload
     |> do_mask(<<mask::32>>, [])
+    |> Enum.reverse()
     |> IO.iodata_to_binary()
   end
 
@@ -118,15 +120,15 @@ defmodule Bandit.WebSocket.Frame do
          <<int_mask::unquote(@mask_size)>> = mask,
          acc
        ) do
-    do_mask(rest, mask, [acc, <<Bitwise.bxor(h, int_mask)::unquote(@mask_size)>>])
+    do_mask(rest, mask, [<<Bitwise.bxor(h, int_mask)::unquote(@mask_size)>> | acc])
   end
 
   defp do_mask(<<h::32, rest::binary>>, <<int_mask::32, _mask_rest::binary>> = mask, acc) do
-    do_mask(rest, mask, [acc, <<Bitwise.bxor(h, int_mask)::32>>])
+    do_mask(rest, mask, [<<Bitwise.bxor(h, int_mask)::32>> | acc])
   end
 
   defp do_mask(<<h::8, rest::binary>>, <<current::8, mask::24, _mask_rest::binary>>, acc) do
-    do_mask(rest, <<mask::24, current::8>>, [acc, <<Bitwise.bxor(h, current)::8>>])
+    do_mask(rest, <<mask::24, current::8>>, [<<Bitwise.bxor(h, current)::8>> | acc])
   end
 
   defp do_mask(<<>>, _mask, acc), do: acc
