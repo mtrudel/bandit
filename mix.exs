@@ -29,7 +29,7 @@ defmodule Bandit.MixProject do
 
   defp deps do
     [
-      {:thousand_island, "~> 0.5.14"},
+      {:thousand_island, "~> 0.5.14", github: "mtrudel/thousand_island", branch: "inline_accept"},
       {:plug, "~> 1.14"},
       {:websock, "~> 0.4.3"},
       {:hpax, "~> 0.1.1"},
