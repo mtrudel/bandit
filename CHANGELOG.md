@@ -1,5 +1,14 @@
 # Changelog for 0.6.x
 
+## 0.6.8 (31 Jan 2023)
+
+### Changes
+
+* Close WebSocket connections with a code of 1000 (instead of 1001) when
+  shutting down the server (#89)
+* Use 100 acceptor processes by default (instead of 10)
+* Improvements to make WebSocket frame masking faster
+
 ## 0.6.7 (17 Jan 2023)
 
 ### Enhancements
