@@ -123,7 +123,9 @@ defmodule Bandit.WebSocket.Connection do
   def handle_shutdown(socket, connection) do
     if connection.state == :open do
       connection.websock.terminate(:shutdown, connection.websock_state)
-      Socket.close(socket, 1001)
+
+      # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
+      Socket.close(socket, 1000)
     end
   end
 
