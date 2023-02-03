@@ -138,7 +138,9 @@ Bandit.start_link(plug: MyApp.MyPlug)
 
 Bandit supports upgrading HTTP requests to WebSocket connections via the use of
 the `Plug.Conn.upgrade_adapter/3` function and the `WebSock` API. For details, see the `Bandit`
-documentation.
+documentation. This is intended for people wanting to interact with WebSockets
+at a low level; specifically, Phoenix users don't need to worry about any of
+this as Phoenix manages all of this for you already.
 
 ## Implementation Details
 
