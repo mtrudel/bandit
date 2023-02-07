@@ -1,5 +1,54 @@
 defmodule Bandit.Telemetry do
   @moduledoc """
+  The following telemetry spans are emitted by bandit
+
+  ## `[:bandit, :request, *]`
+
+  Represents Bandit handling a specific client HTTP request
+
+  This span is started by the following event:
+
+  * `[:bandit, :request, :start]`
+
+      Represents the start of the span
+
+      This event contains the following measurements:
+
+      * `time`: The time of this event, in `:native` units
+
+      This event contains the following metadata:
+
+      * `span_id`: The ID of this span
+      * `connection_span_id`: The span ID of the Thousand Island `:connection` span which contains this request
+
+  This span is ended by the following event:
+
+  * `[:bandit, :request, :stop]`
+
+      Represents the end of the span
+
+      This event contains the following measurements:
+
+      * `time`: The time of this event, in `:native` units
+      * `duration`: The span duration, in `:native` units
+      * `req_header_end_time`: The time that header reading completed, in `:native` units
+      * `req_body_start_time`: The time that request body reading started, in `:native` units.
+      * `req_body_end_time`: The time that request body reading completed, in `:native` units
+      * `req_line_bytes`: The length of the request line, in octets. Includes all line breaks
+      * `req_header_bytes`: The length of the request headers, in octets. Includes all line breaks
+      * `req_body_bytes`: The length of the request body, in octets
+      * `resp_status`: The HTTP status code of the reponse
+      * `resp_start_time`: The time that the response started, in `:native` units
+      * `resp_end_time`: The time that the response completed, in `:native` units
+      * `resp_line_bytes`: The length of the reponse line, in octets. Includes all line breaks
+      * `resp_header_bytes`: The length of the reponse headers, in octets. Includes all line breaks
+      * `resp_body_bytes`: The length of the reponse body, in octets. Not included for chunked
+        responses
+
+      This event contains the following metadata:
+
+      * `span_id`: The ID of this span
+      * `error`: The error that caused the span to end, if it ended in error
   """
 
   defstruct span_name: nil, span_id: nil, start_time: nil

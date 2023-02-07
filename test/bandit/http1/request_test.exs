@@ -3,6 +3,7 @@ defmodule HTTP1RequestTest do
   use ExUnit.Case, async: false
   use ServerHelpers
   use FinchHelpers
+  use Machete
 
   import ExUnit.CaptureLog
 
@@ -792,5 +793,257 @@ defmodule HTTP1RequestTest do
   def spawn_abnormal_child(conn) do
     spawn_link(fn -> exit(:abnormal) end)
     send_resp(conn, 204, "")
+  end
+
+  describe "telemetry" do
+    test "it should send `start` events for normally completing requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :start]]})
+
+      Finch.build(:get, context[:base] <> "/send_200")
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :start], %{time: integer()},
+                %{connection_span_id: string(), span_id: string()}}
+             ]
+    end
+
+    test "it should send `stop` events for normally completing requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      # Use a manually built request so we can count exact bytes
+      request = "GET /send_200 HTTP/1.1\r\nhost: localhost\r\n\r\n"
+      client = SimpleHTTP1Client.tcp_client(context)
+      :gen_tcp.send(client, request)
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: 24,
+                  req_header_end_time: integer(),
+                  req_header_bytes: 19,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 110,
+                  resp_body_bytes: 0,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add req metrics to `stop` events for requests with no request body",
+         context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:post, context[:base] <> "/do_read_body", [{"connection", "close"}], <<>>)
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: integer(),
+                  req_header_end_time: integer(),
+                  req_header_bytes: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 0,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 110,
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    def do_read_body(conn) do
+      {:ok, _body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "OK")
+    end
+
+    test "it should add req metrics to `stop` events for requests with request body", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(
+        :post,
+        context[:base] <> "/do_read_body",
+        [{"connection", "close"}],
+        String.duplicate("a", 80)
+      )
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: integer(),
+                  req_header_end_time: integer(),
+                  req_header_bytes: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 80,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 110,
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add req metrics to `stop` events for chunked request body", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      stream = Stream.repeatedly(fn -> "a" end) |> Stream.take(80)
+
+      Finch.build(
+        :post,
+        context[:base] <> "/do_read_body",
+        [{"connection", "close"}],
+        {:stream, stream}
+      )
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: integer(),
+                  req_header_end_time: integer(),
+                  req_header_bytes: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 80,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 110,
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add (some) resp metrics to `stop` events for chunked responses", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:get, context[:base] <> "/send_chunked_200", [{"connection", "close"}])
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: 32,
+                  req_header_end_time: integer(),
+                  req_header_bytes: 68,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 119,
+                  resp_start_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add resp metrics to `stop` events for sendfile responses", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:get, context[:base] <> "/send_full_file", [{"connection", "close"}])
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: 30,
+                  req_header_end_time: integer(),
+                  req_header_bytes: 68,
+                  resp_status: 200,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 110,
+                  resp_body_bytes: 6,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `stop` events for malformed requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      client = SimpleHTTP1Client.tcp_client(context)
+      :gen_tcp.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
+                %{span_id: string(), error: string()}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `stop` events for timed out requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      client = SimpleHTTP1Client.tcp_client(context)
+      :gen_tcp.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
+      Process.sleep(1500)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
+                %{span_id: string(), error: "timeout"}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `exception` events for erroring requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+      Finch.build(:get, context[:base] <> "/raise_error")
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :exception], %{time: integer()},
+                %{
+                  span_id: string(),
+                  kind: :exit,
+                  exception: %RuntimeError{message: "boom"},
+                  stacktrace: list()
+                }}
+             ]
+    end
   end
 end

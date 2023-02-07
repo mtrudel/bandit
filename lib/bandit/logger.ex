@@ -26,6 +26,9 @@ defmodule Bandit.Logger do
   """
   @spec attach_logger(log_level()) :: :ok | {:error, :already_exists}
   def attach_logger(:error) do
+    events = [
+      [:bandit, :request, :exception]
+    ]
 
     :telemetry.attach_many("#{__MODULE__}.error", events, &__MODULE__.log_error/4, nil)
   end
@@ -33,6 +36,10 @@ defmodule Bandit.Logger do
   def attach_logger(:info) do
     attach_logger(:error)
 
+    events = [
+      [:bandit, :request, :start],
+      [:bandit, :request, :stop]
+    ]
 
     :telemetry.attach_many("#{__MODULE__}.info", events, &__MODULE__.log_info/4, nil)
   end
@@ -40,6 +47,7 @@ defmodule Bandit.Logger do
   def attach_logger(:debug) do
     attach_logger(:info)
 
+    events = []
 
     :telemetry.attach_many("#{__MODULE__}.debug", events, &__MODULE__.log_debug/4, nil)
   end
@@ -47,6 +55,7 @@ defmodule Bandit.Logger do
   def attach_logger(:trace) do
     attach_logger(:debug)
 
+    events = []
 
     :telemetry.attach_many("#{__MODULE__}.trace", events, &__MODULE__.log_trace/4, nil)
   end
