@@ -97,8 +97,8 @@ defmodule Bandit.Pipeline do
        ) do
     # We can safely unset the state, since we match on :upgraded above
     case Bandit.WebSocket.Handshake.handshake(%{conn | state: :unset}, connection_opts) do
-      {:ok, connection_opts} ->
-        {:ok, :websocket, {websock, websock_opts, connection_opts}}
+      {:ok, %{adapter: req}, connection_opts} ->
+        {:ok, :websocket, req, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
         %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)

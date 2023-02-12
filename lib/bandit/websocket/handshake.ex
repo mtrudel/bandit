@@ -40,8 +40,8 @@ defmodule Bandit.WebSocket.Handshake do
         {nil, []}
       end
 
-    send_handshake(conn, returned_data)
-    {:ok, Keyword.put(opts, :compress, negotiated_params)}
+    conn = send_handshake(conn, returned_data)
+    {:ok, conn, Keyword.put(opts, :compress, negotiated_params)}
   end
 
   defp requested_extensions(%Plug.Conn{} = conn) do

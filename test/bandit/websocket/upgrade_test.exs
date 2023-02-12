@@ -1,6 +1,8 @@
 defmodule WebSocketUpgradeTest do
-  use ExUnit.Case, async: true
+  # False due to log & telemetry capture
+  use ExUnit.Case, async: false
   use ServerHelpers
+  use Machete
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
@@ -49,6 +51,36 @@ defmodule WebSocketUpgradeTest do
       assert_receive :timeout, 500
       now = System.monotonic_time(:millisecond)
       assert_in_delta now, then + 250, 50
+    end
+
+    defmodule MyNoopWebSock do
+      use NoopWebSock
+    end
+
+    test "emits HTTP telemetry on upgrade", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, MyNoopWebSock)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_line_bytes: 66,
+                  req_header_end_time: integer(),
+                  req_header_bytes: 141,
+                  resp_status: 101,
+                  resp_line_bytes: 34,
+                  resp_header_bytes: 184,
+                  resp_body_bytes: 0,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
     end
   end
 end
