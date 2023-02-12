@@ -8,16 +8,15 @@ defmodule Bandit.HTTP1.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
+    {_, _, _, connection_span} = transport_info = build_transport_info(socket)
+
     span =
-      Bandit.Telemetry.start_span(:request, %{}, %{
-        connection_span_id: ThousandIsland.Socket.telemetry_span(socket).span_id
-      })
+      Bandit.Telemetry.start_span(:request, %{}, %{connection_span_id: connection_span.span_id})
 
     req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data}
 
     try do
       with {:ok, headers, method, request_target, req} <- Bandit.HTTP1.Adapter.read_headers(req),
-           transport_info <- build_transport_info(socket),
            {:ok, {Bandit.HTTP1.Adapter, req}} <-
              Bandit.Pipeline.run(
                {Bandit.HTTP1.Adapter, req},
@@ -61,7 +60,7 @@ defmodule Bandit.HTTP1.Handler do
 
   defp build_transport_info(socket) do
     {ThousandIsland.Socket.secure?(socket), ThousandIsland.Socket.local_info(socket),
-     ThousandIsland.Socket.peer_info(socket)}
+     ThousandIsland.Socket.peer_info(socket), ThousandIsland.Socket.telemetry_span(socket)}
   end
 
   defp attempt_to_send_fallback(req, code) do

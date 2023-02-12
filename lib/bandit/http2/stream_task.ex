@@ -51,7 +51,7 @@ defmodule Bandit.HTTP2.StreamTask do
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   def run(connection, stream_id, transport_info, all_headers, plug) do
-    with {_, _, peer} <- transport_info,
+    with {_, _, peer, _} <- transport_info,
          {:ok, request_target} <- build_request_target(all_headers),
          req <- %Bandit.HTTP2.Adapter{connection: connection, peer: peer, stream_id: stream_id},
          mod_and_req <- {Bandit.HTTP2.Adapter, req},
