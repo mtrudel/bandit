@@ -61,6 +61,14 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
+    test "derives host and port from host header with ipv6 host", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: [::1]:1234"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "[::1]"
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
     @tag capture_log: true
     test "returns 400 if port cannot be parsed from host header", context do
       client = SimpleHTTP1Client.tcp_client(context)
