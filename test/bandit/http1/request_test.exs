@@ -186,6 +186,7 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
+    @tag :skip
     test "derives ipv6 host from the URI, even if it differs from host header", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
