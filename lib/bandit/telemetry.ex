@@ -41,13 +41,13 @@ defmodule Bandit.Telemetry do
       * `req_body_bytes`: The length of the request body, in octets
       * `resp_status`: The HTTP status code of the reponse
       * `resp_start_time`: The time that the response started, in `:native` units
-      * `resp_end_time`: The time that the response completed, in `:native` units
+      * `resp_end_time`: The time that the response completed, in `:native` units. Not included
+        for chunked responses
       * `resp_line_bytes`: The length of the reponse line, in octets. Includes all line breaks.
         Not included for HTTP/2 requests
       * `resp_header_bytes`: The length of the reponse headers, in octets. Includes all line
         breaks. Not included for HTTP/2 requests
-      * `resp_body_bytes`: The length of the reponse body, in octets. Not included for chunked
-        responses
+      * `resp_body_bytes`: The length of the reponse body, in octets. Set to 0 for chunked responses
 
       This event contains the following metadata:
 

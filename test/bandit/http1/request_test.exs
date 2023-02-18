@@ -963,6 +963,7 @@ defmodule HTTP1RequestTest do
                   resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 119,
+                  resp_body_bytes: 0,
                   resp_start_time: integer()
                 }, %{span_id: string()}}
              ]

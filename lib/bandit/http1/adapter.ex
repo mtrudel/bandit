@@ -363,6 +363,7 @@ defmodule Bandit.HTTP1.Adapter do
       req.metrics
       |> Map.merge(header_metrics)
       |> Map.put(:resp_start_time, start_time)
+      |> Map.put(:resp_body_bytes, 0)
 
     {:ok, nil, %{req | state: :chunking_out, metrics: metrics}}
   end
