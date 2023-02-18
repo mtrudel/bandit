@@ -6,15 +6,25 @@ defmodule Bandit.HTTP2.Adapter do
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false
+  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false, metrics: %{}
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           connection: Bandit.HTTP2.Connection.t(),
           peer: Plug.Conn.Adapter.peer_data(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
-          end_stream: boolean()
+          end_stream: boolean(),
+          metrics: map()
         }
+
+  def init(connection, peer, stream_id) do
+    %__MODULE__{
+      connection: connection,
+      peer: peer,
+      stream_id: stream_id,
+      metrics: %{req_header_end_time: Bandit.Telemetry.time()}
+    }
+  end
 
   # As described in the header documentation for the `Bandit.HTTP2.StreamTask` module, we
   # purposefully use raw `receive` message patterns here in order to facilitate an imperatively
@@ -29,6 +39,12 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   defp do_read_req_body(adapter, timeout, remaining_length, acc) do
+    metrics =
+      adapter.metrics
+      |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.time/0)
+
+    adapter = %{adapter | metrics: metrics}
+
     receive do
       {:data, data} ->
         acc = [data | acc]
@@ -37,13 +53,33 @@ defmodule Bandit.HTTP2.Adapter do
         if remaining_length >= 0 do
           do_read_req_body(adapter, timeout, remaining_length, acc)
         else
-          {:more, wrap_req_body(acc), adapter}
+          bytes_read = IO.iodata_length(acc)
+
+          metrics =
+            adapter.metrics
+            |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
+
+          {:more, wrap_req_body(acc), %{adapter | metrics: metrics}}
         end
 
       :end_stream ->
-        {:ok, wrap_req_body(acc), %{adapter | end_stream: true}}
+        bytes_read = IO.iodata_length(acc)
+
+        metrics =
+          adapter.metrics
+          |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
+          |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+
+        {:ok, wrap_req_body(acc), %{adapter | end_stream: true, metrics: metrics}}
     after
-      timeout -> {:more, wrap_req_body(acc), adapter}
+      timeout ->
+        bytes_read = IO.iodata_length(acc)
+
+        metrics =
+          adapter.metrics
+          |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
+
+        {:more, wrap_req_body(acc), %{adapter | metrics: metrics}}
     end
   end
 
@@ -53,14 +89,21 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
-    if IO.iodata_length(body) == 0 do
-      send_headers(adapter, status, headers, true)
-    else
-      send_headers(adapter, status, headers, false)
-      send_data(adapter, body, true)
-    end
+    adapter =
+      if IO.iodata_length(body) == 0 do
+        adapter
+        |> send_headers(status, headers, true)
+      else
+        adapter
+        |> send_headers(status, headers, false)
+        |> send_data(body, true)
+      end
 
-    {:ok, nil, adapter}
+    metrics =
+      adapter.metrics
+      |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+
+    {:ok, nil, %{adapter | metrics: metrics}}
   end
 
   @impl Plug.Conn.Adapter
@@ -70,27 +113,33 @@ defmodule Bandit.HTTP2.Adapter do
 
     cond do
       offset + length == size && offset == 0 ->
-        send_chunked(adapter, status, headers)
+        adapter = send_headers(adapter, status, headers, false)
 
-        # As per Plug documentation `chunk/2` always returns `:ok`
-        # and webservers SHOULDN'T modify any state on sending a chunk,
-        # so there is no need to check the return value
-        # of `chunk/2` and the adapter doesn't need updating.
-        path
-        |> File.stream!([], 2048)
-        |> Enum.each(&chunk(adapter, &1))
+        adapter =
+          path
+          |> File.stream!([], 2048)
+          |> Enum.reduce(adapter, fn chunk, adapter -> send_data(adapter, chunk, false) end)
+          |> send_data(<<>>, true)
 
-        # Send empty chunk to indicate the end of stream
-        chunk(adapter, "")
+        metrics =
+          adapter.metrics
+          |> Map.put(:resp_end_time, Bandit.Telemetry.time())
 
-        {:ok, nil, adapter}
+        {:ok, nil, %{adapter | metrics: metrics}}
 
       offset + length < size ->
         with {:ok, fd} <- :file.open(path, [:raw, :binary]),
              {:ok, data} <- :file.pread(fd, offset, length) do
-          send_headers(adapter, status, headers, false)
-          send_data(adapter, data, true)
-          {:ok, nil, adapter}
+          adapter =
+            adapter
+            |> send_headers(status, headers, false)
+            |> send_data(data, true)
+
+          metrics =
+            adapter.metrics
+            |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+
+          {:ok, nil, %{adapter | metrics: metrics}}
         end
 
       true ->
@@ -100,8 +149,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{} = adapter, status, headers) do
-    send_headers(adapter, status, headers, false)
-    {:ok, nil, adapter}
+    {:ok, nil, send_headers(adapter, status, headers, false)}
   end
 
   @impl Plug.Conn.Adapter
@@ -111,7 +159,7 @@ defmodule Bandit.HTTP2.Adapter do
     # details) and closing the stream here carves closest to the underlying HTTP/1.1 behaviour
     # (RFC7230§4.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC7540§8.1)
     # so this entire section of the API is a bit slanty regardless.
-    send_data(adapter, chunk, chunk == <<>>)
+    _ = send_data(adapter, chunk, chunk == <<>>)
     :ok
   end
 
@@ -136,6 +184,12 @@ defmodule Bandit.HTTP2.Adapter do
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
 
   defp send_headers(adapter, status, headers, end_stream) do
+    metrics =
+      adapter.metrics
+      |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.time/0)
+      |> Map.put(:resp_status, status)
+      |> Map.put(:resp_body_bytes, 0)
+
     headers = split_cookies(headers)
 
     headers =
@@ -148,6 +202,8 @@ defmodule Bandit.HTTP2.Adapter do
     headers = [{":status", to_string(status)} | headers]
 
     GenServer.call(adapter.connection, {:send_headers, adapter.stream_id, headers, end_stream})
+
+    %{adapter | metrics: metrics}
   end
 
   defp send_data(adapter, data, end_stream) do
@@ -156,6 +212,12 @@ defmodule Bandit.HTTP2.Adapter do
       {:send_data, adapter.stream_id, data, end_stream},
       :infinity
     )
+
+    metrics =
+      adapter.metrics
+      |> Map.update(:resp_body_bytes, IO.iodata_length(data), &(&1 + IO.iodata_length(data)))
+
+    %{adapter | metrics: metrics}
   end
 
   defp split_cookies(headers) do

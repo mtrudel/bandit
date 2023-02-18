@@ -22,6 +22,8 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
   # A stream process can be created only once we have a stream id & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
@@ -29,10 +31,11 @@ defmodule Bandit.HTTP2.StreamTask do
           Bandit.HTTP2.Stream.stream_id(),
           Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
-          Bandit.plug()
+          Bandit.plug(),
+          Bandit.Telemetry.t()
         ) :: {:ok, pid()}
-  def start_link(connection, stream_id, transport_info, headers, plug) do
-    Task.start_link(__MODULE__, :run, [connection, stream_id, transport_info, headers, plug])
+  def start_link(connection, stream_id, transport_info, headers, plug, span) do
+    Task.start_link(__MODULE__, :run, [connection, stream_id, transport_info, headers, plug, span])
   end
 
   # Let the stream task know that body data has arrived from the client. The other half of this
@@ -50,11 +53,9 @@ defmodule Bandit.HTTP2.StreamTask do
   @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
-  def run(connection, stream_id, transport_info, all_headers, plug) do
+  def run(connection, stream_id, transport_info, all_headers, plug, span) do
     with {_, _, peer, _} <- transport_info,
          {:ok, request_target} <- build_request_target(all_headers),
-         req <- %Bandit.HTTP2.Adapter{connection: connection, peer: peer, stream_id: stream_id},
-         mod_and_req <- {Bandit.HTTP2.Adapter, req},
          {:ok, pseudo_headers, headers} <- split_headers(all_headers),
          :ok <- pseudo_headers_all_request(pseudo_headers),
          :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
@@ -65,8 +66,11 @@ defmodule Bandit.HTTP2.StreamTask do
          :ok <- no_connection_headers(headers),
          :ok <- valid_te_header(headers),
          headers <- combine_cookie_crumbs(headers),
-         {:ok, _} <-
+         mod_and_req <-
+           {Bandit.HTTP2.Adapter, Bandit.HTTP2.Adapter.init(connection, peer, stream_id)},
+         {:ok, {Bandit.HTTP2.Adapter, req}} <-
            Bandit.Pipeline.run(mod_and_req, transport_info, method, request_target, headers, plug) do
+      Bandit.Telemetry.stop_span(span, req.metrics)
       :ok
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason

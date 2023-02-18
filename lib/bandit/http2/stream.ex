@@ -18,7 +18,8 @@ defmodule Bandit.HTTP2.Stream do
             pid: nil,
             recv_window_size: nil,
             send_window_size: nil,
-            pending_content_length: nil
+            pending_content_length: nil,
+            span: nil
 
   defmodule StreamError, do: defexception([:message])
 
@@ -38,7 +39,8 @@ defmodule Bandit.HTTP2.Stream do
           pid: pid() | nil,
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
-          pending_content_length: non_neg_integer() | nil
+          pending_content_length: non_neg_integer() | nil,
+          span: Bandit.Telemetry.t()
         }
 
   @spec recv_headers(
@@ -60,10 +62,13 @@ defmodule Bandit.HTTP2.Stream do
 
   def recv_headers(%__MODULE__{state: :idle} = stream, transport_info, headers, _end_stream, plug) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
+         {_, _, _, connection_span} <- transport_info,
+         span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
          {:ok, pid} <-
-           StreamTask.start_link(self(), stream.stream_id, transport_info, headers, plug) do
-      {:ok, %{stream | state: :open, pid: pid, pending_content_length: content_length}}
+           StreamTask.start_link(self(), stream.stream_id, transport_info, headers, plug, span) do
+      {:ok,
+       %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
     end
   end
 
@@ -78,6 +83,13 @@ defmodule Bandit.HTTP2.Stream do
     else
       {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
     end
+  end
+
+  defp start_span(connection_span, stream_id) do
+    Bandit.Telemetry.start_span(:request, %{}, %{
+      connection_span_id: connection_span.span_id,
+      stream_id: stream_id
+    })
   end
 
   # RFC7540§8.1.2.6 - content length must be valid
@@ -245,15 +257,20 @@ defmodule Bandit.HTTP2.Stream do
 
   @spec stream_terminated(t(), term()) :: {:ok, t(), Errors.error_code() | nil}
   def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
+    # In the normal case, stop telemetry is emitted by the stream process to keep the main
+    # connection process unblocked. In error cases we send from here, however, since there are
+    # many error cases which never involve the stream process at all
     {:ok, %{stream | state: :closed, pid: nil}, nil}
   end
 
   def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
+    Bandit.Telemetry.stop_span(stream.span, %{}, %{error: reason})
     Logger.warning("Stream #{stream.stream_id} was killed by bandit (#{reason})")
     {:ok, %{stream | state: :closed, pid: nil}, nil}
   end
 
   def stream_terminated(%__MODULE__{} = stream, {%StreamError{} = error, _}) do
+    Bandit.Telemetry.stop_span(stream.span, %{}, %{error: error.message})
     Logger.warning("Stream #{stream.stream_id} encountered a stream error (#{inspect(error)})")
     {:ok, %{stream | state: :closed, pid: nil}, Errors.protocol_error()}
   end
@@ -264,7 +281,20 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def stream_terminated(%__MODULE__{} = stream, reason) do
+    case reason do
+      {exception, stacktrace} ->
+        Bandit.Telemetry.span_event(stream.span, :exception, %{}, %{
+          kind: :exit,
+          exception: exception,
+          stacktrace: stacktrace
+        })
+
+      _ ->
+        :ok
+    end
+
     Logger.error("Task for stream #{stream.stream_id} crashed with #{inspect(reason)}")
+
     {:ok, %{stream | state: :closed, pid: nil}, Errors.internal_error()}
   end
 end

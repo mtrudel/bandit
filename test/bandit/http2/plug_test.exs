@@ -3,6 +3,7 @@ defmodule HTTP2PlugTest do
   use ExUnit.Case, async: false
   use ServerHelpers
   use FinchHelpers
+  use Machete
 
   import ExUnit.CaptureLog
 
@@ -549,5 +550,171 @@ defmodule HTTP2PlugTest do
     # Ensure that the spawned process has a chance to exit
     Process.sleep(100)
     send_resp(conn, 204, "")
+  end
+
+  describe "telemetry" do
+    test "it should send `start` events for normally completing requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :start]]})
+
+      Finch.build(:get, context[:base] <> "/send_200")
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :start], %{time: integer()},
+                %{connection_span_id: string(), span_id: string(), stream_id: integer()}}
+             ]
+    end
+
+    def send_200(conn) do
+      send_resp(conn, 200, "")
+    end
+
+    test "it should send `stop` events for normally completing requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:get, context[:base] <> "/send_200")
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_header_end_time: integer(),
+                  resp_status: 200,
+                  resp_body_bytes: 0,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add req metrics to `stop` events for requests with no request body",
+         context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:post, context[:base] <> "/do_read_body", [], <<>>)
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_header_end_time: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 0,
+                  resp_status: 200,
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    def do_read_body(conn) do
+      {:ok, _body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "OK")
+    end
+
+    test "it should add req metrics to `stop` events for requests with request body", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:post, context[:base] <> "/do_read_body", [], String.duplicate("a", 80))
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_header_end_time: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 80,
+                  resp_status: 200,
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should add resp metrics to `stop` events for sendfile responses", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(:get, context[:base] <> "/send_full_file", [])
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  req_header_end_time: integer(),
+                  resp_status: 200,
+                  resp_body_bytes: 6,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                }, %{span_id: string()}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `stop` events for malformed requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Take uppercase header example from H2Spec
+      headers =
+        <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
+          129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
+
+      :ssl.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
+                %{span_id: string(), error: string()}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `exception` events for erroring requests", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+      Finch.build(:get, context[:base] <> "/raise_error")
+      |> Finch.request(context[:finch_name])
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :exception], %{time: integer()},
+                %{
+                  span_id: string(),
+                  kind: :exit,
+                  exception: %RuntimeError{message: "boom"},
+                  stacktrace: list()
+                }}
+             ]
+    end
+
+    def raise_error(_conn) do
+      raise "boom"
+    end
   end
 end
