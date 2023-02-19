@@ -187,7 +187,6 @@ defmodule Bandit.HTTP2.Adapter do
     metrics =
       adapter.metrics
       |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.time/0)
-      |> Map.put(:resp_status, status)
       |> Map.put(:resp_body_bytes, 0)
 
     headers = split_cookies(headers)

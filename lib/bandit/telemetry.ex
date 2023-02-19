@@ -31,6 +31,7 @@ defmodule Bandit.Telemetry do
 
       * `time`: The time of this event, in `:native` units
       * `duration`: The span duration, in `:native` units
+      * `conn`: The `Plug.Conn` representing this connection
       * `req_header_end_time`: The time that header reading completed, in `:native` units
       * `req_body_start_time`: The time that request body reading started, in `:native` units.
       * `req_body_end_time`: The time that request body reading completed, in `:native` units
@@ -39,7 +40,6 @@ defmodule Bandit.Telemetry do
       * `req_header_bytes`: The length of the request headers, in octets. Includes all line
         breaks. Not included for HTTP/2 requests
       * `req_body_bytes`: The length of the request body, in octets
-      * `resp_status`: The HTTP status code of the reponse
       * `resp_start_time`: The time that the response started, in `:native` units
       * `resp_end_time`: The time that the response completed, in `:native` units. Not included
         for chunked responses

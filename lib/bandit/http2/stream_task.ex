@@ -68,9 +68,9 @@ defmodule Bandit.HTTP2.StreamTask do
          headers <- combine_cookie_crumbs(headers),
          mod_and_req <-
            {Bandit.HTTP2.Adapter, Bandit.HTTP2.Adapter.init(connection, peer, stream_id)},
-         {:ok, {Bandit.HTTP2.Adapter, req}} <-
+         {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} <-
            Bandit.Pipeline.run(mod_and_req, transport_info, method, request_target, headers, plug) do
-      Bandit.Telemetry.stop_span(span, req.metrics)
+      Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
       :ok
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason

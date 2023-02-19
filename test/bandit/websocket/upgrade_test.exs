@@ -70,10 +70,10 @@ defmodule WebSocketUpgradeTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 66,
                   req_header_end_time: integer(),
                   req_header_bytes: 141,
-                  resp_status: 101,
                   resp_line_bytes: 34,
                   resp_header_bytes: 184,
                   resp_body_bytes: 0,

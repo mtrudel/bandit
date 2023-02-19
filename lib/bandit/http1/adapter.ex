@@ -397,7 +397,6 @@ defmodule Bandit.HTTP1.Adapter do
       |> then(&[&1 | ["\r\n"]])
 
     metrics = %{
-      resp_status: status,
       resp_line_bytes: IO.iodata_length(resp_line),
       resp_header_bytes: IO.iodata_length(headers)
     }

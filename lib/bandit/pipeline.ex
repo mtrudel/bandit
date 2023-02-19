@@ -20,14 +20,12 @@ defmodule Bandit.Pipeline do
           request_target(),
           Plug.Conn.headers(),
           Bandit.plug()
-        ) ::
-          {:ok, Plug.Conn.adapter()} | {:ok, :websocket, tuple()} | {:error, term()}
+        ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
          {:ok, conn} <- call_plug(conn, plug),
-         {:ok, :no_upgrade} <- maybe_upgrade(conn),
-         {:ok, %{adapter: req}} <- commit_response(conn, plug) do
-      {:ok, req}
+         {:ok, :no_upgrade} <- maybe_upgrade(conn) do
+      commit_response(conn, plug)
     end
   end
 
@@ -97,8 +95,8 @@ defmodule Bandit.Pipeline do
        ) do
     # We can safely unset the state, since we match on :upgraded above
     case Bandit.WebSocket.Handshake.handshake(%{conn | state: :unset}, connection_opts) do
-      {:ok, %{adapter: req}, connection_opts} ->
-        {:ok, :websocket, req, {websock, websock_opts, connection_opts}}
+      {:ok, conn, connection_opts} ->
+        {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
         %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)

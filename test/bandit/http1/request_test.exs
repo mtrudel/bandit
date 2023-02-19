@@ -803,6 +803,8 @@ defmodule HTTP1RequestTest do
       Finch.build(:get, context[:base] <> "/send_200")
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :start], %{time: integer()},
@@ -826,10 +828,10 @@ defmodule HTTP1RequestTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 24,
                   req_header_end_time: integer(),
                   req_header_bytes: 19,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 0,
@@ -847,19 +849,21 @@ defmodule HTTP1RequestTest do
       Finch.build(:post, context[:base] <> "/do_read_body", [{"connection", "close"}], <<>>)
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 0,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 2,
@@ -886,19 +890,21 @@ defmodule HTTP1RequestTest do
       )
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 2,
@@ -922,19 +928,21 @@ defmodule HTTP1RequestTest do
       )
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 2,
@@ -951,16 +959,18 @@ defmodule HTTP1RequestTest do
       Finch.build(:get, context[:base] <> "/send_chunked_200", [{"connection", "close"}])
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 32,
                   req_header_end_time: integer(),
                   req_header_bytes: 68,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 119,
                   resp_body_bytes: 0,
@@ -976,16 +986,18 @@ defmodule HTTP1RequestTest do
       Finch.build(:get, context[:base] <> "/send_full_file", [{"connection", "close"}])
       |> Finch.request(context[:finch_name])
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 30,
                   req_header_end_time: integer(),
                   req_header_bytes: 68,
-                  resp_status: 200,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 6,
@@ -1018,7 +1030,7 @@ defmodule HTTP1RequestTest do
 
       client = SimpleHTTP1Client.tcp_client(context)
       :gen_tcp.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
-      Process.sleep(1500)
+      Process.sleep(1100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -1034,6 +1046,8 @@ defmodule HTTP1RequestTest do
 
       Finch.build(:get, context[:base] <> "/raise_error")
       |> Finch.request(context[:finch_name])
+
+      Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [

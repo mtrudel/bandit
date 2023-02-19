@@ -584,8 +584,8 @@ defmodule HTTP2PlugTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
-                  resp_status: 200,
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -607,11 +607,11 @@ defmodule HTTP2PlugTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 0,
-                  resp_status: 200,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -637,11 +637,11 @@ defmodule HTTP2PlugTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_status: 200,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -662,8 +662,8 @@ defmodule HTTP2PlugTest do
                 %{
                   time: integer(),
                   duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
-                  resp_status: 200,
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
                   resp_end_time: integer()

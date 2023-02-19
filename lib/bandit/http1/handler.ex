@@ -17,7 +17,7 @@ defmodule Bandit.HTTP1.Handler do
 
     try do
       with {:ok, headers, method, request_target, req} <- Bandit.HTTP1.Adapter.read_headers(req),
-           {:ok, {Bandit.HTTP1.Adapter, req}} <-
+           {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
              Bandit.Pipeline.run(
                {Bandit.HTTP1.Adapter, req},
                transport_info,
@@ -26,7 +26,7 @@ defmodule Bandit.HTTP1.Handler do
                headers,
                state.plug
              ) do
-        Bandit.Telemetry.stop_span(span, req.metrics)
+        Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
         if Bandit.HTTP1.Adapter.keepalive?(req), do: {:continue, state}, else: {:close, state}
       else
         {:error, :timeout} ->
@@ -39,8 +39,8 @@ defmodule Bandit.HTTP1.Handler do
           Bandit.Telemetry.stop_span(span, %{}, %{error: reason})
           {:error, reason, state}
 
-        {:ok, :websocket, {Bandit.HTTP1.Adapter, req}, upgrade_opts} ->
-          Bandit.Telemetry.stop_span(span, req.metrics)
+        {:ok, :websocket, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn, upgrade_opts} ->
+          Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
 
           state =
             state
