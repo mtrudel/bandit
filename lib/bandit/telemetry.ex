@@ -54,6 +54,23 @@ defmodule Bandit.Telemetry do
       * `span_id`: The ID of this span
       * `error`: The error that caused the span to end, if it ended in error
 
+  The following events may be emitted within this span:
+
+  * `[:bandit, :request, :exception]`
+
+      The request for this span ended unexpectedly
+
+      This event contains the following measurements:
+
+      * `time`: The time of this event, in `:native` units
+
+      This event contains the following metadata:
+
+      * `span_id`: The ID of this span
+      * `kind`: The kind of unexpected condition, typically `:exit`
+      * `exception`: The exception which caused this unexpected termination
+      * `stacktrace`: The stacktrace of the location which caused this unexpected termination
+
   ## `[:bandit, :websocket, *]`
 
   Represents Bandit handling a WebSocket connection
