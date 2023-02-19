@@ -17,12 +17,12 @@ defmodule Bandit.Logger do
   require Logger
 
   @typedoc "Supported log levels"
-  @type log_level :: :error | :info | :debug | :trace
+  @type log_level :: :error | :info
 
   @doc """
   Start logging Bandit at the specified log level. Valid values for log
-  level are `:error`, `:info`, `:debug`, and `:trace`. Enabling a given log
-  level implicitly enables all higher log levels as well.
+  level are `:error` and `:info`. Enabling a given log level implicitly enables all higher log
+  levels as well.
   """
   @spec attach_logger(log_level()) :: :ok | {:error, :already_exists}
   def attach_logger(:error) do
@@ -46,22 +46,6 @@ defmodule Bandit.Logger do
     :telemetry.attach_many("#{__MODULE__}.info", events, &__MODULE__.log_info/4, nil)
   end
 
-  def attach_logger(:debug) do
-    attach_logger(:info)
-
-    events = []
-
-    :telemetry.attach_many("#{__MODULE__}.debug", events, &__MODULE__.log_debug/4, nil)
-  end
-
-  def attach_logger(:trace) do
-    attach_logger(:debug)
-
-    events = []
-
-    :telemetry.attach_many("#{__MODULE__}.trace", events, &__MODULE__.log_trace/4, nil)
-  end
-
   @doc """
   Stop logging Thousand Island at the specified log level. Disabling a given log
   level implicitly disables all lower log levels as well.
@@ -73,17 +57,7 @@ defmodule Bandit.Logger do
   end
 
   def detach_logger(:info) do
-    detach_logger(:debug)
     :telemetry.detach("#{__MODULE__}.info")
-  end
-
-  def detach_logger(:debug) do
-    detach_logger(:trace)
-    :telemetry.detach("#{__MODULE__}.debug")
-  end
-
-  def detach_logger(:trace) do
-    :telemetry.detach("#{__MODULE__}.trace")
   end
 
   @doc false
@@ -96,20 +70,6 @@ defmodule Bandit.Logger do
   @doc false
   def log_info(event, measurements, metadata, _config) do
     Logger.info(
-      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
-    )
-  end
-
-  @doc false
-  def log_debug(event, measurements, metadata, _config) do
-    Logger.debug(
-      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
-    )
-  end
-
-  @doc false
-  def log_trace(event, measurements, metadata, _config) do
-    Logger.debug(
       "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
     )
   end

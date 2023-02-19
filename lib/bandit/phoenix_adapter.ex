@@ -44,8 +44,6 @@ defmodule Bandit.PhoenixAdapter do
       Defaults to `false`, which will cause Bandit to not start an HTTPS server.
   """
 
-  require Logger
-
   @doc false
   def child_specs(endpoint, config) do
     for {scheme, default_port} <- [http: 4000, https: 4040], opts = config[scheme] do
