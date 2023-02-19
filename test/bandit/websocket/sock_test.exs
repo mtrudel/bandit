@@ -1,6 +1,8 @@
 defmodule WebSocketWebSockTest do
-  use ExUnit.Case, async: true
+  # False due to telemetry tests
+  use ExUnit.Case, async: false
   use ServerHelpers
+  use Machete
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
@@ -729,6 +731,163 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       assert_receive :timeout, 1500
+    end
+  end
+
+  describe "telemetry" do
+    defmodule TelemetrySock do
+      use NoopWebSock
+      def handle_in({"close", _}, state), do: {:stop, :normal, state}
+      def handle_in({"abnormal_close", _}, state), do: {:stop, :nope, state}
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
+    end
+
+    test "it should send `start` events on websocket connection", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :start]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :start], %{time: integer(), compress: maybe(boolean())},
+                %{connection_span_id: string(), origin_span_id: string(), span_id: string()}}
+             ]
+    end
+
+    test "it should gather send and recv metrics for inclusion in `stop` events", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      SimpleWebSocketClient.send_text_frame(client, "1234")
+      SimpleWebSocketClient.send_binary_frame(client, "12345")
+      SimpleWebSocketClient.send_ping_frame(client, "123456")
+      SimpleWebSocketClient.send_pong_frame(client, "1234567")
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  recv_text_frame_count: 1,
+                  recv_text_frame_bytes: 4,
+                  recv_binary_frame_count: 1,
+                  recv_binary_frame_bytes: 5,
+                  recv_ping_frame_count: 1,
+                  recv_ping_frame_bytes: 6,
+                  recv_pong_frame_count: 1,
+                  recv_pong_frame_bytes: 7,
+                  recv_connection_close_frame_count: 1,
+                  recv_connection_close_frame_bytes: 0,
+                  send_text_frame_count: 1,
+                  send_text_frame_bytes: 4,
+                  send_binary_frame_count: 1,
+                  send_binary_frame_bytes: 5,
+                  send_pong_frame_count: 1,
+                  send_pong_frame_bytes: 6
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should send `stop` events on normal websocket client disconnection", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  recv_connection_close_frame_count: 1,
+                  recv_connection_close_frame_bytes: 0
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should send `stop` events on normal websocket server disconnection", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      SimpleWebSocketClient.send_text_frame(client, "close")
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  recv_text_frame_count: 1,
+                  recv_text_frame_bytes: 5
+                }, %{span_id: string()}}
+             ]
+    end
+
+    test "it should send `stop` events on normal server shutdown", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      ThousandIsland.stop(context.server_pid)
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop], %{time: integer(), duration: integer()},
+                %{span_id: string()}}
+             ]
+    end
+
+    @tag capture_log: true
+    test "it should send `stop` events on abnormal websocket server disconnection", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      SimpleWebSocketClient.send_text_frame(client, "abnormal_close")
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop],
+                %{
+                  time: integer(),
+                  duration: integer(),
+                  recv_text_frame_count: 1,
+                  recv_text_frame_bytes: 14
+                }, %{span_id: string(), error: :nope}}
+             ]
+    end
+
+    test "it should send `stop` events on timeout", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      Process.sleep(1100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :websocket, :stop], %{time: integer(), duration: integer()},
+                %{span_id: string(), error: :timeout}}
+             ]
     end
   end
 end

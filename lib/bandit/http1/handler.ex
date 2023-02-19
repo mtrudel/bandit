@@ -41,7 +41,13 @@ defmodule Bandit.HTTP1.Handler do
 
         {:ok, :websocket, {Bandit.HTTP1.Adapter, req}, upgrade_opts} ->
           Bandit.Telemetry.stop_span(span, req.metrics)
-          {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}
+
+          state =
+            state
+            |> Map.put(:upgrade_opts, upgrade_opts)
+            |> Map.put(:origin_span_id, span.span_id)
+
+          {:switch, Bandit.WebSocket.Handler, state}
       end
     rescue
       exception ->

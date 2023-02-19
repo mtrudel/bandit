@@ -38,7 +38,9 @@ defmodule Bandit.Logger do
 
     events = [
       [:bandit, :request, :start],
-      [:bandit, :request, :stop]
+      [:bandit, :request, :stop],
+      [:bandit, :websocket, :start],
+      [:bandit, :websocket, :stop]
     ]
 
     :telemetry.attach_many("#{__MODULE__}.info", events, &__MODULE__.log_info/4, nil)

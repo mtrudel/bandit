@@ -4,7 +4,13 @@ defmodule Bandit.WebSocket.Connection do
 
   alias Bandit.WebSocket.{Frame, PerMessageDeflate, Socket}
 
-  defstruct websock: nil, websock_state: nil, state: :open, compress: nil, fragment_frame: nil
+  defstruct websock: nil,
+            websock_state: nil,
+            state: :open,
+            compress: nil,
+            fragment_frame: nil,
+            span: nil,
+            metrics: %{}
 
   @typedoc "Connection state"
   @type state :: :open | :closing
@@ -15,18 +21,37 @@ defmodule Bandit.WebSocket.Connection do
           websock_state: WebSock.state(),
           state: state(),
           compress: PerMessageDeflate.t() | nil,
-          fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil
+          fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil,
+          span: Bandit.Telemetry.t(),
+          metrics: map()
         }
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
 
-  def init(websock, websock_state, connection_opts, socket) do
+  def init(websock, websock_state, connection_opts, socket, origin_span_id) do
     compress = Keyword.get(connection_opts, :compress)
-    instance = %__MODULE__{websock: websock, websock_state: websock_state, compress: compress}
+    connection_span_id = ThousandIsland.Socket.telemetry_span(socket).span_id
+
+    span =
+      Bandit.Telemetry.start_span(:websocket, %{compress: compress}, %{
+        connection_span_id: connection_span_id,
+        origin_span_id: origin_span_id
+      })
+
+    instance = %__MODULE__{
+      websock: websock,
+      websock_state: websock_state,
+      compress: compress,
+      span: span
+    }
+
     websock.init(websock_state) |> handle_continutation(socket, instance)
   end
 
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
+    connection = do_recv_metrics(frame, connection)
+
     case frame do
       %Frame.Continuation{} ->
         do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
@@ -62,6 +87,8 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_frame(frame, socket, %{fragment_frame: fragment_frame} = connection)
       when not is_nil(fragment_frame) do
+    connection = do_recv_metrics(frame, connection)
+
     case frame do
       %Frame.Continuation{fin: true} = frame ->
         data = IO.iodata_to_binary([connection.fragment_frame.data | frame.data])
@@ -90,12 +117,15 @@ defmodule Bandit.WebSocket.Connection do
         if connection.state == :open do
           connection.websock.terminate(:remote, connection.websock_state)
           Socket.close(socket, reply_code(frame.code))
+          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
         end
 
         {:close, %{connection | state: :closing}}
 
       %Frame.Ping{} = frame ->
-        Socket.send_frame(socket, {:pong, frame.data}, false)
+        connection =
+          Socket.send_frame(socket, {:pong, frame.data}, false)
+          |> do_send_metrics(connection)
 
         if function_exported?(connection.websock, :handle_control, 2) do
           connection.websock.handle_control({frame.data, opcode: :ping}, connection.websock_state)
@@ -114,6 +144,26 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
+  defp do_recv_metrics(frame, connection) do
+    metrics =
+      Bandit.WebSocket.Frame.recv_metrics(frame)
+      |> Enum.reduce(connection.metrics, fn {key, value}, metrics ->
+        Map.update(metrics, key, value, &(&1 + value))
+      end)
+
+    %{connection | metrics: metrics}
+  end
+
+  defp do_send_metrics(metrics, connection) do
+    metrics =
+      metrics
+      |> Enum.reduce(connection.metrics, fn {key, value}, metrics ->
+        Map.update(metrics, key, value, &(&1 + value))
+      end)
+
+    %{connection | metrics: metrics}
+  end
+
   # This is a bit of a subtle case, see RFC6455§7.4.1-2
   defp reply_code(code) when code in 0..999 or code in 1004..1006 or code in 1012..2999, do: 1002
   defp reply_code(_code), do: 1000
@@ -126,6 +176,7 @@ defmodule Bandit.WebSocket.Connection do
 
       # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
       Socket.close(socket, 1000)
+      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
     end
   end
 
@@ -138,6 +189,7 @@ defmodule Bandit.WebSocket.Connection do
     if connection.state == :open do
       connection.websock.terminate(:timeout, connection.websock_state)
       Socket.close(socket, 1002)
+      Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: :timeout})
     end
   end
 
@@ -161,6 +213,7 @@ defmodule Bandit.WebSocket.Connection do
         if connection.state == :open do
           connection.websock.terminate(:normal, connection.websock_state)
           Socket.close(socket, 1000)
+          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
         end
 
         {:continue, %{connection | websock_state: websock_state, state: :closing}}
@@ -174,6 +227,7 @@ defmodule Bandit.WebSocket.Connection do
     if connection.state == :open do
       connection.websock.terminate({:error, reason}, connection.websock_state)
       Socket.close(socket, code)
+      Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: reason})
     end
 
     {:error, reason, %{connection | state: :closing}}
@@ -189,11 +243,17 @@ defmodule Bandit.WebSocket.Connection do
   defp do_deflate({opcode, data} = msg, socket, connection) when opcode in [:text, :binary] do
     case PerMessageDeflate.deflate(data, connection.compress) do
       {:ok, data, compress} ->
-        Socket.send_frame(socket, {opcode, data}, true)
+        connection =
+          Socket.send_frame(socket, {opcode, data}, true)
+          |> do_send_metrics(connection)
+
         {:continue, %{connection | compress: compress}}
 
       {:error, :no_compress} ->
-        Socket.send_frame(socket, msg, false)
+        connection =
+          Socket.send_frame(socket, msg, false)
+          |> do_send_metrics(connection)
+
         {:continue, connection}
 
       {:error, _reason} ->
@@ -202,7 +262,10 @@ defmodule Bandit.WebSocket.Connection do
   end
 
   defp do_deflate({opcode, _data} = msg, socket, connection) when opcode in [:ping, :pong] do
-    Socket.send_frame(socket, msg, false)
+    connection =
+      Socket.send_frame(socket, msg, false)
+      |> do_send_metrics(connection)
+
     {:continue, connection}
   end
 

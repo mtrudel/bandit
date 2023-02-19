@@ -53,6 +53,67 @@ defmodule Bandit.Telemetry do
 
       * `span_id`: The ID of this span
       * `error`: The error that caused the span to end, if it ended in error
+
+  ## `[:bandit, :websocket, *]`
+
+  Represents Bandit handling a WebSocket connection
+
+  This span is started by the following event:
+
+  * `[:bandit, :websocket, :start]`
+
+      Represents the start of the span
+
+      This event contains the following measurements:
+
+      * `time`: The time of this event, in `:native` units
+      * `compress`: Details about the compression configuration for this connection
+
+      This event contains the following metadata:
+
+      * `span_id`: The ID of this span
+      * `origin_span_id`: The span ID of the Bandit `:request` span from which this connection originated
+      * `connection_span_id`: The span ID of the Thousand Island `:connection` span which contains this request
+
+  This span is ended by the following event:
+
+  * `[:bandit, :websocket, :stop]`
+
+      Represents the end of the span
+
+      This event contains the following measurements:
+
+      * `time`: The time of this event, in `:native` units
+      * `duration`: The span duration, in `:native` units
+      * `recv_text_frame_count`: The number of text frames received
+      * `recv_text_frame_bytes`: The total number of bytes received in the payload of text frames
+      * `recv_binary_frame_count`: The number of binary frames received
+      * `recv_binary_frame_bytes`: The total number of bytes received in the payload of binary frames
+      * `recv_ping_frame_count`: The number of ping frames received
+      * `recv_ping_frame_bytes`: The total number of bytes received in the payload of ping frames
+      * `recv_pong_frame_count`: The number of pong frames received
+      * `recv_pong_frame_bytes`: The total number of bytes received in the payload of pong frames
+      * `recv_connection_close_frame_count`: The number of connection close frames received
+      * `recv_connection_close_frame_bytes`: The total number of bytes received in the payload of connection close frames
+      * `recv_continuation_frame_count`: The number of continuation frames received
+      * `recv_continuation_frame_bytes`: The total number of bytes received in the payload of continuation frames
+      * `send_text_frame_count`: The number of text frames sent
+      * `send_text_frame_bytes`: The total number of bytes sent in the payload of text frames
+      * `send_binary_frame_count`: The number of binary frames sent
+      * `send_binary_frame_bytes`: The total number of bytes sent in the payload of binary frames
+      * `send_ping_frame_count`: The number of ping frames sent
+      * `send_ping_frame_bytes`: The total number of bytes sent in the payload of ping frames
+      * `send_pong_frame_count`: The number of pong frames sent
+      * `send_pong_frame_bytes`: The total number of bytes sent in the payload of pong frames
+      * `send_connection_close_frame_count`: The number of connection close frames sent
+      * `send_connection_close_frame_bytes`: The total number of bytes sent in the payload of connection close frames
+      * `send_continuation_frame_count`: The number of continuation frames sent
+      * `send_continuation_frame_bytes`: The total number of bytes sent in the payload of continuation frames
+
+      This event contains the following metadata:
+
+      * `span_id`: The ID of this span
+      * `error`: The error that caused the span to end, if it ended in error
   """
 
   defstruct span_name: nil, span_id: nil, start_time: nil

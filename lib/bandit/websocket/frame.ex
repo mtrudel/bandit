@@ -46,6 +46,62 @@ defmodule Bandit.WebSocket.Frame do
     {{:more, msg}, <<>>}
   end
 
+  def recv_metrics(%frame_type{} = frame) do
+    case frame_type do
+      Frame.Continuation ->
+        [
+          recv_continuation_frame_count: 1,
+          recv_continuation_frame_bytes: IO.iodata_length(frame.data)
+        ]
+
+      Frame.Text ->
+        [recv_text_frame_count: 1, recv_text_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.Binary ->
+        [recv_binary_frame_count: 1, recv_binary_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.ConnectionClose ->
+        [
+          recv_connection_close_frame_count: 1,
+          recv_connection_close_frame_bytes: IO.iodata_length(frame.reason)
+        ]
+
+      Frame.Ping ->
+        [recv_ping_frame_count: 1, recv_ping_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.Pong ->
+        [recv_pong_frame_count: 1, recv_pong_frame_bytes: IO.iodata_length(frame.data)]
+    end
+  end
+
+  def send_metrics(%frame_type{} = frame) do
+    case frame_type do
+      Frame.Continuation ->
+        [
+          send_continuation_frame_count: 1,
+          send_continuation_frame_bytes: IO.iodata_length(frame.data)
+        ]
+
+      Frame.Text ->
+        [send_text_frame_count: 1, send_text_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.Binary ->
+        [send_binary_frame_count: 1, send_binary_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.ConnectionClose ->
+        [
+          send_connection_close_frame_count: 1,
+          send_connection_close_frame_bytes: IO.iodata_length(frame.reason)
+        ]
+
+      Frame.Ping ->
+        [send_ping_frame_count: 1, send_ping_frame_bytes: IO.iodata_length(frame.data)]
+
+      Frame.Pong ->
+        [send_pong_frame_count: 1, send_pong_frame_bytes: IO.iodata_length(frame.data)]
+    end
+  end
+
   defp to_frame(_fin, _compressed, rsv, _opcode, _mask, _payload, rest) when rsv != 0x0 do
     {{:error, "Received unsupported RSV flags #{rsv}"}, rest}
   end
