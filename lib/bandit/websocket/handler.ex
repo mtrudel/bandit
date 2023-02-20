@@ -14,12 +14,14 @@ defmodule Bandit.WebSocket.Handler do
     |> Keyword.take([:fullsweep_after])
     |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
 
+    origin_span_id = state.origin_span_id
+
     state =
       state
       |> Map.take([:handler_module])
       |> Map.put(:buffer, <<>>)
 
-    case Connection.init(websock, websock_opts, connection_opts, socket) do
+    case Connection.init(websock, websock_opts, connection_opts, socket, origin_span_id) do
       {:continue, connection} ->
         case Keyword.get(connection_opts, :timeout) do
           nil -> {:continue, Map.put(state, :connection, connection)}

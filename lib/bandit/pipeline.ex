@@ -5,7 +5,7 @@ defmodule Bandit.Pipeline do
 
   @type transport_info ::
           {boolean(), ThousandIsland.Transport.socket_info(),
-           ThousandIsland.Transport.socket_info()}
+           ThousandIsland.Transport.socket_info(), ThousandIsland.Telemetry.t()}
   @type request_target :: {scheme(), host(), Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
   @type host :: Plug.Conn.host() | nil
@@ -20,14 +20,12 @@ defmodule Bandit.Pipeline do
           request_target(),
           Plug.Conn.headers(),
           Bandit.plug()
-        ) ::
-          {:ok, Plug.Conn.adapter()} | {:ok, :websocket, tuple()} | {:error, term()}
+        ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
          {:ok, conn} <- call_plug(conn, plug),
-         {:ok, :no_upgrade} <- maybe_upgrade(conn),
-         {:ok, %{adapter: req}} <- commit_response(conn, plug) do
-      {:ok, req}
+         {:ok, :no_upgrade} <- maybe_upgrade(conn) do
+      commit_response(conn, plug)
     end
   end
 
@@ -38,12 +36,12 @@ defmodule Bandit.Pipeline do
            determine_host_and_port(transport_info, version, request_target, headers),
          {:ok, path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      {_, _, %{address: remote_ip}} = transport_info
+      {_, _, %{address: remote_ip}, _} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
 
-  defp determine_scheme({secure?, _, _}, {scheme, _, _, _}) do
+  defp determine_scheme({secure?, _, _, _}, {scheme, _, _, _}) do
     case {scheme, secure?} do
       {nil, true} -> {:ok, "https"}
       {"https", true} -> {:ok, "https"}
@@ -53,7 +51,7 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp determine_host_and_port({_, local_info, _}, version, {_, nil, nil, _}, headers) do
+  defp determine_host_and_port({_, local_info, _, _}, version, {_, nil, nil, _}, headers) do
     with host_header when not is_nil(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
       {:ok, host, port || local_info[:port]}
@@ -69,7 +67,7 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp determine_host_and_port({_, local_info, _}, _version, {_, host, port, _}, _headers),
+  defp determine_host_and_port({_, local_info, _, _}, _version, {_, host, port, _}, _headers),
     do: {:ok, to_string(host), port || local_info[:port]}
 
   defp determine_path_and_query({_, _, _, :*}), do: {:ok, "*", nil}
@@ -97,8 +95,8 @@ defmodule Bandit.Pipeline do
        ) do
     # We can safely unset the state, since we match on :upgraded above
     case Bandit.WebSocket.Handshake.handshake(%{conn | state: :unset}, connection_opts) do
-      {:ok, connection_opts} ->
-        {:ok, :websocket, {websock, websock_opts, connection_opts}}
+      {:ok, conn, connection_opts} ->
+        {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
         %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)

@@ -291,7 +291,7 @@ defmodule Bandit.HTTP2.Connection do
 
   defp build_transport_info(socket) do
     {ThousandIsland.Socket.secure?(socket), ThousandIsland.Socket.local_info(socket),
-     ThousandIsland.Socket.peer_info(socket)}
+     ThousandIsland.Socket.peer_info(socket), ThousandIsland.Socket.telemetry_span(socket)}
   end
 
   # Shared logic to send any pending frames upon adjustment of our send window

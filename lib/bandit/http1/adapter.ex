@@ -12,7 +12,8 @@ defmodule Bandit.HTTP1.Adapter do
             body_encoding: nil,
             version: nil,
             keepalive: false,
-            upgrade: nil
+            upgrade: nil,
+            metrics: %{}
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
@@ -66,21 +67,33 @@ defmodule Bandit.HTTP1.Adapter do
 
       {:ok, {:http_request, method, request_target, version}, rest} ->
         with {:ok, version} <- get_version(version),
-             {:ok, request_target} <- resolve_request_target(request_target),
-             req <- %{req | buffer: rest, version: version} do
+             {:ok, request_target} <- resolve_request_target(request_target) do
+          bytes_read = byte_size(req.buffer) - byte_size(rest)
+          metrics = Map.update(req.metrics, :req_line_bytes, bytes_read, &(&1 + bytes_read))
+          req = %{req | buffer: rest, version: version, metrics: metrics}
           do_read_headers(req, :httph_bin, headers, method, request_target)
         end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
-        req = %{req | buffer: rest}
+        bytes_read = byte_size(req.buffer) - byte_size(rest)
+        metrics = Map.update(req.metrics, :req_header_bytes, bytes_read, &(&1 + bytes_read))
+        req = %{req | buffer: rest, metrics: metrics}
         headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
         do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
 
       {:ok, :http_eoh, rest} ->
-        {:ok, headers, method, request_target, %{req | state: :headers_read, buffer: rest}}
+        bytes_read = byte_size(req.buffer) - byte_size(rest)
+
+        metrics =
+          req.metrics
+          |> Map.update(:req_header_bytes, bytes_read, &(&1 + bytes_read))
+          |> Map.put(:req_header_end_time, Bandit.Telemetry.time())
+
+        req = %{req | state: :headers_read, buffer: rest, metrics: metrics}
+        {:ok, headers, method, request_target, req}
 
       {:ok, {:http_error, reason}, _rest} ->
-        {:error, reason}
+        {:error, "header read error: #{inspect(reason)}"}
 
       {:error, reason} ->
         {:error, reason}
@@ -119,13 +132,31 @@ defmodule Bandit.HTTP1.Adapter do
   ##############
 
   @impl Plug.Conn.Adapter
-  def read_req_body(%__MODULE__{state: :no_body} = req, _opts), do: {:ok, <<>>, req}
+  def read_req_body(%__MODULE__{state: :no_body} = req, _opts) do
+    time = Bandit.Telemetry.time()
+
+    metrics =
+      req.metrics
+      |> Map.put(:req_body_bytes, 0)
+      |> Map.put(:req_body_start_time, time)
+      |> Map.put(:req_body_end_time, time)
+
+    {:ok, <<>>, %{req | metrics: metrics}}
+  end
 
   def read_req_body(
         %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
         _opts
       ) do
-    {:ok, buffer, %{req | state: :body_read, buffer: <<>>}}
+    time = Bandit.Telemetry.time()
+
+    metrics =
+      req.metrics
+      |> Map.update(:req_body_bytes, byte_size(buffer), &(&1 + byte_size(buffer)))
+      |> Map.put_new(:req_body_start_time, time)
+      |> Map.put(:req_body_end_time, time)
+
+    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, metrics: metrics}}
   end
 
   @dialyzer {:no_improper_lists, read_req_body: 2}
@@ -138,26 +169,53 @@ defmodule Bandit.HTTP1.Adapter do
 
     if byte_size(buffer) >= max_desired_bytes do
       <<to_return::binary-size(max_desired_bytes), rest::binary>> = buffer
-      {:more, to_return, %{req | buffer: rest}}
+
+      metrics =
+        req.metrics
+        |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
+        |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.time/0)
+
+      {:more, to_return, %{req | buffer: rest, metrics: metrics}}
     else
       to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
+
+      metrics = Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.time/0)
 
       with {:ok, iodata} <- read(req.socket, to_read, opts) do
         result = IO.iodata_to_binary([buffer | iodata])
         body_remaining = body_remaining - IO.iodata_length(iodata)
 
         if body_remaining > 0 do
-          {:more, result, %{req | buffer: <<>>, body_remaining: body_remaining}}
+          metrics =
+            Map.update(metrics, :req_body_bytes, byte_size(result), &(&1 + byte_size(result)))
+
+          {:more, result, %{req | buffer: <<>>, body_remaining: body_remaining, metrics: metrics}}
         else
-          {:ok, result, %{req | state: :body_read, buffer: <<>>, body_remaining: 0}}
+          metrics =
+            metrics
+            |> Map.update(:req_body_bytes, byte_size(result), &(&1 + byte_size(result)))
+            |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+
+          {:ok, result,
+           %{req | state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
         end
       end
     end
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
+    start_time = Bandit.Telemetry.time()
+
     with {:ok, body, req} <- do_read_chunk(req, <<>>, opts) do
-      {:ok, IO.iodata_to_binary(body), req}
+      body = IO.iodata_to_binary(body)
+
+      metrics =
+        req.metrics
+        |> Map.put(:req_body_bytes, byte_size(body))
+        |> Map.put(:req_body_start_time, start_time)
+        |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+
+      {:ok, body, %{req | metrics: metrics}}
     end
   end
 
@@ -226,16 +284,27 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
+    start_time = Bandit.Telemetry.time()
+    body_bytes = IO.iodata_length(response)
+
     headers =
       if add_content_length?(status) do
-        [{"content-length", response |> IO.iodata_length() |> to_string()} | headers]
+        [{"content-length", to_string(body_bytes)} | headers]
       else
         headers
       end
 
-    header_io_data = response_header(version, status, headers)
-    ThousandIsland.Socket.send(socket, [header_io_data, response])
-    {:ok, nil, %{req | state: :sent}}
+    {header_iodata, header_metrics} = response_header(version, status, headers)
+    ThousandIsland.Socket.send(socket, [header_iodata, response])
+
+    metrics =
+      req.metrics
+      |> Map.merge(header_metrics)
+      |> Map.put(:resp_body_bytes, body_bytes)
+      |> Map.put(:resp_start_time, start_time)
+      |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+
+    {:ok, nil, %{req | state: :sent, metrics: metrics}}
   end
 
   # Per RFC2616§4.{3,4}
@@ -253,6 +322,7 @@ defmodule Bandit.HTTP1.Adapter do
         offset,
         length
       ) do
+    start_time = Bandit.Telemetry.time()
     %File.Stat{type: :regular, size: size} = File.stat!(path)
 
     length =
@@ -263,10 +333,18 @@ defmodule Bandit.HTTP1.Adapter do
 
     if offset + length <= size do
       headers = [{"content-length", length |> to_string()} | headers]
-      ThousandIsland.Socket.send(socket, response_header(version, status, headers))
+      {header_iodata, header_metrics} = response_header(version, status, headers)
+      ThousandIsland.Socket.send(socket, header_iodata)
       ThousandIsland.Socket.sendfile(socket, path, offset, length)
 
-      {:ok, nil, %{req | state: :sent}}
+      metrics =
+        req.metrics
+        |> Map.merge(header_metrics)
+        |> Map.put(:resp_body_bytes, length)
+        |> Map.put(:resp_start_time, start_time)
+        |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+
+      {:ok, nil, %{req | state: :sent, metrics: metrics}}
     else
       {:error,
        "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
@@ -275,9 +353,19 @@ defmodule Bandit.HTTP1.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{socket: socket, version: version} = req, status, headers) do
+    start_time = Bandit.Telemetry.time()
+
     headers = [{"transfer-encoding", "chunked"} | headers]
-    ThousandIsland.Socket.send(socket, response_header(version, status, headers))
-    {:ok, nil, %{req | state: :chunking_out}}
+    {header_iodata, header_metrics} = response_header(version, status, headers)
+    ThousandIsland.Socket.send(socket, header_iodata)
+
+    metrics =
+      req.metrics
+      |> Map.merge(header_metrics)
+      |> Map.put(:resp_start_time, start_time)
+      |> Map.put(:resp_body_bytes, 0)
+
+    {:ok, nil, %{req | state: :chunking_out, metrics: metrics}}
   end
 
   @impl Plug.Conn.Adapter
@@ -290,23 +378,30 @@ defmodule Bandit.HTTP1.Adapter do
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
 
   defp response_header(version, status, headers) do
+    resp_line = [
+      to_string(version),
+      " ",
+      to_string(status),
+      " ",
+      Plug.Conn.Status.reason_phrase(status),
+      "\r\n"
+    ]
+
     headers =
       if is_nil(Bandit.Headers.get_header(headers, "date")) do
         [Bandit.Clock.date_header() | headers]
       else
         headers
       end
+      |> Enum.map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
+      |> then(&[&1 | ["\r\n"]])
 
-    [
-      to_string(version),
-      " ",
-      to_string(status),
-      " ",
-      Plug.Conn.Status.reason_phrase(status),
-      "\r\n",
-      Enum.map(headers, fn {k, v} -> [k, ": ", v, "\r\n"] end),
-      "\r\n"
-    ]
+    metrics = %{
+      resp_line_bytes: IO.iodata_length(resp_line),
+      resp_header_bytes: IO.iodata_length(headers)
+    }
+
+    {[resp_line, headers], metrics}
   end
 
   @impl Plug.Conn.Adapter
