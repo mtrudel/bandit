@@ -61,6 +61,25 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
+    test "derives host from host header with ipv6 host", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: [FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
+    end
+
+    test "derives host and port from host header with ipv6 host", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: [::1]:1234"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "[::1]"
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
     @tag capture_log: true
     test "returns 400 if port cannot be parsed from host header", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -165,6 +184,22 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", ["host: orange"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
       assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    # Skip this test since there is a bug in :erlang.decode_packet. See https://github.com/mtrudel/bandit/pull/97
+    @tag :skip
+    test "derives ipv6 host from the URI, even if it differs from host header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "http://[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]/echo_components",
+        ["host: orange"]
+      )
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     end
 
     @tag capture_log: true

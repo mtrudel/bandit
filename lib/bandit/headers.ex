@@ -11,6 +11,22 @@ defmodule Bandit.Headers do
     end
   end
 
+  # covers ipv6 addresses, which look like this: `[::1]:4000` as defined in RFC2732
+  def parse_hostlike_header("[" <> _ = host_header) do
+    host_header
+    |> :binary.split("]:")
+    |> case do
+      [host, port] ->
+        case Integer.parse(port) do
+          {port, ""} when port > 0 -> {:ok, host <> "]", port}
+          _ -> {:error, "Header contains invalid port"}
+        end
+
+      [host] ->
+        {:ok, host, nil}
+    end
+  end
+
   def parse_hostlike_header(host_header) do
     host_header
     |> :binary.split(":")
