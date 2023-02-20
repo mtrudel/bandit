@@ -77,8 +77,9 @@ there looks like this following:
 * [x] `0.3.x` series: Implement HTTP/2 adapter
 * [x] `0.4.x` series: Re-implement HTTP/1.x adapter
 * [x] `0.5.x` series: Implement WebSocket extension & Phoenix support
-* [ ] `0.6.x` series: Comprehensive performance optimization & telemetry coverage (in progress)
+* [x] `0.6.x` series: Comprehensive performance optimization & telemetry coverage
 * [ ] `0.7.x` series: Enhance startup options, general quality-of-life issues
+  (in progress)
 * [ ] `0.8.x` series: Bake-in. Ready for general use, with a caveat that we're still not 1.0
 * [ ] `1.x` series: Ready for general use, without reservation
 
@@ -92,7 +93,7 @@ Using Bandit to host your Phoenix application couldn't be simpler:
 1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
 
     ```elixir
-    {:bandit, ">= 0.6.8"}
+    {:bandit, ">= 0.6.9"}
     ```
 2. Add the following to your endpoint configuration in `config/config.exs`:
 
@@ -165,7 +166,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, ">= 0.6.8"}
+    {:bandit, ">= 0.6.9"}
   ]
 end
 ```

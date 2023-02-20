@@ -1,5 +1,22 @@
 # Changelog for 0.6.x
 
+## 0.6.9 (20 Feb 2023)
+
+### Enhancements
+
+* Add comprehensive Telemetry support within Bandit, as documented in the
+  `Bandit.Telemetry` module
+* Update our ThousandIsland dependnecy to pull in Thousand Island's newly
+  updated Telemetry support as documented in the `ThousandIsland.Telemetry`
+  module
+* Fix parsing of host / request headers which contain IPv6 addresses (#97).
+  Thanks @derekkraan!
+
+# Changes
+
+* Use Plug's list of response code reason phrases (#96). Thanks @jclem!
+* Minor doc updates
+
 ## 0.6.8 (31 Jan 2023)
 
 ### Changes
