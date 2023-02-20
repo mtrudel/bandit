@@ -1449,6 +1449,41 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
+    test "derives host from host header with ipv6 host", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
+    end
+
+    test "derives host and port from host header with ipv6 host", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "[::1]:1234"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "[::1]"
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
     @tag capture_log: true
     test "resets stream if port cannot be parsed from host header", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -1659,6 +1694,24 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, false)
       {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
       assert Jason.decode!(body)["host"] == "banana"
+    end
+
+    test "derives ipv6 host from the URI, even if it differs from host header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {":authority", "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:#{context.port}"},
+        {"host", "orange"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     end
 
     test "derives port from host header, even if it differs from host header", context do
