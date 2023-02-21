@@ -10,7 +10,7 @@ defprotocol Bandit.WebSocket.Socket do
           keyword()
   def send_frame(socket, data_and_frame_type, compressed)
 
-  @spec close(socket :: t(), code :: Bandit.WebSocket.Frame.ConnectionClose.status_code()) :: :ok
+  @spec close(socket :: t(), code :: WebSock.close_detail()) :: :ok
   def close(socket, code)
 end
 
@@ -42,7 +42,12 @@ defimpl Bandit.WebSocket.Socket, for: ThousandIsland.Socket do
     [send_pong_frame_count: 1, send_pong_frame_bytes: IO.iodata_length(data)]
   end
 
-  def close(socket, code) do
+  def close(socket, {code, detail}) when is_integer(code) do
+    do_send_frame(socket, %Frame.ConnectionClose{code: code, reason: detail})
+    ThousandIsland.Socket.shutdown(socket, :write)
+  end
+
+  def close(socket, code) when is_integer(code) do
     do_send_frame(socket, %Frame.ConnectionClose{code: code})
     ThousandIsland.Socket.shutdown(socket, :write)
   end
