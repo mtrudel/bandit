@@ -26,6 +26,9 @@ defmodule Bandit.WebSocket.Connection do
           metrics: map()
         }
 
+  @normal_close_code 1000
+  @protocol_error_code 1002
+
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
 
@@ -54,7 +57,12 @@ defmodule Bandit.WebSocket.Connection do
 
     case frame do
       %Frame.Continuation{} ->
-        do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
+        do_error(
+          @protocol_error_code,
+          "Received unexpected continuation frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       %Frame.Text{fin: true, compressed: true} = frame ->
         do_inflate(frame, socket, connection)
@@ -101,10 +109,20 @@ defmodule Bandit.WebSocket.Connection do
         {:continue, %{connection | fragment_frame: frame}}
 
       %Frame.Text{} ->
-        do_error(1002, "Received unexpected text frame (RFC6455§5.4)", socket, connection)
+        do_error(
+          @protocol_error_code,
+          "Received unexpected text frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       %Frame.Binary{} ->
-        do_error(1002, "Received unexpected binary frame (RFC6455§5.4)", socket, connection)
+        do_error(
+          @protocol_error_code,
+          "Received unexpected binary frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       frame ->
         handle_control_frame(frame, socket, connection)
@@ -165,8 +183,10 @@ defmodule Bandit.WebSocket.Connection do
   end
 
   # This is a bit of a subtle case, see RFC6455§7.4.1-2
-  defp reply_code(code) when code in 0..999 or code in 1004..1006 or code in 1012..2999, do: 1002
-  defp reply_code(_code), do: 1000
+  defp reply_code(code) when code in 0..999 or code in 1004..1006 or code in 1012..2999,
+    do: @protocol_error_code
+
+  defp reply_code(_code), do: @normal_close_code
 
   def handle_close(socket, connection), do: do_error(1006, :closed, socket, connection)
 
@@ -175,20 +195,20 @@ defmodule Bandit.WebSocket.Connection do
       connection.websock.terminate(:shutdown, connection.websock_state)
 
       # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
-      Socket.close(socket, 1000)
+      Socket.close(socket, @normal_close_code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics)
     end
   end
 
   def handle_error({:protocol, reason}, socket, connection),
-    do: do_error(1002, reason, socket, connection)
+    do: do_error(@protocol_error_code, reason, socket, connection)
 
   def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
 
   def handle_timeout(socket, connection) do
     if connection.state == :open do
       connection.websock.terminate(:timeout, connection.websock_state)
-      Socket.close(socket, 1002)
+      Socket.close(socket, @protocol_error_code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: :timeout})
     end
   end
@@ -203,6 +223,15 @@ defmodule Bandit.WebSocket.Connection do
       {:ok, websock_state} ->
         {:continue, %{connection | websock_state: websock_state}}
 
+      {:reply, _status, :close, websock_state} ->
+        do_close(@normal_close_code, socket, %{connection | websock_state: websock_state})
+
+      {:reply, _status, {:close, msg}, websock_state} ->
+        do_close(@normal_close_code, msg, socket, %{connection | websock_state: websock_state})
+
+      {:reply, _status, {:close, code, msg}, websock_state} ->
+        do_close(code, msg, socket, %{connection | websock_state: websock_state})
+
       {:reply, _status, msg, websock_state} ->
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
@@ -210,17 +239,21 @@ defmodule Bandit.WebSocket.Connection do
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
       {:stop, :normal, websock_state} ->
-        if connection.state == :open do
-          connection.websock.terminate(:normal, connection.websock_state)
-          Socket.close(socket, 1000)
-          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-        end
-
-        {:continue, %{connection | websock_state: websock_state, state: :closing}}
+        do_close(@normal_close_code, socket, %{connection | websock_state: websock_state})
 
       {:stop, reason, websock_state} ->
         do_error(1011, reason, socket, %{connection | websock_state: websock_state})
     end
+  end
+
+  defp do_close(code, msg \\ <<>>, socket, connection) do
+    if connection.state == :open do
+      connection.websock.terminate(:normal, connection.websock_state)
+      Socket.close(socket, code, msg)
+      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
+    end
+
+    {:continue, %{connection | state: :closing}}
   end
 
   defp do_error(code, reason, socket, connection) do
@@ -277,7 +310,12 @@ defmodule Bandit.WebSocket.Connection do
         handle_frame(frame, socket, connection)
 
       {:error, :no_compress} ->
-        do_error(1002, "Received unexpected compressed frame (RFC6455§5.2)", socket, connection)
+        do_error(
+          @protocol_error_code,
+          "Received unexpected compressed frame (RFC6455§5.2)",
+          socket,
+          connection
+        )
 
       {:error, _reason} ->
         do_error(1007, "Inflation error", socket, connection)

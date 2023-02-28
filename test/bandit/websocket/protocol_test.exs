@@ -282,6 +282,44 @@ defmodule WebSocketProtocolTest do
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
+
+    defmodule ServerSideCloseWithCustomMessageSock do
+      use NoopWebSock
+
+      def handle_in({"normal", opcode: :text}, state),
+        do: {:reply, :ok, {:close, 1000, "Going away"}, state}
+
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+    end
+
+    test "server replies with a custom message and does proper shutdown", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ServerSideCloseWithCustomMessageSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Get the websock to tell bandit to shut down
+      SimpleWebSocketClient.send_text_frame(client, "normal")
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<1000::16, "Going away">>}
+
+      # Wait a bit and validate that the server is still very much alive
+      Process.sleep(100)
+      assert Process.alive?(pid)
+
+      # Now send our half of the handshake and verify that the server has shut down
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(100)
+      refute Process.alive?(pid)
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
   end
 
   describe "client-side connection close" do

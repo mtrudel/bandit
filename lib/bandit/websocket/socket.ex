@@ -10,8 +10,12 @@ defprotocol Bandit.WebSocket.Socket do
           keyword()
   def send_frame(socket, data_and_frame_type, compressed)
 
-  @spec close(socket :: t(), code :: Bandit.WebSocket.Frame.ConnectionClose.status_code()) :: :ok
-  def close(socket, code)
+  @spec close(
+          socket :: t(),
+          code :: Bandit.WebSocket.Frame.ConnectionClose.status_code(),
+          reason :: iodata()
+        ) :: :ok
+  def close(socket, code, reason \\ <<>>)
 end
 
 defimpl Bandit.WebSocket.Socket, for: ThousandIsland.Socket do
@@ -42,8 +46,8 @@ defimpl Bandit.WebSocket.Socket, for: ThousandIsland.Socket do
     [send_pong_frame_count: 1, send_pong_frame_bytes: IO.iodata_length(data)]
   end
 
-  def close(socket, code) do
-    do_send_frame(socket, %Frame.ConnectionClose{code: code})
+  def close(socket, code, reason) do
+    do_send_frame(socket, %Frame.ConnectionClose{code: code, reason: reason})
     ThousandIsland.Socket.shutdown(socket, :write)
   end
 
