@@ -287,13 +287,13 @@ defmodule WebSocketProtocolTest do
       use NoopWebSock
 
       def handle_in({"code_and_message", opcode: :text}, state),
-        do: {:reply, :ok, {:close, 4321, "Going away"}, state}
+        do: {:stop, :normal, {4321, "Going away"}, state}
 
-      def handle_in({"message_only", opcode: :text}, state),
-        do: {:reply, :ok, {:close, "Bye"}, state}
+      def handle_in({"code_only", opcode: :text}, state),
+        do: {:stop, :normal, 1234, state}
 
       def handle_in({"normal", opcode: :text}, state),
-        do: {:reply, :ok, :close, state}
+        do: {:stop, :normal, state}
 
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
@@ -337,11 +337,11 @@ defmodule WebSocketProtocolTest do
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
 
       # Get the websock to tell bandit to shut down
-      SimpleWebSocketClient.send_text_frame(client, "message_only")
+      SimpleWebSocketClient.send_text_frame(client, "code_only")
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
       assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
-               {:ok, <<1000::16, "Bye">>}
+               {:ok, <<1234::16>>}
 
       # Wait a bit and validate that the server is still very much alive
       Process.sleep(100)

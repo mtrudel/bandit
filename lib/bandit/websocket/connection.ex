@@ -223,15 +223,6 @@ defmodule Bandit.WebSocket.Connection do
       {:ok, websock_state} ->
         {:continue, %{connection | websock_state: websock_state}}
 
-      {:reply, _status, :close, websock_state} ->
-        do_close(@normal_close_code, socket, %{connection | websock_state: websock_state})
-
-      {:reply, _status, {:close, msg}, websock_state} ->
-        do_close(@normal_close_code, msg, socket, %{connection | websock_state: websock_state})
-
-      {:reply, _status, {:close, code, msg}, websock_state} ->
-        do_close(code, msg, socket, %{connection | websock_state: websock_state})
-
       {:reply, _status, msg, websock_state} ->
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
@@ -239,14 +230,20 @@ defmodule Bandit.WebSocket.Connection do
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
       {:stop, :normal, websock_state} ->
-        do_close(@normal_close_code, socket, %{connection | websock_state: websock_state})
+        do_close(@normal_close_code, <<>>, socket, %{connection | websock_state: websock_state})
+
+      {:stop, :normal, {close_code, close_msg}, websock_state} ->
+        do_close(close_code, close_msg, socket, %{connection | websock_state: websock_state})
+
+      {:stop, :normal, close_code, websock_state} ->
+        do_close(close_code, <<>>, socket, %{connection | websock_state: websock_state})
 
       {:stop, reason, websock_state} ->
         do_error(1011, reason, socket, %{connection | websock_state: websock_state})
     end
   end
 
-  defp do_close(code, msg \\ <<>>, socket, connection) do
+  defp do_close(code, msg, socket, connection) do
     if connection.state == :open do
       connection.websock.terminate(:normal, connection.websock_state)
       Socket.close(socket, code, msg)
