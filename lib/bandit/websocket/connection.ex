@@ -210,10 +210,10 @@ defmodule Bandit.WebSocket.Connection do
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
       {:stop, :normal, websock_state} ->
-        do_stop(1000, socket, %{connection | websock_state: websock_state})
+        do_stop(1000, :normal, socket, %{connection | websock_state: websock_state})
 
       {:stop, :normal, code, websock_state} ->
-        do_stop(code, socket, %{connection | websock_state: websock_state})
+        do_stop(code, :normal, socket, %{connection | websock_state: websock_state})
 
       {:stop, reason, websock_state} ->
         do_error(1011, reason, socket, %{connection | websock_state: websock_state})
@@ -223,9 +223,9 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  defp do_stop(code, socket, connection) do
+  defp do_stop(code, reason, socket, connection) do
     if connection.state == :open do
-      connection.websock.terminate(:normal, connection.websock_state)
+      connection.websock.terminate(reason, connection.websock_state)
       Socket.close(socket, code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics)
     end
