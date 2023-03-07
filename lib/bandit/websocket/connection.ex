@@ -184,14 +184,7 @@ defmodule Bandit.WebSocket.Connection do
     do: do_error(1002, reason, socket, connection)
 
   def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
-
-  def handle_timeout(socket, connection) do
-    if connection.state == :open do
-      connection.websock.terminate(:timeout, connection.websock_state)
-      Socket.close(socket, 1002)
-      Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: :timeout})
-    end
-  end
+  def handle_timeout(socket, connection), do: do_error(1002, :timeout, socket, connection)
 
   def handle_info(msg, socket, connection) do
     connection.websock.handle_info(msg, connection.websock_state)
