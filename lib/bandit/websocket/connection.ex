@@ -170,15 +170,8 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_close(socket, connection), do: do_error(1006, :closed, socket, connection)
 
-  def handle_shutdown(socket, connection) do
-    if connection.state == :open do
-      connection.websock.terminate(:shutdown, connection.websock_state)
-
-      # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
-      Socket.close(socket, 1000)
-      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-    end
-  end
+  # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
+  def handle_shutdown(socket, connection), do: do_stop(1000, :shutdown, socket, connection)
 
   def handle_error({:protocol, reason}, socket, connection),
     do: do_error(1002, reason, socket, connection)
