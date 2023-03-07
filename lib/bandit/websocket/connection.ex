@@ -114,12 +114,14 @@ defmodule Bandit.WebSocket.Connection do
   defp handle_control_frame(frame, socket, connection) do
     case frame do
       %Frame.ConnectionClose{} = frame ->
-        if connection.state == :open do
-          connection.websock.terminate(:remote, connection.websock_state)
-          Socket.close(socket, reply_code(frame.code))
-          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-        end
+        # This is a bit of a subtle case, see RFC6455§7.4.1-2
+        reply_code =
+          case frame.code do
+            code when code in 0..999 or code in 1004..1006 or code in 1012..2999 -> 1002
+            _code -> 1000
+          end
 
+        do_stop(reply_code, :remote, socket, connection)
         {:close, %{connection | state: :closing}}
 
       %Frame.Ping{} = frame ->
@@ -163,10 +165,6 @@ defmodule Bandit.WebSocket.Connection do
 
     %{connection | metrics: metrics}
   end
-
-  # This is a bit of a subtle case, see RFC6455§7.4.1-2
-  defp reply_code(code) when code in 0..999 or code in 1004..1006 or code in 1012..2999, do: 1002
-  defp reply_code(_code), do: 1000
 
   def handle_close(socket, connection), do: do_error(1006, :closed, socket, connection)
 
