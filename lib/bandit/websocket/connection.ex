@@ -117,8 +117,8 @@ defmodule Bandit.WebSocket.Connection do
         # This is a bit of a subtle case, see RFC6455§7.4.1-2
         reply_code =
           case frame.code do
-            code when code in 0..999 or code in 1004..1006 or code in 1012..2999 -> 1002
-            _code -> 1000
+            code when code in 1000..1003 or code in 1007..1011 or code > 2999 -> 1000
+            _code -> 1002
           end
 
         do_stop(reply_code, :remote, socket, connection)
