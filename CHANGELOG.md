@@ -1,5 +1,12 @@
 # Changelog for 0.6.x
 
+## 0.6.10 (10 Mar 2023)
+
+### Enhancements
+
+* Support explicit setting of WebSocket close codes & reasons as added in WebSock
+0.5.0
+
 ## 0.6.9 (20 Feb 2023)
 
 ### Enhancements
