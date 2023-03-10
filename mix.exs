@@ -31,7 +31,7 @@ defmodule Bandit.MixProject do
     [
       {:thousand_island, "~> 0.6.1"},
       {:plug, "~> 1.14"},
-      {:websock, "~> 0.4.3"},
+      {:websock, "~> 0.5"},
       {:hpax, "~> 0.1.1"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:finch, "~> 0.8", only: [:dev, :test]},

@@ -48,7 +48,7 @@ defmodule WebSocketUpgradeTest do
 
       # Ensure that the passed timeout was recognized
       then = System.monotonic_time(:millisecond)
-      assert_receive :timeout, 500
+      assert_receive {:error, :timeout}, 500
       now = System.monotonic_time(:millisecond)
       assert_in_delta now, then + 250, 50
     end

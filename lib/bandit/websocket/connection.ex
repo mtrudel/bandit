@@ -114,12 +114,14 @@ defmodule Bandit.WebSocket.Connection do
   defp handle_control_frame(frame, socket, connection) do
     case frame do
       %Frame.ConnectionClose{} = frame ->
-        if connection.state == :open do
-          connection.websock.terminate(:remote, connection.websock_state)
-          Socket.close(socket, reply_code(frame.code))
-          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-        end
+        # This is a bit of a subtle case, see RFC6455§7.4.1-2
+        reply_code =
+          case frame.code do
+            code when code in 1000..1003 or code in 1007..1011 or code > 2999 -> 1000
+            _code -> 1002
+          end
 
+        do_stop(reply_code, :remote, socket, connection)
         {:close, %{connection | state: :closing}}
 
       %Frame.Ping{} = frame ->
@@ -164,34 +166,16 @@ defmodule Bandit.WebSocket.Connection do
     %{connection | metrics: metrics}
   end
 
-  # This is a bit of a subtle case, see RFC6455§7.4.1-2
-  defp reply_code(code) when code in 0..999 or code in 1004..1006 or code in 1012..2999, do: 1002
-  defp reply_code(_code), do: 1000
-
   def handle_close(socket, connection), do: do_error(1006, :closed, socket, connection)
 
-  def handle_shutdown(socket, connection) do
-    if connection.state == :open do
-      connection.websock.terminate(:shutdown, connection.websock_state)
-
-      # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
-      Socket.close(socket, 1000)
-      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-    end
-  end
+  # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
+  def handle_shutdown(socket, connection), do: do_stop(1000, :shutdown, socket, connection)
 
   def handle_error({:protocol, reason}, socket, connection),
     do: do_error(1002, reason, socket, connection)
 
   def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
-
-  def handle_timeout(socket, connection) do
-    if connection.state == :open do
-      connection.websock.terminate(:timeout, connection.websock_state)
-      Socket.close(socket, 1002)
-      Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: :timeout})
-    end
-  end
+  def handle_timeout(socket, connection), do: do_error(1002, :timeout, socket, connection)
 
   def handle_info(msg, socket, connection) do
     connection.websock.handle_info(msg, connection.websock_state)
@@ -210,17 +194,27 @@ defmodule Bandit.WebSocket.Connection do
         do_deflate(msg, socket, %{connection | websock_state: websock_state})
 
       {:stop, :normal, websock_state} ->
-        if connection.state == :open do
-          connection.websock.terminate(:normal, connection.websock_state)
-          Socket.close(socket, 1000)
-          Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-        end
+        do_stop(1000, :normal, socket, %{connection | websock_state: websock_state})
 
-        {:continue, %{connection | websock_state: websock_state, state: :closing}}
+      {:stop, :normal, code, websock_state} ->
+        do_stop(code, :normal, socket, %{connection | websock_state: websock_state})
 
       {:stop, reason, websock_state} ->
         do_error(1011, reason, socket, %{connection | websock_state: websock_state})
+
+      {:stop, reason, code, websock_state} ->
+        do_error(code, reason, socket, %{connection | websock_state: websock_state})
     end
+  end
+
+  defp do_stop(code, reason, socket, connection) do
+    if connection.state == :open do
+      connection.websock.terminate(reason, connection.websock_state)
+      Socket.close(socket, code)
+      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
+    end
+
+    {:continue, %{connection | state: :closing}}
   end
 
   defp do_error(code, reason, socket, connection) do
