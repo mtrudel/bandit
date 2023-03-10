@@ -931,7 +931,7 @@ defmodule WebSocketWebSockTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      assert_receive {:error, :timeout}, 1500
+      assert_receive :timeout, 1500
     end
   end
 

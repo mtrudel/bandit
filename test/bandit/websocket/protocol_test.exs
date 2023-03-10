@@ -471,7 +471,7 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
       # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, :timeout}, 1500
+      assert_receive :timeout, 1500
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
@@ -488,7 +488,7 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
       # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, :timeout}, 1500
+      assert_receive :timeout, 1500
 
       # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}

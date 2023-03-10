@@ -219,13 +219,16 @@ defmodule Bandit.WebSocket.Connection do
 
   defp do_error(code, reason, socket, connection) do
     if connection.state == :open do
-      connection.websock.terminate({:error, reason}, connection.websock_state)
+      connection.websock.terminate(maybe_wrap_reason(reason), connection.websock_state)
       Socket.close(socket, code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: reason})
     end
 
     {:error, reason, %{connection | state: :closing}}
   end
+
+  defp maybe_wrap_reason(:timeout), do: :timeout
+  defp maybe_wrap_reason(reason), do: {:error, reason}
 
   defp do_deflate(msgs, socket, connection) when is_list(msgs) do
     Enum.reduce(msgs, {:continue, connection}, fn
