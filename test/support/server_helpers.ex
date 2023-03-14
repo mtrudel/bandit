@@ -9,6 +9,12 @@ defmodule ServerHelpers do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
+            http_1_options: [
+              max_request_line_length: 5000,
+              max_header_length: 5000,
+              max_header_count: 40,
+              max_requests: 3
+            ],
             options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
           ]
           |> Bandit.child_spec()

@@ -85,6 +85,15 @@ defmodule Bandit do
       This overrides any value set for `scheme` and is intended for cases where control
       over the socket at a fundamental level is needed.
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
+  * `http_1_options`: Options to configure the HTTP/1 stack in Bandit. Valid options are:
+      * `max_request_line_length`: The maximum permitted length of the request line
+      (expressed as the number of bytes on the wire) in an HTTP/1.1 request. Defaults to 10_000 bytes
+      * `max_header_length`: The maximum permitted length of any single header (combined
+      key & value, expressed as the number of bytes on the wire) in an HTTP/1.1 request. Defaults to 10_000 bytes
+      * `max_header_count`: The maximum permitted number of headers in an HTTP/1.1 request.
+      Defaults to 50 headers
+      * `max_requests`: The maximum number of requests to serve in a single
+      HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
 
   ## Setting up an HTTPS Server
 
@@ -159,14 +168,19 @@ defmodule Bandit do
   options to pass to this function.
   """
   def start_link(arg) do
-    {options, illegal_options} =
-      arg
-      |> Keyword.get(:options, [])
-      |> Keyword.split(~w(port num_acceptors read_timeout transport_module transport_options)a)
+    options =
+      get_options(
+        arg,
+        :options,
+        ~w(port num_acceptors read_timeout transport_module transport_options)a
+      )
 
-    if illegal_options != [] do
-      raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
-    end
+    http_1_options =
+      get_options(
+        arg,
+        :http_1_options,
+        ~w(max_request_line_length max_header_length max_header_count max_requests)a
+      )
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
@@ -178,7 +192,11 @@ defmodule Bandit do
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
-    handler_options = %{plug: plug, handler_module: Bandit.InitialHandler}
+    handler_options = %{
+      plug: plug,
+      handler_module: Bandit.InitialHandler,
+      opts: %{http_1: http_1_options}
+    }
 
     options
     |> Keyword.put_new(:transport_module, transport_module)
@@ -198,6 +216,19 @@ defmodule Bandit do
       {:error, _} = error ->
         error
     end
+  end
+
+  defp get_options(arg, opt_name, valid_values) do
+    {options, illegal_options} =
+      arg
+      |> Keyword.get(opt_name, [])
+      |> Keyword.split(valid_values)
+
+    if illegal_options != [] do
+      raise "Unsupported option(s) in #{opt_name} config: #{inspect(illegal_options)}"
+    end
+
+    options
   end
 
   defp plug(arg) do

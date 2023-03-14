@@ -26,6 +26,23 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  describe "keepalive requests" do
+    test "closes connection after max_requests is reached", context do
+      # max_requests is set to 3 in ServerHelpers
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+  end
+
   describe "origin-form request target (RFC9112§3.2.1)" do
     test "derives scheme from underlying transport", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -303,6 +320,17 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  describe "request line limits" do
+    @tag capture_log: true
+    test "returns 414 for request lines that are too long", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
+
+      assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
   describe "request headers" do
     test "reads headers properly", context do
       {:ok, response} =
@@ -325,6 +353,30 @@ defmodule HTTP1RequestTest do
       assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana"]
       # make iodata explicit
       send_resp(conn, 200, ["O", "K"])
+    end
+
+    @tag capture_log: true
+    test "returns 431 for header lines that are too long", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: localhost",
+        "foo: " <> String.duplicate("a", 5000 - 6)
+      ])
+
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag capture_log: true
+    test "returns 431 for too many header lines", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      headers = for i <- 1..40, do: "header#{i}: foo"
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", headers ++ ["host: localhost"])
+
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
     end
   end
 
@@ -1069,7 +1121,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: "timeout"
+                  error: :timeout
                 }}
              ]
     end

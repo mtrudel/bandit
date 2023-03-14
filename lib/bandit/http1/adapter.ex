@@ -13,7 +13,8 @@ defmodule Bandit.HTTP1.Adapter do
             version: nil,
             keepalive: false,
             upgrade: nil,
-            metrics: %{}
+            metrics: %{},
+            opts: []
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
@@ -50,6 +51,7 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @dialyzer {:no_improper_lists, do_read_headers: 5}
+  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp do_read_headers(
          req,
          type \\ :http_bin,
@@ -57,7 +59,14 @@ defmodule Bandit.HTTP1.Adapter do
          method \\ nil,
          request_target \\ nil
        ) do
-    case :erlang.decode_packet(type, req.buffer, []) do
+    # Figure out how to limit this read based on if we're reading request line or headers
+    packet_size =
+      case method do
+        nil -> Keyword.get(req.opts, :max_request_line_length, 10_000)
+        _ -> Keyword.get(req.opts, :max_header_length, 10_000)
+      end
+
+    case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
         with {:ok, iodata} <- read(req.socket, 0) do
           # decode_packet expects a binary, so convert it to one
@@ -79,7 +88,12 @@ defmodule Bandit.HTTP1.Adapter do
         metrics = Map.update(req.metrics, :req_header_bytes, bytes_read, &(&1 + bytes_read))
         req = %{req | buffer: rest, metrics: metrics}
         headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
-        do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
+
+        if length(headers) <= Keyword.get(req.opts, :max_header_count, 50) do
+          do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
+        else
+          {:error, :too_many_headers}
+        end
 
       {:ok, :http_eoh, rest} ->
         bytes_read = byte_size(req.buffer) - byte_size(rest)
@@ -94,6 +108,12 @@ defmodule Bandit.HTTP1.Adapter do
 
       {:ok, {:http_error, reason}, _rest} ->
         {:error, "header read error: #{inspect(reason)}"}
+
+      {:error, :invalid} ->
+        case method do
+          nil -> {:error, :request_uri_too_long}
+          _ -> {:error, :header_too_long}
+        end
 
       {:error, reason} ->
         {:error, reason}
