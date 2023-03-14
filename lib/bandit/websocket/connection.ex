@@ -8,6 +8,7 @@ defmodule Bandit.WebSocket.Connection do
             websock_state: nil,
             state: :open,
             compress: nil,
+            opts: [],
             fragment_frame: nil,
             span: nil,
             metrics: %{}
@@ -21,6 +22,7 @@ defmodule Bandit.WebSocket.Connection do
           websock_state: WebSock.state(),
           state: state(),
           compress: PerMessageDeflate.t() | nil,
+          opts: keyword(),
           fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil,
           span: Bandit.Telemetry.t(),
           metrics: map()
@@ -45,6 +47,7 @@ defmodule Bandit.WebSocket.Connection do
       websock: websock,
       websock_state: websock_state,
       compress: compress,
+      opts: connection_opts,
       span: span
     }
 
@@ -173,10 +176,14 @@ defmodule Bandit.WebSocket.Connection do
   # Some uncertainty if this should be 1000 or 1001 @ https://github.com/mtrudel/bandit/issues/89
   def handle_shutdown(socket, connection), do: do_stop(1000, :shutdown, socket, connection)
 
-  def handle_error({:protocol, reason}, socket, connection),
+  def handle_error({:deserializing, :max_frame_size_exceeded = reason}, socket, connection),
+    do: do_error(1009, reason, socket, connection)
+
+  def handle_error({:deserializing, reason}, socket, connection),
     do: do_error(1002, reason, socket, connection)
 
   def handle_error(reason, socket, connection), do: do_error(1011, reason, socket, connection)
+
   def handle_timeout(socket, connection), do: do_error(1002, :timeout, socket, connection)
 
   def handle_info(msg, socket, connection) do

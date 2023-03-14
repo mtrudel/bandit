@@ -113,6 +113,16 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.send_text_frame(client, payload)
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
     end
+
+    @tag capture_log: true
+    test "over-sized frames are rejected", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 200_001)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+    end
   end
 
   describe "frame fragmentation" do

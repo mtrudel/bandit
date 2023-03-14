@@ -103,6 +103,9 @@ defmodule Bandit do
       Defaults to 50 headers
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
+  * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
+      * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
+      a number of bytes on the wire). Defaults to 0 (no limit)
 
   ## Setting up an HTTPS Server
 
@@ -198,6 +201,8 @@ defmodule Bandit do
         ~w(max_header_key_length max_header_value_length max_header_count max_requests)a
       )
 
+    websocket_options = get_options(arg, :websocket_options, ~w(max_frame_size)a)
+
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
@@ -211,7 +216,7 @@ defmodule Bandit do
     handler_options = %{
       plug: plug,
       handler_module: Bandit.InitialHandler,
-      opts: %{http_1: http_1_options, http_2: http_2_options}
+      opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options}
     }
 
     options

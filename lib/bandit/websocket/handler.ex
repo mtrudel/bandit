@@ -14,6 +14,8 @@ defmodule Bandit.WebSocket.Handler do
     |> Keyword.take([:fullsweep_after])
     |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
 
+    connection_opts = Keyword.merge(state.opts.websocket, connection_opts)
+
     origin_telemetry_span_context = state.origin_telemetry_span_context
 
     state =
@@ -42,7 +44,9 @@ defmodule Bandit.WebSocket.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     (state.buffer <> data)
-    |> Stream.unfold(&Frame.deserialize(&1))
+    |> Stream.unfold(
+      &Frame.deserialize(&1, Keyword.get(state.connection.opts, :max_frame_size, 0))
+    )
     |> Enum.reduce_while({:continue, state}, fn
       {:ok, frame}, {:continue, state} ->
         case Connection.handle_frame(frame, socket, state.connection) do
@@ -60,7 +64,7 @@ defmodule Bandit.WebSocket.Handler do
         {:halt, {:continue, %{state | buffer: rest}}}
 
       {:error, message}, {:continue, state} ->
-        {:halt, {:error, {:protocol, message}, state}}
+        {:halt, {:error, {:deserializing, message}, state}}
     end)
   end
 

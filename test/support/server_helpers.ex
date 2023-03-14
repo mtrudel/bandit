@@ -15,6 +15,7 @@ defmodule ServerHelpers do
               max_header_count: 40,
               max_requests: 3
             ],
+            websocket_options: [max_frame_size: 2_000_000],
             options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
           ]
           |> Bandit.child_spec()
