@@ -949,6 +949,7 @@ defmodule WebSocketWebSockTest do
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
