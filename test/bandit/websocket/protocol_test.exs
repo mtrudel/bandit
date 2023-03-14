@@ -473,6 +473,16 @@ defmodule WebSocketProtocolTest do
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
+
+    test "server does NOT send a 1007 on a non UTF-8 text frame when so configured", context do
+      context = http_server(context, websocket_options: [validate_text_frames: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<0xE2::8, 0x82::8, 0x28::8>>}
+    end
   end
 
   describe "timeout conditions" do

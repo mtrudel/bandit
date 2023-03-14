@@ -65,7 +65,7 @@ defmodule Bandit.WebSocket.Connection do
         do_inflate(frame, socket, connection)
 
       %Frame.Text{fin: true} = frame ->
-        if String.valid?(frame.data) do
+        if !Keyword.get(connection.opts, :validate_text_frames, true) || String.valid?(frame.data) do
           connection.websock.handle_in({frame.data, opcode: :text}, connection.websock_state)
           |> handle_continutation(socket, connection)
         else

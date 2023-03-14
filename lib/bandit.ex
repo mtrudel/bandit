@@ -108,6 +108,9 @@ defmodule Bandit do
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
       * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
       a number of bytes on the wire). Defaults to 0 (no limit)
+      * `validate_text_frames`: Whether or not to validate text frames as being UTF-8. Strictly
+      speaking this is required per RFC6455§5.6, however it can be an expensive operation and one
+      that may be safely skipped in some situations. Defaults to true
 
   ## Setting up an HTTPS Server
 
@@ -203,7 +206,8 @@ defmodule Bandit do
         ~w(max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
       )
 
-    websocket_options = get_options(arg, :websocket_options, ~w(max_frame_size)a)
+    websocket_options =
+      get_options(arg, :websocket_options, ~w(max_frame_size validate_text_frames)a)
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
