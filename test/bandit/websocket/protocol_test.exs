@@ -116,6 +116,7 @@ defmodule WebSocketProtocolTest do
 
     @tag capture_log: true
     test "over-sized frames are rejected", context do
+      context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 

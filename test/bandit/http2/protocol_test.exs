@@ -77,8 +77,9 @@ defmodule HTTP2ProtocolTest do
 
     @tag capture_log: true
     test "returns a connection error if too many requests are sent", context do
+      context = https_server(context, http_2_options: [max_requests: 3])
       socket = SimpleH2Client.setup_connection(context)
-      port = context.port
+      port = context[:port]
 
       {:ok, send_ctx} =
         SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
@@ -916,6 +917,7 @@ defmodule HTTP2ProtocolTest do
 
     @tag capture_log: true
     test "returns a stream error if sent headers contain too many headers", context do
+      context = https_server(context, http_2_options: [max_header_count: 40])
       socket = SimpleH2Client.setup_connection(context)
 
       headers =
@@ -923,7 +925,7 @@ defmodule HTTP2ProtocolTest do
           {":method", "HEAD"},
           {":path", "/"},
           {":scheme", "https"},
-          {":authority", "localhost:#{context.port}"}
+          {":authority", "localhost:#{context[:port]}"}
         ] ++ for i <- 1..37, do: {"header#{i}", "foo"}
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
@@ -933,13 +935,14 @@ defmodule HTTP2ProtocolTest do
 
     @tag capture_log: true
     test "returns a stream error if sent headers contain an overlong key", context do
+      context = https_server(context, http_2_options: [max_header_key_length: 5000])
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
         {":method", "HEAD"},
         {":path", "/"},
         {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"},
+        {":authority", "localhost:#{context[:port]}"},
         {String.duplicate("a", 5_001), "foo"}
       ]
 
@@ -950,13 +953,14 @@ defmodule HTTP2ProtocolTest do
 
     @tag capture_log: true
     test "returns a stream error if sent headers contain an overlong value", context do
+      context = https_server(context, http_2_options: [max_header_value_length: 5000])
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
         {":method", "HEAD"},
         {":path", "/"},
         {":scheme", "https"},
-        {":authority", "localhost:#{context.port}"},
+        {":authority", "localhost:#{context[:port]}"},
         {"foo", String.duplicate("a", 5_001)}
       ]
 

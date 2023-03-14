@@ -28,8 +28,9 @@ defmodule HTTP1RequestTest do
 
   describe "keepalive requests" do
     test "closes connection after max_requests is reached", context do
-      # max_requests is set to 3 in ServerHelpers
+      context = http_server(context, http_1_options: [max_requests: 3])
       client = SimpleHTTP1Client.tcp_client(context)
+
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
       assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
 
@@ -323,7 +324,9 @@ defmodule HTTP1RequestTest do
   describe "request line limits" do
     @tag capture_log: true
     test "returns 414 for request lines that are too long", context do
+      context = http_server(context, http_1_options: [max_request_line_length: 5000])
       client = SimpleHTTP1Client.tcp_client(context)
+
       SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
 
       assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
@@ -357,6 +360,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns 431 for header lines that are too long", context do
+      context = http_server(context, http_1_options: [max_header_length: 5000])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/echo_components", [
@@ -370,6 +374,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns 431 for too many header lines", context do
+      context = http_server(context, http_1_options: [max_header_count: 40])
       client = SimpleHTTP1Client.tcp_client(context)
 
       headers = for i <- 1..40, do: "header#{i}: foo"

@@ -5,19 +5,13 @@ defmodule ServerHelpers do
     quote location: :keep do
       import Plug.Conn
 
-      def http_server(context) do
+      def http_server(context, opts \\ []) do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
-            http_1_options: [
-              max_request_line_length: 5000,
-              max_header_length: 5000,
-              max_header_count: 40,
-              max_requests: 3
-            ],
-            websocket_options: [max_frame_size: 2_000_000],
             options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
           ]
+          |> Keyword.merge(opts)
           |> Bandit.child_spec()
           |> start_supervised()
 
@@ -25,17 +19,11 @@ defmodule ServerHelpers do
         [base: "http://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
-      def https_server(context) do
+      def https_server(context, opts \\ []) do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
             scheme: :https,
-            http_2_options: [
-              max_header_key_length: 5000,
-              max_header_value_length: 5000,
-              max_header_count: 40,
-              max_requests: 3
-            ],
             options: [
               port: 0,
               read_timeout: 1000,
@@ -46,6 +34,7 @@ defmodule ServerHelpers do
               ]
             ]
           ]
+          |> Keyword.merge(opts)
           |> Bandit.child_spec()
           |> start_supervised()
 
