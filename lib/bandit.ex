@@ -94,6 +94,15 @@ defmodule Bandit do
       Defaults to 50 headers
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `http_2_options`: Options to configure the HTTP/2 stack in Bandit. Valid options are:
+      * `max_header_key_length`: The maximum permitted length of any single header key
+      (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
+      * `max_header_value_length`: The maximum permitted length of any single header value
+      (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
+      * `max_header_count`: The maximum permitted number of headers in an HTTP/2 request.
+      Defaults to 50 headers
+      * `max_requests`: The maximum number of requests to serve in a single
+      HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
 
   ## Setting up an HTTPS Server
 
@@ -182,6 +191,13 @@ defmodule Bandit do
         ~w(max_request_line_length max_header_length max_header_count max_requests)a
       )
 
+    http_2_options =
+      get_options(
+        arg,
+        :http_2_options,
+        ~w(max_header_key_length max_header_value_length max_header_count max_requests)a
+      )
+
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
@@ -195,7 +211,7 @@ defmodule Bandit do
     handler_options = %{
       plug: plug,
       handler_module: Bandit.InitialHandler,
-      opts: %{http_1: http_1_options}
+      opts: %{http_1: http_1_options, http_2: http_2_options}
     }
 
     options

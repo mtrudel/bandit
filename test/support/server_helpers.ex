@@ -29,6 +29,12 @@ defmodule ServerHelpers do
           [
             plug: __MODULE__,
             scheme: :https,
+            http_2_options: [
+              max_header_key_length: 5000,
+              max_header_value_length: 5000,
+              max_header_count: 40,
+              max_requests: 3
+            ],
             options: [
               port: 0,
               read_timeout: 1000,

@@ -13,6 +13,7 @@ defmodule Bandit.HTTP2.StreamCollection do
             max_concurrent_streams: :infinity,
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
+            stream_count: 0,
             streams: %{}
 
   @typedoc "A collection of Stream structs, accessible by id or pid"
@@ -95,6 +96,11 @@ defmodule Bandit.HTTP2.StreamCollection do
         {:error, :invalid_stream}
 
       _pid ->
+        new_stream_count =
+          if Map.has_key?(collection.streams, stream.stream_id),
+            do: collection.stream_count,
+            else: collection.stream_count + 1
+
         streams = Map.put(collection.streams, stream.stream_id, stream)
 
         last_local_stream_id =
@@ -115,6 +121,7 @@ defmodule Bandit.HTTP2.StreamCollection do
          %{
            collection
            | streams: streams,
+             stream_count: new_stream_count,
              last_remote_stream_id: last_remote_stream_id,
              last_local_stream_id: last_local_stream_id
          }}
@@ -126,4 +133,7 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   @spec last_remote_stream_id(t()) :: Stream.stream_id()
   def last_remote_stream_id(collection), do: collection.last_remote_stream_id
+
+  @spec stream_count(t()) :: non_neg_integer()
+  def stream_count(collection), do: collection.stream_count
 end
