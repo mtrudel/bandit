@@ -103,6 +103,8 @@ defmodule Bandit do
       Defaults to 50 headers
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
+      * `default_local_settings`: Options to override the default values for local HTTP/2
+      settings. Values provided here will override the defaults specified in RFC7540§6.5.2.
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
       * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
       a number of bytes on the wire). Defaults to 0 (no limit)
@@ -198,7 +200,7 @@ defmodule Bandit do
       get_options(
         arg,
         :http_2_options,
-        ~w(max_header_key_length max_header_value_length max_header_count max_requests)a
+        ~w(max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
       )
 
     websocket_options = get_options(arg, :websocket_options, ~w(max_frame_size)a)

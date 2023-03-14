@@ -48,7 +48,12 @@ defmodule Bandit.HTTP2.Connection do
 
   @spec init(Socket.t(), Bandit.plug(), keyword()) :: {:ok, t()}
   def init(socket, plug, opts) do
-    connection = %__MODULE__{plug: plug, opts: opts}
+    connection = %__MODULE__{
+      plug: plug,
+      opts: opts,
+      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, []))
+    }
+
     # Send SETTINGS frame per RFC7540§3.5
     %Frame.Settings{ack: false, settings: connection.local_settings}
     |> send_frame(socket, connection)
