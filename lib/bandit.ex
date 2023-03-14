@@ -76,7 +76,11 @@ defmodule Bandit do
       * `num_acceptors`: The number of acceptor processes to run. This is mostly a performance
       tuning knob and can usually be left at the default value of 10
       * `read_timeout`: How long to wait for data from the client before timing out and closing the
-      connection, specified in milliseconds. Defaults to `15_000` milliseconds
+      connection, specified in milliseconds. Defaults to `60_000` milliseconds
+      * `shutdown_timeout`: How long to wait for existing connections to complete before forcibly
+      shutting them down at server shutdown, specified in milliseconds. Defaults to `15_000`
+      milliseconds. May also be `:infinity` or `:brutal_kill` as described in the `Supervisor`
+      documentation.
       * `transport_module`: The name of the module which provides basic socket functions.
       This overrides any value set for `scheme` and is intended for cases where control
       over the socket at a fundamental level is needed.
@@ -142,7 +146,12 @@ defmodule Bandit do
 
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
-    %{id: make_ref(), start: {__MODULE__, :start_link, [arg]}}
+    %{
+      id: make_ref(),
+      start: {__MODULE__, :start_link, [arg]},
+      type: :supervisor,
+      restart: :permanent
+    }
   end
 
   @doc """
@@ -172,8 +181,6 @@ defmodule Bandit do
     handler_options = %{plug: plug, handler_module: Bandit.InitialHandler}
 
     options
-    |> Keyword.put_new(:read_timeout, 15_000)
-    |> Keyword.put_new(:num_acceptors, 100)
     |> Keyword.put_new(:transport_module, transport_module)
     |> Keyword.update(
       :transport_options,
