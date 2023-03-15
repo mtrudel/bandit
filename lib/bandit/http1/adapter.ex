@@ -62,8 +62,8 @@ defmodule Bandit.HTTP1.Adapter do
     # Figure out how to limit this read based on if we're reading request line or headers
     packet_size =
       case method do
-        nil -> Keyword.get(req.opts, :max_request_line_length, 10_000)
-        _ -> Keyword.get(req.opts, :max_header_length, 10_000)
+        nil -> Keyword.get(req.opts.http_1, :max_request_line_length, 10_000)
+        _ -> Keyword.get(req.opts.http_1, :max_header_length, 10_000)
       end
 
     case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
@@ -89,7 +89,7 @@ defmodule Bandit.HTTP1.Adapter do
         req = %{req | buffer: rest, metrics: metrics}
         headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
 
-        if length(headers) <= Keyword.get(req.opts, :max_header_count, 50) do
+        if length(headers) <= Keyword.get(req.opts.http_1, :max_header_count, 50) do
           do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
         else
           {:error, :too_many_headers}
@@ -429,7 +429,13 @@ defmodule Bandit.HTTP1.Adapter do
   def inform(_req, _status, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def upgrade(req, :websocket, opts), do: {:ok, %{req | upgrade: {:websocket, opts}}}
+  def upgrade(req, :websocket, opts) do
+    if Keyword.get(req.opts.websocket, :enabled, true) do
+      {:ok, %{req | upgrade: {:websocket, opts}}}
+    else
+      {:error, :not_supported}
+    end
+  end
 
   def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
 

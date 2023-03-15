@@ -593,6 +593,33 @@ defmodule HTTP1RequestTest do
       assert errors =~ "Not a valid WebSocket upgrade request"
     end
 
+    test "returns a 400 and errors loudly if websocket support is not enabled", context do
+      context = http_server(context, websocket_options: [enabled: false])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client)
+             ~> {:ok, "200 OK",
+              [
+                date: string(),
+                "content-length": "85",
+                "cache-control": "max-age=0, private, must-revalidate"
+              ],
+              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.HTTP1.Adapter\"}"}
+    end
+
     defmodule MyNoopWebSock do
       use NoopWebSock
     end
@@ -602,6 +629,10 @@ defmodule HTTP1RequestTest do
       # calling upgrade_adapter
       conn
       |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
+    rescue
+      e in ArgumentError ->
+        conn
+        |> send_resp(200, inspect(e))
     end
   end
 

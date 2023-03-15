@@ -15,7 +15,7 @@ defmodule Bandit.HTTP1.Handler do
         connection_telemetry_span_context: connection_span.telemetry_span_context
       })
 
-    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data, opts: state.opts.http_1}
+    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data, opts: state.opts}
 
     try do
       with {:ok, headers, method, request_target, req} <-
