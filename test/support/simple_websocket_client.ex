@@ -36,11 +36,14 @@ defmodule SimpleWebSocketClient do
       ""
     ] = String.split(response, "\r\n")
 
-    if deflate do
-      {:ok, "sec-websocket-extensions: permessage-deflate\r\n"} = :gen_tcp.recv(client, 46)
-    end
+    case :gen_tcp.recv(client, 2) do
+      {:ok, "\r\n"} ->
+        {:ok, false}
 
-    {:ok, "\r\n"} = :gen_tcp.recv(client, 2)
+      {:ok, "se"} when deflate ->
+        {:ok, "c-websocket-extensions: permessage-deflate\r\n\r\n"} = :gen_tcp.recv(client, 46)
+        {:ok, true}
+    end
   end
 
   def connection_closed_for_reading?(client) do

@@ -431,7 +431,7 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def upgrade(req, :websocket, opts) do
     if Keyword.get(req.opts.websocket, :enabled, true) do
-      {:ok, %{req | upgrade: {:websocket, opts}}}
+      {:ok, %{req | upgrade: {:websocket, opts, req.opts.websocket}}}
     else
       {:error, :not_supported}
     end

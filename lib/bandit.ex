@@ -114,6 +114,10 @@ defmodule Bandit do
       * `validate_text_frames`: Whether or not to validate text frames as being UTF-8. Strictly
       speaking this is required per RFC6455§5.6, however it can be an expensive operation and one
       that may be safely skipped in some situations. Defaults to true
+      * `compress`: Whether or not to allow per-message deflate compression globally. Note that
+      upgrade requests still need to set the `compress: true` option in `connection_opts` on
+      a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
+      for details). Defaults to `true`
 
   ## Setting up an HTTPS Server
 
@@ -210,7 +214,11 @@ defmodule Bandit do
       )
 
     websocket_options =
-      get_options(arg, :websocket_options, ~w(enabled max_frame_size validate_text_frames)a)
+      get_options(
+        arg,
+        :websocket_options,
+        ~w(enabled max_frame_size validate_text_frames compress)a
+      )
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)

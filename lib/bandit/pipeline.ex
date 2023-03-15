@@ -90,11 +90,17 @@ defmodule Bandit.Pipeline do
   defp maybe_upgrade(
          %Plug.Conn{
            state: :upgraded,
-           adapter: {_, %{upgrade: {:websocket, {websock, websock_opts, connection_opts}}}}
+           adapter:
+             {_,
+              %{upgrade: {:websocket, {websock, websock_opts, connection_opts}, websocket_opts}}}
          } = conn
        ) do
     # We can safely unset the state, since we match on :upgraded above
-    case Bandit.WebSocket.Handshake.handshake(%{conn | state: :unset}, connection_opts) do
+    case Bandit.WebSocket.Handshake.handshake(
+           %{conn | state: :unset},
+           connection_opts,
+           websocket_opts
+         ) do
       {:ok, conn, connection_opts} ->
         {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
 

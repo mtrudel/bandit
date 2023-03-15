@@ -214,6 +214,15 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
       assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
     end
+
+    test "does not negotiate compression if not globally configured to", context do
+      context = http_server(context, websocket_options: [compress: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      assert {:ok, false} = SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+    end
   end
 
   describe "ping frames" do
