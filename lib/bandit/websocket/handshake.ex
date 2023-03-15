@@ -35,7 +35,7 @@ defmodule Bandit.WebSocket.Handshake do
 
     {negotiated_params, returned_data} =
       if Keyword.get(opts, :compress) && Keyword.get(websocket_opts, :compress, true) do
-        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions)
+        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions, websocket_opts)
       else
         {nil, []}
       end

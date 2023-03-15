@@ -118,6 +118,19 @@ defmodule Bandit do
       upgrade requests still need to set the `compress: true` option in `connection_opts` on
       a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
       for details). Defaults to `true`
+      * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
+      are:
+        * `level`: The compression level to use for deflation. May be one of `none`, `default`,
+        `best_compression`, `best_speed`, or an integer in `0..9`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zlevel) for more information.
+        Defaults to `default`
+        * `memory_level`: The memory level to use for deflation. May be an integer in `1..9`. See
+        [:zlib documentation](https://www.erlang.org/doc/man/zlib.html#type-zmemlevel) for more
+        information. Defaults to `8`
+        * `strategy`: The strategy to use for deflation. May be one of `default`, `filtered`,
+        `huffman_only`, or `rle`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zstrategy) for more
+        information. Defaults to `default`
 
   ## Setting up an HTTPS Server
 
