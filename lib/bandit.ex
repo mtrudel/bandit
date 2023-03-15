@@ -86,6 +86,7 @@ defmodule Bandit do
       over the socket at a fundamental level is needed.
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
   * `http_1_options`: Options to configure the HTTP/1 stack in Bandit. Valid options are:
+      * `enabled`: Whether or not to serve HTTP/1 requests. Defaults to true
       * `max_request_line_length`: The maximum permitted length of the request line
       (expressed as the number of bytes on the wire) in an HTTP/1.1 request. Defaults to 10_000 bytes
       * `max_header_length`: The maximum permitted length of any single header (combined
@@ -95,6 +96,7 @@ defmodule Bandit do
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
   * `http_2_options`: Options to configure the HTTP/2 stack in Bandit. Valid options are:
+      * `enabled`: Whether or not to serve HTTP/2 requests. Defaults to true
       * `max_header_key_length`: The maximum permitted length of any single header key
       (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
       * `max_header_value_length`: The maximum permitted length of any single header value
@@ -196,14 +198,14 @@ defmodule Bandit do
       get_options(
         arg,
         :http_1_options,
-        ~w(max_request_line_length max_header_length max_header_count max_requests)a
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests)a
       )
 
     http_2_options =
       get_options(
         arg,
         :http_2_options,
-        ~w(max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
       )
 
     websocket_options =
