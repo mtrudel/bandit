@@ -53,6 +53,8 @@ defmodule Bandit.Telemetry do
       This event contains the following metadata:
 
       * `telemetry_span_context`: A unique identifier for this span
+      * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
+        span which contains this request
       * `error`: The error that caused the span to end, if it ended in error
 
   The following events may be emitted within this span:
@@ -133,15 +135,20 @@ defmodule Bandit.Telemetry do
       This event contains the following metadata:
 
       * `telemetry_span_context`: A unique identifier for this span
+      * `origin_telemetry_span_context`: The span context of the Bandit `:request` span from which
+        this connection originated
+      * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
+        span which contains this request
       * `error`: The error that caused the span to end, if it ended in error
   """
 
-  defstruct span_name: nil, telemetry_span_context: nil, start_time: nil
+  defstruct span_name: nil, telemetry_span_context: nil, start_time: nil, start_metadata: nil
 
   @opaque t :: %__MODULE__{
             span_name: atom(),
             telemetry_span_context: reference(),
-            start_time: integer()
+            start_time: integer(),
+            start_metadata: map()
           }
 
   @app_name :bandit
@@ -157,7 +164,8 @@ defmodule Bandit.Telemetry do
     %__MODULE__{
       span_name: span_name,
       telemetry_span_context: telemetry_span_context,
-      start_time: measurements[:monotonic_time]
+      start_time: measurements[:monotonic_time],
+      start_metadata: metadata
     }
   end
 
@@ -175,6 +183,8 @@ defmodule Bandit.Telemetry do
 
     measurements =
       Map.put(measurements, :duration, measurements[:monotonic_time] - span.start_time)
+
+    metadata = Map.merge(span.start_metadata, metadata)
 
     untimed_span_event(span, :stop, measurements, metadata)
   end

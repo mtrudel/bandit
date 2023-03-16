@@ -593,7 +593,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -619,7 +624,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -649,7 +659,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -671,7 +686,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -693,7 +713,12 @@ defmodule HTTP2PlugTest do
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
-                %{telemetry_span_context: reference(), error: string()}}
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer(),
+                  error: string()
+                }}
              ]
     end
 

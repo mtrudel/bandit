@@ -997,7 +997,12 @@ defmodule WebSocketWebSockTest do
                   send_binary_frame_bytes: 5,
                   send_pong_frame_count: 1,
                   send_pong_frame_bytes: 6
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -1018,7 +1023,12 @@ defmodule WebSocketWebSockTest do
                   duration: integer(),
                   recv_connection_close_frame_count: 1,
                   recv_connection_close_frame_bytes: 0
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -1039,7 +1049,12 @@ defmodule WebSocketWebSockTest do
                   duration: integer(),
                   recv_text_frame_count: 1,
                   recv_text_frame_bytes: 5
-                }, %{telemetry_span_context: reference()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -1055,7 +1070,11 @@ defmodule WebSocketWebSockTest do
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :websocket, :stop], %{monotonic_time: integer(), duration: integer()},
-                %{telemetry_span_context: reference()}}
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -1077,7 +1096,13 @@ defmodule WebSocketWebSockTest do
                   duration: integer(),
                   recv_text_frame_count: 1,
                   recv_text_frame_bytes: 14
-                }, %{telemetry_span_context: reference(), error: :nope}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  error: :nope
+                }}
              ]
     end
 
@@ -1092,7 +1117,12 @@ defmodule WebSocketWebSockTest do
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :websocket, :stop], %{monotonic_time: integer(), duration: integer()},
-                %{telemetry_span_context: reference(), error: :timeout}}
+                %{
+                  connection_telemetry_span_context: reference(),
+                  origin_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  error: :timeout
+                }}
              ]
     end
   end
