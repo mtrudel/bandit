@@ -68,7 +68,7 @@ defmodule WebSocketUpgradeTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 66,

@@ -87,7 +87,7 @@ defmodule Bandit.HTTP1.Adapter do
         metrics =
           req.metrics
           |> Map.update(:req_header_bytes, bytes_read, &(&1 + bytes_read))
-          |> Map.put(:req_header_end_time, Bandit.Telemetry.time())
+          |> Map.put(:req_header_end_time, Bandit.Telemetry.monotonic_time())
 
         req = %{req | state: :headers_read, buffer: rest, metrics: metrics}
         {:ok, headers, method, request_target, req}
@@ -133,7 +133,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{state: :no_body} = req, _opts) do
-    time = Bandit.Telemetry.time()
+    time = Bandit.Telemetry.monotonic_time()
 
     metrics =
       req.metrics
@@ -148,7 +148,7 @@ defmodule Bandit.HTTP1.Adapter do
         %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
         _opts
       ) do
-    time = Bandit.Telemetry.time()
+    time = Bandit.Telemetry.monotonic_time()
 
     metrics =
       req.metrics
@@ -173,13 +173,14 @@ defmodule Bandit.HTTP1.Adapter do
       metrics =
         req.metrics
         |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
-        |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.time/0)
+        |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
       {:more, to_return, %{req | buffer: rest, metrics: metrics}}
     else
       to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
 
-      metrics = Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.time/0)
+      metrics =
+        Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
       with {:ok, iodata} <- read(req.socket, to_read, opts) do
         result = IO.iodata_to_binary([buffer | iodata])
@@ -194,7 +195,7 @@ defmodule Bandit.HTTP1.Adapter do
           metrics =
             metrics
             |> Map.update(:req_body_bytes, byte_size(result), &(&1 + byte_size(result)))
-            |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+            |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
           {:ok, result,
            %{req | state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
@@ -204,7 +205,7 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
-    start_time = Bandit.Telemetry.time()
+    start_time = Bandit.Telemetry.monotonic_time()
 
     with {:ok, body, req} <- do_read_chunk(req, <<>>, opts) do
       body = IO.iodata_to_binary(body)
@@ -213,7 +214,7 @@ defmodule Bandit.HTTP1.Adapter do
         req.metrics
         |> Map.put(:req_body_bytes, byte_size(body))
         |> Map.put(:req_body_start_time, start_time)
-        |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+        |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
       {:ok, body, %{req | metrics: metrics}}
     end
@@ -284,7 +285,7 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
-    start_time = Bandit.Telemetry.time()
+    start_time = Bandit.Telemetry.monotonic_time()
     body_bytes = IO.iodata_length(response)
 
     headers =
@@ -302,7 +303,7 @@ defmodule Bandit.HTTP1.Adapter do
       |> Map.merge(header_metrics)
       |> Map.put(:resp_body_bytes, body_bytes)
       |> Map.put(:resp_start_time, start_time)
-      |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+      |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
     {:ok, nil, %{req | state: :sent, metrics: metrics}}
   end
@@ -322,7 +323,7 @@ defmodule Bandit.HTTP1.Adapter do
         offset,
         length
       ) do
-    start_time = Bandit.Telemetry.time()
+    start_time = Bandit.Telemetry.monotonic_time()
     %File.Stat{type: :regular, size: size} = File.stat!(path)
 
     length =
@@ -342,7 +343,7 @@ defmodule Bandit.HTTP1.Adapter do
         |> Map.merge(header_metrics)
         |> Map.put(:resp_body_bytes, length)
         |> Map.put(:resp_start_time, start_time)
-        |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+        |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
       {:ok, nil, %{req | state: :sent, metrics: metrics}}
     else
@@ -353,7 +354,7 @@ defmodule Bandit.HTTP1.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{socket: socket, version: version} = req, status, headers) do
-    start_time = Bandit.Telemetry.time()
+    start_time = Bandit.Telemetry.monotonic_time()
 
     headers = [{"transfer-encoding", "chunked"} | headers]
     {header_iodata, header_metrics} = response_header(version, status, headers)
