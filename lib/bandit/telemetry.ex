@@ -172,13 +172,6 @@ defmodule Bandit.Telemetry do
   end
 
   @doc false
-  @spec start_child_span(t(), atom(), map(), map()) :: t()
-  def start_child_span(parent_span, span_name, measurements \\ %{}, metadata \\ %{}) do
-    metadata = Map.put(metadata, :parent_id, parent_span.telemetry_span_context)
-    start_span(span_name, measurements, metadata)
-  end
-
-  @doc false
   @spec stop_span(t(), map(), map()) :: :ok
   def stop_span(span, measurements \\ %{}, metadata \\ %{}) do
     measurements = Map.put_new_lazy(measurements, :monotonic_time, &monotonic_time/0)
