@@ -70,6 +70,8 @@ defmodule Bandit.Telemetry do
       This event contains the following metadata:
 
       * `telemetry_span_context`: A unique identifier for this span
+      * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
+        span which contains this request
       * `kind`: The kind of unexpected condition, typically `:exit`
       * `exception`: The exception which caused this unexpected termination
       * `stacktrace`: The stacktrace of the location which caused this unexpected termination
@@ -187,6 +189,17 @@ defmodule Bandit.Telemetry do
     metadata = Map.merge(span.start_metadata, metadata)
 
     untimed_span_event(span, :stop, measurements, metadata)
+  end
+
+  def span_exception(span, kind, exception, stacktrace) do
+    metadata =
+      Map.merge(span.start_metadata, %{
+        kind: kind,
+        exception: exception,
+        stacktrace: stacktrace
+      })
+
+    span_event(span, :exception, %{}, metadata)
   end
 
   @doc false

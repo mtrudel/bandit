@@ -55,13 +55,7 @@ defmodule Bandit.HTTP1.Handler do
       exception ->
         # Raise here so that users can see useful stacktraces
         attempt_to_send_fallback(req, 500)
-
-        Bandit.Telemetry.span_event(span, :exception, %{}, %{
-          kind: :exit,
-          exception: exception,
-          stacktrace: __STACKTRACE__
-        })
-
+        Bandit.Telemetry.span_exception(span, :exit, exception, __STACKTRACE__)
         reraise(exception, __STACKTRACE__)
     end
   end

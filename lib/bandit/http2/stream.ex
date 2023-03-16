@@ -283,11 +283,7 @@ defmodule Bandit.HTTP2.Stream do
   def stream_terminated(%__MODULE__{} = stream, reason) do
     case reason do
       {exception, stacktrace} ->
-        Bandit.Telemetry.span_event(stream.span, :exception, %{}, %{
-          kind: :exit,
-          exception: exception,
-          stacktrace: stacktrace
-        })
+        Bandit.Telemetry.span_exception(stream.span, :exit, exception, stacktrace)
 
       _ ->
         :ok

@@ -1088,6 +1088,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :exception], %{monotonic_time: integer()},
                 %{
+                  connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},

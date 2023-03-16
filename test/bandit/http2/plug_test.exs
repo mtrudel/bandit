@@ -734,7 +734,9 @@ defmodule HTTP2PlugTest do
              ~> [
                {[:bandit, :request, :exception], %{monotonic_time: integer()},
                 %{
+                  connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  stream_id: integer(),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},
                   stacktrace: list()
