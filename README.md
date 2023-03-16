@@ -51,7 +51,8 @@ foundational work that is approachable & understandable by users above it in the
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
 * Complete support of the [WebSock API](https://github.com/phoenixframework/websock)
 * Complete server support for HTTP/1.x as defined in [RFC
-  2616](https://datatracker.ietf.org/doc/html/rfc2616)
+  9112](https://datatracker.ietf.org/doc/html/rfc9112) & [RFC
+  9110](https://datatracker.ietf.org/doc/html/rfc9110)
 * Complete server support for HTTP/2 as defined in [RFC
   7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
   [h2spec](https://github.com/summerwind/h2spec) conformance testing
