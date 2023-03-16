@@ -79,7 +79,7 @@ defmodule WebSocketUpgradeTest do
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                }, %{telemetry_span_context: reference()}}
              ]
     end
   end

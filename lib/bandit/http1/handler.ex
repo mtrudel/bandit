@@ -11,7 +11,9 @@ defmodule Bandit.HTTP1.Handler do
     {_, _, _, connection_span} = transport_info = build_transport_info(socket)
 
     span =
-      Bandit.Telemetry.start_span(:request, %{}, %{connection_span_id: connection_span.span_id})
+      Bandit.Telemetry.start_span(:request, %{}, %{
+        connection_telemetry_span_context: connection_span.telemetry_span_context
+      })
 
     req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data}
 
@@ -45,7 +47,7 @@ defmodule Bandit.HTTP1.Handler do
           state =
             state
             |> Map.put(:upgrade_opts, upgrade_opts)
-            |> Map.put(:origin_span_id, span.span_id)
+            |> Map.put(:origin_telemetry_span_context, span.telemetry_span_context)
 
           {:switch, Bandit.WebSocket.Handler, state}
       end

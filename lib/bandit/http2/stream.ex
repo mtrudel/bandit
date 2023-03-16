@@ -87,7 +87,7 @@ defmodule Bandit.HTTP2.Stream do
 
   defp start_span(connection_span, stream_id) do
     Bandit.Telemetry.start_span(:request, %{}, %{
-      connection_span_id: connection_span.span_id,
+      connection_telemetry_span_context: connection_span.telemetry_span_context,
       stream_id: stream_id
     })
   end
