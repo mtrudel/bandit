@@ -1,6 +1,16 @@
+# Changelog for 0.7.x
+
+## 0.7.0 (17 Mar 2023)
+
+### Enhancements
+
+* Add configuration points for various parameters within the HTTP/1, HTTP/2 and
+  WebSocket stacks. See [Bandit
+  docs](https://hexdocs.pm/bandit/Bandit.html#module-config-options) for details
+
 # Changelog for 0.6.x
 
-## 0.6.11 (10 Mar 2023)
+## 0.6.11 (17 Mar 2023)
 
 ### Changes
 
