@@ -30,6 +30,9 @@ defmodule Bandit.PhoenixAdapter do
         for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
         to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.TCP`
+      * `http_1_options`: Any valid value from the `http_1_options` section of `Bandit`'s config documentation
+      * `http_2_options`: Any valid value from the `http_2_options` section of `Bandit`'s config documentation
+      * `websocket_options`: Any valid value from the `websocket_options` section of `Bandit`'s config documentation
 
       Defaults to `false`, which will cause Bandit to not start an HTTP server.
 
@@ -40,6 +43,9 @@ defmodule Bandit.PhoenixAdapter do
         for IPv4 addresses, an 8-element tuple for IPv6 addresses, or using `{:local, path}` to bind
         to a Unix domain socket. Defaults to the Bandit default of `{0, 0, 0, 0, 0, 0, 0, 0}`.
       * `transport_options`: Any valid value from `ThousandIsland.Transports.SSL`
+      * `http_1_options`: Any valid value from the `http_1_options` section of `Bandit`'s config documentation
+      * `http_2_options`: Any valid value from the `http_2_options` section of `Bandit`'s config documentation
+      * `websocket_options`: Any valid value from the `websocket_options` section of `Bandit`'s config documentation
 
       Defaults to `false`, which will cause Bandit to not start an HTTPS server.
   """
@@ -47,26 +53,39 @@ defmodule Bandit.PhoenixAdapter do
   @doc false
   def child_specs(endpoint, config) do
     for {scheme, default_port} <- [http: 4000, https: 4040], opts = config[scheme] do
-      port = Keyword.get(opts, :port, default_port)
-      ip_opt = Keyword.take(opts, [:ip])
-      transport_options = Keyword.get(opts, :transport_options, [])
-      opts = [port: port_to_integer(port), transport_options: ip_opt ++ transport_options]
+      plug = resolve_plug(config[:code_reloader], endpoint)
 
-      plug =
-        if config[:code_reloader] &&
-             Code.ensure_loaded?(Phoenix.Endpoint.SyncCodeReloadPlug) &&
-             function_exported?(Phoenix.Endpoint.SyncCodeReloadPlug, :call, 2) do
-          {Phoenix.Endpoint.SyncCodeReloadPlug, {endpoint, []}}
-        else
-          endpoint
-        end
-
-      [plug: plug, display_plug: endpoint, scheme: scheme, options: opts]
+      opts
+      |> build_options(default_port)
+      |> Keyword.merge(plug: plug, display_plug: endpoint, scheme: scheme)
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end
   end
 
-  defp port_to_integer(port) when is_binary(port), do: String.to_integer(port)
-  defp port_to_integer(port) when is_integer(port), do: port
+  defp resolve_plug(code_reload?, endpoint) do
+    if code_reload? &&
+         Code.ensure_loaded?(Phoenix.Endpoint.SyncCodeReloadPlug) &&
+         function_exported?(Phoenix.Endpoint.SyncCodeReloadPlug, :call, 2) do
+      {Phoenix.Endpoint.SyncCodeReloadPlug, {endpoint, []}}
+    else
+      endpoint
+    end
+  end
+
+  defp build_options(opts, default_port) do
+    {ip_options, options} = Keyword.split(opts, [:ip])
+    {nested_options, options} = Keyword.split(options, [:port, :transport_options])
+
+    nested_options =
+      nested_options
+      |> Keyword.update!(:port, fn
+        nil -> default_port
+        port when is_binary(port) -> String.to_integer(port)
+        port when is_integer(port) -> port
+      end)
+      |> Keyword.update(:transport_options, ip_options, &Keyword.merge(&1, ip_options))
+
+    Keyword.put(options, :options, nested_options)
+  end
 end
