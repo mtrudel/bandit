@@ -11,7 +11,7 @@ defmodule Bandit.Headers do
     end
   end
 
-  # covers ipv6 addresses, which look like this: `[::1]:4000` as defined in RFC2732
+  # covers ipv6 addresses, which look like this: `[::1]:4000` as defined in RFC3986
   def parse_hostlike_header("[" <> _ = host_header) do
     host_header
     |> :binary.split("]:")
