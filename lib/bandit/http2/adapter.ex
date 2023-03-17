@@ -22,7 +22,7 @@ defmodule Bandit.HTTP2.Adapter do
       connection: connection,
       peer: peer,
       stream_id: stream_id,
-      metrics: %{req_header_end_time: Bandit.Telemetry.time()}
+      metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()}
     }
   end
 
@@ -41,7 +41,7 @@ defmodule Bandit.HTTP2.Adapter do
   defp do_read_req_body(adapter, timeout, remaining_length, acc) do
     metrics =
       adapter.metrics
-      |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.time/0)
+      |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
     adapter = %{adapter | metrics: metrics}
 
@@ -68,7 +68,7 @@ defmodule Bandit.HTTP2.Adapter do
         metrics =
           adapter.metrics
           |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
-          |> Map.put(:req_body_end_time, Bandit.Telemetry.time())
+          |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
         {:ok, wrap_req_body(acc), %{adapter | end_stream: true, metrics: metrics}}
     after
@@ -101,7 +101,7 @@ defmodule Bandit.HTTP2.Adapter do
 
     metrics =
       adapter.metrics
-      |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+      |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
     {:ok, nil, %{adapter | metrics: metrics}}
   end
@@ -123,7 +123,7 @@ defmodule Bandit.HTTP2.Adapter do
 
         metrics =
           adapter.metrics
-          |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+          |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
         {:ok, nil, %{adapter | metrics: metrics}}
 
@@ -137,7 +137,7 @@ defmodule Bandit.HTTP2.Adapter do
 
           metrics =
             adapter.metrics
-            |> Map.put(:resp_end_time, Bandit.Telemetry.time())
+            |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
           {:ok, nil, %{adapter | metrics: metrics}}
         end
@@ -186,7 +186,7 @@ defmodule Bandit.HTTP2.Adapter do
   defp send_headers(adapter, status, headers, end_stream) do
     metrics =
       adapter.metrics
-      |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.time/0)
+      |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.monotonic_time/0)
       |> Map.put(:resp_body_bytes, 0)
 
     headers = split_cookies(headers)

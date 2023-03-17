@@ -562,8 +562,12 @@ defmodule HTTP2PlugTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :start], %{time: integer()},
-                %{connection_span_id: string(), span_id: string(), stream_id: integer()}}
+               {[:bandit, :request, :start], %{monotonic_time: integer()},
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -582,14 +586,19 @@ defmodule HTTP2PlugTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -605,7 +614,7 @@ defmodule HTTP2PlugTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
@@ -615,7 +624,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -635,7 +649,7 @@ defmodule HTTP2PlugTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
@@ -645,7 +659,12 @@ defmodule HTTP2PlugTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -660,14 +679,19 @@ defmodule HTTP2PlugTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer()
+                }}
              ]
     end
 
@@ -688,8 +712,13 @@ defmodule HTTP2PlugTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
-                %{span_id: string(), error: string()}}
+               {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer(),
+                  error: string()
+                }}
              ]
     end
 
@@ -703,9 +732,11 @@ defmodule HTTP2PlugTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :exception], %{time: integer()},
+               {[:bandit, :request, :exception], %{monotonic_time: integer()},
                 %{
-                  span_id: string(),
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  stream_id: integer(),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},
                   stacktrace: list()

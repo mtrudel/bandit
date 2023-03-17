@@ -29,14 +29,16 @@ defmodule Bandit.WebSocket.Connection do
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
   # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
 
-  def init(websock, websock_state, connection_opts, socket, origin_span_id) do
+  def init(websock, websock_state, connection_opts, socket, origin_telemetry_span_context) do
     compress = Keyword.get(connection_opts, :compress)
-    connection_span_id = ThousandIsland.Socket.telemetry_span(socket).span_id
+
+    connection_telemetry_span_context =
+      ThousandIsland.Socket.telemetry_span(socket).telemetry_span_context
 
     span =
       Bandit.Telemetry.start_span(:websocket, %{compress: compress}, %{
-        connection_span_id: connection_span_id,
-        origin_span_id: origin_span_id
+        connection_telemetry_span_context: connection_telemetry_span_context,
+        origin_telemetry_span_context: origin_telemetry_span_context
       })
 
     instance = %__MODULE__{

@@ -807,8 +807,11 @@ defmodule HTTP1RequestTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :start], %{time: integer()},
-                %{connection_span_id: string(), span_id: string()}}
+               {[:bandit, :request, :start], %{monotonic_time: integer()},
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -826,7 +829,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 24,
@@ -837,7 +840,11 @@ defmodule HTTP1RequestTest do
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -855,7 +862,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
@@ -869,7 +876,11 @@ defmodule HTTP1RequestTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -896,7 +907,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
@@ -910,7 +921,11 @@ defmodule HTTP1RequestTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -934,7 +949,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
@@ -948,7 +963,11 @@ defmodule HTTP1RequestTest do
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -965,7 +984,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 32,
@@ -975,7 +994,11 @@ defmodule HTTP1RequestTest do
                   resp_header_bytes: 119,
                   resp_body_bytes: 0,
                   resp_start_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -992,7 +1015,7 @@ defmodule HTTP1RequestTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 30,
@@ -1003,7 +1026,11 @@ defmodule HTTP1RequestTest do
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
 
@@ -1018,8 +1045,12 @@ defmodule HTTP1RequestTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
-                %{span_id: string(), error: string()}}
+               {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  error: string()
+                }}
              ]
     end
 
@@ -1034,8 +1065,12 @@ defmodule HTTP1RequestTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :stop], %{time: integer(), duration: integer()},
-                %{span_id: string(), error: "timeout"}}
+               {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  error: "timeout"
+                }}
              ]
     end
 
@@ -1051,9 +1086,10 @@ defmodule HTTP1RequestTest do
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
-               {[:bandit, :request, :exception], %{time: integer()},
+               {[:bandit, :request, :exception], %{monotonic_time: integer()},
                 %{
-                  span_id: string(),
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},
                   stacktrace: list()

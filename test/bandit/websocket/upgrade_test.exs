@@ -68,7 +68,7 @@ defmodule WebSocketUpgradeTest do
              ~> [
                {[:bandit, :request, :stop],
                 %{
-                  time: integer(),
+                  monotonic_time: integer(),
                   duration: integer(),
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 66,
@@ -79,7 +79,11 @@ defmodule WebSocketUpgradeTest do
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
-                }, %{span_id: string()}}
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
              ]
     end
   end
