@@ -1,5 +1,17 @@
 # Changelog for 0.6.x
 
+## 0.6.11 (10 Mar 2023)
+
+### Changes
+
+* Modified telemetry event payloads to match the conventions espoused by
+  `:telemetry.span/3`
+* Default shutdown timeout is now 15s (up from 5s)
+
+### Enhancements
+
+* Update to Thosuand Island 0.6.4 (from 0.6.2)
+
 ## 0.6.10 (10 Mar 2023)
 
 ### Enhancements
