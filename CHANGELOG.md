@@ -1,5 +1,14 @@
 # Changelog for 0.7.x
 
+## 0.7.1 (17 Mar 2023)
+
+### Changes
+
+* Update documentation & messaging to refer to RFC911x RFCs where appropriate
+* Validate top-level config options at startup
+* Revise Phoenix adapter to support new config options
+* Doc updates
+
 ## 0.7.0 (17 Mar 2023)
 
 ### Enhancements
