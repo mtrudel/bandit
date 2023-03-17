@@ -20,7 +20,7 @@ defmodule Bandit.HTTP2.FlowControl do
     else
       # We want our new window to be as large as possible, but are limited by both the maximum size
       # of the window (2^31-1) and the maximum size of the increment we can send to the client, both
-      # per RFC7540§6.9. Be careful about handling cases where we have a negative window due to
+      # per RFC9113§6.9. Be careful about handling cases where we have a negative window due to
       # misbehaving clients or network races
       new_recv_window_size = min(recv_window_size + @max_window_increment, @max_window_size)
 
@@ -35,7 +35,7 @@ defmodule Bandit.HTTP2.FlowControl do
           {:ok, non_neg_integer()} | {:error, term()}
   def update_send_window(current_send_window, increment) do
     if current_send_window + increment > @max_window_size do
-      {:error, "Invalid WINDOW_UPDATE increment RFC7540§6.9.1"}
+      {:error, "Invalid WINDOW_UPDATE increment RFC9113§6.9.1"}
     else
       {:ok, current_send_window + increment}
     end

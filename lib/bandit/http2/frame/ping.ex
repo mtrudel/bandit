@@ -27,13 +27,13 @@ defmodule Bandit.HTTP2.Frame.Ping do
 
   def deserialize(_flags, stream_id, _payload) when stream_id != 0 do
     {:error,
-     {:connection, Errors.protocol_error(), "Invalid stream ID in PING frame (RFC7540§6.7)"}}
+     {:connection, Errors.protocol_error(), "Invalid stream ID in PING frame (RFC9113§6.7)"}}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
     {:error,
      {:connection, Errors.frame_size_error(),
-      "PING frame with invalid payload size (RFC7540§6.7)"}}
+      "PING frame with invalid payload size (RFC9113§6.7)"}}
   end
 
   defimpl Frame.Serializable do

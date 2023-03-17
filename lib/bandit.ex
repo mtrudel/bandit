@@ -106,7 +106,7 @@ defmodule Bandit do
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
       * `default_local_settings`: Options to override the default values for local HTTP/2
-      settings. Values provided here will override the defaults specified in RFC7540§6.5.2.
+      settings. Values provided here will override the defaults specified in RFC9113§6.5.2.
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve WebSocket upgrade requests. Defaults to true
       * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as

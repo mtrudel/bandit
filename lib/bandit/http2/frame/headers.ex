@@ -34,7 +34,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
 
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Errors.protocol_error(), "HEADERS frame with zero stream_id (RFC7540§6.2)"}}
+     {:connection, Errors.protocol_error(), "HEADERS frame with zero stream_id (RFC9113§6.2)"}}
   end
 
   # Padding and priority
@@ -76,7 +76,7 @@ defmodule Bandit.HTTP2.Frame.Headers do
       when set?(flags, @padding_bit) do
     {:error,
      {:connection, Errors.protocol_error(),
-      "HEADERS frame with invalid padding length (RFC7540§6.2)"}}
+      "HEADERS frame with invalid padding length (RFC9113§6.2)"}}
   end
 
   def deserialize(

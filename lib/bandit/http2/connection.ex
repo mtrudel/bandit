@@ -54,7 +54,7 @@ defmodule Bandit.HTTP2.Connection do
       local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, []))
     }
 
-    # Send SETTINGS frame per RFC7540§3.5
+    # Send SETTINGS frame per RFC9113§3.4
     %Frame.Settings{ack: false, settings: connection.local_settings}
     |> send_frame(socket, connection)
 
@@ -62,7 +62,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   #
-  # Receiving while expecting CONTINUATION frames is a special case (RFC7540§6.10); handle it first
+  # Receiving while expecting CONTINUATION frames is a special case (RFC9113§6.10); handle it first
   #
 
   @spec handle_frame(Frame.frame(), Socket.t(), t()) :: Handler.handler_result()
@@ -89,7 +89,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(_frame, socket, %Connection{fragment_frame: %Frame.Headers{}} = connection) do
     shutdown_connection(
       Errors.protocol_error(),
-      "Expected CONTINUATION frame (RFC7540§6.10)",
+      "Expected CONTINUATION frame (RFC9113§6.10)",
       socket,
       connection
     )
@@ -170,6 +170,7 @@ defmodule Bandit.HTTP2.Connection do
         socket,
         connection
       ) do
+    # This is no longer mentioned in RFC9113, but error anyway since it's squarely illogical
     handle_stream_error(
       stream_id,
       Errors.protocol_error(),
@@ -215,7 +216,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Continuation{}, socket, connection) do
     shutdown_connection(
       Errors.protocol_error(),
-      "Received unexpected CONTINUATION frame (RFC7540§6.10)",
+      "Received unexpected CONTINUATION frame (RFC9113§6.10)",
       socket,
       connection
     )
@@ -245,7 +246,7 @@ defmodule Bandit.HTTP2.Connection do
         shutdown_connection(error_code, error_message, socket, connection)
 
       {:error, {:stream, stream_id, error_code, error_message}} ->
-        # If we're erroring out on a stream error, RFC7540§6.9 stipulates that we MUST take into
+        # If we're erroring out on a stream error, RFC9113§6.9 stipulates that we MUST take into
         # account the sizes of errored frames. As such, ensure that we update our connection
         # window to reflect that space taken up by this frame. We needn't worry about the stream's
         # window since we're shutting it down anyway
@@ -263,6 +264,7 @@ defmodule Bandit.HTTP2.Connection do
         socket,
         connection
       ) do
+    # This is no longer mentioned in RFC9113, but error anyway since it's squarely illogical
     handle_stream_error(
       stream_id,
       Errors.protocol_error(),

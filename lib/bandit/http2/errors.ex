@@ -1,6 +1,6 @@
 defmodule Bandit.HTTP2.Errors do
   @moduledoc false
-  # Errors as defined in RFC7540§11
+  # Errors as defined in RFC9113§7
 
   @typedoc "An error code as defined for GOAWAY and RST_STREAM errors"
   @type error_code() :: non_neg_integer()

@@ -1,7 +1,7 @@
 # HTTP/2 Handler
 
 Included in this folder is a complete `ThousandIsland.Handler` based implementation of HTTP/2 as
-defined in RFC 7540. 
+defined in [RFC 9113](https://datatracker.ietf.org/doc/rfc9113). 
 
 ## Process model
 
@@ -52,7 +52,7 @@ looks like the following:
    normally or due to error. Note that frame deserialization may end up returning a connection
    error if the parsed frames fail specific criteria (generally, the frame parsing modules are
    responsible for identifying errors as described in [section
-   6](https://datatracker.ietf.org/doc/html/rfc7540#section-6) of RFC 7540). In these cases, the
+   6](https://datatracker.ietf.org/doc/html/rfc9113#section-6) of RFC 9113). In these cases, the
    failure is passed through to the connection module for processing in order to coordinate an
    orderly shutdown or client notification as appropriate
 

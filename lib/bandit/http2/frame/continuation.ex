@@ -23,7 +23,7 @@ defmodule Bandit.HTTP2.Frame.Continuation do
   def deserialize(_flags, 0, _payload) do
     {:error,
      {:connection, Errors.protocol_error(),
-      "CONTINUATION frame with zero stream_id (RFC7540§6.10)"}}
+      "CONTINUATION frame with zero stream_id (RFC9113§6.10)"}}
   end
 
   def deserialize(flags, stream_id, <<fragment::binary>>) do

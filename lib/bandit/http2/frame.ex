@@ -51,7 +51,7 @@ defmodule Bandit.HTTP2.Frame do
     end
   end
 
-  # This is a little more aggressive than necessary. RFC7540§4.2 says we only need
+  # This is a little more aggressive than necessary. RFC9113§4.2 says we only need
   # to treat frame size violations as connection level errors if the frame in
   # question would affect the connection as a whole, so we could be more surgical
   # here and send stream level errors in some cases. However, we are well within
@@ -62,7 +62,7 @@ defmodule Bandit.HTTP2.Frame do
         max_frame_size
       )
       when length > max_frame_size do
-    {{:error, {:connection, Errors.frame_size_error(), "Payload size too large (RFC7540§4.2)"}},
+    {{:error, {:connection, Errors.frame_size_error(), "Payload size too large (RFC9113§4.2)"}},
      rest}
   end
 

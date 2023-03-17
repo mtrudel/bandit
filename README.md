@@ -54,8 +54,10 @@ foundational work that is approachable & understandable by users above it in the
   9112](https://datatracker.ietf.org/doc/html/rfc9112) & [RFC
   9110](https://datatracker.ietf.org/doc/html/rfc9110)
 * Complete server support for HTTP/2 as defined in [RFC
-  7540](https://datatracker.ietf.org/doc/html/rfc7540), comprehensively covered by automated
-  [h2spec](https://github.com/summerwind/h2spec) conformance testing
+  9113](https://datatracker.ietf.org/doc/html/rfc9113) & [RFC
+  9110](https://datatracker.ietf.org/doc/html/rfc9110), comprehensively covered
+  by automated [h2spec](https://github.com/summerwind/h2spec) conformance
+  testing
 * Complete server support for WebSockets as defined in [RFC
   6455](https://datatracker.ietf.org/doc/html/rfc6455), comprehensively covered by automated
   [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing. Per-message

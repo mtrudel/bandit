@@ -1,6 +1,6 @@
 defmodule Bandit.HTTP2.Settings do
   @moduledoc false
-  # Settings as defined in RFC7540§6.5.2 and §11.3
+  # Settings as defined in RFC9113§6.5.2
 
   defstruct header_table_size: 4_096,
             max_concurrent_streams: :infinity,
@@ -8,7 +8,7 @@ defmodule Bandit.HTTP2.Settings do
             max_frame_size: 16_384,
             max_header_list_size: :infinity
 
-  @typedoc "A collection of settings as defined in RFC7540§6"
+  @typedoc "A collection of settings as defined in RFC9113§6.5"
   @type t :: %__MODULE__{
           header_table_size: non_neg_integer(),
           max_concurrent_streams: non_neg_integer() | :infinity,

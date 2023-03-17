@@ -157,7 +157,7 @@ defmodule Bandit.HTTP2.Adapter do
     # Sending an empty chunk implicitly ends the stream. This is a bit of an undefined corner of
     # the Plug.Conn.Adapter behaviour (see https://github.com/elixir-plug/plug/pull/535 for
     # details) and closing the stream here carves closest to the underlying HTTP/1.1 behaviour
-    # (RFC7230§4.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC7540§8.1)
+    # (RFC9112§7.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC9113§8.1)
     # so this entire section of the API is a bit slanty regardless.
     _ = send_data(adapter, chunk, chunk == <<>>)
     :ok

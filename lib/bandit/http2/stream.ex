@@ -1,6 +1,6 @@
 defmodule Bandit.HTTP2.Stream do
   @moduledoc false
-  # Carries out state management transitions per RFC7540§5.1. Anything having to do
+  # Carries out state management transitions per RFC9113§5.1. Anything having to do
   # with the internal state of a stream is handled in this module. Note that sending
   # of frames on behalf of a stream is a bit of a split responsibility: the stream
   # itself may update state depending on the value of the end_stream flag (this is
@@ -76,7 +76,7 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 
-  # RFC7540§5.1.1 - client initiated streams must be odd
+  # RFC9113§5.1.1 - client initiated streams must be odd
   defp stream_id_is_valid_client(stream_id) do
     if Integer.is_odd(stream_id) do
       :ok
@@ -92,7 +92,7 @@ defmodule Bandit.HTTP2.Stream do
     })
   end
 
-  # RFC7540§8.1.2.6 - content length must be valid
+  # RFC9113§8.1.1 - content length must be valid
   defp get_content_length(headers, stream_id) do
     case Bandit.Headers.get_content_length(headers) do
       {:ok, content_length} -> {:ok, content_length}
@@ -100,7 +100,7 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  # RFC7540§8.1.2.1 - pseudo headers must appear first
+  # RFC9113§8.1 - no pseudo headers
   defp no_pseudo_headers(headers, stream_id) do
     if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end) do
       {:error,

@@ -830,7 +830,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
-    test "combines Cookie headers per RFC7540§8.1.2.5", context do
+    test "combines Cookie headers per RFC9113§8.2.3", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -855,7 +855,7 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, "OK")
     end
 
-    test "breaks Cookie headers up per RFC7540§8.1.2.5", context do
+    test "breaks Cookie headers up per RFC9113§8.2.3", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1452,7 +1452,7 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
-  describe "origin-form request target (no :authority header, RFC7540§8.1.2.3)" do
+  describe "origin-form request target (no :authority header, RFC9113§8.3.1)" do
     test "derives scheme from :scheme pseudo header", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1954,7 +1954,7 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
-  describe "asterisk-form request target (RFC7540§8.1.2.3 & RFC9112§3.2.4)" do
+  describe "asterisk-form request target (RFC9113§8.3.1 & RFC9112§3.2.4)" do
     @tag capture_log: true
     test "parse global OPTIONS path correctly", context do
       socket = SimpleH2Client.setup_connection(context)

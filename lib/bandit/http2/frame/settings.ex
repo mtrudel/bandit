@@ -36,22 +36,22 @@ defmodule Bandit.HTTP2.Frame.Settings do
         {:cont, {:ok, acc}}
 
       {:ok, {0x02, _value}}, {:ok, _acc} ->
-        {:halt, {:error, Errors.protocol_error(), "Invalid enable_push value (RFC7540§6.5)"}}
+        {:halt, {:error, Errors.protocol_error(), "Invalid enable_push value (RFC9113§6.5)"}}
 
       {:ok, {0x03, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
 
       {:ok, {0x04, value}}, {:ok, _acc} when value > @max_window_size ->
-        {:halt, {:error, Errors.flow_control_error(), "Invalid window_size (RFC7540§6.5)"}}
+        {:halt, {:error, Errors.flow_control_error(), "Invalid window_size (RFC9113§6.5)"}}
 
       {:ok, {0x04, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | initial_window_size: value}}}
 
       {:ok, {0x05, value}}, {:ok, _acc} when value < @min_frame_size ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}}
+        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
 
       {:ok, {0x05, value}}, {:ok, _acc} when value > @max_frame_size ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC7540§6.5)"}}
+        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
 
       {:ok, {0x05, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | max_frame_size: value}}}
@@ -63,7 +63,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
         {:cont, {:ok, acc}}
 
       {:error, _rest}, _acc ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid SETTINGS size (RFC7540§6.5)"}}
+        {:halt, {:error, Errors.frame_size_error(), "Invalid SETTINGS size (RFC9113§6.5)"}}
     end)
     |> case do
       {:ok, settings} -> {:ok, %__MODULE__{ack: false, settings: settings}}
@@ -78,11 +78,11 @@ defmodule Bandit.HTTP2.Frame.Settings do
   def deserialize(flags, 0, _payload) when set?(flags, @ack_bit) do
     {:error,
      {:connection, Errors.frame_size_error(),
-      "SETTINGS ack frame with non-empty payload (RFC7540§6.5)"}}
+      "SETTINGS ack frame with non-empty payload (RFC9113§6.5)"}}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
-    {:error, {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC7540§6.5)"}}
+    {:error, {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC9113§6.5)"}}
   end
 
   defimpl Frame.Serializable do
@@ -95,7 +95,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
     def serialize(%Settings{ack: false} = frame, _max_frame_size) do
       # Note that the ordering here corresponds to the keys' alphabetical
       # ordering on the Setting struct. However, we know there are no duplicates
-      # in this list so this is not a problem per RFC7540§6.5
+      # in this list so this is not a problem per RFC9113§6.5
       #
       # Encode default settings values as empty binaries so that we do not send
       # them. This means we can't restore settings back to default values if we

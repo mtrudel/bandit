@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.Frame.RstStream do
           {:ok, t()} | {:error, Connection.error()}
   def deserialize(_flags, 0, _payload) do
     {:error,
-     {:connection, Errors.protocol_error(), "RST_STREAM frame with zero stream_id (RFC7540§6.4)"}}
+     {:connection, Errors.protocol_error(), "RST_STREAM frame with zero stream_id (RFC9113§6.4)"}}
   end
 
   def deserialize(_flags, stream_id, <<error_code::32>>) do
@@ -25,7 +25,7 @@ defmodule Bandit.HTTP2.Frame.RstStream do
   def deserialize(_flags, _stream_id, _payload) do
     {:error,
      {:connection, Errors.frame_size_error(),
-      "Invalid payload size in RST_STREAM frame (RFC7540§6.4)"}}
+      "Invalid payload size in RST_STREAM frame (RFC9113§6.4)"}}
   end
 
   defimpl Frame.Serializable do

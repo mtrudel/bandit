@@ -92,7 +92,7 @@ defmodule Bandit.HTTP2.StreamTask do
     end
   end
 
-  # RFC7540§8.1.2.3 - path should be non-empty and absolute
+  # RFC9113§8.3.1 - path should be non-empty and absolute
   defp get_path(headers) do
     headers
     |> Bandit.Headers.get_header(":path")
@@ -104,14 +104,14 @@ defmodule Bandit.HTTP2.StreamTask do
     end
   end
 
-  # RFC7540§8.1.2.3 - path should match the path-absolute production from RFC3986
+  # RFC9113§8.3.1 - path should match the path-absolute production from RFC3986
   defp split_path(path) do
     if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
       do: {:ok, path},
       else: {:error, "Path contains dot segment"}
   end
 
-  # RFC7540§8.1.2.2 - pseudo headers must appear first
+  # RFC9113§8.3 - pseudo headers must appear first
   defp split_headers(headers) do
     {pseudo_headers, headers} =
       Enum.split_while(headers, fn {key, _value} -> String.starts_with?(key, ":") end)
@@ -121,14 +121,14 @@ defmodule Bandit.HTTP2.StreamTask do
       else: {:ok, pseudo_headers, headers}
   end
 
-  # RFC7540§8.1.2.1 - only request pseudo headers may appear
+  # RFC9113§8.3.1 - only request pseudo headers may appear
   defp pseudo_headers_all_request(headers) do
     if Enum.any?(headers, fn {key, _value} -> key not in ~w[:method :scheme :authority :path] end),
       do: {:error, "Received invalid pseudo header"},
       else: :ok
   end
 
-  # RFC7540§8.1.2.3 - method, scheme, path pseudo headers must appear exactly once
+  # RFC9113§8.3.1 - method, scheme, path pseudo headers must appear exactly once
   defp exactly_one_instance_of(headers, header) do
     headers
     |> Enum.count(fn {key, _value} -> key == header end)
@@ -138,7 +138,7 @@ defmodule Bandit.HTTP2.StreamTask do
     end
   end
 
-  # RFC7540§8.1.2 - all headers name fields must be lowercsae
+  # RFC9113§8.2 - all headers name fields must be lowercsae
   defp headers_all_lowercase(headers) do
     if Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
       do: :ok,
@@ -149,9 +149,9 @@ defmodule Bandit.HTTP2.StreamTask do
   defp lowercase?(<<_char, rest::bits>>), do: lowercase?(rest)
   defp lowercase?(<<>>), do: true
 
-  # RFC7540§8.1.2.2 - no hop-by-hop headers from RFC2616§13.5.1
+  # RFC9113§8.2.2 - no hop-by-hop headers
   # Note that we do not filter out the TE header here, since it is allowed in
-  # specific cases by RFC7540§8.1.2.2. We check those cases in a separate filter
+  # specific cases by RFC9113§8.2.2. We check those cases in a separate filter
   defp no_connection_headers(headers) do
     connection_headers =
       ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
@@ -161,14 +161,14 @@ defmodule Bandit.HTTP2.StreamTask do
       else: :ok
   end
 
-  # RFC7540§8.1.2.2 - TE header may be present if it contains exactly 'trailers'
+  # RFC9113§8.2.2 - TE header may be present if it contains exactly 'trailers'
   defp valid_te_header(headers) do
     if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
       do: :ok,
       else: {:error, "Received invalid TE header"}
   end
 
-  # Per RFC7540§8.1.2.5
+  # Per RFC9113§8.2.3
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
     combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
