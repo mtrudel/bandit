@@ -13,7 +13,7 @@ correctness, clarity & performance as fundamental goals.
 
 In [ongoing automated performance
 tests](https://github.com/mtrudel/bandit/actions/runs/4449308920),
-Bandit's HTTP/1.x engine is up to 5x faster than Cowboy depending on the number of concurrent
+Bandit's HTTP/1.x engine is up to 4x faster than Cowboy depending on the number of concurrent
 requests. When comparing HTTP/2 performance, Bandit is up to 1.5x faster than Cowboy. This is
 possible because Bandit has been built from the ground up for use with Plug applications; this
 focus pays dividends in both performance and also in the approachability of the code base.
@@ -63,7 +63,7 @@ foundational work that is approachable & understandable by users above it in the
   [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing. Per-message
   compression as defined in [RFC 7692](https://datatracker.ietf.org/doc/html/rfc7692) is also
   supported
-* Extremely scalable and performant client handling at a rate up to 5x that of Cowboy for the same
+* Extremely scalable and performant client handling at a rate up to 4x that of Cowboy for the same
   workload with as-good-or-better memory use
 
 Any Phoenix or Plug app should work with Bandit as a drop-in replacement for
