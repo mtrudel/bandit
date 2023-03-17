@@ -192,32 +192,43 @@ defmodule Bandit do
   options to pass to this function.
   """
   def start_link(arg) do
+    arg =
+      arg
+      |> validate_options(
+        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options)a,
+        "top level"
+      )
+
     options =
-      get_options(
-        arg,
-        :options,
-        ~w(port num_acceptors read_timeout transport_module transport_options)a
+      arg
+      |> Keyword.get(:options, [])
+      |> validate_options(
+        ~w(port num_acceptors read_timeout transport_module transport_options)a,
+        :options
       )
 
     http_1_options =
-      get_options(
-        arg,
-        :http_1_options,
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests)a
+      arg
+      |> Keyword.get(:http_1_options, [])
+      |> validate_options(
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests)a,
+        :http_1_options
       )
 
     http_2_options =
-      get_options(
-        arg,
-        :http_2_options,
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
+      arg
+      |> Keyword.get(:http_2_options, [])
+      |> validate_options(
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a,
+        :http_2_options
       )
 
     websocket_options =
-      get_options(
-        arg,
-        :websocket_options,
-        ~w(enabled max_frame_size validate_text_frames compress)a
+      arg
+      |> Keyword.get(:websocket_options, [])
+      |> validate_options(
+        ~w(enabled max_frame_size validate_text_frames compress)a,
+        :websocket_options
       )
 
     scheme = Keyword.get(arg, :scheme, :http)
@@ -256,14 +267,11 @@ defmodule Bandit do
     end
   end
 
-  defp get_options(arg, opt_name, valid_values) do
-    {options, illegal_options} =
-      arg
-      |> Keyword.get(opt_name, [])
-      |> Keyword.split(valid_values)
+  defp validate_options(options, valid_values, name) do
+    {options, illegal_options} = Keyword.split(options, valid_values)
 
     if illegal_options != [] do
-      raise "Unsupported option(s) in #{opt_name} config: #{inspect(illegal_options)}"
+      raise "Unsupported keys(s) in #{name} config: #{inspect(Keyword.keys(illegal_options))}"
     end
 
     options
