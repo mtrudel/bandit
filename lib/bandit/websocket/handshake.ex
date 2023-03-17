@@ -22,20 +22,20 @@ defmodule Bandit.WebSocket.Handshake do
     end
   end
 
-  def handshake(%Plug.Conn{} = conn, opts) do
+  def handshake(%Plug.Conn{} = conn, opts, websocket_opts) do
     if valid_upgrade?(conn) do
-      do_handshake(conn, opts)
+      do_handshake(conn, opts, websocket_opts)
     else
       {:error, "Not a valid WebSocket upgrade request"}
     end
   end
 
-  defp do_handshake(conn, opts) do
+  defp do_handshake(conn, opts, websocket_opts) do
     requested_extensions = requested_extensions(conn)
 
     {negotiated_params, returned_data} =
-      if Keyword.get(opts, :compress) do
-        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions)
+      if Keyword.get(opts, :compress) && Keyword.get(websocket_opts, :compress, true) do
+        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions, websocket_opts)
       else
         {nil, []}
       end

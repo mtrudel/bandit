@@ -113,6 +113,17 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.send_text_frame(client, payload)
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
     end
+
+    @tag capture_log: true
+    test "over-sized frames are rejected", context do
+      context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 200_001)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+    end
   end
 
   describe "frame fragmentation" do
@@ -202,6 +213,15 @@ defmodule WebSocketProtocolTest do
 
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
       assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
+    end
+
+    test "does not negotiate compression if not globally configured to", context do
+      context = http_server(context, websocket_options: [compress: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      assert {:ok, false} = SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
   end
 
@@ -461,6 +481,16 @@ defmodule WebSocketProtocolTest do
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    test "server does NOT send a 1007 on a non UTF-8 text frame when so configured", context do
+      context = http_server(context, websocket_options: [validate_text_frames: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<0xE2::8, 0x82::8, 0x28::8>>}
     end
   end
 

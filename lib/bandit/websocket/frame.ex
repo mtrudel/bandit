@@ -15,34 +15,45 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Ping.t()
           | Frame.Pong.t()
 
-  @spec deserialize(binary()) :: {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
+  @spec deserialize(binary(), non_neg_integer()) ::
+          {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
-          payload::binary-size(length), rest::binary>>
-      ) do
+          payload::binary-size(length), rest::binary>>,
+        max_frame_size
+      )
+      when max_frame_size == 0 or length <= max_frame_size do
     to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 126::7, length::16, mask::32,
-          payload::binary-size(length), rest::binary>>
-      ) do
+          payload::binary-size(length), rest::binary>>,
+        max_frame_size
+      )
+      when max_frame_size == 0 or length <= max_frame_size do
     to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, length::7, mask::32,
-          payload::binary-size(length), rest::binary>>
+          payload::binary-size(length), rest::binary>>,
+        max_frame_size
       )
-      when length <= 125 do
+      when length <= 125 and (max_frame_size == 0 or length <= max_frame_size) do
     to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
-  def deserialize(<<>>) do
+  def deserialize(<<>>, _max_frame_size) do
     nil
   end
 
-  def deserialize(msg) do
+  def deserialize(msg, max_frame_size)
+      when max_frame_size != 0 and byte_size(msg) > max_frame_size do
+    {{:error, :max_frame_size_exceeded}, msg}
+  end
+
+  def deserialize(msg, _max_frame_size) do
     {{:more, msg}, <<>>}
   end
 

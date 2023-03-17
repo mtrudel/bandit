@@ -15,10 +15,11 @@ defmodule Bandit.HTTP1.Handler do
         connection_telemetry_span_context: connection_span.telemetry_span_context
       })
 
-    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data}
+    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data, opts: state.opts}
 
     try do
-      with {:ok, headers, method, request_target, req} <- Bandit.HTTP1.Adapter.read_headers(req),
+      with {:ok, headers, method, request_target, req} <-
+             Bandit.HTTP1.Adapter.read_headers(req),
            {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
              Bandit.Pipeline.run(
                {Bandit.HTTP1.Adapter, req},
@@ -29,15 +30,10 @@ defmodule Bandit.HTTP1.Handler do
                state.plug
              ) do
         Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
-        if Bandit.HTTP1.Adapter.keepalive?(req), do: {:continue, state}, else: {:close, state}
+        maybe_keepalive(req, state)
       else
-        {:error, :timeout} ->
-          attempt_to_send_fallback(req, 408)
-          Bandit.Telemetry.stop_span(span, %{}, %{error: "timeout"})
-          {:error, "timeout reading request", state}
-
         {:error, reason} ->
-          attempt_to_send_fallback(req, 400)
+          attempt_to_send_fallback(req, code_for_reason(reason))
           Bandit.Telemetry.stop_span(span, %{}, %{error: reason})
           {:error, reason, state}
 
@@ -65,10 +61,28 @@ defmodule Bandit.HTTP1.Handler do
      ThousandIsland.Socket.peer_info(socket), ThousandIsland.Socket.telemetry_span(socket)}
   end
 
+  defp code_for_reason(:timeout), do: 408
+  defp code_for_reason(:request_uri_too_long), do: 414
+  defp code_for_reason(:header_too_long), do: 431
+  defp code_for_reason(:too_many_headers), do: 431
+  defp code_for_reason(_), do: 400
+
   defp attempt_to_send_fallback(req, code) do
     Bandit.HTTP1.Adapter.send_resp(req, code, [], <<>>)
   rescue
     _ -> :ok
+  end
+
+  defp maybe_keepalive(req, state) do
+    requests_processed = Map.get(state, :requests_processed, 0) + 1
+    request_limit = Keyword.get(state.opts.http_1, :max_requests, 0)
+    under_limit = request_limit == 0 || requests_processed < request_limit
+
+    if under_limit && Bandit.HTTP1.Adapter.keepalive?(req) do
+      {:continue, Map.put(state, :requests_processed, requests_processed)}
+    else
+      {:close, state}
+    end
   end
 
   def handle_info({:plug_conn, :sent}, state), do: {:noreply, state}

@@ -9,13 +9,13 @@ defmodule WebSocketFrameDeserializationTest do
     test "errors on reserved flag 1 being set" do
       frame = <<0x1::1, 0x1::3, 0x1::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) == {{:error, "Received unsupported RSV flags 1"}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:error, "Received unsupported RSV flags 1"}, <<>>}
     end
 
     test "errors on reserved flag 2 being set" do
       frame = <<0x1::1, 0x2::3, 0x1::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) == {{:error, "Received unsupported RSV flags 2"}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:error, "Received unsupported RSV flags 2"}, <<>>}
     end
   end
 
@@ -26,7 +26,7 @@ defmodule WebSocketFrameDeserializationTest do
 
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 2::7, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -36,7 +36,7 @@ defmodule WebSocketFrameDeserializationTest do
 
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 10::7, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -46,7 +46,7 @@ defmodule WebSocketFrameDeserializationTest do
 
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 125::7, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -56,7 +56,7 @@ defmodule WebSocketFrameDeserializationTest do
 
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 126::7, 126::16, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -66,7 +66,7 @@ defmodule WebSocketFrameDeserializationTest do
 
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 126::7, 127::16, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -77,7 +77,7 @@ defmodule WebSocketFrameDeserializationTest do
       frame =
         <<0x1::1, 0x0::3, 0x1::4, 1::1, 126::7, 16_000::16, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
     end
 
@@ -88,8 +88,40 @@ defmodule WebSocketFrameDeserializationTest do
       frame =
         <<0x1::1, 0x0::3, 0x1::4, 1::1, 127::7, 1_000_000::64, 1234::32, masked_payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: payload}}, <<>>}
+    end
+
+    test "errors on frames over max_frame_size bytes with small frames" do
+      payload = String.duplicate("a", 125)
+      masked_payload = Frame.mask(payload, 1234)
+
+      frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 125::7, 1234::32, masked_payload::binary>>
+
+      assert Frame.deserialize(frame, 124) ==
+               {{:error, :max_frame_size_exceeded}, frame}
+    end
+
+    test "errors on frames over max_frame_size bytes with medium frames" do
+      payload = String.duplicate("a", 16_000)
+      masked_payload = Frame.mask(payload, 1234)
+
+      frame =
+        <<0x1::1, 0x0::3, 0x1::4, 1::1, 126::7, 16_000::16, 1234::32, masked_payload::binary>>
+
+      assert Frame.deserialize(frame, 15_999) ==
+               {{:error, :max_frame_size_exceeded}, frame}
+    end
+
+    test "errors on frames over max_frame_size bytes with large frames" do
+      payload = String.duplicate("a", 1_000_000)
+      masked_payload = Frame.mask(payload, 1234)
+
+      frame =
+        <<0x1::1, 0x0::3, 0x1::4, 1::1, 127::7, 1_000_000::64, 1234::32, masked_payload::binary>>
+
+      assert Frame.deserialize(frame, 999_999) ==
+               {{:error, :max_frame_size_exceeded}, frame}
     end
   end
 
@@ -97,7 +129,7 @@ defmodule WebSocketFrameDeserializationTest do
     test "asks for more" do
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 125::7, 0::32, 1, 2, 3>>
 
-      assert Frame.deserialize(frame) == {{:more, frame}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:more, frame}, <<>>}
     end
   end
 
@@ -105,7 +137,7 @@ defmodule WebSocketFrameDeserializationTest do
     test "returns extra data" do
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 1::7, 0::32, 1, 2, 3>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: <<1>>}}, <<2, 3>>}
     end
   end
@@ -114,7 +146,7 @@ defmodule WebSocketFrameDeserializationTest do
     test "returns an Unknown frame" do
       frame = <<0x1::1, 0x0::3, 0xF::4, 1::1, 1::7, 0::32, 1, 2, 3>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "unknown opcode #{15}"}, <<2, 3>>}
     end
   end
@@ -125,7 +157,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x0::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Continuation{fin: true, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
 
@@ -134,7 +166,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x0::3, 0x0::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Continuation{fin: false, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
 
@@ -143,7 +175,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x4::3, 0x0::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a compressed continuation frame (RFC7692§6.1)"}, <<>>}
     end
   end
@@ -154,7 +186,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x0::3, 0x1::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: false, compressed: false, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
 
@@ -163,7 +195,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x1::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: true, compressed: false, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
 
@@ -172,7 +204,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x4::3, 0x1::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Text{fin: false, compressed: true, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
   end
@@ -183,7 +215,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x0::3, 0x2::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Binary{fin: false, compressed: false, data: <<1, 2, 3, 4, 5>>}},
                 <<>>}
     end
@@ -193,7 +225,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x2::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Binary{fin: true, compressed: false, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
 
@@ -202,7 +234,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x0::1, 0x4::3, 0x2::4, 1::1, 5::7, 0x01020304::32,
           mask(<<1, 2, 3, 4, 5>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Binary{fin: false, compressed: true, data: <<1, 2, 3, 4, 5>>}}, <<>>}
     end
   end
@@ -215,7 +247,7 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x8::4, 1::1, 125::7, 0x01020304::32,
           mask(<<1000::16, payload::binary>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.ConnectionClose{code: 1000, reason: payload}}, <<>>}
     end
 
@@ -224,19 +256,19 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x8::4, 1::1, 2::7, 0x01020304::32,
           mask(<<1000::16>>, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.ConnectionClose{code: 1000}}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:ok, %Frame.ConnectionClose{code: 1000}}, <<>>}
     end
 
     test "deserializes frames with no payload" do
       frame = <<0x1::1, 0x0::3, 0x8::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.ConnectionClose{}}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:ok, %Frame.ConnectionClose{}}, <<>>}
     end
 
     test "refuses frame with invalid payload" do
       frame = <<0x1::1, 0x0::3, 0x8::4, 1::1, 1::7, 0x01020304::32, 1>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Invalid connection close payload (RFC6455§5.5)"}, <<>>}
     end
 
@@ -244,21 +276,21 @@ defmodule WebSocketFrameDeserializationTest do
       payload = String.duplicate("a", 126)
       frame = <<0x1::1, 0x0::3, 0x8::4, 1::1, 126::7, 126::16, 0x01020304::32, payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Invalid connection close payload (RFC6455§5.5)"}, <<>>}
     end
 
     test "refuses frames with fin bit clear" do
       frame = <<0x0::1, 0x0::3, 0x8::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a fragmented connection close frame (RFC6455§5.5)"}, <<>>}
     end
 
     test "refuses frame with per-message compressed bit set" do
       frame = <<0x1::1, 0x4::3, 0x8::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a compressed connection close frame (RFC7692§6.1)"}, <<>>}
     end
   end
@@ -271,35 +303,35 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0x9::4, 1::1, 125::7, 0x01020304::32,
           mask(payload, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Ping{data: payload}}, <<>>}
     end
 
     test "deserializes frames with no payload" do
       frame = <<0x1::1, 0x0::3, 0x9::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.Ping{}}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:ok, %Frame.Ping{}}, <<>>}
     end
 
     test "refuses frame with overly large payload" do
       payload = String.duplicate("a", 126)
       frame = <<0x1::1, 0x0::3, 0x9::4, 1::1, 126::7, 126::16, 0x01020304::32, payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Invalid ping payload (RFC6455§5.5.2)"}, <<>>}
     end
 
     test "refuses frames with fin bit clear" do
       frame = <<0x0::1, 0x0::3, 0x9::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a fragmented ping frame (RFC6455§5.5.2)"}, <<>>}
     end
 
     test "refuses frames with per-message compressed bit set" do
       frame = <<0x1::1, 0x4::3, 0x9::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a compressed ping frame (RFC7692§6.1)"}, <<>>}
     end
   end
@@ -312,35 +344,35 @@ defmodule WebSocketFrameDeserializationTest do
         <<0x1::1, 0x0::3, 0xA::4, 1::1, 125::7, 0x01020304::32,
           mask(payload, 0x01020304)::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:ok, %Frame.Pong{data: payload}}, <<>>}
     end
 
     test "deserializes frames with no payload" do
       frame = <<0x1::1, 0x0::3, 0xA::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) == {{:ok, %Frame.Pong{}}, <<>>}
+      assert Frame.deserialize(frame, 0) == {{:ok, %Frame.Pong{}}, <<>>}
     end
 
     test "refuses frame with overly large payload" do
       payload = String.duplicate("a", 126)
       frame = <<0x1::1, 0x0::3, 0xA::4, 1::1, 126::7, 126::16, 0x01020304::32, payload::binary>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Invalid pong payload (RFC6455§5.5.3)"}, <<>>}
     end
 
     test "refuses frames with fin bit clear" do
       frame = <<0x0::1, 0x0::3, 0xA::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a fragmented pong frame (RFC6455§5.5.3)"}, <<>>}
     end
 
     test "refuses frames with per-message compressed bit set" do
       frame = <<0x1::1, 0x4::3, 0xA::4, 1::1, 0::7, 0x01020304::32>>
 
-      assert Frame.deserialize(frame) ==
+      assert Frame.deserialize(frame, 0) ==
                {{:error, "Cannot have a compressed pong frame (RFC7692§6.1)"}, <<>>}
     end
   end

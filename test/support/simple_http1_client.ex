@@ -62,4 +62,8 @@ defmodule SimpleHTTP1Client do
 
     {:ok, status, headers, body}
   end
+
+  def connection_closed_for_reading?(client) do
+    :gen_tcp.recv(client, 0) == {:error, :closed}
+  end
 end

@@ -25,7 +25,8 @@ defmodule Bandit.HTTP2.Connection do
             recv_window_size: 65_535,
             streams: %StreamCollection{},
             pending_sends: [],
-            plug: nil
+            plug: nil,
+            opts: []
 
   @typedoc "A description of a connection error"
   @type error :: {:connection, Errors.error_code(), String.t()}
@@ -41,12 +42,18 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: StreamCollection.t(),
           pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
-          plug: Bandit.plug()
+          plug: Bandit.plug(),
+          opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.plug()) :: {:ok, t()}
-  def init(socket, plug) do
-    connection = %__MODULE__{plug: plug}
+  @spec init(Socket.t(), Bandit.plug(), keyword()) :: {:ok, t()}
+  def init(socket, plug, opts) do
+    connection = %__MODULE__{
+      plug: plug,
+      opts: opts,
+      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, []))
+    }
+
     # Send SETTINGS frame per RFC7540§3.5
     %Frame.Settings{ack: false, settings: connection.local_settings}
     |> send_frame(socket, connection)
@@ -178,6 +185,8 @@ defmodule Bandit.HTTP2.Connection do
          {:hpack, {:ok, headers, recv_hpack_state}} <-
            {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
+         true <- accept_stream?(connection),
+         true <- accept_headers?(headers, connection.opts, stream),
          transport_info <- build_transport_info(socket),
          {:ok, stream} <-
            Stream.recv_headers(stream, transport_info, headers, end_stream, connection.plug),
@@ -287,6 +296,47 @@ defmodule Bandit.HTTP2.Connection do
     Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})")
 
     {:continue, connection}
+  end
+
+  defp accept_stream?(connection) do
+    max_requests = Keyword.get(connection.opts, :max_requests, 0)
+
+    if max_requests != 0 && StreamCollection.stream_count(connection.streams) >= max_requests do
+      {:error, {:connection, Errors.refused_stream(), "Connection count exceeded"}}
+    else
+      true
+    end
+  end
+
+  defp accept_headers?(headers, opts, stream) do
+    with true <- valid_header_count?(headers, Keyword.get(opts, :max_header_count, 50), stream),
+         max_header_key_length <- Keyword.get(opts, :max_header_key_length, 10_000),
+         max_header_value_length <- Keyword.get(opts, :max_header_value_length, 10_000) do
+      valid_headers?(headers, max_header_key_length, max_header_value_length, stream)
+    end
+  end
+
+  defp valid_header_count?(headers, max, _stream) when length(headers) <= max, do: true
+
+  defp valid_header_count?(_, _, stream),
+    do:
+      {:error,
+       {:stream, stream.stream_id, Errors.frame_size_error(), "Request contains too many headers"}}
+
+  defp valid_headers?(headers, max_key_length, max_value_length, stream) do
+    if Enum.any?(headers, fn
+         {_, nil} ->
+           false
+
+         {key, value} ->
+           String.length(key) > max_key_length || String.length(value) > max_value_length
+       end) do
+      {:error,
+       {:stream, stream.stream_id, Errors.frame_size_error(),
+        "Request contains overlong header(s)"}}
+    else
+      true
+    end
   end
 
   defp build_transport_info(socket) do

@@ -10,6 +10,23 @@ defmodule InitialHandlerTest do
     send_resp(conn, 200, body)
   end
 
+  describe "disabling protocols requests" do
+    test "closes connection on HTTP/1 request if so configured", context do
+      context = http_server(context, http_1_options: [enabled: false])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "closes connection on HTTP/2 request if so configured", context do
+      context = https_server(context, http_2_options: [enabled: false])
+      socket = SimpleH2Client.tls_client(context)
+      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert :ssl.recv(socket, 0) == {:error, :closed}
+    end
+  end
+
   describe "HTTP/1.x handling over TCP" do
     setup :http_server
     setup :finch_http1_client

@@ -21,12 +21,12 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
 
   @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
 
-  def negotiate(requested_extensions) do
+  def negotiate(requested_extensions, opts) do
     :proplists.get_all_values("permessage-deflate", requested_extensions)
     |> Enum.find_value(&do_negotiate/1)
     |> case do
       nil -> {nil, []}
-      params -> {init(params), "permessage-deflate": params}
+      params -> {init(params, opts), "permessage-deflate": params}
     end
   end
 
@@ -82,7 +82,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     end)
   end
 
-  defp init(params) do
+  defp init(params, opts) do
     instance = struct(__MODULE__, params)
     inflate_context = :zlib.open()
     :ok = :zlib.inflateInit(inflate_context, fix_bits(-instance.client_max_window_bits))
@@ -91,11 +91,11 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     :ok =
       :zlib.deflateInit(
         deflate_context,
-        :default,
+        Keyword.get(opts, :level, :default),
         :deflated,
         fix_bits(-instance.server_max_window_bits),
-        8,
-        :default
+        Keyword.get(opts, :mem_level, 8),
+        Keyword.get(opts, :strategy, :default)
       )
 
     %{instance | inflate_context: inflate_context, deflate_context: deflate_context}

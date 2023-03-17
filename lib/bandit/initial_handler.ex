@@ -12,22 +12,24 @@ defmodule Bandit.InitialHandler do
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    {alpn_protocol(socket), sniff_wire(socket)}
-    |> case do
-      {_, :likely_tls} ->
+    http_1_enabled = Keyword.get(Map.get(state.opts, :http_1, []), :enabled, true)
+    http_2_enabled = Keyword.get(Map.get(state.opts, :http_2, []), :enabled, true)
+
+    case {http_1_enabled, http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
+      {_, _, _, :likely_tls} ->
         Logger.warning("Connection that looks like TLS received on a clear channel")
         {:close, state}
 
-      {Bandit.HTTP2.Handler, Bandit.HTTP2.Handler} ->
+      {_, true, Bandit.HTTP2.Handler, Bandit.HTTP2.Handler} ->
         {:switch, Bandit.HTTP2.Handler, state}
 
-      {Bandit.HTTP1.Handler, {:no_match, data}} ->
+      {true, _, Bandit.HTTP1.Handler, {:no_match, data}} ->
         {:switch, Bandit.HTTP1.Handler, data, state}
 
-      {:no_match, Bandit.HTTP2.Handler} ->
+      {_, true, :no_match, Bandit.HTTP2.Handler} ->
         {:switch, Bandit.HTTP2.Handler, state}
 
-      {:no_match, {:no_match, data}} ->
+      {true, _, :no_match, {:no_match, data}} ->
         {:switch, Bandit.HTTP1.Handler, data, state}
 
       _other ->

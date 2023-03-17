@@ -85,6 +85,52 @@ defmodule Bandit do
       This overrides any value set for `scheme` and is intended for cases where control
       over the socket at a fundamental level is needed.
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
+  * `http_1_options`: Options to configure the HTTP/1 stack in Bandit. Valid options are:
+      * `enabled`: Whether or not to serve HTTP/1 requests. Defaults to true
+      * `max_request_line_length`: The maximum permitted length of the request line
+      (expressed as the number of bytes on the wire) in an HTTP/1.1 request. Defaults to 10_000 bytes
+      * `max_header_length`: The maximum permitted length of any single header (combined
+      key & value, expressed as the number of bytes on the wire) in an HTTP/1.1 request. Defaults to 10_000 bytes
+      * `max_header_count`: The maximum permitted number of headers in an HTTP/1.1 request.
+      Defaults to 50 headers
+      * `max_requests`: The maximum number of requests to serve in a single
+      HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `http_2_options`: Options to configure the HTTP/2 stack in Bandit. Valid options are:
+      * `enabled`: Whether or not to serve HTTP/2 requests. Defaults to true
+      * `max_header_key_length`: The maximum permitted length of any single header key
+      (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
+      * `max_header_value_length`: The maximum permitted length of any single header value
+      (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
+      * `max_header_count`: The maximum permitted number of headers in an HTTP/2 request.
+      Defaults to 50 headers
+      * `max_requests`: The maximum number of requests to serve in a single
+      HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
+      * `default_local_settings`: Options to override the default values for local HTTP/2
+      settings. Values provided here will override the defaults specified in RFC7540§6.5.2.
+  * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
+      * `enabled`: Whether or not to serve WebSocket upgrade requests. Defaults to true
+      * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
+      a number of bytes on the wire). Defaults to 0 (no limit)
+      * `validate_text_frames`: Whether or not to validate text frames as being UTF-8. Strictly
+      speaking this is required per RFC6455§5.6, however it can be an expensive operation and one
+      that may be safely skipped in some situations. Defaults to true
+      * `compress`: Whether or not to allow per-message deflate compression globally. Note that
+      upgrade requests still need to set the `compress: true` option in `connection_opts` on
+      a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
+      for details). Defaults to `true`
+      * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
+      are:
+        * `level`: The compression level to use for deflation. May be one of `none`, `default`,
+        `best_compression`, `best_speed`, or an integer in `0..9`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zlevel) for more information.
+        Defaults to `default`
+        * `memory_level`: The memory level to use for deflation. May be an integer in `1..9`. See
+        [:zlib documentation](https://www.erlang.org/doc/man/zlib.html#type-zmemlevel) for more
+        information. Defaults to `8`
+        * `strategy`: The strategy to use for deflation. May be one of `default`, `filtered`,
+        `huffman_only`, or `rle`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zstrategy) for more
+        information. Defaults to `default`
 
   ## Setting up an HTTPS Server
 
@@ -159,14 +205,33 @@ defmodule Bandit do
   options to pass to this function.
   """
   def start_link(arg) do
-    {options, illegal_options} =
-      arg
-      |> Keyword.get(:options, [])
-      |> Keyword.split(~w(port num_acceptors read_timeout transport_module transport_options)a)
+    options =
+      get_options(
+        arg,
+        :options,
+        ~w(port num_acceptors read_timeout transport_module transport_options)a
+      )
 
-    if illegal_options != [] do
-      raise "Unsupported option(s) in Bandit config: #{inspect(illegal_options)}"
-    end
+    http_1_options =
+      get_options(
+        arg,
+        :http_1_options,
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests)a
+      )
+
+    http_2_options =
+      get_options(
+        arg,
+        :http_2_options,
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a
+      )
+
+    websocket_options =
+      get_options(
+        arg,
+        :websocket_options,
+        ~w(enabled max_frame_size validate_text_frames compress)a
+      )
 
     scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
@@ -178,7 +243,11 @@ defmodule Bandit do
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
-    handler_options = %{plug: plug, handler_module: Bandit.InitialHandler}
+    handler_options = %{
+      plug: plug,
+      handler_module: Bandit.InitialHandler,
+      opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options}
+    }
 
     options
     |> Keyword.put_new(:transport_module, transport_module)
@@ -198,6 +267,19 @@ defmodule Bandit do
       {:error, _} = error ->
         error
     end
+  end
+
+  defp get_options(arg, opt_name, valid_values) do
+    {options, illegal_options} =
+      arg
+      |> Keyword.get(opt_name, [])
+      |> Keyword.split(valid_values)
+
+    if illegal_options != [] do
+      raise "Unsupported option(s) in #{opt_name} config: #{inspect(illegal_options)}"
+    end
+
+    options
   end
 
   defp plug(arg) do

@@ -74,6 +74,36 @@ defmodule HTTP2ProtocolTest do
       Process.sleep(1500)
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
+
+    @tag capture_log: true
+    test "returns a connection error if too many requests are sent", context do
+      context = https_server(context, http_2_options: [max_requests: 3])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
+
+      {:ok, 1, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", port, send_ctx)
+
+      {:ok, 3, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 5, :get, "/body_response", port, send_ctx)
+
+      {:ok, 5, false, _, _recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 5, true, "OK"}
+
+      {:ok, _send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 7, :get, "/body_response", port, send_ctx)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 5, 7}
+    end
   end
 
   describe "settings exchange" do
@@ -883,6 +913,60 @@ defmodule HTTP2ProtocolTest do
        ], _ctx} = SimpleH2Client.recv_headers(socket, ctx)
 
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+    end
+
+    @tag capture_log: true
+    test "returns a stream error if sent headers contain too many headers", context do
+      context = https_server(context, http_2_options: [max_header_count: 40])
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers =
+        [
+          {":method", "HEAD"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context[:port]}"}
+        ] ++ for i <- 1..37, do: {"header#{i}", "foo"}
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
+    end
+
+    @tag capture_log: true
+    test "returns a stream error if sent headers contain an overlong key", context do
+      context = https_server(context, http_2_options: [max_header_key_length: 5000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context[:port]}"},
+        {String.duplicate("a", 5_001), "foo"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
+    end
+
+    @tag capture_log: true
+    test "returns a stream error if sent headers contain an overlong value", context do
+      context = https_server(context, http_2_options: [max_header_value_length: 5000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context[:port]}"},
+        {"foo", String.duplicate("a", 5_001)}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
     end
   end
 
