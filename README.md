@@ -11,21 +11,20 @@ Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x,
 HTTP/2 and WebSocket clients over both HTTP and HTTPS. It is written with
 correctness, clarity & performance as fundamental goals.
 
-In [recent performance
-tests](https://github.com/mtrudel/network_benchmark/blob/0b18a9b299b9619c38d2a70ab967831565121d65/benchmarks-09-2021.pdf),
+In [ongoing automated performance
+tests](https://github.com/mtrudel/bandit/actions/runs/4449308920),
 Bandit's HTTP/1.x engine is up to 5x faster than Cowboy depending on the number of concurrent
-requests. When comparing HTTP/2 performance, Bandit is up to 2.3x faster than Cowboy (this number
-is likely even higher, as Cowboy was unable to complete many test runs without error). This is
+requests. When comparing HTTP/2 performance, Bandit is up to 1.5x faster than Cowboy. This is
 possible because Bandit has been built from the ground up for use with Plug applications; this
 focus pays dividends in both performance and also in the approachability of the code base.
 
 Bandit also emphasizes correctness. Its HTTP/2 implementation scores 100% on the
 [h2spec](https://github.com/summerwind/h2spec) suite in strict mode, and its
 WebSocket implementation scores 100% on the
-[Autobahn](https://github.com/crossbario/autobahn-testsuite) test suite.
-Extensive test coverage, strict credo analysis and dialyzer coverage round out
-a test suite that ensures that Bandit is and will remain a platform you can
-count on.
+[Autobahn](https://github.com/crossbario/autobahn-testsuite) test suite, both of
+which run as part of Bandit's comprehensive CI suite. Extensive unit test,
+credo, dialyzer, and performance regression test coverage round out a test suite
+that ensures that Bandit is and will remain a platform you can count on.
 
 Lastly, Bandit exists to demystify the lower layers of infrastructure code. In a world where
 The New Thing is nearly always adding abstraction on top of abstraction, it's important to have
@@ -40,13 +39,14 @@ foundational work that is approachable & understandable by users above it in the
   & fulfill the requirements of safely supporting protocol correctness
 * Prioritize (in order): correctness, clarity, performance. Seek to remove the mystery of
   infrastructure code by being approachable and easy to understand
-* Become the go-to HTTP & low-level networking stack of choice for the Elixir community by being
+* Along with our companion library [Thousand
+  Island](https://github.com/mtrudel/thousand_island), become the go-to HTTP
+  & low-level networking stack of choice for the Elixir community by being
   reliable, efficient, and approachable
 
 ## Project Status
 
-* Complete support for running
-  [Phoenix](https://github.com/phoenixframework/phoenix) applications (WebSocket
+* Complete support for [Phoenix](https://github.com/phoenixframework/phoenix) applications (WebSocket
   support requires Phoenix 1.7+)
 * Complete support of the [Plug API](https://github.com/elixir-plug/plug)
 * Complete support of the [WebSock API](https://github.com/phoenixframework/websock)
@@ -68,22 +68,7 @@ foundational work that is approachable & understandable by users above it in the
 
 Any Phoenix or Plug app should work with Bandit as a drop-in replacement for
 Cowboy; exceptions to this are errors (if you find one, please [file an
-issue!](https://github.com/mtrudel/bandit/issues)) That having been said, Bandit
-remains a young project and we're still not at a 1.0 state just yet. The road
-there looks like this following:
-
-* [x] `0.1.x` series: Proof of concept (along with [Thousand
-  Island](https://github.com/mtrudel/thousand_island)) sufficient to support
-  [HAP](https://github.com/mtrudel/hap)
-* [x] `0.2.x` series: Revise process model to accommodate forthcoming HTTP/2 and WebSocket
-  adapters
-* [x] `0.3.x` series: Implement HTTP/2 adapter
-* [x] `0.4.x` series: Re-implement HTTP/1.x adapter
-* [x] `0.5.x` series: Implement WebSocket extension & Phoenix support
-* [x] `0.6.x` series: Comprehensive performance optimization & telemetry coverage
-* [ ] `0.7.x` series: Enhance startup options, general quality-of-life issues
-  (in progress)
-* [ ] `1.x` series: Ready for general use, without reservation
+issue!](https://github.com/mtrudel/bandit/issues)).
 
 ## Using Bandit With Phoenix
 
@@ -134,20 +119,26 @@ options via the `Bandit.start_link/1` function:
 
 ```elixir
 # Start an http server on the default port 4000, serving MyApp.MyPlug
-Bandit.start_link(plug: MyApp.MyPlug)
+Bandit.start_link(plug: MyPlug)
 ```
 
 ## WebSocket Support
 
-Bandit supports upgrading HTTP requests to WebSocket connections via the use of
-the `Plug.Conn.upgrade_adapter/3` function and the `WebSock` API. For details, see the `Bandit`
-documentation. This is intended for people wanting to interact with WebSockets
-at a low level; specifically, Phoenix users don't need to worry about any of
-this as Phoenix manages all of this for you already.
+If you're using Bandit to run a Phoenix application as suggested above, there is
+nothing more for you to do; WebSocket support will 'just work'.
+
+If you wish to interact with WebSockets at a more fundamental level, the
+[WebSock](https://hexdocs.pm/websock/WebSock.html) and
+[WebSockAdapter](https://hexdocs.pm/websock_adapter/WebSockAdapter.html) libraries
+provides a generic abstraction for WebSockets (very similar to how Plug is
+a generic abstraction on top of HTTP). Bandit fully supports all aspects of
+these libraries. 
 
 ## Implementation Details
 
-Bandit's HTTP/2 implementation is described in detail in its own [README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x and WebSocket implementations is a work in progress.
+Bandit's HTTP/2 implementation is described in detail in its own
+[README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x and
+WebSocket implementations is a work in progress.
 
 ## Contributing
 

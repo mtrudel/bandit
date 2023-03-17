@@ -21,7 +21,7 @@ defmodule Bandit do
 
   1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
     ```elixir
-    {:bandit, ">= 0.5.10"}
+    {:bandit, ">= 0.7.0"}
     ```
 
   2. Add the following to your endpoint configuration in `config/config.exs`:
@@ -74,7 +74,7 @@ defmodule Bandit do
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
       * `num_acceptors`: The number of acceptor processes to run. This is mostly a performance
-      tuning knob and can usually be left at the default value of 10
+      tuning knob and can usually be left at the default value of 100
       * `read_timeout`: How long to wait for data from the client before timing out and closing the
       connection, specified in milliseconds. Defaults to `60_000` milliseconds
       * `shutdown_timeout`: How long to wait for existing connections to complete before forcibly
@@ -159,30 +159,17 @@ defmodule Bandit do
 
   ## WebSocket Support
 
-  Bandit supports upgrading HTTP requests to WebSocket connections via 
-  the use of the `Plug.Conn.upgrade_adapter/3` function, called with `:websocket` as the second
-  argument. Applications should validate that the connection represents a valid WebSocket request
-  before calling this function (Bandit will validate the connection as part of the upgrade
+  Bandit supports WebSocket implementations via the
+  [WebSock](https://hexdocs.pm/websock/WebSock.html) and
+  [WebSockAdapter](https://hexdocs.pm/websock_adapter/WebSockAdapter.html) libraries, which
+  provide a generic abstraction for WebSockets (very similar to how Plug is a generic abstraction
+  on top of HTTP). Bandit fully supports all aspects of these libraries.
+
+  Applications should validate that the connection represents a valid WebSocket request
+  before attempting an upgrade (Bandit will validate the connection as part of the upgrade
   process, but does not provide any capacity for an application to be notified if the upgrade is
   not successful). If an application wishes to negotiate WebSocket subprotocols or otherwise set
-  any response headers, it should do so before calling `Plug.Conn.upgrade_adapter/3`.
-
-  The third argument to `Plug.Conn.upgrade_adapter/3` defines the details of how Bandit should 
-  handle the WebSocket connection, and must take the form `{handler, handler_opts,
-  connection_opts}`, where values are as follows:
-
-  * `handler` is a module which implements the `WebSock` API
-  * `handler_opts` is an arbitrary term which will be passed as the argument to `c:WebSock.init/1`
-  * `connection_opts` is a keyword list which consists of zero or more of the following options:
-    * `timeout`: The number of milliseconds to wait after no client data is received before
-      closing the connection. Defaults to `60_000`
-    * `compress`: Whether or not to accept negotiation of a compression extension with the
-      client. Defaults to `false`
-    * `fullsweep_after`: The maximum number of garbage collections
-      before forcing a full sweep of the socket process. You can set it to `0` to force more
-      frequent cleanups of your websocket transport processes. Setting this option requires
-      Erlang/OTP 24
-
+  any response headers, it should do so before upgrading.
   """
 
   require Logger
