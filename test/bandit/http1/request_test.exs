@@ -676,10 +676,15 @@ defmodule HTTP1RequestTest do
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
 
-      # Deflated version of 10_000 copies of "a"
-      assert response.body ==
-               <<120, 156, 236, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239, 95, 194, 28, 110, 64, 1,
-                 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 0, 0, 255, 255>>
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert response.body == expected
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
@@ -691,11 +696,7 @@ defmodule HTTP1RequestTest do
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
 
-      # gzipped version of 10_000 copies of "a"
-      assert response.body ==
-               <<31, 139, 8, 0, 0, 0, 0, 0, 0, 19, 237, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239,
-                 95, 194, 28, 110, 64, 1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 151, 212, 126, 70,
-                 16, 39, 0, 0>>
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
     test "writes out a response with x-gzip encoding if so negotiated", context do
@@ -707,11 +708,7 @@ defmodule HTTP1RequestTest do
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
 
-      # gzipped version of 10_000 copies of "a"
-      assert response.body ==
-               <<31, 139, 8, 0, 0, 0, 0, 0, 0, 19, 237, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239,
-                 95, 194, 28, 110, 64, 1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 151, 212, 126, 70,
-                 16, 39, 0, 0>>
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
     test "uses the first matching encoding in accept-encoding", context do
@@ -725,10 +722,15 @@ defmodule HTTP1RequestTest do
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
 
-      # Deflated version of 10_000 copies of "a"
-      assert response.body ==
-               <<120, 156, 236, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239, 95, 194, 28, 110, 64, 1,
-                 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 0, 0, 255, 255>>
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert response.body == expected
     end
 
     test "falls back to no encoding if no encodings provided", context do
