@@ -12,6 +12,13 @@ defmodule Bandit.Compression do
     do_compress(response, accept_encoding)
   end
 
+  defp do_compress(response, ["deflate" | _]) do
+    deflate_context = :zlib.open()
+    :ok = :zlib.deflateInit(deflate_context)
+    response = :zlib.deflate(deflate_context, response, :sync)
+    {response, "deflate"}
+  end
+
   defp do_compress(response, [_ | rest]), do: do_compress(response, rest)
   defp do_compress(response, []), do: {response, nil}
 end

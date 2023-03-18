@@ -667,6 +667,25 @@ defmodule HTTP1RequestTest do
   end
 
   describe "response body" do
+    test "writes out a response with deflate encoding if so negotiated", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "deflate"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+
+      # Deflated version of 10_000 copies of "a"
+      assert response.body ==
+               <<120, 156, 236, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239, 95, 194, 28, 110, 64, 1,
+                 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 0, 0, 255, 255>>
+    end
+
+    def send_big_body(conn) do
+      send_resp(conn, 200, String.duplicate("a", 10_000))
+    end
+
     test "writes out a response with no content-length header for 204 responses", context do
       {:ok, response} =
         Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
