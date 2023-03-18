@@ -107,7 +107,12 @@ defmodule Bandit.HTTP2.Adapter do
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
     {body, content_encoding} =
       if Keyword.get(adapter.opts, :compress, true),
-        do: Bandit.Compression.compress(body, adapter.accept_encoding),
+        do:
+          Bandit.Compression.compress(
+            body,
+            adapter.accept_encoding,
+            Keyword.get(adapter.opts, :deflate_opts, [])
+          ),
         else: {body, nil}
 
     headers =

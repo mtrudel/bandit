@@ -312,7 +312,12 @@ defmodule Bandit.HTTP1.Adapter do
 
     {response, content_encoding} =
       if Keyword.get(req.opts.http_1, :compress, true),
-        do: Bandit.Compression.compress(response, req.accept_encoding),
+        do:
+          Bandit.Compression.compress(
+            response,
+            req.accept_encoding,
+            Keyword.get(req.opts.http_1, :deflate_opts, [])
+          ),
         else: {response, nil}
 
     headers =

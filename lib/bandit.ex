@@ -96,6 +96,21 @@ defmodule Bandit do
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
       * `compress`: Whether or not to attempt compression of responses. Defaults to true
+      * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
+      are:
+        * `level`: The compression level to use for deflation. May be one of `none`, `default`,
+        `best_compression`, `best_speed`, or an integer in `0..9`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zlevel) for more information.
+        Defaults to `default`
+        * `window_bits`: The base-2 log of the size of the histroy buffer. Largers values compress
+        better, but use more memory. Defaults to 15
+        * `memory_level`: The memory level to use for deflation. May be an integer in `1..9`. See
+        [:zlib documentation](https://www.erlang.org/doc/man/zlib.html#type-zmemlevel) for more
+        information. Defaults to `8`
+        * `strategy`: The strategy to use for deflation. May be one of `default`, `filtered`,
+        `huffman_only`, or `rle`. See [:zlib
+        documentation](https://www.erlang.org/doc/man/zlib.html#type-zstrategy) for more
+        information. Defaults to `default`
   * `http_2_options`: Options to configure the HTTP/2 stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve HTTP/2 requests. Defaults to true
       * `max_header_key_length`: The maximum permitted length of any single header key
@@ -109,6 +124,8 @@ defmodule Bandit do
       * `default_local_settings`: Options to override the default values for local HTTP/2
       settings. Values provided here will override the defaults specified in RFC9113§6.5.2.
       * `compress`: Whether or not to attempt compression of responses. Defaults to true
+      * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
+      are the same as the `deflate_opts` option under the `http_1_options` section above
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve WebSocket upgrade requests. Defaults to true
       * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
@@ -121,18 +138,8 @@ defmodule Bandit do
       a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
       for details). Defaults to `true`
       * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
-      are:
-        * `level`: The compression level to use for deflation. May be one of `none`, `default`,
-        `best_compression`, `best_speed`, or an integer in `0..9`. See [:zlib
-        documentation](https://www.erlang.org/doc/man/zlib.html#type-zlevel) for more information.
-        Defaults to `default`
-        * `memory_level`: The memory level to use for deflation. May be an integer in `1..9`. See
-        [:zlib documentation](https://www.erlang.org/doc/man/zlib.html#type-zmemlevel) for more
-        information. Defaults to `8`
-        * `strategy`: The strategy to use for deflation. May be one of `default`, `filtered`,
-        `huffman_only`, or `rle`. See [:zlib
-        documentation](https://www.erlang.org/doc/man/zlib.html#type-zstrategy) for more
-        information. Defaults to `default`
+      are the same as the `deflate_opts` option under the `http_1_options` section above, with the
+      exception of the `window_bits` parameter
 
   ## Setting up an HTTPS Server
 
