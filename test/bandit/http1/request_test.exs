@@ -714,6 +714,47 @@ defmodule HTTP1RequestTest do
                  16, 39, 0, 0>>
     end
 
+    test "uses the first matching encoding in accept-encoding", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [
+          {"accept-encoding", "foo, deflate"}
+        ])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+
+      # Deflated version of 10_000 copies of "a"
+      assert response.body ==
+               <<120, 156, 236, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239, 95, 194, 28, 110, 64, 1,
+                 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 0, 0, 255, 255>>
+    end
+
+    test "falls back to no encoding if no encodings provided", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body")
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "falls back to no encoding if no encodings match", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "a, b, c"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     def send_big_body(conn) do
       send_resp(conn, 200, String.duplicate("a", 10_000))
     end
