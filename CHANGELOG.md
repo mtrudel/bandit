@@ -1,5 +1,17 @@
 # Changelog for 0.7.x
 
+## 0.7.2 (18 Mar 2023)
+
+### Enhancements
+
+* Added HTTP compression via 'Content-Encoding' negotiation, enabled by default.
+  Configuration is available; see [Bandit
+  docs](https://hexdocs.pm/bandit/Bandit.html#module-config-options) for details
+
+### Changes
+
+* Minor refactor of internal HTTP/2 plumbing. No user visible changes
+
 ## 0.7.1 (17 Mar 2023)
 
 ### Changes
