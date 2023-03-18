@@ -1169,6 +1169,49 @@ defmodule HTTP1RequestTest do
              ]
     end
 
+    test "it should add req metrics to `stop` events for requests with content encoding",
+         context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Finch.build(
+        :post,
+        context[:base] <> "/do_read_body",
+        [{"connection", "close"}, {"accept-encoding", "deflate"}],
+        String.duplicate("a", 80)
+      )
+      |> Finch.request(context[:finch_name])
+
+      Process.sleep(100)
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  monotonic_time: integer(),
+                  duration: integer(),
+                  conn: struct_like(Plug.Conn, []),
+                  req_line_bytes: integer(),
+                  req_header_end_time: integer(),
+                  req_header_bytes: integer(),
+                  req_body_start_time: integer(),
+                  req_body_end_time: integer(),
+                  req_body_bytes: 80,
+                  resp_line_bytes: 17,
+                  resp_header_bytes: 138,
+                  resp_uncompressed_body_bytes: 2,
+                  resp_body_bytes: 10,
+                  resp_compression_method: "deflate",
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference()
+                }}
+             ]
+    end
+
     test "it should add (some) resp metrics to `stop` events for chunked responses", context do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})

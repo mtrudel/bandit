@@ -310,15 +310,29 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     start_time = Bandit.Telemetry.monotonic_time()
 
-    {response, content_encoding} =
-      if Keyword.get(req.opts.http_1, :compress, true),
-        do:
+    {response, content_encoding, compression_metrics} =
+      if Keyword.get(req.opts.http_1, :compress, true) do
+        uncompressed_length = IO.iodata_length(response)
+
+        {response, content_encoding} =
           Bandit.Compression.compress(
             response,
             req.accept_encoding,
             Keyword.get(req.opts.http_1, :deflate_opts, [])
-          ),
-        else: {response, nil}
+          )
+
+        compression_metrics =
+          if content_encoding,
+            do: %{
+              resp_uncompressed_body_bytes: uncompressed_length,
+              resp_compression_method: content_encoding
+            },
+            else: %{}
+
+        {response, content_encoding, compression_metrics}
+      else
+        {response, nil, %{}}
+      end
 
     headers =
       if content_encoding,
@@ -337,6 +351,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     metrics =
       req.metrics
+      |> Map.merge(compression_metrics)
       |> Map.merge(header_metrics)
       |> Map.put(:resp_body_bytes, body_bytes)
       |> Map.put(:resp_start_time, start_time)

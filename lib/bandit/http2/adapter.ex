@@ -105,15 +105,29 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
-    {body, content_encoding} =
-      if Keyword.get(adapter.opts, :compress, true),
-        do:
+    {body, content_encoding, compression_metrics} =
+      if Keyword.get(adapter.opts, :compress, true) do
+        uncompressed_length = IO.iodata_length(body)
+
+        {body, content_encoding} =
           Bandit.Compression.compress(
             body,
             adapter.accept_encoding,
             Keyword.get(adapter.opts, :deflate_opts, [])
-          ),
-        else: {body, nil}
+          )
+
+        compression_metrics =
+          if content_encoding,
+            do: %{
+              resp_uncompressed_body_bytes: uncompressed_length,
+              resp_compression_method: content_encoding
+            },
+            else: %{}
+
+        {body, content_encoding, compression_metrics}
+      else
+        {body, nil, %{}}
+      end
 
     headers =
       if content_encoding,
@@ -132,6 +146,7 @@ defmodule Bandit.HTTP2.Adapter do
 
     metrics =
       adapter.metrics
+      |> Map.merge(compression_metrics)
       |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
     {:ok, nil, %{adapter | metrics: metrics}}
