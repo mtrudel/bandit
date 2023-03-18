@@ -190,7 +190,14 @@ defmodule Bandit.HTTP2.Connection do
          true <- accept_headers?(headers, connection.opts, stream),
          transport_info <- build_transport_info(socket),
          {:ok, stream} <-
-           Stream.recv_headers(stream, transport_info, headers, end_stream, connection.plug),
+           Stream.recv_headers(
+             stream,
+             transport_info,
+             headers,
+             end_stream,
+             connection.plug,
+             connection.opts
+           ),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}

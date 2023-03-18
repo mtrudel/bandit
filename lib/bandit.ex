@@ -108,6 +108,7 @@ defmodule Bandit do
       HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
       * `default_local_settings`: Options to override the default values for local HTTP/2
       settings. Values provided here will override the defaults specified in RFC9113§6.5.2.
+      * `compress`: Whether or not to attempt compression of responses. Defaults to true
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve WebSocket upgrade requests. Defaults to true
       * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
