@@ -220,7 +220,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:http_1_options, [])
       |> validate_options(
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests)a,
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_opts)a,
         :http_1_options
       )
 
@@ -228,7 +228,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:http_2_options, [])
       |> validate_options(
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings)a,
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_opts)a,
         :http_2_options
       )
 

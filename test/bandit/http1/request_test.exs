@@ -757,6 +757,22 @@ defmodule HTTP1RequestTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "falls back to no encoding if compression is disabled", context do
+      context =
+        http_server(context, http_1_options: [compress: false])
+        |> Enum.into(context)
+
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "deflate"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     def send_big_body(conn) do
       send_resp(conn, 200, String.duplicate("a", 10_000))
     end

@@ -289,6 +289,31 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
     end
 
+    test "falls back to no encoding if compression is disabled", context do
+      context = https_server(context, http_2_options: [compress: false])
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context[:port]}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
     def send_big_body(conn) do
       conn |> send_resp(200, String.duplicate("a", 10_000))
     end
