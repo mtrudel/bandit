@@ -95,7 +95,9 @@ defmodule Bandit do
       Defaults to 50 headers
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
-      * `compress`: Whether or not to attempt compression of responses. Defaults to true
+      * `compress`: Whether or not to attempt compression of responses via content-encoding
+      negotiation as described in
+      [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
       * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
       are:
         * `level`: The compression level to use for deflation. May be one of `none`, `default`,
@@ -123,7 +125,9 @@ defmodule Bandit do
       HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
       * `default_local_settings`: Options to override the default values for local HTTP/2
       settings. Values provided here will override the defaults specified in RFC9113§6.5.2.
-      * `compress`: Whether or not to attempt compression of responses. Defaults to true
+      * `compress`: Whether or not to attempt compression of responses via content-encoding
+      negotiation as described in
+      [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
       * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
       are the same as the `deflate_opts` option under the `http_1_options` section above
   * `websocket_options`: Options to configure the WebSocket stack in Bandit. Valid options are:
@@ -139,7 +143,7 @@ defmodule Bandit do
       for details). Defaults to `true`
       * `deflate_opts`: A keyword list of options to set on the deflate library. Possible options
       are the same as the `deflate_opts` option under the `http_1_options` section above, with the
-      exception of the `window_bits` parameter
+      exception that the `window_bits` parameter is not available
 
   ## Setting up an HTTPS Server
 
