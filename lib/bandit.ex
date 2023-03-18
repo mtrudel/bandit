@@ -95,6 +95,7 @@ defmodule Bandit do
       Defaults to 50 headers
       * `max_requests`: The maximum number of requests to serve in a single
       HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+      * `compress`: Whether or not to attempt compression of responses. Defaults to true
   * `http_2_options`: Options to configure the HTTP/2 stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve HTTP/2 requests. Defaults to true
       * `max_header_key_length`: The maximum permitted length of any single header key

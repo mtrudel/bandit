@@ -12,6 +12,7 @@ defmodule Bandit.HTTP1.Adapter do
             body_encoding: nil,
             version: nil,
             keepalive: false,
+            accept_encoding: nil,
             upgrade: nil,
             metrics: %{},
             opts: []
@@ -26,9 +27,10 @@ defmodule Bandit.HTTP1.Adapter do
     with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
          {:ok, body_size} <- Bandit.Headers.get_content_length(headers) do
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
+      accept_encoding = Bandit.Headers.get_header(headers, "accept-encoding")
       connection = Bandit.Headers.get_header(headers, "connection")
       keepalive = should_keepalive?(req.version, connection)
-      req = %{req | keepalive: keepalive}
+      req = %{req | accept_encoding: accept_encoding, keepalive: keepalive}
 
       case {body_size, body_encoding} do
         {nil, nil} ->
@@ -307,6 +309,17 @@ defmodule Bandit.HTTP1.Adapter do
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     start_time = Bandit.Telemetry.monotonic_time()
+
+    {response, content_encoding} =
+      if Keyword.get(req.opts.http_1, :compress, true),
+        do: Bandit.Compression.compress(response, req.accept_encoding),
+        else: {response, nil}
+
+    headers =
+      if content_encoding,
+        do: [{"content-encoding", content_encoding} | headers],
+        else: headers
+
     body_bytes = IO.iodata_length(response)
 
     headers =
