@@ -28,20 +28,21 @@ defmodule Bandit.HTTP1.Adapter do
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
       connection = Bandit.Headers.get_header(headers, "connection")
       keepalive = should_keepalive?(req.version, connection)
+      req = %{req | keepalive: keepalive}
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
+          {:ok, headers, method, request_target, %{req | state: :no_body}}
 
         {body_size, nil} ->
           body_remaining = body_size - byte_size(req.buffer)
 
           {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_remaining: body_remaining, keepalive: keepalive}}
+           %{req | state: :headers_read, body_remaining: body_remaining}}
 
         {nil, body_encoding} ->
           {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_encoding: body_encoding, keepalive: keepalive}}
+           %{req | state: :headers_read, body_encoding: body_encoding}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -309,11 +310,9 @@ defmodule Bandit.HTTP1.Adapter do
     body_bytes = IO.iodata_length(response)
 
     headers =
-      if add_content_length?(status) do
-        [{"content-length", to_string(body_bytes)} | headers]
-      else
-        headers
-      end
+      if add_content_length?(status),
+        do: [{"content-length", to_string(body_bytes)} | headers],
+        else: headers
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
     ThousandIsland.Socket.send(socket, [header_iodata, response])
