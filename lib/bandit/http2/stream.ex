@@ -23,6 +23,8 @@ defmodule Bandit.HTTP2.Stream do
 
   defmodule StreamError, do: defexception([:message])
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
+
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
 
@@ -62,11 +64,11 @@ defmodule Bandit.HTTP2.Stream do
 
   def recv_headers(%__MODULE__{state: :idle} = stream, transport_info, headers, _end_stream, plug) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         {_, _, _, connection_span} <- transport_info,
+         {_, _, peer, connection_span} <- transport_info,
          span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
-         {:ok, pid} <-
-           StreamTask.start_link(self(), stream.stream_id, transport_info, headers, plug, span) do
+         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id),
+         {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
     end

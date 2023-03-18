@@ -10,7 +10,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
-          connection: Bandit.HTTP2.Connection.t(),
+          connection: pid(),
           peer: Plug.Conn.Adapter.peer_data(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
@@ -21,8 +21,14 @@ defmodule Bandit.HTTP2.Adapter do
     %__MODULE__{
       connection: connection,
       peer: peer,
-      stream_id: stream_id,
-      metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()}
+      stream_id: stream_id
+    }
+  end
+
+  def add_end_header_metric(adapter) do
+    %{
+      adapter
+      | metrics: Map.put(adapter.metrics, :req_header_end_time, Bandit.Telemetry.monotonic_time())
     }
   end
 
