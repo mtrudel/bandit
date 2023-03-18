@@ -682,6 +682,38 @@ defmodule HTTP1RequestTest do
                  0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 0, 0, 255, 255>>
     end
 
+    test "writes out a response with gzip encoding if so negotiated", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "gzip"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+
+      # gzipped version of 10_000 copies of "a"
+      assert response.body ==
+               <<31, 139, 8, 0, 0, 0, 0, 0, 0, 19, 237, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239,
+                 95, 194, 28, 110, 64, 1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 151, 212, 126, 70,
+                 16, 39, 0, 0>>
+    end
+
+    test "writes out a response with x-gzip encoding if so negotiated", context do
+      {:ok, response} =
+        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "x-gzip"}])
+        |> Finch.request(context[:finch_name])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+
+      # gzipped version of 10_000 copies of "a"
+      assert response.body ==
+               <<31, 139, 8, 0, 0, 0, 0, 0, 0, 19, 237, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239,
+                 95, 194, 28, 110, 64, 1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 151, 212, 126, 70,
+                 16, 39, 0, 0>>
+    end
+
     def send_big_body(conn) do
       send_resp(conn, 200, String.duplicate("a", 10_000))
     end

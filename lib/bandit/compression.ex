@@ -19,6 +19,9 @@ defmodule Bandit.Compression do
     {response, "deflate"}
   end
 
+  defp do_compress(response, ["x-gzip" | _]), do: do_compress(response, ["gzip"])
+  defp do_compress(response, ["gzip" | _]), do: {:zlib.gzip(response), "gzip"}
+
   defp do_compress(response, [_ | rest]), do: do_compress(response, rest)
   defp do_compress(response, []), do: {response, nil}
 end

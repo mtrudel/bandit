@@ -157,6 +157,35 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected_body}
     end
 
+    test "writes out a response with gzip encoding if so negotiated", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "gzip"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Deflated version of 10_000 copies of "a"
+      expected_body =
+        <<31, 139, 8, 0, 0, 0, 0, 0, 0, 19, 237, 193, 1, 13, 0, 0, 0, 194, 160, 172, 239, 95, 194,
+          28, 110, 64, 1, 0, 0, 0, 0, 0, 0, 0, 0, 192, 191, 1, 151, 212, 126, 70, 16, 39, 0, 0>>
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected_body}
+    end
+
     def send_big_body(conn) do
       conn |> send_resp(200, String.duplicate("a", 10_000))
     end
