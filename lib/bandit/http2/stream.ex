@@ -50,9 +50,17 @@ defmodule Bandit.HTTP2.Stream do
           Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
           boolean,
-          Bandit.plug()
+          Bandit.plug(),
+          keyword()
         ) :: {:ok, t()} | {:error, Connection.error()} | {:error, error()}
-  def recv_headers(%__MODULE__{state: state} = stream, _transport_info, trailers, true, _plug)
+  def recv_headers(
+        %__MODULE__{state: state} = stream,
+        _transport_info,
+        trailers,
+        true,
+        _plug,
+        _opts
+      )
       when state in [:open, :local_closed] do
     with :ok <- no_pseudo_headers(trailers, stream.stream_id) do
       # These are actually trailers, which Plug doesn't support. Log and ignore
@@ -62,19 +70,27 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  def recv_headers(%__MODULE__{state: :idle} = stream, transport_info, headers, _end_stream, plug) do
+  def recv_headers(
+        %__MODULE__{state: :idle} = stream,
+        transport_info,
+        headers,
+        _end_stream,
+        plug,
+        opts
+      ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
          {_, _, peer, connection_span} <- transport_info,
          span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
-         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id),
+         accept_encoding <- Bandit.Headers.get_header(headers, "accept-encoding"),
+         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id, accept_encoding, opts),
          {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
     end
   end
 
-  def recv_headers(%__MODULE__{}, _transport_info, _headers, _end_stream, _plug) do
+  def recv_headers(%__MODULE__{}, _transport_info, _headers, _end_stream, _plug, _opts) do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
   end
 

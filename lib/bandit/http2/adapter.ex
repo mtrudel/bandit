@@ -6,7 +6,13 @@ defmodule Bandit.HTTP2.Adapter do
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct connection: nil, peer: nil, stream_id: nil, end_stream: false, metrics: %{}
+  defstruct connection: nil,
+            peer: nil,
+            stream_id: nil,
+            end_stream: false,
+            accept_encoding: nil,
+            metrics: %{},
+            opts: []
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
@@ -14,14 +20,18 @@ defmodule Bandit.HTTP2.Adapter do
           peer: Plug.Conn.Adapter.peer_data(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
-          metrics: map()
+          accept_encoding: String.t() | nil,
+          metrics: map(),
+          opts: keyword()
         }
 
-  def init(connection, peer, stream_id) do
+  def init(connection, peer, stream_id, accept_encoding, opts) do
     %__MODULE__{
       connection: connection,
       peer: peer,
-      stream_id: stream_id
+      stream_id: stream_id,
+      accept_encoding: accept_encoding,
+      opts: opts
     }
   end
 
@@ -95,6 +105,35 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
+    {body, content_encoding, compression_metrics} =
+      if Keyword.get(adapter.opts, :compress, true) do
+        uncompressed_length = IO.iodata_length(body)
+
+        {body, content_encoding} =
+          Bandit.Compression.compress(
+            body,
+            adapter.accept_encoding,
+            Keyword.get(adapter.opts, :deflate_opts, [])
+          )
+
+        compression_metrics =
+          if content_encoding,
+            do: %{
+              resp_uncompressed_body_bytes: uncompressed_length,
+              resp_compression_method: content_encoding
+            },
+            else: %{}
+
+        {body, content_encoding, compression_metrics}
+      else
+        {body, nil, %{}}
+      end
+
+    headers =
+      if content_encoding,
+        do: [{"content-encoding", content_encoding} | headers],
+        else: headers
+
     adapter =
       if IO.iodata_length(body) == 0 do
         adapter
@@ -107,6 +146,7 @@ defmodule Bandit.HTTP2.Adapter do
 
     metrics =
       adapter.metrics
+      |> Map.merge(compression_metrics)
       |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
     {:ok, nil, %{adapter | metrics: metrics}}

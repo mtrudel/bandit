@@ -48,7 +48,13 @@ defmodule Bandit.Telemetry do
         Not included for HTTP/2 requests
       * `resp_header_bytes`: The length of the reponse headers, in octets. Includes all line
         breaks. Not included for HTTP/2 requests
-      * `resp_body_bytes`: The length of the reponse body, in octets. Set to 0 for chunked responses
+      * `resp_body_bytes`: The length of the reponse body, in octets. If the response is
+        compressed, this is the size of the compressed payload as sent on the wire. Set to 0 for
+        chunked responses
+      * `resp_uncompressed_body_bytes`: The length of the original, uncompressed body. Only
+        included for responses which are compressed
+      * `resp_compression_method`: The method of compression, as sent in the `Content-Encoding`
+        header of the response. Only included for responses which are compressed
 
       This event contains the following metadata:
 

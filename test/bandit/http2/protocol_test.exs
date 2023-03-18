@@ -128,6 +128,196 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, "OK")
     end
 
+    test "writes out a response with deflate encoding if so negotiated", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "deflate"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
+    test "writes out a response with gzip encoding if so negotiated", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "gzip"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      expected = :zlib.gzip(String.duplicate("a", 10_000))
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
+    test "writes out a response with x-gzip encoding if so negotiated", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "x-gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "gzip"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      expected = :zlib.gzip(String.duplicate("a", 10_000))
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
+    test "uses the first matching encoding in accept-encoding", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "foo, deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "deflate"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
+    test "falls back to no encoding if no encodings provided", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    test "falls back to no encoding if no encodings match", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "a, b, c"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    test "falls back to no encoding if compression is disabled", context do
+      context = https_server(context, http_2_options: [compress: false])
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_big_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context[:port]}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    def send_big_body(conn) do
+      conn |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
     test "sends multiple DATA frames with last one end of stream when chunking", context do
       socket = SimpleH2Client.setup_connection(context)
 

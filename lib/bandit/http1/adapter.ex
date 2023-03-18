@@ -12,6 +12,7 @@ defmodule Bandit.HTTP1.Adapter do
             body_encoding: nil,
             version: nil,
             keepalive: false,
+            accept_encoding: nil,
             upgrade: nil,
             metrics: %{},
             opts: []
@@ -26,22 +27,24 @@ defmodule Bandit.HTTP1.Adapter do
     with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
          {:ok, body_size} <- Bandit.Headers.get_content_length(headers) do
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
+      accept_encoding = Bandit.Headers.get_header(headers, "accept-encoding")
       connection = Bandit.Headers.get_header(headers, "connection")
       keepalive = should_keepalive?(req.version, connection)
+      req = %{req | accept_encoding: accept_encoding, keepalive: keepalive}
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, request_target, %{req | state: :no_body, keepalive: keepalive}}
+          {:ok, headers, method, request_target, %{req | state: :no_body}}
 
         {body_size, nil} ->
           body_remaining = body_size - byte_size(req.buffer)
 
           {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_remaining: body_remaining, keepalive: keepalive}}
+           %{req | state: :headers_read, body_remaining: body_remaining}}
 
         {nil, body_encoding} ->
           {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_encoding: body_encoding, keepalive: keepalive}}
+           %{req | state: :headers_read, body_encoding: body_encoding}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -306,20 +309,49 @@ defmodule Bandit.HTTP1.Adapter do
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     start_time = Bandit.Telemetry.monotonic_time()
+
+    {response, content_encoding, compression_metrics} =
+      if Keyword.get(req.opts.http_1, :compress, true) do
+        uncompressed_length = IO.iodata_length(response)
+
+        {response, content_encoding} =
+          Bandit.Compression.compress(
+            response,
+            req.accept_encoding,
+            Keyword.get(req.opts.http_1, :deflate_opts, [])
+          )
+
+        compression_metrics =
+          if content_encoding,
+            do: %{
+              resp_uncompressed_body_bytes: uncompressed_length,
+              resp_compression_method: content_encoding
+            },
+            else: %{}
+
+        {response, content_encoding, compression_metrics}
+      else
+        {response, nil, %{}}
+      end
+
+    headers =
+      if content_encoding,
+        do: [{"content-encoding", content_encoding} | headers],
+        else: headers
+
     body_bytes = IO.iodata_length(response)
 
     headers =
-      if add_content_length?(status) do
-        [{"content-length", to_string(body_bytes)} | headers]
-      else
-        headers
-      end
+      if add_content_length?(status),
+        do: [{"content-length", to_string(body_bytes)} | headers],
+        else: headers
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
     ThousandIsland.Socket.send(socket, [header_iodata, response])
 
     metrics =
       req.metrics
+      |> Map.merge(compression_metrics)
       |> Map.merge(header_metrics)
       |> Map.put(:resp_body_bytes, body_bytes)
       |> Map.put(:resp_start_time, start_time)

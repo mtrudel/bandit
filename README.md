@@ -58,6 +58,9 @@ foundational work that is approachable & understandable by users above it in the
   9110](https://datatracker.ietf.org/doc/html/rfc9110), comprehensively covered
   by automated [h2spec](https://github.com/summerwind/h2spec) conformance
   testing
+* Support for HTTP content encoding compression on both HTTP/1.x and HTTP/2.
+  gzip and deflate methods are supported per
+  [RFC9110§8.4.1.{2,3}](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4.1.2)
 * Complete server support for WebSockets as defined in [RFC
   6455](https://datatracker.ietf.org/doc/html/rfc6455), comprehensively covered by automated
   [Autobahn](https://github.com/crossbario/autobahn-testsuite) conformance testing. Per-message
