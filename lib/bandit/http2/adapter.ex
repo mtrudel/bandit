@@ -10,7 +10,7 @@ defmodule Bandit.HTTP2.Adapter do
             peer: nil,
             stream_id: nil,
             end_stream: false,
-            accept_encoding: nil,
+            content_encoding: nil,
             metrics: %{},
             opts: []
 
@@ -20,17 +20,17 @@ defmodule Bandit.HTTP2.Adapter do
           peer: Plug.Conn.Adapter.peer_data(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
-          accept_encoding: String.t() | nil,
+          content_encoding: String.t() | nil,
           metrics: map(),
           opts: keyword()
         }
 
-  def init(connection, peer, stream_id, accept_encoding, opts) do
+  def init(connection, peer, stream_id, content_encoding, opts) do
     %__MODULE__{
       connection: connection,
       peer: peer,
       stream_id: stream_id,
-      accept_encoding: accept_encoding,
+      content_encoding: content_encoding,
       opts: opts
     }
   end
@@ -105,34 +105,22 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
-    {body, content_encoding, compression_metrics} =
-      if Keyword.get(adapter.opts, :compress, true) do
-        uncompressed_length = IO.iodata_length(body)
+    {body, headers, compression_metrics} =
+      case {body, adapter.content_encoding} do
+        {body, content_encoding} when body != <<>> and not is_nil(content_encoding) ->
+          metrics = %{
+            resp_uncompressed_body_bytes: IO.iodata_length(body),
+            resp_compression_method: content_encoding
+          }
 
-        {body, content_encoding} =
-          Bandit.Compression.compress(
-            body,
-            adapter.accept_encoding,
-            Keyword.get(adapter.opts, :deflate_opts, [])
-          )
+          deflate_opts = Keyword.get(adapter.opts, :deflate_opts, [])
+          body = Bandit.Compression.compress(body, adapter.content_encoding, deflate_opts)
+          headers = [{"content-encoding", adapter.content_encoding} | headers]
+          {body, headers, metrics}
 
-        compression_metrics =
-          if content_encoding,
-            do: %{
-              resp_uncompressed_body_bytes: uncompressed_length,
-              resp_compression_method: content_encoding
-            },
-            else: %{}
-
-        {body, content_encoding, compression_metrics}
-      else
-        {body, nil, %{}}
+        _ ->
+          {body, headers, %{}}
       end
-
-    headers =
-      if content_encoding,
-        do: [{"content-encoding", content_encoding} | headers],
-        else: headers
 
     adapter =
       if IO.iodata_length(body) == 0 do

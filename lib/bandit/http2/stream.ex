@@ -82,8 +82,8 @@ defmodule Bandit.HTTP2.Stream do
          {_, _, peer, connection_span} <- transport_info,
          span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
-         accept_encoding <- Bandit.Headers.get_header(headers, "accept-encoding"),
-         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id, accept_encoding, opts),
+         content_encoding <- negotiate_content_encoding(headers, opts),
+         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id, content_encoding, opts),
          {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
@@ -116,6 +116,13 @@ defmodule Bandit.HTTP2.Stream do
       {:ok, content_length} -> {:ok, content_length}
       {:error, reason} -> {:error, {:stream, stream_id, Errors.protocol_error(), reason}}
     end
+  end
+
+  defp negotiate_content_encoding(headers, opts) do
+    Bandit.Compression.negotiate_content_encoding(
+      Bandit.Headers.get_header(headers, "accept-encoding"),
+      Keyword.get(opts, :compress, true)
+    )
   end
 
   # RFC9113§8.1 - no pseudo headers

@@ -12,7 +12,7 @@ defmodule Bandit.HTTP1.Adapter do
             body_encoding: nil,
             version: nil,
             keepalive: false,
-            accept_encoding: nil,
+            content_encoding: nil,
             upgrade: nil,
             metrics: %{},
             opts: []
@@ -27,10 +27,16 @@ defmodule Bandit.HTTP1.Adapter do
     with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
          {:ok, body_size} <- Bandit.Headers.get_content_length(headers) do
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
-      accept_encoding = Bandit.Headers.get_header(headers, "accept-encoding")
+
+      content_encoding =
+        Bandit.Compression.negotiate_content_encoding(
+          Bandit.Headers.get_header(headers, "accept-encoding"),
+          Keyword.get(req.opts.http_1, :compress, true)
+        )
+
       connection = Bandit.Headers.get_header(headers, "connection")
       keepalive = should_keepalive?(req.version, connection)
-      req = %{req | accept_encoding: accept_encoding, keepalive: keepalive}
+      req = %{req | content_encoding: content_encoding, keepalive: keepalive}
 
       case {body_size, body_encoding} do
         {nil, nil} ->
@@ -310,34 +316,22 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
     start_time = Bandit.Telemetry.monotonic_time()
 
-    {response, content_encoding, compression_metrics} =
-      if Keyword.get(req.opts.http_1, :compress, true) do
-        uncompressed_length = IO.iodata_length(response)
+    {response, headers, compression_metrics} =
+      case {response, req.content_encoding} do
+        {response, content_encoding} when response != <<>> and not is_nil(content_encoding) ->
+          metrics = %{
+            resp_uncompressed_body_bytes: IO.iodata_length(response),
+            resp_compression_method: content_encoding
+          }
 
-        {response, content_encoding} =
-          Bandit.Compression.compress(
-            response,
-            req.accept_encoding,
-            Keyword.get(req.opts.http_1, :deflate_opts, [])
-          )
+          deflate_opts = Keyword.get(req.opts.http_1, :deflate_opts, [])
+          response = Bandit.Compression.compress(response, req.content_encoding, deflate_opts)
+          headers = [{"content-encoding", req.content_encoding} | headers]
+          {response, headers, metrics}
 
-        compression_metrics =
-          if content_encoding,
-            do: %{
-              resp_uncompressed_body_bytes: uncompressed_length,
-              resp_compression_method: content_encoding
-            },
-            else: %{}
-
-        {response, content_encoding, compression_metrics}
-      else
-        {response, nil, %{}}
+        _ ->
+          {response, headers, %{}}
       end
-
-    headers =
-      if content_encoding,
-        do: [{"content-encoding", content_encoding} | headers],
-        else: headers
 
     body_bytes = IO.iodata_length(response)
 

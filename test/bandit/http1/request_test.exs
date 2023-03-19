@@ -706,7 +706,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "x-gzip"
 
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
