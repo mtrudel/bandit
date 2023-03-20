@@ -85,6 +85,10 @@ defmodule Bandit do
       This overrides any value set for `scheme` and is intended for cases where control
       over the socket at a fundamental level is needed.
       * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
+      * `handler_module`: The name of the module which Thousand Island will use to handle
+      requests. This overrides Bandit's built in handler and is intended for cases where control
+      over requests at a fundamental level is needed. You almost certainly don't want to fuss
+      with this option unless you know exactly what you're doing
   * `http_1_options`: Options to configure the HTTP/1 stack in Bandit. Valid options are:
       * `enabled`: Whether or not to serve HTTP/1 requests. Defaults to true
       * `max_request_line_length`: The maximum permitted length of the request line
@@ -216,7 +220,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:options, [])
       |> validate_options(
-        ~w(port num_acceptors read_timeout transport_module transport_options)a,
+        ~w(port num_acceptors read_timeout transport_module transport_options handler_module)a,
         :options
       )
 
@@ -267,7 +271,7 @@ defmodule Bandit do
       extra_transport_options,
       &(&1 ++ extra_transport_options)
     )
-    |> Keyword.put(:handler_module, Bandit.DelegatingHandler)
+    |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
     |> Keyword.put(:handler_options, handler_options)
     |> ThousandIsland.start_link()
     |> case do
