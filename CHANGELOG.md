@@ -1,5 +1,16 @@
 # Changelog for 0.7.x
 
+## 0.7.3 (20 Mar 2023)
+
+### Enhancements
+
+* Added advanced `handler_module` configuration option to `options`
+
+### Fixes
+
+* Support returning `x-gzip` as negotiated `content-encoding` (previously would
+  negotiate a request for `x-gzip` as `gzip`)
+
 ## 0.7.2 (18 Mar 2023)
 
 ### Enhancements
