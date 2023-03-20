@@ -70,6 +70,7 @@ defmodule Bandit do
     connection by the endpoint name
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
+     Defaults to `:http`
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
@@ -81,10 +82,11 @@ defmodule Bandit do
       shutting them down at server shutdown, specified in milliseconds. Defaults to `15_000`
       milliseconds. May also be `:infinity` or `:brutal_kill` as described in the `Supervisor`
       documentation.
+      * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
       * `transport_module`: The name of the module which provides basic socket functions.
       This overrides any value set for `scheme` and is intended for cases where control
-      over the socket at a fundamental level is needed.
-      * `transport_options`: A keyword list of options to be passed into the transport socket's listen function
+      over the socket at a fundamental level is needed. You almost certainly don't want to fuss
+      with this option unless you know exactly what you're doing
       * `handler_module`: The name of the module which Thousand Island will use to handle
       requests. This overrides Bandit's built in handler and is intended for cases where control
       over requests at a fundamental level is needed. You almost certainly don't want to fuss
