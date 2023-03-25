@@ -205,6 +205,28 @@ defmodule HTTP2PlugTest do
     conn |> resp(200, "OK")
   end
 
+  test "ignores when sending response from other process", context do
+    warnings =
+      capture_log(fn ->
+        {:ok, response} =
+          Finch.build(:head, context[:base] <> "/other_process_send_resp")
+          |> Finch.request(context[:finch_name])
+
+        assert is_nil(response.status)
+        assert response.body == ""
+      end)
+
+    assert warnings =~ "the connection will complete unexpectedly"
+  end
+
+  def other_process_send_resp(conn) do
+    fn ->
+      send_resp(conn, 200, "OK")
+    end
+    |> Task.async()
+    |> Task.await()
+  end
+
   test "sending a chunk", context do
     {:ok, response} =
       Finch.build(:get, context[:base] <> "/chunk_test") |> Finch.request(context[:finch_name])

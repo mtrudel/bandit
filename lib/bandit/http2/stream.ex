@@ -219,7 +219,11 @@ defmodule Bandit.HTTP2.Stream do
 
   @spec owner?(t(), pid()) :: :ok | {:error, :not_owner}
   def owner?(%__MODULE__{pid: pid}, pid), do: :ok
-  def owner?(%__MODULE__{}, _pid), do: {:error, :not_owner}
+  def owner?(%__MODULE__{} = stream, pid) do
+    Logger.warning("Stream #{stream.stream_id} was handled by #{inspect pid} but MUST be handled by #{inspect stream.pid}, the connection will complete unexpectedly")
+
+    {:error, :not_owner}
+  end
 
   @spec get_send_window_size(t()) :: non_neg_integer()
   def get_send_window_size(%__MODULE__{} = stream), do: stream.send_window_size
