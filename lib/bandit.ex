@@ -282,10 +282,7 @@ defmodule Bandit do
         {:ok, pid}
 
       {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
-        port = Keyword.get(options, :port, 4000)
-        address = options |> Keyword.get(:transport_options, []) |> Keyword.get(:ip, {127, 0, 0, 1})
-
-        Logger.error([info(scheme, display_plug, %{port: port, address: address}), " failed, port already in use"])
+        Logger.error("Startup failed; address/port already in use")
         error
 
       {:error, _} = error ->
@@ -313,18 +310,14 @@ defmodule Bandit do
     end
   end
 
-  defp info(scheme, plug, pid_or_info) do
+  defp info(scheme, plug, pid) do
     server_vsn = Application.spec(:bandit)[:vsn]
-    "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid_or_info)}"
+    "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
-  defp bound_address(scheme, pid) when is_pid(pid) do
-    {:ok, info} = ThousandIsland.listener_info(pid)
+  defp bound_address(scheme, pid) do
+    {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
 
-    bound_address(scheme, info)
-  end
-
-  defp bound_address(scheme, %{address: address, port: port}) do
     case address do
       {:local, unix_path} ->
         "#{unix_path} (#{scheme}+unix)"
