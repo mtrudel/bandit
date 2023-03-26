@@ -51,7 +51,8 @@ defmodule ServerTest do
                  })
       end)
 
-    assert logs =~ " Startup failed; address/port already in use"
+    assert logs =~
+             "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port already in use"
   end
 
   test "can run multiple instances of Bandit", context do

@@ -282,7 +282,7 @@ defmodule Bandit do
         {:ok, pid}
 
       {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
-        Logger.error("Startup failed; address/port already in use")
+        Logger.error([info(scheme, display_plug, nil), " failed, port already in use"])
         error
 
       {:error, _} = error ->
@@ -315,15 +315,14 @@ defmodule Bandit do
     "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
+  defp bound_address(scheme, nil), do: scheme
+
   defp bound_address(scheme, pid) do
     {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
 
     case address do
-      {:local, unix_path} ->
-        "#{unix_path} (#{scheme}+unix)"
-
-      address ->
-        "#{:inet.ntoa(address)}:#{port} (#{scheme})"
+      {:local, unix_path} -> "#{unix_path} (#{scheme}+unix)"
+      address -> "#{:inet.ntoa(address)}:#{port} (#{scheme})"
     end
   end
 end
