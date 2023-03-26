@@ -36,6 +36,24 @@ defmodule ServerTest do
     assert logs == ""
   end
 
+  test "server logs connection error detail log at startup" do
+    pid = start_supervised!({Bandit, scheme: :http, plug: __MODULE__})
+    {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
+
+    logs =
+      capture_log(fn ->
+        assert {:error, _} =
+          start_supervised({
+            Bandit,
+            scheme: :http,
+            plug: __MODULE__,
+            options: [port: port, transport_options: [ip: address]]})
+      end)
+
+    assert logs =~
+      "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 0.0.0.0:4000 (http) failed, port already in use"
+  end
+
   test "can run multiple instances of Bandit", context do
     start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4000]})
     start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4001]})
