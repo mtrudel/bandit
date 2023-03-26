@@ -22,6 +22,20 @@ defmodule ServerTest do
              "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 127.0.0.1"
   end
 
+  test "log: false arg disables connection detail log at startup" do
+    logs =
+      capture_log(fn ->
+        [
+          plug: __MODULE__,
+          options: [port: 0, transport_options: [ip: :loopback], log: false]
+        ]
+        |> Bandit.child_spec()
+        |> start_supervised()
+      end)
+
+    assert logs == ""
+  end
+
   test "can run multiple instances of Bandit", context do
     start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4000]})
     start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4001]})
