@@ -250,15 +250,8 @@ defmodule Bandit do
         :websocket_options
       )
 
-    scheme = Keyword.get(arg, :scheme, :http)
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
-
-    {transport_module, extra_transport_options} =
-      case scheme do
-        :http -> {ThousandIsland.Transports.TCP, []}
-        :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
-      end
 
     handler_options = %{
       plug: plug,
@@ -266,13 +259,17 @@ defmodule Bandit do
       opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options}
     }
 
+    scheme = Keyword.get(arg, :scheme, :http)
+
+    {transport_module, more_transport_options} =
+      case scheme do
+        :http -> {ThousandIsland.Transports.TCP, []}
+        :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
+      end
+
     options
     |> Keyword.put_new(:transport_module, transport_module)
-    |> Keyword.update(
-      :transport_options,
-      extra_transport_options,
-      &(&1 ++ extra_transport_options)
-    )
+    |> Keyword.update(:transport_options, more_transport_options, &(&1 ++ more_transport_options))
     |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
     |> Keyword.put(:handler_options, handler_options)
     |> ThousandIsland.start_link()
@@ -287,13 +284,13 @@ defmodule Bandit do
   end
 
   defp validate_options(options, valid_values, name) do
-    {options, illegal_options} = Keyword.split(options, valid_values)
+    case Keyword.split(options, valid_values) do
+      {options, []} ->
+        options
 
-    if illegal_options != [] do
-      raise "Unsupported keys(s) in #{name} config: #{inspect(Keyword.keys(illegal_options))}"
+      {_, illegal_options} ->
+        raise "Unsupported keys(s) in #{name} config: #{inspect(Keyword.keys(illegal_options))}"
     end
-
-    options
   end
 
   defp plug(arg) do
