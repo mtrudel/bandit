@@ -71,7 +71,7 @@ defmodule Bandit do
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
      Defaults to `:http`
-  * `:log` - Log level to use for Bandit start log event.
+  * `:startup_log` - The log level at which Bandit should log startup info.
     Defaults to `:info` log level, can be set to false to disable it.
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
     `ThousandIsland` documentation, however some common options are:
@@ -216,7 +216,7 @@ defmodule Bandit do
     arg =
       arg
       |> validate_options(
-        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options log)a,
+        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options startup_log)a,
         "top level"
       )
 
@@ -254,7 +254,7 @@ defmodule Bandit do
 
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
-    log = Keyword.get(arg, :log, :info)
+    startup_log = Keyword.get(arg, :startup_log, :info)
 
     handler_options = %{
       plug: plug,
@@ -278,7 +278,7 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        log && Logger.log(log, info(scheme, display_plug, pid))
+        startup_log && Logger.log(startup_log, info(scheme, display_plug, pid))
         {:ok, pid}
 
       {:error, _} = error ->
