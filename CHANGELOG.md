@@ -1,5 +1,20 @@
 # Changelog for 0.7.x
 
+## 0.7.4 (27 Mar 2023)
+
+### Changes
+
+* Calling `Plug.Conn` adapter functions for HTTP/2 based requests are no longer
+  restricted to being called from the process which called `Plug.call/2`
+
+### Enhancements
+
+* Added `startup_log` to control whether / how Bandit logs the bound host & port
+  at startup (Thanks @danschultzer)
+* Improved logging when the configured port is in use at startup (Thanks
+  @danschultzer)
+* Update to Thousand Island 0.6.5
+
 ## 0.7.3 (20 Mar 2023)
 
 ### Enhancements
