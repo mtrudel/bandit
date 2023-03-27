@@ -71,6 +71,8 @@ defmodule Bandit do
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
      to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
      Defaults to `:http`
+  * `:startup_log` - The log level at which Bandit should log startup info.
+    Defaults to `:info` log level, can be set to false to disable it.
   * `options`: Options to pass to `ThousandIsland`. For an exhaustive list of options see the
     `ThousandIsland` documentation, however some common options are:
       * `port`: The port to bind to. Defaults to 4000
@@ -214,7 +216,7 @@ defmodule Bandit do
     arg =
       arg
       |> validate_options(
-        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options)a,
+        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options startup_log)a,
         "top level"
       )
 
@@ -252,6 +254,7 @@ defmodule Bandit do
 
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
+    startup_log = Keyword.get(arg, :startup_log, :info)
 
     handler_options = %{
       plug: plug,
@@ -275,8 +278,12 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        Logger.info(info(scheme, display_plug, pid))
+        startup_log && Logger.log(startup_log, info(scheme, display_plug, pid))
         {:ok, pid}
+
+      {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
+        Logger.error([info(scheme, display_plug, nil), " failed, port already in use"])
+        error
 
       {:error, _} = error ->
         error
@@ -308,15 +315,14 @@ defmodule Bandit do
     "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
+  defp bound_address(scheme, nil), do: scheme
+
   defp bound_address(scheme, pid) do
     {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
 
     case address do
-      {:local, unix_path} ->
-        "#{unix_path} (#{scheme}+unix)"
-
-      address ->
-        "#{:inet.ntoa(address)}:#{port} (#{scheme})"
+      {:local, unix_path} -> "#{unix_path} (#{scheme}+unix)"
+      address -> "#{:inet.ntoa(address)}:#{port} (#{scheme})"
     end
   end
 end
