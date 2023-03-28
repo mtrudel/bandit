@@ -5,7 +5,7 @@ defmodule Bandit.MixProject do
     [
       app: :bandit,
       version: "0.7.4",
-      elixir: "~> 1.11",
+      elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       elixirc_paths: elixirc_path(Mix.env()),
