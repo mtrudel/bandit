@@ -1,5 +1,6 @@
 defmodule ServerTest do
-  use ExUnit.Case, async: true
+  # False due to capture log emptiness check
+  use ExUnit.Case, async: false
   use ServerHelpers
   use FinchHelpers
 
