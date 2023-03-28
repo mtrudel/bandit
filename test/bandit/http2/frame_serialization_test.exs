@@ -1,6 +1,8 @@
 defmodule HTTP2FrameSerializationTest do
   use ExUnit.Case, async: true
 
+  use Machete
+
   alias Bandit.HTTP2.{Frame, Settings}
 
   describe "DATA frames" do
@@ -145,21 +147,19 @@ defmodule HTTP2FrameSerializationTest do
         }
       }
 
-      assert [
+      assert Frame.serialize(frame, 16_384)
+             ~> [
                [
                  <<0, 0, 30, 4, 0, 0, 0, 0, 0>>,
-                 settings
+                 in_any_order([
+                   <<1::16, 1000::32>>,
+                   <<4::16, 3000::32>>,
+                   <<3::16, 2000::32>>,
+                   <<5::16, 40_000::32>>,
+                   <<6::16, 5000::32>>
+                 ])
                ]
-             ] = Frame.serialize(frame, 16_384)
-
-      assert Enum.sort(settings) ==
-               [
-                 <<1::16, 1000::32>>,
-                 <<3::16, 2000::32>>,
-                 <<4::16, 3000::32>>,
-                 <<5::16, 40_000::32>>,
-                 <<6::16, 5000::32>>
-               ]
+             ]
     end
 
     test "serializes ack frames" do
