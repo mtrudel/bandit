@@ -51,6 +51,6 @@ defmodule Bandit.MixProject do
   end
 
   defp docs do
-    [main: "Bandit"]
+    [main: "Bandit", logo: "assets/ex_doc_logo.png"]
   end
 end

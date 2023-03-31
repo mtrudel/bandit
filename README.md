@@ -1,4 +1,4 @@
-# Bandit
+[![Bandit](https://github.com/mtrudel/bandit/raw/main/assets/readme_logo.png)](https://github.com/mtrudel/bandit)
 
 [![Build Status](https://github.com/mtrudel/bandit/workflows/Elixir%20CI/badge.svg)](https://github.com/mtrudel/bandit/actions)
 [![Docs](https://img.shields.io/badge/api-docs-green.svg?style=flat)](https://hexdocs.pm/bandit)
