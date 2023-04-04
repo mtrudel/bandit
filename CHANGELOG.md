@@ -1,5 +1,19 @@
 # Changelog for 0.7.x
 
+## 0.7.5 (4 Apr 2023)
+
+### Changes
+
+* Drop explicit support for Elixir 1.11 since we no longer test it in CI (should
+  still work, just that it's now at-your-own-risk)
+* Add logo to ex_doc and README
+
+### Fixes
+
+* Allow access to Thousand Island's underlying `shutdown_timeout` option
+* Fix test errors that cropped up in OTP 26
+
+
 ## 0.7.4 (27 Mar 2023)
 
 ### Changes
