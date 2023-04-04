@@ -224,7 +224,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:options, [])
       |> validate_options(
-        ~w(port num_acceptors read_timeout transport_module transport_options handler_module)a,
+        ~w(port num_acceptors read_timeout shutdown_timeout transport_module transport_options handler_module)a,
         :options
       )
 
