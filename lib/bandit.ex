@@ -198,7 +198,7 @@ defmodule Bandit do
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
     %{
-      id: make_ref(),
+      id: {__MODULE__, make_ref()},
       start: {__MODULE__, :start_link, [arg]},
       type: :supervisor,
       restart: :permanent
