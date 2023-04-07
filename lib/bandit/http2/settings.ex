@@ -1,6 +1,7 @@
 defmodule Bandit.HTTP2.Settings do
-  @moduledoc false
-  # Settings as defined in RFC9113§6.5.2
+  @moduledoc """
+  Settings as defined in RFC9113§6.5.2
+  """
 
   defstruct header_table_size: 4_096,
             max_concurrent_streams: :infinity,
