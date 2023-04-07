@@ -153,7 +153,7 @@ defmodule Bandit do
   * `compress`: Whether or not to attempt compression of responses via content-encoding
   negotiation as described in
   [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
-  * `deflate_opts`: A keyword list of options to set on the deflate library. A complete list can
+  * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
   be found at `t:deflate_options/0`
   """
   @type http_1_options :: [
@@ -163,7 +163,7 @@ defmodule Bandit do
           max_header_count: pos_integer(),
           max_requests: pos_integer(),
           compress: boolean(),
-          deflate_opt: deflate_options()
+          deflate_opions: deflate_options()
         ]
 
   @typedoc """
@@ -183,7 +183,7 @@ defmodule Bandit do
   * `compress`: Whether or not to attempt compression of responses via content-encoding
   negotiation as described in
   [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
-  * `deflate_opts`: A keyword list of options to set on the deflate library. A complete list can
+  * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
   be found at `t:deflate_options/0`
   """
   @type http_2_options :: [
@@ -194,7 +194,7 @@ defmodule Bandit do
           max_requests: pos_integer(),
           default_local_settings: Bandit.HTTP2.Settings.t(),
           compress: boolean(),
-          deflate_opt: deflate_options()
+          deflate_options: deflate_options()
         ]
 
   @typedoc """
@@ -265,7 +265,8 @@ defmodule Bandit do
       arg
       |> Keyword.get(:http_1_options, [])
       |> validate_options(
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_opts)a,
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests
+        compress deflate_options)a,
         :http_1_options
       )
 
@@ -273,7 +274,8 @@ defmodule Bandit do
       arg
       |> Keyword.get(:http_2_options, [])
       |> validate_options(
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_opts)a,
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests
+        default_local_settings compress deflate_options)a,
         :http_2_options
       )
 
