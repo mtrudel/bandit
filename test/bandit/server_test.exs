@@ -13,7 +13,7 @@ defmodule ServerTest do
       capture_log(fn ->
         [
           plug: __MODULE__,
-          options: [port: 0, transport_options: [ip: :loopback]]
+          thousand_island_options: [port: 0, transport_options: [ip: :loopback]]
         ]
         |> Bandit.child_spec()
         |> start_supervised()
@@ -28,7 +28,11 @@ defmodule ServerTest do
       capture_log(fn ->
         [
           plug: __MODULE__,
-          options: [port: 0, transport_options: [ip: :loopback], startup_log: false]
+          thousand_island_options: [
+            port: 0,
+            transport_options: [ip: :loopback],
+            startup_log: false
+          ]
         ]
         |> Bandit.child_spec()
         |> start_supervised()
@@ -48,7 +52,7 @@ defmodule ServerTest do
                    Bandit,
                    scheme: :http,
                    plug: __MODULE__,
-                   options: [port: port, transport_options: [ip: address]]
+                   thousand_island_options: [port: port, transport_options: [ip: address]]
                  })
       end)
 
@@ -57,8 +61,13 @@ defmodule ServerTest do
   end
 
   test "can run multiple instances of Bandit", context do
-    start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4000]})
-    start_supervised({Bandit, scheme: :http, plug: __MODULE__, options: [port: 4001]})
+    start_supervised(
+      {Bandit, scheme: :http, plug: __MODULE__, thousand_island_options: [port: 4000]}
+    )
+
+    start_supervised(
+      {Bandit, scheme: :http, plug: __MODULE__, thousand_island_options: [port: 4001]}
+    )
 
     {:ok, response} =
       Finch.build(:get, "http://localhost:4000/hello")

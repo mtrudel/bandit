@@ -9,7 +9,11 @@ defmodule ServerHelpers do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
-            options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
+            thousand_island_options: [
+              port: 0,
+              read_timeout: 1000,
+              transport_options: [ip: :loopback]
+            ]
           ]
           |> Keyword.merge(opts)
           |> Bandit.child_spec()
@@ -24,7 +28,7 @@ defmodule ServerHelpers do
           [
             plug: __MODULE__,
             scheme: :https,
-            options: [
+            thousand_island_options: [
               port: 0,
               read_timeout: 1000,
               transport_options: [

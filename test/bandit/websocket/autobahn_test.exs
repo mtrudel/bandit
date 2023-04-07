@@ -28,7 +28,7 @@ defmodule WebsocketAutobahnTest do
   test "autobahn test suite" do
     # We can't use ServerHelpers since we need to bind on all interfaces
     {:ok, server_pid} =
-      [plug: __MODULE__, options: [port: 0]]
+      [plug: __MODULE__, thousand_island_options: [port: 0]]
       |> Bandit.child_spec()
       |> start_supervised()
 

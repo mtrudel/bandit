@@ -75,10 +75,10 @@ defmodule Bandit.PhoenixAdapter do
 
   defp build_options(opts, default_port) do
     {ip_options, options} = Keyword.split(opts, [:ip])
-    {nested_options, options} = Keyword.split(options, [:port, :transport_options])
+    {thousand_island_options, options} = Keyword.split(options, [:port, :transport_options])
 
-    nested_options =
-      nested_options
+    thousand_island_options =
+      thousand_island_options
       |> Keyword.update!(:port, fn
         nil -> default_port
         port when is_binary(port) -> String.to_integer(port)
@@ -86,6 +86,6 @@ defmodule Bandit.PhoenixAdapter do
       end)
       |> Keyword.update(:transport_options, ip_options, &Keyword.merge(&1, ip_options))
 
-    Keyword.put(options, :options, nested_options)
+    Keyword.put(options, :thousand_island_options, thousand_island_options)
   end
 end

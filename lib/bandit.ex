@@ -45,7 +45,7 @@ defmodule Bandit do
   ```elixir
   def start(_type, _args) do
     children = [
-      {Bandit, plug: MyApp.MyPlug, scheme: :http, options: [port: 4000]}
+      {Bandit, plug: MyPlug}
     ]
 
     opts = [strategy: :one_for_one, name: MyApp.Supervisor]
@@ -73,8 +73,7 @@ defmodule Bandit do
 
   ```elixir
   def start(_type, _args) do
-    bandit_options = [
-      port: 4000,
+    thousand_island_options = [
       transport_options: [
         certfile: Path.join(__DIR__, "path/to/cert.pem"),
         keyfile: Path.join(__DIR__, "path/to/key.pem")
@@ -82,7 +81,7 @@ defmodule Bandit do
     ]
 
     children = [
-      {Bandit, plug: MyApp.MyPlug, scheme: :https, options: bandit_options}
+      {Bandit, plug: MyPlug, scheme: :https, thousand_island_options: thousand_island_options}
     ]
 
     opts = [strategy: :one_for_one, name: MyApp.Supervisor]
@@ -110,16 +109,16 @@ defmodule Bandit do
 
   * `plug`: The plug to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will need
-  to specify `certfile` and `keyfile` in the `transport_options` subsection of `options`.
+  to specify `certfile` and `keyfile` in the `transport_options` subsection of `thousand_island_options`.
   Defaults to `:http`
   * `display_plug`: The plug to use when describing the connection in logs. Useful for situations
   such as Phoenix code reloading where you have a 'wrapper' plug but wish to refer to the
   connection by the endpoint name
   * `:startup_log`: The log level at which Bandit should log startup info.
   Defaults to `:info` log level, can be set to false to disable it.
-  * `:options`: A list of options to pass to Thousand Island. Bandit sets some default values in
-  this list based on the value of `scheme`, which can be overridden by values appearing here.
-  A complete list can be found at `t:ThousandIsland.options/0`.
+  * `:thousand_island_options`: A list of options to pass to Thousand Island. Bandit sets some
+  default values in this list based on the value of `scheme`, which can be overridden by values
+  appearing here. A complete list can be found at `t:ThousandIsland.options/0`.
   * `:http_1_options`: A list of options to configure Bandit's HTTP/1 stack. A complete list can
   be found at `t:http_1_options/0`
   * `:http_2_options`: A list of options to configure Bandit's HTTP/2 stack. A complete list can
@@ -132,7 +131,7 @@ defmodule Bandit do
           scheme: :http | :https,
           display_plug: module(),
           startup_log: Logger.level() | false,
-          options: ThousandIsland.options(),
+          thousand_island_options: ThousandIsland.options(),
           http_1_options: http_1_options(),
           http_2_options: http_2_options(),
           websocket_options: websocket_options()
@@ -230,7 +229,7 @@ defmodule Bandit do
 
   require Logger
 
-  @spec child_spec(keyword()) :: Supervisor.child_spec()
+  @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(arg) do
     %{
       id: {__MODULE__, make_ref()},
@@ -249,24 +248,23 @@ defmodule Bandit do
     arg =
       arg
       |> validate_options(
-        ~w(scheme plug display_plug options http_1_options http_2_options websocket_options startup_log)a,
+        ~w(plug scheme display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a,
         "top level"
       )
 
-    options =
+    thousand_island_options =
       arg
-      |> Keyword.get(:options, [])
+      |> Keyword.get(:thousand_island_options, [])
       |> validate_options(
         ~w(port num_acceptors read_timeout shutdown_timeout transport_module transport_options handler_module)a,
-        :options
+        :thousand_island_options
       )
 
     http_1_options =
       arg
       |> Keyword.get(:http_1_options, [])
       |> validate_options(
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests
-        compress deflate_options)a,
+        ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a,
         :http_1_options
       )
 
@@ -274,8 +272,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:http_2_options, [])
       |> validate_options(
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests
-        default_local_settings compress deflate_options)a,
+        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a,
         :http_2_options
       )
 
@@ -305,7 +302,7 @@ defmodule Bandit do
         :https -> {ThousandIsland.Transports.SSL, alpn_preferred_protocols: ["h2", "http/1.1"]}
       end
 
-    options
+    thousand_island_options
     |> Keyword.put_new(:transport_module, transport_module)
     |> Keyword.update(:transport_options, more_transport_options, &(&1 ++ more_transport_options))
     |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
