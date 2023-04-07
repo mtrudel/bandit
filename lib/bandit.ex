@@ -256,7 +256,7 @@ defmodule Bandit do
       arg
       |> Keyword.get(:thousand_island_options, [])
       |> validate_options(
-        ~w(port num_acceptors read_timeout shutdown_timeout transport_module transport_options handler_module)a,
+        ThousandIsland.ServerConfig.__struct__() |> Map.from_struct() |> Map.keys(),
         :thousand_island_options
       )
 
