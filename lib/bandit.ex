@@ -195,9 +195,6 @@ defmodule Bandit do
 
   require Logger
 
-  @typedoc "A Plug definition"
-  @type plug :: {module(), keyword()}
-
   @spec child_spec(keyword()) :: Supervisor.child_spec()
   def child_spec(arg) do
     %{
