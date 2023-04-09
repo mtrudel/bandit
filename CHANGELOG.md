@@ -1,5 +1,25 @@
 # Changelog for 0.7.x
 
+## 0.7.6 (9 Apr 2023)
+
+### Changes
+
+* **BREAKING CHANGE** Rename top-level `options` field to `thousand_island_options`
+* **BREAKING CHANGE** Rename `deflate_opts` to `deflate_options` where used
+* Massive overhaul of documentation to use types where possible
+* Bandit now uses a term of the form `{Bandit, ref()}` for `id` in our child spec
+* Bumped to Thousand Island 0.6.7. `num_connections` is now 16384 by default
+
+### Enhancements
+
+* Added top level support for the following convenience parameters:
+  * `port` can now be set at the top level of your configuration
+  * `ip` can now be set at the top level of your configuration
+  * `keyfile` and `certfile` can now be set at the top level of your configuration
+* Transport options are now validated by `Plug.SSL.configure/1` when starting
+  an HTTPS server
+* Rely on Thousand Island to validate options specified in `thousand_island_options`. This should avoid cases like #125 in the future.
+
 ## 0.7.5 (4 Apr 2023)
 
 ### Changes
