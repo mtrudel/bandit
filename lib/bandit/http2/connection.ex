@@ -42,11 +42,11 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: StreamCollection.t(),
           pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
-          plug: Bandit.plug(),
+          plug: Bandit.Pipeline.plug_def(),
           opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.plug(), keyword()) :: {:ok, t()}
+  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()}
   def init(socket, plug, opts) do
     connection = %__MODULE__{
       plug: plug,

@@ -85,17 +85,18 @@ Using Bandit to host your Phoenix application couldn't be simpler:
     ```elixir
     {:bandit, ">= 0.7.5"}
     ```
-2. Add the following to your endpoint configuration in `config/config.exs`:
+2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`:
 
      ```elixir
      config :your_app, YourAppWeb.Endpoint,
        adapter: Bandit.PhoenixAdapter
      ```
-3. That's it! You should now see messages at startup indicating that Phoenix is using Bandit to
-serve your endpoint.
-
-For more details about how to configure Bandit within Phoenix, consult the
-[Bandit.PhoenixAdapter](https://hexdocs.pm/bandit/Bandit.PhoenixAdapter.html) documentation.
+3. That's it! You should now see messages at startup indicating that Phoenix is
+   using Bandit to serve your endpoint, and everything should 'just work'. Note
+   that if you have set any exotic configuration options within your endpoint,
+   you may need to update that configuration to work with Bandit; see the
+   [Bandit.PhoenixAdapter](https://hexdocs.pm/bandit/Bandit.PhoenixAdapter.html)
+   documentation for more information.
 
 ## Using Bandit With Plug Applications
 

@@ -3,6 +3,7 @@ defmodule Bandit.Pipeline do
   # Provides a common pipeline for HTTP/1.1 and h2 adapters, factoring together shared
   # functionality relating to `Plug.Conn` management
 
+  @type plug_def :: {module(), Plug.opts()}
   @type transport_info ::
           {boolean(), ThousandIsland.Transport.socket_info(),
            ThousandIsland.Transport.socket_info(), ThousandIsland.Telemetry.t()}
@@ -19,7 +20,7 @@ defmodule Bandit.Pipeline do
           Plug.Conn.method(),
           request_target(),
           Plug.Conn.headers(),
-          Bandit.plug()
+          plug_def()
         ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),

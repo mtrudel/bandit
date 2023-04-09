@@ -50,7 +50,7 @@ defmodule Bandit.HTTP2.Stream do
           Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
           boolean,
-          Bandit.plug(),
+          Bandit.Pipeline.plug_def(),
           keyword()
         ) :: {:ok, t()} | {:error, Connection.error()} | {:error, error()}
   def recv_headers(

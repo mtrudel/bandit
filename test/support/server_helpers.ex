@@ -9,7 +9,9 @@ defmodule ServerHelpers do
         {:ok, server_pid} =
           [
             plug: __MODULE__,
-            options: [port: 0, read_timeout: 1000, transport_options: [ip: :loopback]]
+            port: 0,
+            ip: :loopback,
+            thousand_island_options: [read_timeout: 1000]
           ]
           |> Keyword.merge(opts)
           |> Bandit.child_spec()
@@ -24,15 +26,11 @@ defmodule ServerHelpers do
           [
             plug: __MODULE__,
             scheme: :https,
-            options: [
-              port: 0,
-              read_timeout: 1000,
-              transport_options: [
-                ip: :loopback,
-                certfile: Path.join(__DIR__, "../support/cert.pem"),
-                keyfile: Path.join(__DIR__, "../support/key.pem")
-              ]
-            ]
+            port: 0,
+            ip: :loopback,
+            certfile: Path.join(__DIR__, "../support/cert.pem") |> Path.expand(),
+            keyfile: Path.join(__DIR__, "../support/key.pem") |> Path.expand(),
+            thousand_island_options: [read_timeout: 1000]
           ]
           |> Keyword.merge(opts)
           |> Bandit.child_spec()

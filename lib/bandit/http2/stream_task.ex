@@ -30,7 +30,7 @@ defmodule Bandit.HTTP2.StreamTask do
           Bandit.HTTP2.Adapter.t(),
           Bandit.Pipeline.transport_info(),
           Plug.Conn.headers(),
-          Bandit.plug(),
+          Bandit.Pipeline.plug_def(),
           Bandit.Telemetry.t()
         ) :: {:ok, pid()}
   def start_link(req, transport_info, headers, plug, span) do

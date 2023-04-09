@@ -324,8 +324,8 @@ defmodule Bandit.HTTP1.Adapter do
             resp_compression_method: content_encoding
           }
 
-          deflate_opts = Keyword.get(req.opts.http_1, :deflate_opts, [])
-          response = Bandit.Compression.compress(response, req.content_encoding, deflate_opts)
+          deflate_options = Keyword.get(req.opts.http_1, :deflate_options, [])
+          response = Bandit.Compression.compress(response, req.content_encoding, deflate_options)
           headers = [{"content-encoding", req.content_encoding} | headers]
           {response, headers, metrics}
 
