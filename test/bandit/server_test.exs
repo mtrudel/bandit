@@ -11,12 +11,7 @@ defmodule ServerTest do
   test "server logs connection details at startup" do
     logs =
       capture_log(fn ->
-        [
-          plug: __MODULE__,
-          thousand_island_options: [port: 0, transport_options: [ip: :loopback]]
-        ]
-        |> Bandit.child_spec()
-        |> start_supervised()
+        start_supervised({Bandit, plug: __MODULE__, port: 0, ip: :loopback})
       end)
 
     assert logs =~
@@ -26,16 +21,7 @@ defmodule ServerTest do
   test "startup_log: false arg disables connection detail log at startup" do
     logs =
       capture_log(fn ->
-        [
-          plug: __MODULE__,
-          thousand_island_options: [
-            port: 0,
-            transport_options: [ip: :loopback],
-            startup_log: false
-          ]
-        ]
-        |> Bandit.child_spec()
-        |> start_supervised()
+        start_supervised({Bandit, plug: __MODULE__, port: 0, ip: :loopback, startup_log: false})
       end)
 
     assert logs == ""
@@ -47,13 +33,7 @@ defmodule ServerTest do
 
     logs =
       capture_log(fn ->
-        assert {:error, _} =
-                 start_supervised({
-                   Bandit,
-                   scheme: :http,
-                   plug: __MODULE__,
-                   thousand_island_options: [port: port, transport_options: [ip: address]]
-                 })
+        assert {:error, _} = start_supervised({Bandit, plug: __MODULE__, port: port, ip: address})
       end)
 
     assert logs =~
@@ -61,13 +41,9 @@ defmodule ServerTest do
   end
 
   test "can run multiple instances of Bandit", context do
-    start_supervised(
-      {Bandit, scheme: :http, plug: __MODULE__, thousand_island_options: [port: 4000]}
-    )
+    start_supervised({Bandit, plug: __MODULE__, port: 4000})
 
-    start_supervised(
-      {Bandit, scheme: :http, plug: __MODULE__, thousand_island_options: [port: 4001]}
-    )
+    start_supervised({Bandit, plug: __MODULE__, port: 4001})
 
     {:ok, response} =
       Finch.build(:get, "http://localhost:4000/hello")
