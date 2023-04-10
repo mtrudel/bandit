@@ -136,17 +136,17 @@ defmodule Bandit do
   * `display_plug`: The plug to use when describing the connection in logs. Useful for situations
     such as Phoenix code reloading where you have a 'wrapper' plug but wish to refer to the
     connection by the endpoint name
-  * `:startup_log`: The log level at which Bandit should log startup info.
+  * `startup_log`: The log level at which Bandit should log startup info.
     Defaults to `:info` log level, can be set to false to disable it
-  * `:thousand_island_options`: A list of options to pass to Thousand Island. Bandit sets some
+  * `thousand_island_options`: A list of options to pass to Thousand Island. Bandit sets some
     default values in this list based on your top-level configuration; these values will be
     overridden by values appearing here. A complete list can be found at
     `t:ThousandIsland.options/0`
-  * `:http_1_options`: A list of options to configure Bandit's HTTP/1 stack. A complete list can
+  * `http_1_options`: A list of options to configure Bandit's HTTP/1 stack. A complete list can
     be found at `t:http_1_options/0`
-  * `:http_2_options`: A list of options to configure Bandit's HTTP/2 stack. A complete list can
+  * `http_2_options`: A list of options to configure Bandit's HTTP/2 stack. A complete list can
     be found at `t:http_2_options/0`
-  * `:websocket_options`: A list of options to configure Bandit's WebSocket stack. A complete list can
+  * `websocket_options`: A list of options to configure Bandit's WebSocket stack. A complete list can
     be found at `t:websocket_options/0`
   """
   @type options :: [
