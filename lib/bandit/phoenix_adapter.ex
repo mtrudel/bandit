@@ -8,7 +8,7 @@ defmodule Bandit.PhoenixAdapter do
   To use this adapter, your project will need to include Bandit as a dependency:
 
   ```elixir
-  {:bandit, ">= 0.7.6"}
+  {:bandit, ">= 0.7.7"}
   ```
 
   Once Bandit is included as a dependency of your Phoenix project, add the following `adapter:`

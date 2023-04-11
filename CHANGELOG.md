@@ -1,5 +1,17 @@
 # Changelog for 0.7.x
 
+## 0.7.7 (11 Apr 2023)
+
+### Changes
+
+* Bandit will now raise an error at startup if no plug is specified in config
+  (thanks @moogle19!)
+
+### Fixes
+
+* Fix crash at startup when using `otp_app` option (thanks @moogle19!)
+* Minor doc formatting fixes
+
 ## 0.7.6 (9 Apr 2023)
 
 ### Changes
