@@ -345,6 +345,7 @@ defmodule Bandit do
               {:ok, options} -> options
               {:error, message} -> raise "Plug.SSL.configure/1 encountered error: #{message}"
             end
+            |> Keyword.delete(:otp_app)
 
           {ThousandIsland.Transports.SSL, transport_options, 4040}
       end
