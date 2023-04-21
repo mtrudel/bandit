@@ -22,7 +22,7 @@ defmodule Bandit do
   1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
 
       ```elixir
-      {:bandit, ">= 0.7.7"}
+      {:bandit, ">= 1.0-pre"}
       ```
   2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`:
 

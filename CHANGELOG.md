@@ -1,5 +1,11 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.1 (21 Apr 2023)
+
+### Changes
+
+* Update Thousand Island dependency to 1.0-pre
+
 ## 0.7.7 (11 Apr 2023)
 
 ### Changes
