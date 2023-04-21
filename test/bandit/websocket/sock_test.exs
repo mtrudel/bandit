@@ -4,6 +4,8 @@ defmodule WebSocketWebSockTest do
   use ServerHelpers
   use Machete
 
+  import ExUnit.CaptureLog
+
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
 
   setup :http_server
@@ -869,6 +871,27 @@ defmodule WebSocketWebSockTest do
     end
 
     def send(msg), do: send(__MODULE__, msg)
+
+    defmodule TerminateNoImplWebSock do
+      def init(_), do: {:ok, []}
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
+    end
+
+    test "callback is optional", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateNoImplWebSock)
+
+      warnings =
+        capture_log(fn ->
+          # Get the websock to tell bandit to shut down
+          SimpleWebSocketClient.send_text_frame(client, "normal")
+
+          # Give Bandit a chance to explode if it's going to
+          Process.sleep(100)
+        end)
+
+      refute warnings =~ "UndefinedFunctionError"
+    end
 
     defmodule TerminateWebSock do
       use NoopWebSock
