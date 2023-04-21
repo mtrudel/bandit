@@ -8,6 +8,58 @@ defmodule ServerTest do
 
   setup :finch_http1_client
 
+  test "server fails to start with unsupported socket option" do
+    assert {:error, {{:shutdown, {:failed_to_start_child, :listener, :badarg}}, _}} =
+             start_supervised(
+               {Bandit, plug: __MODULE__, thousand_island_options: [transport_options: [:foo]]}
+             )
+  end
+
+  test "server fails to start with unsupported ThousandIsland option" do
+    assert {:error, {{:EXIT, {%{message: message}, _}}, _}} =
+             start_supervised(
+               {Bandit, plug: __MODULE__, thousand_island_options: [unsupported_option: true]}
+             )
+
+    assert message ==
+             "Unsupported keys(s) in thousand_island_options config: [:unsupported_option]"
+  end
+
+  test "SSL server fails to start with unsupported Plug.SSL option" do
+    assert {:error, {{:EXIT, {%{message: message}, _}}, _}} =
+             start_supervised(
+               {Bandit,
+                plug: __MODULE__,
+                scheme: :https,
+                certfile: Path.join(__DIR__, "../support/cert.pem") |> Path.expand(),
+                keyfile: Path.join(__DIR__, "../support/key.pem") |> Path.expand(),
+                thousand_island_options: [
+                  transport_options: [cipher_suite: :unknown_suite]
+                ]}
+             )
+
+    assert message =~ "unknown :cipher_suite named :unknown_suite"
+  end
+
+  test "server starts with irregular socket option" do
+    assert {:ok, _} =
+             start_supervised(
+               {Bandit, plug: __MODULE__, thousand_island_options: [transport_options: [:inet]]}
+             )
+  end
+
+  test "SSL server starts with irregular socket option" do
+    assert {:ok, _} =
+             start_supervised(
+               {Bandit,
+                plug: __MODULE__,
+                scheme: :https,
+                certfile: Path.join(__DIR__, "../support/cert.pem") |> Path.expand(),
+                keyfile: Path.join(__DIR__, "../support/key.pem") |> Path.expand(),
+                thousand_island_options: [transport_options: [:inet, cipher_suite: :strong]]}
+             )
+  end
+
   test "server logs connection details at startup" do
     logs =
       capture_log(fn ->

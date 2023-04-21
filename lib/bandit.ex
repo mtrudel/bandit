@@ -331,21 +331,25 @@ defmodule Bandit do
         :http ->
           transport_options =
             Keyword.take(arg, [:ip])
-            |> Keyword.merge(Keyword.get(thousand_island_options, :transport_options, []))
+            |> merge_options(Keyword.get(thousand_island_options, :transport_options))
 
           {ThousandIsland.Transports.TCP, transport_options, 4000}
 
         :https ->
+          original_options =
+            classify_options(Keyword.get(thousand_island_options, :transport_options))
+
           transport_options =
             Keyword.take(arg, [:ip, :keyfile, :certfile, :otp_app, :cipher_suite])
             |> Keyword.merge(alpn_preferred_protocols: ["h2", "http/1.1"])
-            |> Keyword.merge(Keyword.get(thousand_island_options, :transport_options, []))
+            |> Keyword.merge(original_options[:keyword] || [])
             |> Plug.SSL.configure()
             |> case do
               {:ok, options} -> options
               {:error, message} -> raise "Plug.SSL.configure/1 encountered error: #{message}"
             end
             |> Keyword.delete(:otp_app)
+            |> Enum.concat(original_options[:irregular] || [])
 
           {ThousandIsland.Transports.SSL, transport_options, 4040}
       end
@@ -391,6 +395,23 @@ defmodule Bandit do
       {plug, plug_options} -> {plug, plug.init(plug_options)}
       plug -> {plug, plug.init([])}
     end
+  end
+
+  defp merge_options(keywords, nil), do: keywords
+
+  defp merge_options(keywords, options) do
+    keywords
+    |> Enum.filter(fn {k, _} -> not :proplists.is_defined(k, options) end)
+    |> Enum.concat(options)
+  end
+
+  defp classify_options(nil), do: %{}
+
+  defp classify_options(options) do
+    Enum.group_by(options, fn
+      {k, _} when is_atom(k) -> :keyword
+      _ -> :irregular
+    end)
   end
 
   defp parse_as_number(value) when is_binary(value), do: String.to_integer(value)
