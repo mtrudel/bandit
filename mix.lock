@@ -24,5 +24,5 @@
   "plug_crypto": {:hex, :plug_crypto, "1.2.5", "918772575e48e81e455818229bf719d4ab4181fcbf7f85b68a35620f78d89ced", [:mix], [], "hexpm", "26549a1d6345e2172eb1c233866756ae44a9609bd33ee6f99147ab3fd87fd842"},
   "telemetry": {:hex, :telemetry, "1.2.1", "68fdfe8d8f05a8428483a97d7aab2f268aaff24b49e0f599faa091f1d4e7f61c", [:rebar3], [], "hexpm", "dad9ce9d8effc621708f99eac538ef1cbe05d6a874dd741de2e689c47feafed5"},
   "thousand_island": {:hex, :thousand_island, "1.0.0-pre.1", "8e8322e5d8b8711d84a2ce4aba2b8e88a7db9f942656a616b28db47f3406a1ae", [:mix], [{:telemetry, "~> 0.4 or ~> 1.0", [hex: :telemetry, repo: "hexpm", optional: false]}], "hexpm", "99a30c4b5f64a2315953248b5f346c9c7dcde14f8ebac0232f6a933e7fce551d"},
-  "websock": {:hex, :websock, "0.5.0", "f6bbce90226121d62a0715bca7c986c5e43de0ccc9475d79c55381d1796368cc", [:mix], [], "hexpm", "b51ac706df8a7a48a2c622ee02d09d68be8c40418698ffa909d73ae207eb5fb8"},
+  "websock": {:hex, :websock, "0.5.1", "c496036ce95bc26d08ba086b2a827b212c67e7cabaa1c06473cd26b40ed8cf10", [:mix], [], "hexpm", "b9f785108b81cd457b06e5f5dabe5f65453d86a99118b2c0a515e1e296dc2d2c"},
 }
