@@ -331,7 +331,7 @@ defmodule Bandit do
         :http ->
           transport_options =
             Keyword.take(arg, [:ip])
-            |> Keyword.merge(Keyword.get(thousand_island_options, :transport_options, []))
+            |> then(&(Keyword.get(thousand_island_options, :transport_options, []) ++ &1))
 
           {ThousandIsland.Transports.TCP, transport_options, 4000}
 
@@ -339,7 +339,7 @@ defmodule Bandit do
           transport_options =
             Keyword.take(arg, [:ip, :keyfile, :certfile, :otp_app, :cipher_suite])
             |> Keyword.merge(alpn_preferred_protocols: ["h2", "http/1.1"])
-            |> Keyword.merge(Keyword.get(thousand_island_options, :transport_options, []))
+            |> then(&(Keyword.get(thousand_island_options, :transport_options, []) ++ &1))
             |> Plug.SSL.configure()
             |> case do
               {:ok, options} -> options
