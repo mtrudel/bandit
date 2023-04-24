@@ -1,5 +1,11 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.2 (24 Apr 2023)
+
+### Fixes
+
+* Don't require transport_options to be a keyword list (#130, thanks @justinludwig!)
+
 ## 1.0.0-pre.1 (21 Apr 2023)
 
 ### Changes
