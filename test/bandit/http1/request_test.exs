@@ -2,13 +2,13 @@ defmodule HTTP1RequestTest do
   # False due to capture log emptiness check
   use ExUnit.Case, async: false
   use ServerHelpers
-  use FinchHelpers
+  use ReqHelpers
   use Machete
 
   import ExUnit.CaptureLog
 
   setup :http_server
-  setup :finch_http1_client
+  setup :req_http1_client
 
   describe "invalid requests" do
     @tag capture_log: true
@@ -336,12 +336,11 @@ defmodule HTTP1RequestTest do
 
   describe "request headers" do
     test "reads headers properly", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/expect_headers/a//b/c?abc=def", [
-          {"X-Fruit", "banana"},
-          {"connection", "close"}
-        ])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req,
+          url: "/expect_headers/a//b/c?abc=def",
+          headers: [{"X-Fruit", "banana"}]
+        )
 
       assert response.status == 200
       assert response.body == "OK"
@@ -387,9 +386,7 @@ defmodule HTTP1RequestTest do
 
   describe "request body" do
     test "reads a zero length body properly", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/expect_no_body", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/expect_no_body")
 
       assert response.status == 200
       assert response.body == "OK"
@@ -402,14 +399,8 @@ defmodule HTTP1RequestTest do
     end
 
     test "reads a content-length encoded body properly", context do
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_body",
-          [{"connection", "close"}],
-          String.duplicate("0123456789", 800_000)
-        )
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.post!(context.req, url: "/expect_body", body: String.duplicate("0123456789", 800_000))
 
       assert response.status == 200
       assert response.body == "OK"
@@ -424,14 +415,12 @@ defmodule HTTP1RequestTest do
 
     # Success case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     test "reads a content-length with multiple content-lengths encoded body properly", context do
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_body_with_multiple_content_length",
-          [{"connection", "close"}, {"content-length", "8000000,8000000,8000000"}],
-          String.duplicate("a", 8_000_000)
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "8000000,8000000,8000000"}],
+          body: String.duplicate("a", 8_000_000)
         )
-        |> Finch.request(context[:finch_name])
 
       assert response.status == 200
       assert response.body == "OK"
@@ -448,56 +437,47 @@ defmodule HTTP1RequestTest do
     @tag capture_log: true
     test "rejects a request with non-matching multiple content lengths", context do
       # Use a smaller body size to avoid raciness in reading the response
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_body_with_multiple_content_length",
-          [{"connection", "close"}, {"content-length", "8000,8001,8000"}],
-          String.duplicate("a", 8_000)
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "8000,8001,8000"}],
+          body: String.duplicate("a", 8_000)
         )
-        |> Finch.request(context[:finch_name])
 
       assert response.status == 400
     end
 
     @tag capture_log: true
     test "rejects a request with negative content-length", context do
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/negative_content_length",
-          [{"content-length", "-321"}, {"connection", "close"}],
-          String.duplicate("a", 1_000)
+      response =
+        Req.post!(context.req,
+          url: "/negative_content_length",
+          headers: [{"content-length", "-321"}],
+          body: String.duplicate("a", 1_000)
         )
-        |> Finch.request(context[:finch_name])
 
       assert response.status == 400
     end
 
     @tag capture_log: true
     test "rejects a request with non-integer content length", context do
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_body_with_multiple_content_length",
-          [{"connection", "close"}, {"content-length", "foo"}],
-          String.duplicate("a", 8_000)
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "foo"}],
+          body: String.duplicate("a", 8_000)
         )
-        |> Finch.request(context[:finch_name])
 
       assert response.status == 400
     end
 
     test "reads a content-length encoded body properly when more of it arrives than we want to read",
          context do
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_big_body",
-          [{"connection", "close"}],
-          String.duplicate("0123456789", 800_000)
+      response =
+        Req.post!(context.req,
+          url: "/expect_big_body",
+          body: String.duplicate("0123456789", 800_000)
         )
-        |> Finch.request(context[:finch_name])
 
       assert response.status == 200
       assert response.body == "OK"
@@ -517,14 +497,7 @@ defmodule HTTP1RequestTest do
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
         |> Stream.take(8)
 
-      {:ok, response} =
-        Finch.build(
-          :post,
-          context[:base] <> "/expect_chunked_body",
-          [{"connection", "close"}],
-          {:stream, stream}
-        )
-        |> Finch.request(context[:finch_name])
+      response = Req.post!(context.req, url: "/expect_chunked_body", body: {:stream, stream})
 
       assert response.status == 200
       assert response.body == "OK"
@@ -538,9 +511,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "reading request body multiple times works as expected", context do
-      {:ok, response} =
-        Finch.build(:post, context[:base] <> "/multiple_body_read", [], "OK")
-        |> Finch.request(context[:finch_name])
+      response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
 
       assert response.status == 200
     end
@@ -557,9 +528,7 @@ defmodule HTTP1RequestTest do
     test "raises an ArgumentError on unsupported upgrades", context do
       errors =
         capture_log(fn ->
-          {:ok, response} =
-            Finch.build(:get, context[:base] <> "/upgrade_unsupported", [{"connection", "close"}])
-            |> Finch.request(context[:finch_name])
+          response = Req.get!(context.req, url: "/upgrade_unsupported")
 
           assert response.status == 500
 
@@ -580,9 +549,7 @@ defmodule HTTP1RequestTest do
          context do
       errors =
         capture_log(fn ->
-          {:ok, response} =
-            Finch.build(:get, context[:base] <> "/upgrade_websocket", [{"connection", "close"}])
-            |> Finch.request(context[:finch_name])
+          response = Req.get!(context.req, url: "/upgrade_websocket")
 
           assert response.status == 400
           assert response.body == "Not a valid WebSocket upgrade request"
@@ -638,9 +605,7 @@ defmodule HTTP1RequestTest do
 
   describe "response headers" do
     test "writes out a response with a valid date header", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_200")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_200")
 
       assert response.status == 200
 
@@ -649,9 +614,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "returns user-defined date header instead of internal version", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/date_header")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/date_header")
 
       assert response.status == 200
 
@@ -668,9 +631,8 @@ defmodule HTTP1RequestTest do
 
   describe "response body" do
     test "writes out a response with deflate encoding if so negotiated", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "deflate"}])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
@@ -688,35 +650,31 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "gzip"}])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "gzip"}])
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
-
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
     test "writes out a response with x-gzip encoding if so negotiated", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "x-gzip"}])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "x-gzip"}])
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "x-gzip"
-
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
     test "uses the first matching encoding in accept-encoding", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [
-          {"accept-encoding", "foo, deflate"}
-        ])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "foo, deflate"}]
+        )
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
@@ -734,26 +692,21 @@ defmodule HTTP1RequestTest do
     end
 
     test "falls back to no encoding if no encodings provided", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_big_body")
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-
       assert response.body == String.duplicate("a", 10_000)
     end
 
     test "falls back to no encoding if no encodings match", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "a, b, c"}])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "a, b, c"}])
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -762,14 +715,16 @@ defmodule HTTP1RequestTest do
         http_server(context, http_1_options: [compress: false])
         |> Enum.into(context)
 
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_big_body", [{"accept-encoding", "deflate"}])
-        |> Finch.request(context[:finch_name])
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          base_url: context.base,
+          headers: [{"accept-encoding", "deflate"}]
+        )
 
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -778,9 +733,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with no content-length header for 204 responses", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_204", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_204")
 
       assert response.status == 204
       assert response.body == ""
@@ -792,9 +745,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with no content-length header for 304 responses", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_304", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_304")
 
       assert response.status == 304
       assert response.body == ""
@@ -806,9 +757,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with zero content-length for 200 responses", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_200")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_200")
 
       assert response.status == 200
       assert response.body == ""
@@ -820,9 +769,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with zero content-length for 301 responses", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_301")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_301")
 
       assert response.status == 301
       assert response.body == ""
@@ -834,9 +781,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a response with zero content-length for 401 responses", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_401")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_401")
 
       assert response.status == 401
       assert response.body == ""
@@ -848,13 +793,10 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a chunked response", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_chunked_200", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_chunked_200")
 
       assert response.status == 200
       assert response.body == "OK"
-
       assert Bandit.Headers.get_header(response.headers, "transfer-encoding") == "chunked"
     end
 
@@ -868,9 +810,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a sent file for the entire file with content length", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_full_file", [{"connection", "close"}])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_full_file")
 
       assert response.status == 200
       assert response.body == "ABCDEF"
@@ -883,11 +823,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "writes out a sent file for parts of a file with content length", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/send_file?offset=1&length=3", [
-          {"connection", "close"}
-        ])
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/send_file?offset=1&length=3")
 
       assert response.status == 200
       assert response.body == "BCD"
@@ -910,9 +846,7 @@ defmodule HTTP1RequestTest do
   describe "abnormal handler processes" do
     @tag capture_log: true
     test "returns a 500 if the plug raises an exception", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/raise_error")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/raise_error")
 
       assert response.status == 500
     end
@@ -923,9 +857,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns a 500 if the plug does not return anything", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/noop")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/noop")
 
       assert response.status == 500
     end
@@ -936,9 +868,7 @@ defmodule HTTP1RequestTest do
 
     @tag capture_log: true
     test "returns a 500 if the plug does not return a conn", context do
-      {:ok, response} =
-        Finch.build(:get, context[:base] <> "/return_garbage")
-        |> Finch.request(context[:finch_name])
+      response = Req.get!(context.req, url: "/return_garbage")
 
       assert response.status == 500
     end
@@ -950,8 +880,7 @@ defmodule HTTP1RequestTest do
     test "silently accepts EXIT messages from normally terminating spwaned processes", context do
       errors =
         capture_log(fn ->
-          Finch.build(:get, context[:base] <> "/spawn_child")
-          |> Finch.request(context[:finch_name])
+          Req.get!(context.req, url: "/spawn_child")
 
           # Let the backing process see & handle the handle_info EXIT message
           Process.sleep(100)
@@ -974,8 +903,7 @@ defmodule HTTP1RequestTest do
        context do
     errors =
       capture_log(fn ->
-        Finch.build(:get, context[:base] <> "/spawn_abnormal_child")
-        |> Finch.request(context[:finch_name])
+        Req.get!(context.req, url: "/spawn_abnormal_child")
 
         # Let the backing process see & handle the handle_info EXIT message
         Process.sleep(100)
@@ -998,8 +926,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :start]]})
 
-      Finch.build(:get, context[:base] <> "/send_200")
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_200")
 
       Process.sleep(100)
 
@@ -1051,8 +978,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:post, context[:base] <> "/do_read_body", [{"connection", "close"}], <<>>)
-      |> Finch.request(context[:finch_name])
+      Req.post!(context.req, url: "/do_read_body", body: <<>>)
 
       Process.sleep(100)
 
@@ -1091,13 +1017,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(
-        :post,
-        context[:base] <> "/do_read_body",
-        [{"connection", "close"}],
-        String.duplicate("a", 80)
-      )
-      |> Finch.request(context[:finch_name])
+      Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
       Process.sleep(100)
 
@@ -1132,14 +1052,7 @@ defmodule HTTP1RequestTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
       stream = Stream.repeatedly(fn -> "a" end) |> Stream.take(80)
-
-      Finch.build(
-        :post,
-        context[:base] <> "/do_read_body",
-        [{"connection", "close"}],
-        {:stream, stream}
-      )
-      |> Finch.request(context[:finch_name])
+      Req.post!(context.req, url: "/do_read_body", body: {:stream, stream})
 
       Process.sleep(100)
 
@@ -1174,13 +1087,11 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(
-        :post,
-        context[:base] <> "/do_read_body",
-        [{"connection", "close"}, {"accept-encoding", "deflate"}],
-        String.duplicate("a", 80)
+      Req.post!(context.req,
+        url: "/do_read_body",
+        body: String.duplicate("a", 80),
+        compressed: true
       )
-      |> Finch.request(context[:finch_name])
 
       Process.sleep(100)
 
@@ -1198,10 +1109,10 @@ defmodule HTTP1RequestTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 138,
+                  resp_header_bytes: 135,
                   resp_uncompressed_body_bytes: 2,
-                  resp_body_bytes: 10,
-                  resp_compression_method: "deflate",
+                  resp_body_bytes: 22,
+                  resp_compression_method: "gzip",
                   resp_start_time: integer(),
                   resp_end_time: integer()
                 },
@@ -1216,8 +1127,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:get, context[:base] <> "/send_chunked_200", [{"connection", "close"}])
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_chunked_200")
 
       Process.sleep(100)
 
@@ -1230,7 +1140,7 @@ defmodule HTTP1RequestTest do
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 32,
                   req_header_end_time: integer(),
-                  req_header_bytes: 68,
+                  req_header_bytes: 48,
                   resp_line_bytes: 17,
                   resp_header_bytes: 119,
                   resp_body_bytes: 0,
@@ -1247,8 +1157,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:get, context[:base] <> "/send_full_file", [{"connection", "close"}])
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_full_file")
 
       Process.sleep(100)
 
@@ -1261,7 +1170,7 @@ defmodule HTTP1RequestTest do
                   conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 30,
                   req_header_end_time: integer(),
-                  req_header_bytes: 68,
+                  req_header_bytes: 48,
                   resp_line_bytes: 17,
                   resp_header_bytes: 110,
                   resp_body_bytes: 6,
@@ -1320,8 +1229,7 @@ defmodule HTTP1RequestTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
-      Finch.build(:get, context[:base] <> "/raise_error")
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/raise_error")
 
       Process.sleep(100)
 
