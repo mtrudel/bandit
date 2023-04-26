@@ -21,7 +21,7 @@ defmodule HTTP1RequestTest do
     @tag capture_log: true
     test "returns a 400 if the request has an invalid http version", context do
       client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"], "0.9")
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "0.9")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
   end
