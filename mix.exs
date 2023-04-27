@@ -34,7 +34,7 @@ defmodule Bandit.MixProject do
       {:websock, "~> 0.5"},
       {:hpax, "~> 0.1.1"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
-      {:finch, "~> 0.8", only: [:dev, :test]},
+      {:req, "~> 0.3", only: [:dev, :test]},
       {:machete, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},

@@ -2,11 +2,8 @@ defmodule ServerTest do
   # False due to capture log emptiness check
   use ExUnit.Case, async: false
   use ServerHelpers
-  use FinchHelpers
 
   import ExUnit.CaptureLog
-
-  setup :finch_http1_client
 
   test "server logs connection details at startup" do
     logs =
@@ -40,24 +37,12 @@ defmodule ServerTest do
              "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port already in use"
   end
 
-  test "can run multiple instances of Bandit", context do
+  test "can run multiple instances of Bandit" do
     start_supervised({Bandit, plug: __MODULE__, port: 4000})
-
     start_supervised({Bandit, plug: __MODULE__, port: 4001})
 
-    {:ok, response} =
-      Finch.build(:get, "http://localhost:4000/hello")
-      |> Finch.request(context[:finch_name])
-
-    assert response.status == 200
-    assert response.body == "OK"
-
-    {:ok, response} =
-      Finch.build(:get, "http://localhost:4001/hello")
-      |> Finch.request(context[:finch_name])
-
-    assert response.status == 200
-    assert response.body == "OK"
+    assert 200 == Req.get!("http://localhost:4000/hello").status
+    assert 200 == Req.get!("http://localhost:4001/hello").status
   end
 
   def hello(conn) do

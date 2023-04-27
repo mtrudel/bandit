@@ -1,7 +1,7 @@
 defmodule InitialHandlerTest do
   use ExUnit.Case, async: true
   use ServerHelpers
-  use FinchHelpers
+  use ReqHelpers
 
   import ExUnit.CaptureLog
 
@@ -29,25 +29,19 @@ defmodule InitialHandlerTest do
 
   describe "HTTP/1.x handling over TCP" do
     setup :http_server
-    setup :finch_http1_client
+    setup :req_http1_client
 
-    test "sets up the HTTP 1.x handler", %{base: base, finch_name: finch_name} do
-      {:ok, response} = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
-
-      assert response.status == 200
-      assert response.body == "HTTP/1.1 http"
+    test "sets up the HTTP 1.x handler", context do
+      assert "HTTP/1.1 http" == Req.get!(context.req, url: "/report_version").body
     end
   end
 
   describe "HTTP/1.x handling over SSL" do
     setup :https_server
-    setup :finch_http1_client
+    setup :req_http1_client
 
-    test "sets up the HTTP 1.x handler", %{base: base, finch_name: finch_name} do
-      {:ok, response} = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
-
-      assert response.status == 200
-      assert response.body == "HTTP/1.1 https"
+    test "sets up the HTTP 1.x handler", context do
+      assert "HTTP/1.1 https" == Req.get!(context.req, url: "/report_version").body
     end
 
     @tag :capture_log
@@ -60,25 +54,19 @@ defmodule InitialHandlerTest do
 
   describe "HTTP/2 handling over TCP" do
     setup :http_server
-    setup :finch_h2_client
+    setup :req_h2_client
 
-    test "sets up the HTTP/2 handler", %{base: base, finch_name: finch_name} do
-      {:ok, response} = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
-
-      assert response.status == 200
-      assert response.body == "HTTP/2 http"
+    test "sets up the HTTP/2 handler", context do
+      assert "HTTP/2 http" == Req.get!(context.req, url: "/report_version").body
     end
   end
 
   describe "HTTP/2 handling over SSL" do
     setup :https_server
-    setup :finch_h2_client
+    setup :req_h2_client
 
-    test "sets up the HTTP/2 handler", %{base: base, finch_name: finch_name} do
-      {:ok, response} = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
-
-      assert response.status == 200
-      assert response.body == "HTTP/2 https"
+    test "sets up the HTTP/2 handler", context do
+      assert "HTTP/2 https" == Req.get!(context.req, url: "/report_version").body
     end
 
     @tag :capture_log
@@ -91,13 +79,13 @@ defmodule InitialHandlerTest do
 
   describe "unknown protocols" do
     setup :http_server
-    setup :finch_http1_client
+    setup :req_http1_client
 
-    test "TLS connection is made to a TCP server", %{base: base, finch_name: finch_name} do
+    test "TLS connection is made to a TCP server", context do
       warnings =
         capture_log(fn ->
-          base = String.replace_prefix(base, "http", "https")
-          _ = Finch.build(:get, base <> "/report_version") |> Finch.request(finch_name)
+          base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
+          _ = Req.get(context.req, url: "/report_version", base_url: base_url)
         end)
 
       assert warnings =~ "Connection that looks like TLS received on a clear channel"

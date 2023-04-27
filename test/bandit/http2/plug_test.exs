@@ -2,18 +2,17 @@ defmodule HTTP2PlugTest do
   # False due to capture log emptiness check
   use ExUnit.Case, async: false
   use ServerHelpers
-  use FinchHelpers
+  use ReqHelpers
   use Machete
 
   import ExUnit.CaptureLog
 
   setup :https_server
-  setup :finch_h2_client
+  setup :req_h2_client
 
   test "reading request headers", context do
-    {:ok, response} =
-      Finch.build(:head, context[:base] <> "/header_read_test", [{"X-Request-Header", "Request"}])
-      |> Finch.request(context[:finch_name])
+    response =
+      Req.head!(context.req, url: "/header_read_test", headers: [{"X-Request-Header", "Request"}])
 
     assert response.status == 200
   end
@@ -25,9 +24,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "request headers do not include pseudo headers", context do
-    {:ok, response} =
-      Finch.build(:head, context[:base] <> "/no_pseudo_header")
-      |> Finch.request(context[:finch_name])
+    response = Req.head!(context.req, url: "/no_pseudo_header")
 
     assert response.status == 200
   end
@@ -39,9 +36,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading request body when there is no body sent", context do
-    {:ok, response} =
-      Finch.build(:head, context[:base] <> "/empty_body_read")
-      |> Finch.request(context[:finch_name])
+    response = Req.head!(context.req, url: "/empty_body_read")
 
     assert response.status == 200
   end
@@ -53,9 +48,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading request body when there is a simple body sent", context do
-    {:ok, response} =
-      Finch.build(:post, context[:base] <> "/simple_body_read", [], "OK")
-      |> Finch.request(context[:finch_name])
+    response = Req.post!(context.req, url: "/simple_body_read", body: "OK")
 
     assert response.status == 200
   end
@@ -67,9 +60,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading request body multiple times works as expected", context do
-    {:ok, response} =
-      Finch.build(:post, context[:base] <> "/multiple_body_read", [], "OK")
-      |> Finch.request(context[:finch_name])
+    response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
 
     assert response.status == 200
   end
@@ -127,9 +118,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "writing response headers", context do
-    {:ok, response} =
-      Finch.build(:head, context[:base] <> "/header_write_test")
-      |> Finch.request(context[:finch_name])
+    response = Req.head!(context.req, url: "/header_write_test")
 
     assert response.status == 200
 
@@ -149,9 +138,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "writing user-defined date header", context do
-    {:ok, response} =
-      Finch.build(:head, context[:base] <> "/date_header_test")
-      |> Finch.request(context[:finch_name])
+    response = Req.head!(context.req, url: "/date_header_test")
 
     assert response.status == 200
 
@@ -168,8 +155,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "sending a body", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/body_test") |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/body_test")
 
     assert response.status == 200
     assert response.body == "OK"
@@ -180,9 +166,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "sending a body as iolist", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/iolist_body_test")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/iolist_body_test")
 
     assert response.status == 200
     assert response.body == "OK"
@@ -193,9 +177,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "lazy sending a body", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/lazy_body_test")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/lazy_body_test")
 
     assert response.status == 200
     assert response.body == "OK"
@@ -206,8 +188,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "sending a chunk", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/chunk_test") |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/chunk_test")
 
     assert response.status == 200
     assert response.body == "OKOK"
@@ -226,9 +207,7 @@ defmodule HTTP2PlugTest do
     test "raises an ArgumentError on unsupported upgrades", context do
       errors =
         capture_log(fn ->
-          response =
-            Finch.build(:get, context[:base] <> "/upgrade_unsupported")
-            |> Finch.request(context[:finch_name])
+          response = Req.get(context.req, url: "/upgrade_unsupported")
 
           assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                    response
@@ -248,9 +227,7 @@ defmodule HTTP2PlugTest do
   test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
     errors =
       capture_log(fn ->
-        response =
-          Finch.build(:get, context[:base] <> "/noop")
-          |> Finch.request(context[:finch_name])
+        response = Req.get(context.req, url: "/noop")
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
@@ -265,9 +242,7 @@ defmodule HTTP2PlugTest do
   test "raises an error if the conn returns garbage", context do
     errors =
       capture_log(fn ->
-        response =
-          Finch.build(:get, context[:base] <> "/garbage")
-          |> Finch.request(context[:finch_name])
+        response = Req.get(context.req, url: "/garbage")
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
@@ -280,9 +255,7 @@ defmodule HTTP2PlugTest do
   def garbage(_conn), do: :boom
 
   test "writes out a sent file for the entire file", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/send_full_file")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/send_full_file")
 
     assert response.status == 200
     assert response.body == "ABCDEF"
@@ -294,9 +267,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "writes out a sent file for parts of a file", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/send_file?offset=1&length=3")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/send_file?offset=1&length=3")
 
     assert response.status == 200
     assert response.body == "BCD"
@@ -305,9 +276,7 @@ defmodule HTTP2PlugTest do
   @large_file_path Path.join([__DIR__, "../../support/sendfile_large"])
 
   test "sending a large file greater than 2048 bytes", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/large_file_test")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/large_file_test")
 
     assert response.status == 200
     assert response.body == File.read!(@large_file_path)
@@ -321,9 +290,7 @@ defmodule HTTP2PlugTest do
   test "errors out if asked to read beyond the file", context do
     errors =
       capture_log(fn ->
-        response =
-          Finch.build(:get, context[:base] <> "/send_file?offset=1&length=3000")
-          |> Finch.request(context[:finch_name])
+        response = Req.get(context.req, url: "/send_file?offset=1&length=3000")
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
@@ -478,9 +445,7 @@ defmodule HTTP2PlugTest do
   end
 
   test "reading HTTP version", context do
-    {:ok, response} =
-      Finch.build(:get, context[:base] <> "/report_version")
-      |> Finch.request(context[:finch_name])
+    response = Req.get!(context.req, url: "/report_version")
 
     assert response.status == 200
     assert response.body == "HTTP/2"
@@ -508,8 +473,7 @@ defmodule HTTP2PlugTest do
   test "silently accepts EXIT messages from normally terminating spwaned processes", context do
     errors =
       capture_log(fn ->
-        Finch.build(:get, context[:base] <> "/spawn_child")
-        |> Finch.request(context[:finch_name])
+        Req.get!(context.req, url: "/spawn_child")
 
         # Let the backing process see & handle the handle_info EXIT message
         Process.sleep(100)
@@ -532,8 +496,7 @@ defmodule HTTP2PlugTest do
        context do
     errors =
       capture_log(fn ->
-        Finch.build(:get, context[:base] <> "/spawn_abnormal_child")
-        |> Finch.request(context[:finch_name])
+        Req.get(context.req, url: "/spawn_abnormal_child")
 
         # Let the backing process see & handle the handle_info EXIT message
         Process.sleep(100)
@@ -557,8 +520,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :start]]})
 
-      Finch.build(:get, context[:base] <> "/send_200")
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_200")
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -579,8 +541,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:get, context[:base] <> "/send_200")
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_200")
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -607,8 +568,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:post, context[:base] <> "/do_read_body", [], <<>>)
-      |> Finch.request(context[:finch_name])
+      Req.post!(context.req, url: "/do_read_body", body: <<>>)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -642,8 +602,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:post, context[:base] <> "/do_read_body", [], String.duplicate("a", 80))
-      |> Finch.request(context[:finch_name])
+      Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -673,13 +632,11 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(
-        :post,
-        context[:base] <> "/do_read_body",
-        [{"accept-encoding", "deflate"}],
-        String.duplicate("a", 80)
+      Req.post!(context.req,
+        url: "/do_read_body",
+        body: String.duplicate("a", 80),
+        compressed: true
       )
-      |> Finch.request(context[:finch_name])
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -693,8 +650,8 @@ defmodule HTTP2PlugTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
                   resp_uncompressed_body_bytes: 2,
-                  resp_body_bytes: 10,
-                  resp_compression_method: "deflate",
+                  resp_body_bytes: 22,
+                  resp_compression_method: "gzip",
                   resp_start_time: integer(),
                   resp_end_time: integer()
                 },
@@ -710,8 +667,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      Finch.build(:get, context[:base] <> "/send_full_file", [])
-      |> Finch.request(context[:finch_name])
+      Req.get!(context.req, url: "/send_full_file")
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
@@ -765,8 +721,7 @@ defmodule HTTP2PlugTest do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
-      Finch.build(:get, context[:base] <> "/raise_error")
-      |> Finch.request(context[:finch_name])
+      Req.get(context.req, url: "/raise_error")
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
