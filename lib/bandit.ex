@@ -322,8 +322,8 @@ defmodule Bandit do
       plug: plug,
       handler_module: Bandit.InitialHandler,
       opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options},
-      http_1_enabled: http_1_options[:enabled] || true,
-      http_2_enabled: http_2_options[:enabled] || true
+      http_1_enabled: Keyword.get(http_1_options, :enabled, true),
+      http_2_enabled: Keyword.get(http_2_options, :enabled, true)
     }
 
     scheme = Keyword.get(arg, :scheme, :http)
