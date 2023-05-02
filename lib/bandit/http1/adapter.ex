@@ -15,6 +15,7 @@ defmodule Bandit.HTTP1.Adapter do
             content_encoding: nil,
             upgrade: nil,
             metrics: %{},
+            websocket_enabled: false,
             opts: []
 
   # credo:disable-for-this-file Credo.Check.Design.AliasUsage
@@ -455,13 +456,8 @@ defmodule Bandit.HTTP1.Adapter do
   def inform(_req, _status, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def upgrade(req, :websocket, opts) do
-    if Keyword.get(req.opts.websocket, :enabled, true) do
-      {:ok, %{req | upgrade: {:websocket, opts, req.opts.websocket}}}
-    else
-      {:error, :not_supported}
-    end
-  end
+  def upgrade(%Bandit.HTTP1.Adapter{websocket_enabled: true} = req, :websocket, opts),
+    do: {:ok, %{req | upgrade: {:websocket, opts, req.opts.websocket}}}
 
   def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
 
