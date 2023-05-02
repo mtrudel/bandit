@@ -109,7 +109,7 @@ defmodule Bandit do
     valid `certfile` and `keyfile` values (or an equivalent value within
     `thousand_island_options.transport_options`). Defaults to `:http`
   * `port`: The TCP port to listen on. This option is offered as a convenience and actually sets
-    the option of the same name within `thousand_island_options`. If ia string value is passed, it 
+    the option of the same name within `thousand_island_options`. If ia string value is passed, it
     will be parsed as an integer. Defaults to 4000 if `scheme` is `:http`, and 4040 if `scheme` is
     `:https`
   * `ip`:  The interface(s) to listen on. This option is offered as a convenience and actually sets the
@@ -318,10 +318,17 @@ defmodule Bandit do
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
     startup_log = Keyword.get(arg, :startup_log, :info)
 
+    {http_1_enabled, http_1_options} = Keyword.pop(http_1_options, :enabled, true)
+    {http_2_enabled, http_2_options} = Keyword.pop(http_2_options, :enabled, true)
+    {websocket_enabled, websocket_options} = Keyword.pop(websocket_options, :enabled, true)
+
     handler_options = %{
       plug: plug,
       handler_module: Bandit.InitialHandler,
-      opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options}
+      opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options},
+      http_1_enabled: http_1_enabled,
+      http_2_enabled: http_2_enabled,
+      websocket_enabled: websocket_enabled
     }
 
     scheme = Keyword.get(arg, :scheme, :http)
