@@ -1,5 +1,18 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.3 (3 May 2023)
+
+### Enhancements
+
+* Respect read timeout for HTTP/1 keepalives (#140)
+* Support Websock 0.5.1, including support for optional c:Websock.terminate/2`
+  (#131)
+
+### Changes
+
+* Use Req instead of Finch in tests (#137)
+* Improve a few corner cases in tests (#136)
+
 ## 1.0.0-pre.2 (24 Apr 2023)
 
 ### Fixes
