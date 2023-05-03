@@ -42,6 +42,15 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
+
+    test "idle keepalive connections are closed after read_timeout", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      Process.sleep(1100)
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
   end
 
   describe "origin-form request target (RFC9112§3.2.1)" do

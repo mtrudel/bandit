@@ -85,7 +85,9 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  def handle_info({:plug_conn, :sent}, state), do: {:noreply, state}
+  def handle_info({:plug_conn, :sent}, {socket, state}),
+    do: {:noreply, {socket, state}, socket.read_timeout}
+
   def handle_info({:EXIT, _pid, :normal}, {socket, state}),
     do: {:noreply, {socket, state}, socket.read_timeout}
 end
