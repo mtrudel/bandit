@@ -338,7 +338,7 @@ defmodule Bandit.HTTP2.Connection do
            false
 
          {key, value} ->
-           String.length(key) > max_key_length || String.length(value) > max_value_length
+           byte_size(key) > max_key_length || byte_size(value) > max_value_length
        end) do
       {:error,
        {:stream, stream.stream_id, Errors.frame_size_error(),
