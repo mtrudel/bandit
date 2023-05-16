@@ -215,6 +215,8 @@ defmodule HTTP1RequestTest do
     end
 
     # Skip this test since there is a bug in :erlang.decode_packet. See https://github.com/mtrudel/bandit/pull/97
+    # This has been fixed upstream in OTP26+; see OTP-18540 for details. Reintroduce this test
+    # once we support OTP26+
     @tag :skip
     test "derives ipv6 host from the URI, even if it differs from host header", context do
       client = SimpleHTTP1Client.tcp_client(context)
