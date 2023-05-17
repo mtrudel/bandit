@@ -18,7 +18,7 @@ defmodule Bandit.Headers do
     |> case do
       [host, port] ->
         case Integer.parse(port) do
-          {port, ""} when port > 0 -> {:ok, host <> "]", port}
+          {port, ""} when port in 0..65_535 -> {:ok, host <> "]", port}
           _ -> {:error, "Header contains invalid port"}
         end
 
@@ -33,7 +33,7 @@ defmodule Bandit.Headers do
     |> case do
       [host, port] ->
         case Integer.parse(port) do
-          {port, ""} when port > 0 -> {:ok, host, port}
+          {port, ""} when port in 0..65_535 -> {:ok, host, port}
           _ -> {:error, "Header contains invalid port"}
         end
 
