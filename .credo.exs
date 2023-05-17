@@ -19,28 +19,7 @@
           #
           ## Design Checks
           #
-          # You can customize the priority of any check
-          # Priority values are: `low, normal, high, higher`
-          #
-          {Credo.Check.Design.AliasUsage,
-           [
-            priority: :low,
-            if_nested_deeper_than: 2,
-            if_called_more_often_than: 1,
-            # List of default excluded last names `++` the ones we added.
-            excluded_lastnames: ~w[Access Agent Application Atom Base Behaviour
-                          Bitwise Code Date DateTime Dict Enum Exception
-                          File Float GenEvent GenServer HashDict HashSet
-                          Integer IO Kernel Keyword List Macro Map MapSet
-                          Module NaiveDateTime Node OptionParser Path Port
-                          Process Protocol Range Record Regex Registry Set
-                          Stream String StringIO Supervisor System Task Time
-                          Tuple URI Version] ++ ~w[Adapter Utils]
-          ]},
-          # You can also customize the exit_status of each check.
-          # If you don't want TODO comments to cause `mix credo` to fail, just
-          # set this value to 0 (zero).
-          #
+          {Credo.Check.Design.AliasUsage, false},
           {Credo.Check.Design.TagTODO, [exit_status: 2]},
           {Credo.Check.Design.TagFIXME, []},
 
