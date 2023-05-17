@@ -4,8 +4,6 @@ defmodule WebSocketUpgradeTest do
   use ServerHelpers
   use Machete
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   setup :http_server
 
   def call(conn, _opts) do

@@ -6,8 +6,6 @@ defmodule WebSocketWebSockTest do
 
   import ExUnit.CaptureLog
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   setup :http_server
 
   def call(conn, _opts) do
