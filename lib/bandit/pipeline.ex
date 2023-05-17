@@ -12,8 +12,6 @@ defmodule Bandit.Pipeline do
   @type host :: Plug.Conn.host() | nil
   @type path :: String.t() | :*
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   @spec run(
           Plug.Conn.adapter(),
           transport_info(),

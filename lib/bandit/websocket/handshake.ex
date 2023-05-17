@@ -4,8 +4,6 @@ defmodule Bandit.WebSocket.Handshake do
 
   import Plug.Conn
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   def valid_upgrade?(%Plug.Conn{} = conn) do
     case get_http_protocol(conn) do
       :"HTTP/1.1" ->

@@ -18,8 +18,6 @@ defmodule Bandit.HTTP1.Adapter do
             websocket_enabled: false,
             opts: []
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   ################
   # Header Reading
   ################

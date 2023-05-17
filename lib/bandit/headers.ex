@@ -2,8 +2,6 @@ defmodule Bandit.Headers do
   @moduledoc false
   # Conveniences for dealing with headers
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value

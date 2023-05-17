@@ -4,8 +4,6 @@ defmodule Bandit.HTTP1.Handler do
 
   use ThousandIsland.Handler
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     {_, _, _, connection_span} = transport_info = build_transport_info(socket)

@@ -1,8 +1,6 @@
 defmodule Bandit.Compression do
   @moduledoc false
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   @spec negotiate_content_encoding(String.t(), boolean()) :: String.t() | nil
   def negotiate_content_encoding(nil, _), do: nil
   def negotiate_content_encoding(_, false), do: nil
