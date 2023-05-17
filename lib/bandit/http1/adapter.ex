@@ -59,7 +59,6 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @dialyzer {:no_improper_lists, do_read_headers: 5}
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp do_read_headers(
          req,
          type \\ :http_bin,

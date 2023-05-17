@@ -117,7 +117,6 @@ defmodule Bandit.WebSocket.Frame do
     {{:error, "Received unsupported RSV flags #{rsv}"}, rest}
   end
 
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   defp to_frame(fin, compressed, 0x0, opcode, mask, payload, rest) do
     fin = fin == 0x1
     compressed = compressed == 0x1

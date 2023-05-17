@@ -24,7 +24,6 @@ defmodule Bandit.HTTP2.Frame do
 
   @spec deserialize(binary(), non_neg_integer()) ::
           {{:ok, frame()}, iodata()} | {{:error, Connection.error()}, iodata()}
-  # credo:disable-for-next-line Credo.Check.Refactor.CyclomaticComplexity
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
           payload::binary-size(length), rest::binary>>,

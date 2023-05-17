@@ -28,8 +28,6 @@ defmodule Bandit.WebSocket.Connection do
           metrics: map()
         }
 
-  # credo:disable-for-this-file Credo.Check.Refactor.CyclomaticComplexity
-
   def init(websock, websock_state, connection_opts, socket, origin_telemetry_span_context) do
     compress = Keyword.get(connection_opts, :compress)
 
