@@ -22,8 +22,6 @@ defmodule Bandit.HTTP2.StreamTask do
 
   use Task
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(

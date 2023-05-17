@@ -23,8 +23,6 @@ defmodule Bandit.HTTP2.Stream do
 
   defmodule StreamError, do: defexception([:message])
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
 

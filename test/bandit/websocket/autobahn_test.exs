@@ -1,8 +1,6 @@
 defmodule WebsocketAutobahnTest do
   use ExUnit.Case, async: true
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   @moduletag :external_conformance
   @moduletag timeout: 3_600_000
 

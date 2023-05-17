@@ -5,8 +5,6 @@ defmodule WebSocketHTTP1HandshakeTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   setup :http_server
 
   defmodule MyNoopWebSock do

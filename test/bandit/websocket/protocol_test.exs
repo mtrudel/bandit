@@ -2,8 +2,6 @@ defmodule WebSocketProtocolTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
-
   setup :http_server
 
   def call(conn, _opts) do
