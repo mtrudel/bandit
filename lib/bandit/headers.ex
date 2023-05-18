@@ -2,6 +2,8 @@ defmodule Bandit.Headers do
   @moduledoc false
   # Conveniences for dealing with headers
 
+  defguardp is_port_number(port) when Bitwise.band(port, 0xFFFF) === port
+
   def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
@@ -16,7 +18,7 @@ defmodule Bandit.Headers do
     |> case do
       [host, port] ->
         case Integer.parse(port) do
-          {port, ""} when port in 0..65_535 -> {:ok, host <> "]", port}
+          {port, ""} when is_port_number(port) -> {:ok, host <> "]", port}
           _ -> {:error, "Header contains invalid port"}
         end
 
@@ -31,7 +33,7 @@ defmodule Bandit.Headers do
     |> case do
       [host, port] ->
         case Integer.parse(port) do
-          {port, ""} when port in 0..65_535 -> {:ok, host, port}
+          {port, ""} when is_port_number(port) -> {:ok, host, port}
           _ -> {:error, "Header contains invalid port"}
         end
 
