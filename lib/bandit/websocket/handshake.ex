@@ -5,26 +5,32 @@ defmodule Bandit.WebSocket.Handshake do
   import Plug.Conn
 
   def valid_upgrade?(%Plug.Conn{} = conn) do
-    case get_http_protocol(conn) do
-      :"HTTP/1.1" ->
-        # Cases from RFC6455§4.2.1
-        conn.method == "GET" and
-          get_req_header(conn, "host") != [] and
-          header_contains?(conn, "upgrade", "websocket") and
-          header_contains?(conn, "connection", "upgrade") and
-          match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key")) and
-          get_req_header(conn, "sec-websocket-version") == ["13"]
+    validate_upgrade(conn) == :ok
+  end
 
-      _ ->
-        false
+  defp validate_upgrade(conn) do
+    # Cases from RFC6455§4.2.1
+    with {:http_version, :"HTTP/1.1"} <- {:http_version, get_http_protocol(conn)},
+         {:method, "GET"} <- {:method, conn.method},
+         {:host_header, header} when header != [] <- {:host_header, get_req_header(conn, "host")},
+         {:upgrade_header, true} <-
+           {:upgrade_header, header_contains?(conn, "upgrade", "websocket")},
+         {:connection_header, true} <-
+           {:connection_header, header_contains?(conn, "connection", "upgrade")},
+         {:sec_websocket_key_header, true} <-
+           {:sec_websocket_key_header,
+            match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key"))},
+         {:sec_websocket_version_header, ["13"]} <-
+           {:sec_websocket_version_header, get_req_header(conn, "sec-websocket-version")} do
+      :ok
+    else
+      {step, _detail} -> {:error, "WebSocket upgrade failed: error in #{step} check"}
     end
   end
 
   def handshake(%Plug.Conn{} = conn, opts, websocket_opts) do
-    if valid_upgrade?(conn) do
+    with :ok <- validate_upgrade(conn) do
       do_handshake(conn, opts, websocket_opts)
-    else
-      {:error, "Not a valid WebSocket upgrade request"}
     end
   end
 
