@@ -1,5 +1,24 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.4 (23 May 2023)
+
+### Enhancements
+
+* Performance / correctness improvements to header length validation (#143,
+  thanks @moogle19!)
+* Performance improvements to host header port parsing (#145 & #147, thanks
+  @ryanwinchester!)
+* Improve WebSocket upgrade failure error messages to aid in diagnosis (#152)
+
+### Changes
+
+* Consolidate credo config (#146, thanks @ryanwinchester!)
+
+### Fixes
+
+* Fix error in suggested version dependencies during 1.0-pre series (#142,
+  thanks @cvkmohan!)
+
 ## 1.0.0-pre.3 (3 May 2023)
 
 ### Enhancements
