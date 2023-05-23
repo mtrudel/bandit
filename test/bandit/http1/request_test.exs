@@ -556,19 +556,148 @@ defmodule HTTP1RequestTest do
       |> send_resp(200, "Not supported")
     end
 
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a valid upgrade",
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a GET",
          context do
       errors =
         capture_log(fn ->
-          response = Req.get!(context.req, url: "/upgrade_websocket")
+          client = SimpleHTTP1Client.tcp_client(context)
 
-          assert response.status == 400
-          assert response.body == "Not a valid WebSocket upgrade request"
+          SimpleHTTP1Client.send(
+            client,
+            "POST",
+            "/upgrade_websocket",
+            [
+              "Host: server.example.com",
+              "Upgrade: WebSocket",
+              "Connection: Upgrade",
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+              "Sec-WebSocket-Version: 13"
+            ]
+          )
+
+          assert SimpleHTTP1Client.recv_reply(client)
+                 ~> {:ok, "400 Bad Request", list(),
+                  "WebSocket upgrade failed: error in method check"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "Not a valid WebSocket upgrade request"
+      assert errors =~ "WebSocket upgrade failed: error in method check"
+    end
+
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
+         context do
+      errors =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+
+          SimpleHTTP1Client.send(
+            client,
+            "GET",
+            "/upgrade_websocket",
+            [
+              "Host: server.example.com",
+              "Upgrade: NOPE",
+              "Connection: Upgrade",
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+              "Sec-WebSocket-Version: 13"
+            ]
+          )
+
+          assert SimpleHTTP1Client.recv_reply(client)
+                 ~> {:ok, "400 Bad Request", list(),
+                  "WebSocket upgrade failed: error in upgrade_header check"}
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "WebSocket upgrade failed: error in upgrade_header check"
+    end
+
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
+         context do
+      errors =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+
+          SimpleHTTP1Client.send(
+            client,
+            "GET",
+            "/upgrade_websocket",
+            [
+              "Host: server.example.com",
+              "Upgrade: WebSocket",
+              "Connection: NOPE",
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+              "Sec-WebSocket-Version: 13"
+            ]
+          )
+
+          assert SimpleHTTP1Client.recv_reply(client)
+                 ~> {:ok, "400 Bad Request", list(),
+                  "WebSocket upgrade failed: error in connection_header check"}
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "WebSocket upgrade failed: error in connection_header check"
+    end
+
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
+         context do
+      errors =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+
+          SimpleHTTP1Client.send(
+            client,
+            "GET",
+            "/upgrade_websocket",
+            [
+              "Host: server.example.com",
+              "Upgrade: WebSocket",
+              "Connection: Upgrade",
+              "Sec-WebSocket-Version: 13"
+            ]
+          )
+
+          assert SimpleHTTP1Client.recv_reply(client)
+                 ~> {:ok, "400 Bad Request", list(),
+                  "WebSocket upgrade failed: error in sec_websocket_key_header check"}
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "WebSocket upgrade failed: error in sec_websocket_key_header check"
+    end
+
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
+         context do
+      errors =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+
+          SimpleHTTP1Client.send(
+            client,
+            "GET",
+            "/upgrade_websocket",
+            [
+              "Host: server.example.com",
+              "Upgrade: WebSocket",
+              "Connection: Upgrade",
+              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+              "Sec-WebSocket-Version: 99"
+            ]
+          )
+
+          assert SimpleHTTP1Client.recv_reply(client)
+                 ~> {:ok, "400 Bad Request", list(),
+                  "WebSocket upgrade failed: error in sec_websocket_version_header check"}
+
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "WebSocket upgrade failed: error in sec_websocket_version_header check"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do

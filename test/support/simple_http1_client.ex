@@ -54,6 +54,11 @@ defmodule SimpleHTTP1Client do
             0 ->
               rest
 
+            pending when pending < 0 ->
+              expected = String.to_integer(value)
+              <<response::binary-size(expected), _rest::binary>> = rest
+              response
+
             pending ->
               {:ok, response} = :gen_tcp.recv(socket, pending)
               rest <> response
