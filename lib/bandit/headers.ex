@@ -4,6 +4,7 @@ defmodule Bandit.Headers do
 
   defguardp is_port_number(port) when Bitwise.band(port, 0xFFFF) === port
 
+  @spec get_header(Plug.Conn.headers(), header :: binary()) :: binary() | nil
   def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do
       {_, value} -> value
@@ -12,6 +13,8 @@ defmodule Bandit.Headers do
   end
 
   # covers ipv6 addresses, which look like this: `[::1]:4000` as defined in RFC3986
+  @spec parse_hostlike_header(host_header :: binary()) ::
+          {:ok, binary(), nil | integer()} | {:error, String.t()}
   def parse_hostlike_header("[" <> _ = host_header) do
     host_header
     |> :binary.split("]:")
@@ -42,6 +45,7 @@ defmodule Bandit.Headers do
     end
   end
 
+  @spec get_content_length(Plug.Conn.headers()) :: {:ok, nil | integer()} | {:error, String.t()}
   def get_content_length(headers) do
     case get_header(headers, "content-length") do
       nil -> {:ok, nil}
@@ -67,6 +71,7 @@ defmodule Bandit.Headers do
     end
   end
 
+  @spec all?([binary()], binary()) :: boolean()
   defp all?([value | rest], value), do: all?(rest, value)
   defp all?([], _str), do: true
   defp all?(_values, _value), do: false

@@ -34,7 +34,7 @@ defmodule Bandit.Logger do
   end
 
   def attach_logger(:info) do
-    attach_logger(:error)
+    _ = attach_logger(:error)
 
     events = [
       [:bandit, :request, :start],
@@ -52,7 +52,7 @@ defmodule Bandit.Logger do
   """
   @spec detach_logger(log_level()) :: :ok | {:error, :not_found}
   def detach_logger(:error) do
-    detach_logger(:info)
+    _ = detach_logger(:info)
     :telemetry.detach("#{__MODULE__}.error")
   end
 
@@ -61,6 +61,12 @@ defmodule Bandit.Logger do
   end
 
   @doc false
+  @spec log_error(
+          :telemetry.event_name(),
+          :telemetry.event_measurements(),
+          :telemetry.event_metadata(),
+          :telemetry.handler_config()
+        ) :: :ok
   def log_error(event, measurements, metadata, _config) do
     Logger.error(
       "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
@@ -68,6 +74,12 @@ defmodule Bandit.Logger do
   end
 
   @doc false
+  @spec log_info(
+          :telemetry.event_name(),
+          :telemetry.event_measurements(),
+          :telemetry.event_metadata(),
+          :telemetry.handler_config()
+        ) :: :ok
   def log_info(event, measurements, metadata, _config) do
     Logger.info(
       "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"

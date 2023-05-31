@@ -1,7 +1,7 @@
 defmodule Bandit.Compression do
   @moduledoc false
 
-  @spec negotiate_content_encoding(String.t(), boolean()) :: String.t() | nil
+  @spec negotiate_content_encoding(nil | binary(), boolean()) :: String.t() | nil
   def negotiate_content_encoding(nil, _), do: nil
   def negotiate_content_encoding(_, false), do: nil
 
@@ -11,7 +11,7 @@ defmodule Bandit.Compression do
     |> Enum.find(&(&1 in ~w(deflate gzip x-gzip)))
   end
 
-  @spec compress(binary(), String.t(), keyword()) :: binary()
+  @spec compress(binary(), String.t(), Bandit.deflate_options()) :: iodata()
   def compress(response, "deflate", opts) do
     deflate_context = :zlib.open()
 
@@ -28,6 +28,6 @@ defmodule Bandit.Compression do
     :zlib.deflate(deflate_context, response, :sync)
   end
 
-  def compress(response, "x-gzip", opts), do: compress(response, "gzip", opts)
+  def compress(response, "x-gzip", _opts), do: compress(response, "gzip", [])
   def compress(response, "gzip", _opts), do: :zlib.gzip(response)
 end

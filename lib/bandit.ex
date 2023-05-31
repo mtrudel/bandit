@@ -149,22 +149,23 @@ defmodule Bandit do
   * `websocket_options`: A list of options to configure Bandit's WebSocket stack. A complete list can
     be found at `t:websocket_options/0`
   """
-  @type options :: [
-          plug: module() | {module(), Plug.opts()},
-          scheme: :http | :https,
-          port: :inet.port_number(),
-          ip: :inet.socket_address(),
-          keyfile: binary(),
-          certfile: binary(),
-          otp_app: binary() | atom(),
-          cipher_suite: :strong | :compatible,
-          display_plug: module(),
-          startup_log: Logger.level() | false,
-          thousand_island_options: ThousandIsland.options(),
-          http_1_options: http_1_options(),
-          http_2_options: http_2_options(),
-          websocket_options: websocket_options()
-        ]
+  @type options :: [option()]
+  @typep scheme :: :http | :https
+  @typep option ::
+           {:plug, module() | {module(), Plug.opts()}}
+           | {:scheme, scheme()}
+           | {:port, :inet.port_number()}
+           | {:ip, :inet.socket_address()}
+           | {:keyfile, binary()}
+           | {:certfile, binary()}
+           | {:otp_app, binary() | atom()}
+           | {:cipher_suite, :strong | :compatible}
+           | {:display_plug, module()}
+           | {:startup_log, Logger.level() | false}
+           | {:thousand_island_options, ThousandIsland.options()}
+           | {:http_1_options, http_1_options()}
+           | {:http_2_options, http_2_options()}
+           | {:websocket_options, websocket_options()}
 
   @typedoc """
   Options to configure the HTTP/1 stack in Bandit
@@ -184,15 +185,15 @@ defmodule Bandit do
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
   """
-  @type http_1_options :: [
-          enabled: boolean(),
-          max_request_line_length: pos_integer(),
-          max_header_length: pos_integer(),
-          max_header_count: pos_integer(),
-          max_requests: pos_integer(),
-          compress: boolean(),
-          deflate_opions: deflate_options()
-        ]
+  @type http_1_options :: [http_1_option()]
+  @typep http_1_option ::
+           {:enabled, boolean()}
+           | {:max_request_line_length, pos_integer()}
+           | {:max_header_length, pos_integer()}
+           | {:max_header_count, pos_integer()}
+           | {:max_requests, pos_integer()}
+           | {:compress, boolean()}
+           | {:deflate_opions, deflate_options()}
 
   @typedoc """
   Options to configure the HTTP/2 stack in Bandit
@@ -214,16 +215,16 @@ defmodule Bandit do
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
   """
-  @type http_2_options :: [
-          enabled: boolean(),
-          max_header_key_length: pos_integer(),
-          max_header_value_length: pos_integer(),
-          max_header_count: pos_integer(),
-          max_requests: pos_integer(),
-          default_local_settings: Bandit.HTTP2.Settings.t(),
-          compress: boolean(),
-          deflate_options: deflate_options()
-        ]
+  @type http_2_options :: [http_2_option()]
+  @typep http_2_option ::
+           {:enabled, boolean()}
+           | {:max_header_key_length, pos_integer()}
+           | {:max_header_value_length, pos_integer()}
+           | {:max_header_count, pos_integer()}
+           | {:max_requests, pos_integer()}
+           | {:default_local_settings, Bandit.HTTP2.Settings.t()}
+           | {:compress, boolean()}
+           | {:deflate_options, deflate_options()}
 
   @typedoc """
   Options to configure the WebSocket stack in Bandit
@@ -239,22 +240,22 @@ defmodule Bandit do
     a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
     for details). Defaults to `true`
   """
-  @type websocket_options :: [
-          enabled: boolean(),
-          max_frame_size: pos_integer(),
-          validate_text_frames: boolean(),
-          compress: boolean()
-        ]
+  @type websocket_options :: [websocket_option()]
+  @typep websocket_option ::
+           {:enabled, boolean()}
+           | {:max_frame_size, pos_integer()}
+           | {:validate_text_frames, boolean()}
+           | {:compress, boolean()}
 
   @typedoc """
   Options to configure the deflate library used for HTTP compression
   """
-  @type deflate_options :: [
-          level: :zlib.zlevel(),
-          window_bits: :zlib.zwindowbits(),
-          memory_level: :zlib.zmemlevel(),
-          strategy: :zlib.zstrategy()
-        ]
+  @type deflate_options :: [deflate_option()]
+  @typep deflate_option ::
+           {:level, :zlib.zlevel()}
+           | {:window_bits, :zlib.zwindowbits()}
+           | {:memory_level, :zlib.zmemlevel()}
+           | {:strategy, :zlib.zstrategy()}
 
   require Logger
 
@@ -269,50 +270,37 @@ defmodule Bandit do
     }
   end
 
+  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a
+  @http_2_keys ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a
+  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
+  @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
+                        |> Map.from_struct()
+                        |> Map.keys()
+
   @doc """
   Starts a Bandit server using the provided arguments. See `t:options/0` for specific options to
   pass to this function.
   """
   @spec start_link(options()) :: Supervisor.on_start()
   def start_link(arg) do
-    arg =
-      arg
-      |> validate_options(
-        ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a,
-        "top level"
-      )
+    arg = validate_options(arg, @top_level_keys, "top level")
 
     thousand_island_options =
-      arg
-      |> Keyword.get(:thousand_island_options, [])
-      |> validate_options(
-        ThousandIsland.ServerConfig.__struct__() |> Map.from_struct() |> Map.keys(),
-        :thousand_island_options
-      )
+      Keyword.get(arg, :thousand_island_options, [])
+      |> validate_options(@thousand_island_keys, :thousand_island_options)
 
     http_1_options =
-      arg
-      |> Keyword.get(:http_1_options, [])
-      |> validate_options(
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a,
-        :http_1_options
-      )
+      Keyword.get(arg, :http_1_options, [])
+      |> validate_options(@http_1_keys, :http_1_options)
 
     http_2_options =
-      arg
-      |> Keyword.get(:http_2_options, [])
-      |> validate_options(
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a,
-        :http_2_options
-      )
+      Keyword.get(arg, :http_2_options, [])
+      |> validate_options(@http_2_keys, :http_2_options)
 
     websocket_options =
-      arg
-      |> Keyword.get(:websocket_options, [])
-      |> validate_options(
-        ~w(enabled max_frame_size validate_text_frames compress)a,
-        :websocket_options
-      )
+      Keyword.get(arg, :websocket_options, [])
+      |> validate_options(@websocket_keys, :websocket_options)
 
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
@@ -380,6 +368,8 @@ defmodule Bandit do
     end
   end
 
+  @spec validate_options(Keyword.t(), [atom(), ...], String.t() | atom()) ::
+          Keyword.t() | no_return()
   defp validate_options(options, valid_values, name) do
     case Keyword.split(options, valid_values) do
       {options, []} ->
@@ -390,6 +380,7 @@ defmodule Bandit do
     end
   end
 
+  @spec plug(options()) :: {module(), Plug.opts()}
   defp plug(arg) do
     arg
     |> Keyword.get(:plug)
@@ -400,14 +391,17 @@ defmodule Bandit do
     end
   end
 
+  @spec parse_as_number(binary() | integer()) :: integer()
   defp parse_as_number(value) when is_binary(value), do: String.to_integer(value)
   defp parse_as_number(value) when is_integer(value), do: value
 
+  @spec info(scheme(), module(), nil | pid()) :: String.t()
   defp info(scheme, plug, pid) do
     server_vsn = Application.spec(:bandit)[:vsn]
     "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
+  @spec bound_address(scheme(), nil | pid()) :: String.t() | scheme()
   defp bound_address(scheme, nil), do: scheme
 
   defp bound_address(scheme, pid) do
