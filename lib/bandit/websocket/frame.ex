@@ -22,7 +22,7 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Pong.t()
 
   @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
+          {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()} | nil
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
           payload::binary-size(length), rest::binary>>,
@@ -50,8 +50,9 @@ defmodule Bandit.WebSocket.Frame do
     to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
+  # nil is used to indicate for Stream.unfold/2 that the frame deserialization is finished
   def deserialize(<<>>, _max_frame_size) do
-    {{:error, :incomplete_frame}, <<>>}
+    nil
   end
 
   def deserialize(msg, max_frame_size)
