@@ -46,7 +46,10 @@ defmodule Bandit.HTTP1.Handler do
           state =
             state
             |> Map.put(:upgrade_opts, upgrade_opts)
-            |> Map.put(:origin_telemetry_span_context, span.telemetry_span_context)
+            |> Map.put(
+              :origin_telemetry_span_context,
+              Bandit.Telemetry.telemetry_span_context(span)
+            )
 
           {:switch, Bandit.WebSocket.Handler, state}
       end
