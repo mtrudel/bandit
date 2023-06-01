@@ -66,7 +66,7 @@ defmodule Bandit.HTTP2.Frame do
   end
 
   def deserialize(<<>>, _max_frame_size) do
-    nil
+    {{:error, {:connection, Errors.frame_size_error(), "Payload size too small"}}, <<>>}
   end
 
   def deserialize(msg, _max_frame_size) do
@@ -95,7 +95,7 @@ defmodule Bandit.HTTP2.Frame do
     def serialize(frame, max_frame_size)
   end
 
-  @spec serialize(frame(), non_neg_integer()) :: iodata()
+  @spec serialize(frame(), non_neg_integer()) :: iolist()
   def serialize(frame, max_frame_size) do
     frame
     |> Serializable.serialize(max_frame_size)
