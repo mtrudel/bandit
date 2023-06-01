@@ -4,7 +4,13 @@ defmodule Bandit.WebSocket.Frame do
   alias Bandit.WebSocket.Frame
 
   @typedoc "Indicates an opcode"
-  @type opcode :: non_neg_integer()
+  @type opcode ::
+          (binary :: 0x2)
+          | (connection_close :: 0x8)
+          | (continuation :: 0x0)
+          | (ping :: 0x9)
+          | (pong :: 0xA)
+          | (text :: 0x1)
 
   @typedoc "A valid WebSocket frame"
   @type frame ::
@@ -45,7 +51,7 @@ defmodule Bandit.WebSocket.Frame do
   end
 
   def deserialize(<<>>, _max_frame_size) do
-    nil
+    {{:error, :incomplete_frame}, <<>>}
   end
 
   def deserialize(msg, max_frame_size)
@@ -145,7 +151,7 @@ defmodule Bandit.WebSocket.Frame do
     def serialize(frame)
   end
 
-  @spec serialize(frame()) :: iodata()
+  @spec serialize(frame()) :: iolist()
   def serialize(frame) do
     frame
     |> Serializable.serialize()
