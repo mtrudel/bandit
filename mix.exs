@@ -47,7 +47,19 @@ defmodule Bandit.MixProject do
   defp elixirc_path(_), do: ["lib/"]
 
   defp dialyzer do
-    [plt_core_path: "priv/plts", plt_file: {:no_warn, "priv/plts/dialyzer.plt"}]
+    [
+      plt_core_path: "priv/plts",
+      plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
+      plt_add_deps: :apps_direct,
+      flags: [
+        "-Werror_handling",
+        "-Wextra_return",
+        "-Wmissing_return",
+        "-Wunknown",
+        "-Wunmatched_returns",
+        "-Wunderspecs"
+      ]
+    ]
   end
 
   defp docs do
