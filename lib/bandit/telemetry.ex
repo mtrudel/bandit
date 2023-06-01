@@ -152,17 +152,19 @@ defmodule Bandit.Telemetry do
 
   defstruct span_name: nil, telemetry_span_context: nil, start_time: nil, start_metadata: nil
 
+  @typep span_name :: atom()
   @opaque t :: %__MODULE__{
-            span_name: atom(),
+            span_name: span_name(),
             telemetry_span_context: reference(),
             start_time: integer(),
-            start_metadata: map()
+            start_metadata: :telemetry.event_metadata()
           }
 
   @app_name :bandit
 
   @doc false
-  @spec start_span(atom(), map(), map()) :: t()
+  @spec start_span(span_name(), :telemetry.event_measurements(), :telemetry.event_metadata()) ::
+          t()
   def start_span(span_name, measurements \\ %{}, metadata \\ %{}) do
     measurements = Map.put_new_lazy(measurements, :monotonic_time, &monotonic_time/0)
     telemetry_span_context = make_ref()
@@ -178,7 +180,7 @@ defmodule Bandit.Telemetry do
   end
 
   @doc false
-  @spec stop_span(t(), map(), map()) :: :ok
+  @spec stop_span(t(), :telemetry.event_measurements(), :telemetry.event_metadata()) :: :ok
   def stop_span(span, measurements \\ %{}, metadata \\ %{}) do
     measurements = Map.put_new_lazy(measurements, :monotonic_time, &monotonic_time/0)
 
@@ -190,6 +192,7 @@ defmodule Bandit.Telemetry do
     untimed_span_event(span, :stop, measurements, metadata)
   end
 
+  @spec span_exception(t(), Exception.kind(), Exception.t(), Exception.stacktrace()) :: :ok
   def span_exception(span, kind, exception, stacktrace) do
     metadata =
       Map.merge(span.start_metadata, %{
@@ -202,21 +205,33 @@ defmodule Bandit.Telemetry do
   end
 
   @doc false
-  @spec span_event(t(), atom(), map(), map()) :: :ok
+  @spec span_event(t(), span_name(), :telemetry.event_measurements(), :telemetry.event_metadata()) ::
+          :ok
   def span_event(span, name, measurements \\ %{}, metadata \\ %{}) do
     measurements = Map.put_new_lazy(measurements, :monotonic_time, &monotonic_time/0)
     untimed_span_event(span, name, measurements, metadata)
   end
 
   @doc false
-  @spec untimed_span_event(t(), atom(), map(), map()) :: :ok
+  @spec untimed_span_event(
+          t(),
+          span_name(),
+          :telemetry.event_measurements(),
+          :telemetry.event_metadata()
+        ) :: :ok
   def untimed_span_event(span, name, measurements \\ %{}, metadata \\ %{}) do
     metadata = Map.put(metadata, :telemetry_span_context, span.telemetry_span_context)
     event([span.span_name, name], measurements, metadata)
   end
 
+  @spec monotonic_time :: integer()
   defdelegate monotonic_time, to: System
 
+  @spec event(
+          :telemetry.event_name(),
+          :telemetry.event_measurements(),
+          :telemetry.event_metadata()
+        ) :: :ok
   defp event(suffix, measurements, metadata) do
     :telemetry.execute([@app_name | suffix], measurements, metadata)
   end

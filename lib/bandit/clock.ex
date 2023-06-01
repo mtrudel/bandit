@@ -27,10 +27,12 @@ defmodule Bandit.Clock do
     {"date", date}
   end
 
+  @spec start_link(any()) :: {:ok, pid()}
   def start_link(_opts) do
     Task.start_link(__MODULE__, :init, [])
   end
 
+  @spec init :: no_return()
   def init do
     __MODULE__ = :ets.new(__MODULE__, [:set, :protected, :named_table, {:read_concurrency, true}])
 

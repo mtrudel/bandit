@@ -151,7 +151,7 @@ defmodule Bandit do
   """
   @type options :: [
           plug: module() | {module(), Plug.opts()},
-          scheme: :http | :https,
+          scheme: scheme(),
           port: :inet.port_number(),
           ip: :inet.socket_address(),
           keyfile: binary(),
@@ -165,6 +165,8 @@ defmodule Bandit do
           http_2_options: http_2_options(),
           websocket_options: websocket_options()
         ]
+
+  @type scheme :: :http | :https
 
   @typedoc """
   Options to configure the HTTP/1 stack in Bandit
@@ -269,50 +271,37 @@ defmodule Bandit do
     }
   end
 
+  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a
+  @http_2_keys ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a
+  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
+  @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
+                        |> Map.from_struct()
+                        |> Map.keys()
+
   @doc """
   Starts a Bandit server using the provided arguments. See `t:options/0` for specific options to
   pass to this function.
   """
   @spec start_link(options()) :: Supervisor.on_start()
   def start_link(arg) do
-    arg =
-      arg
-      |> validate_options(
-        ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a,
-        "top level"
-      )
+    arg = validate_options(arg, @top_level_keys, "top level")
 
     thousand_island_options =
-      arg
-      |> Keyword.get(:thousand_island_options, [])
-      |> validate_options(
-        ThousandIsland.ServerConfig.__struct__() |> Map.from_struct() |> Map.keys(),
-        :thousand_island_options
-      )
+      Keyword.get(arg, :thousand_island_options, [])
+      |> validate_options(@thousand_island_keys, :thousand_island_options)
 
     http_1_options =
-      arg
-      |> Keyword.get(:http_1_options, [])
-      |> validate_options(
-        ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a,
-        :http_1_options
-      )
+      Keyword.get(arg, :http_1_options, [])
+      |> validate_options(@http_1_keys, :http_1_options)
 
     http_2_options =
-      arg
-      |> Keyword.get(:http_2_options, [])
-      |> validate_options(
-        ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a,
-        :http_2_options
-      )
+      Keyword.get(arg, :http_2_options, [])
+      |> validate_options(@http_2_keys, :http_2_options)
 
     websocket_options =
-      arg
-      |> Keyword.get(:websocket_options, [])
-      |> validate_options(
-        ~w(enabled max_frame_size validate_text_frames compress)a,
-        :websocket_options
-      )
+      Keyword.get(arg, :websocket_options, [])
+      |> validate_options(@websocket_keys, :websocket_options)
 
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
@@ -380,6 +369,8 @@ defmodule Bandit do
     end
   end
 
+  @spec validate_options(Keyword.t(), [atom(), ...], String.t() | atom()) ::
+          Keyword.t() | no_return()
   defp validate_options(options, valid_values, name) do
     case Keyword.split(options, valid_values) do
       {options, []} ->
@@ -390,6 +381,7 @@ defmodule Bandit do
     end
   end
 
+  @spec plug(options()) :: {module(), Plug.opts()}
   defp plug(arg) do
     arg
     |> Keyword.get(:plug)
@@ -400,14 +392,17 @@ defmodule Bandit do
     end
   end
 
+  @spec parse_as_number(binary() | integer()) :: integer()
   defp parse_as_number(value) when is_binary(value), do: String.to_integer(value)
   defp parse_as_number(value) when is_integer(value), do: value
 
+  @spec info(scheme(), module(), nil | pid()) :: String.t()
   defp info(scheme, plug, pid) do
     server_vsn = Application.spec(:bandit)[:vsn]
     "Running #{inspect(plug)} with Bandit #{server_vsn} at #{bound_address(scheme, pid)}"
   end
 
+  @spec bound_address(scheme(), nil | pid()) :: String.t() | scheme()
   defp bound_address(scheme, nil), do: scheme
 
   defp bound_address(scheme, pid) do
