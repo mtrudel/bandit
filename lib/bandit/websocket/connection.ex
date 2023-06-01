@@ -123,7 +123,7 @@ defmodule Bandit.WebSocket.Connection do
             _code -> 1002
           end
 
-        do_stop(reply_code, :remote, socket, connection)
+        _ = do_stop(reply_code, :remote, socket, connection)
         {:close, %{connection | state: :closing}}
 
       %Frame.Ping{} = frame ->

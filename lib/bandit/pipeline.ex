@@ -105,6 +105,7 @@ defmodule Bandit.Pipeline do
 
       {:error, reason} ->
         %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
+        _ = %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
         {:error, reason}
     end
   end

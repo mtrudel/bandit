@@ -36,7 +36,7 @@ defmodule Bandit.HTTP1.Handler do
         maybe_keepalive(req, state)
       else
         {:error, reason} ->
-          attempt_to_send_fallback(req, code_for_reason(reason))
+          _ = attempt_to_send_fallback(req, code_for_reason(reason))
           Bandit.Telemetry.stop_span(span, %{}, %{error: reason})
           {:error, reason, state}
 
@@ -53,7 +53,7 @@ defmodule Bandit.HTTP1.Handler do
     rescue
       exception ->
         # Raise here so that users can see useful stacktraces
-        attempt_to_send_fallback(req, 500)
+        _ = attempt_to_send_fallback(req, 500)
         Bandit.Telemetry.span_exception(span, :exit, exception, __STACKTRACE__)
         reraise(exception, __STACKTRACE__)
     end

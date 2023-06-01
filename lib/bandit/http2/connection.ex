@@ -55,8 +55,9 @@ defmodule Bandit.HTTP2.Connection do
     }
 
     # Send SETTINGS frame per RFC9113§3.4
-    %Frame.Settings{ack: false, settings: connection.local_settings}
-    |> send_frame(socket, connection)
+    _ =
+      %Frame.Settings{ack: false, settings: connection.local_settings}
+      |> send_frame(socket, connection)
 
     {:ok, connection}
   end
@@ -104,7 +105,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
-    %Frame.Settings{ack: true} |> send_frame(socket, connection)
+    _ = %Frame.Settings{ack: true} |> send_frame(socket, connection)
 
     streams =
       connection.streams
@@ -126,7 +127,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Ping{ack: false} = frame, socket, connection) do
-    %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket, connection)
+    _ = %Frame.Ping{ack: true, payload: frame.payload} |> send_frame(socket, connection)
     {:continue, connection}
   end
 
@@ -237,15 +238,17 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream, stream_window_increment} <- Stream.recv_data(stream, frame.data),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      if connection_window_increment > 0 do
-        %Frame.WindowUpdate{stream_id: 0, size_increment: connection_window_increment}
-        |> send_frame(socket, connection)
-      end
+      _ =
+        if connection_window_increment > 0 do
+          %Frame.WindowUpdate{stream_id: 0, size_increment: connection_window_increment}
+          |> send_frame(socket, connection)
+        end
 
-      if stream_window_increment > 0 do
-        %Frame.WindowUpdate{stream_id: frame.stream_id, size_increment: stream_window_increment}
-        |> send_frame(socket, connection)
-      end
+      _ =
+        if stream_window_increment > 0 do
+          %Frame.WindowUpdate{stream_id: frame.stream_id, size_increment: stream_window_increment}
+          |> send_frame(socket, connection)
+        end
 
       {:continue, %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
     else
@@ -385,8 +388,9 @@ defmodule Bandit.HTTP2.Connection do
   def shutdown_connection(error_code, reason, socket, connection) do
     last_remote_stream_id = StreamCollection.last_remote_stream_id(connection.streams)
 
-    %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
-    |> send_frame(socket, connection)
+    _ =
+      %Frame.Goaway{last_stream_id: last_remote_stream_id, error_code: error_code}
+      |> send_frame(socket, connection)
 
     if error_code == Errors.no_error() do
       {:close, connection}
@@ -399,8 +403,9 @@ defmodule Bandit.HTTP2.Connection do
     {:ok, stream} = StreamCollection.get_stream(connection.streams, stream_id)
     Stream.terminate_stream(stream, {:bandit, reason})
 
-    %Frame.RstStream{stream_id: stream_id, error_code: error_code}
-    |> send_frame(socket, connection)
+    _ =
+      %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+      |> send_frame(socket, connection)
 
     {:continue, connection}
   end
@@ -424,12 +429,13 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream} <- Stream.send_headers(stream),
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      %Frame.Headers{
-        stream_id: stream_id,
-        end_stream: end_stream,
-        fragment: block
-      }
-      |> send_frame(socket, connection)
+      _ =
+        %Frame.Headers{
+          stream_id: stream_id,
+          end_stream: end_stream,
+          fragment: block
+        }
+        |> send_frame(socket, connection)
 
       {:ok, %{connection | send_hpack_state: send_hpack_state, streams: streams}}
     end
@@ -452,10 +458,11 @@ defmodule Bandit.HTTP2.Connection do
          end_stream_to_send <- end_stream && rest == <<>>,
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream_to_send),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      if end_stream_to_send || IO.iodata_length(data_to_send) > 0 do
-        %Frame.Data{stream_id: stream_id, end_stream: end_stream_to_send, data: data_to_send}
-        |> send_frame(socket, connection)
-      end
+      _ =
+        if end_stream_to_send || IO.iodata_length(data_to_send) > 0 do
+          %Frame.Data{stream_id: stream_id, end_stream: end_stream_to_send, data: data_to_send}
+          |> send_frame(socket, connection)
+        end
 
       if byte_size(rest) == 0 do
         {:ok, true, %{connection | streams: streams}}
@@ -482,10 +489,11 @@ defmodule Bandit.HTTP2.Connection do
     with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
          {:ok, stream, error_code} <- Stream.stream_terminated(stream, reason),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      if !is_nil(error_code) do
-        %Frame.RstStream{stream_id: stream.stream_id, error_code: error_code}
-        |> send_frame(socket, connection)
-      end
+      _ =
+        if !is_nil(error_code) do
+          %Frame.RstStream{stream_id: stream.stream_id, error_code: error_code}
+          |> send_frame(socket, connection)
+        end
 
       {:ok, %{connection | streams: streams}}
     end
