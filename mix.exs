@@ -51,6 +51,7 @@ defmodule Bandit.MixProject do
       plt_core_path: "priv/plts",
       plt_file: {:no_warn, "priv/plts/dialyzer.plt"},
       plt_add_deps: :apps_direct,
+      plt_add_apps: [:ssl, :public_key],
       flags: [
         "-Werror_handling",
         "-Wextra_return",
