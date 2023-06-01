@@ -149,23 +149,24 @@ defmodule Bandit do
   * `websocket_options`: A list of options to configure Bandit's WebSocket stack. A complete list can
     be found at `t:websocket_options/0`
   """
-  @type options :: [option()]
-  @typep scheme :: :http | :https
-  @typep option ::
-           {:plug, module() | {module(), Plug.opts()}}
-           | {:scheme, scheme()}
-           | {:port, :inet.port_number()}
-           | {:ip, :inet.socket_address()}
-           | {:keyfile, binary()}
-           | {:certfile, binary()}
-           | {:otp_app, binary() | atom()}
-           | {:cipher_suite, :strong | :compatible}
-           | {:display_plug, module()}
-           | {:startup_log, Logger.level() | false}
-           | {:thousand_island_options, ThousandIsland.options()}
-           | {:http_1_options, http_1_options()}
-           | {:http_2_options, http_2_options()}
-           | {:websocket_options, websocket_options()}
+  @type options :: [
+          plug: module() | {module(), Plug.opts()},
+          scheme: scheme(),
+          port: :inet.port_number(),
+          ip: :inet.socket_address(),
+          keyfile: binary(),
+          certfile: binary(),
+          otp_app: binary() | atom(),
+          cipher_suite: :strong | :compatible,
+          display_plug: module(),
+          startup_log: Logger.level() | false,
+          thousand_island_options: ThousandIsland.options(),
+          http_1_options: http_1_options(),
+          http_2_options: http_2_options(),
+          websocket_options: websocket_options()
+        ]
+
+  @type scheme :: :http | :https
 
   @typedoc """
   Options to configure the HTTP/1 stack in Bandit
@@ -185,15 +186,15 @@ defmodule Bandit do
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
   """
-  @type http_1_options :: [http_1_option()]
-  @typep http_1_option ::
-           {:enabled, boolean()}
-           | {:max_request_line_length, pos_integer()}
-           | {:max_header_length, pos_integer()}
-           | {:max_header_count, pos_integer()}
-           | {:max_requests, pos_integer()}
-           | {:compress, boolean()}
-           | {:deflate_opions, deflate_options()}
+  @type http_1_options :: [
+          enabled: boolean(),
+          max_request_line_length: pos_integer(),
+          max_header_length: pos_integer(),
+          max_header_count: pos_integer(),
+          max_requests: pos_integer(),
+          compress: boolean(),
+          deflate_opions: deflate_options()
+        ]
 
   @typedoc """
   Options to configure the HTTP/2 stack in Bandit
@@ -215,16 +216,16 @@ defmodule Bandit do
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
   """
-  @type http_2_options :: [http_2_option()]
-  @typep http_2_option ::
-           {:enabled, boolean()}
-           | {:max_header_key_length, pos_integer()}
-           | {:max_header_value_length, pos_integer()}
-           | {:max_header_count, pos_integer()}
-           | {:max_requests, pos_integer()}
-           | {:default_local_settings, Bandit.HTTP2.Settings.t()}
-           | {:compress, boolean()}
-           | {:deflate_options, deflate_options()}
+  @type http_2_options :: [
+          enabled: boolean(),
+          max_header_key_length: pos_integer(),
+          max_header_value_length: pos_integer(),
+          max_header_count: pos_integer(),
+          max_requests: pos_integer(),
+          default_local_settings: Bandit.HTTP2.Settings.t(),
+          compress: boolean(),
+          deflate_options: deflate_options()
+        ]
 
   @typedoc """
   Options to configure the WebSocket stack in Bandit
@@ -240,22 +241,22 @@ defmodule Bandit do
     a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
     for details). Defaults to `true`
   """
-  @type websocket_options :: [websocket_option()]
-  @typep websocket_option ::
-           {:enabled, boolean()}
-           | {:max_frame_size, pos_integer()}
-           | {:validate_text_frames, boolean()}
-           | {:compress, boolean()}
+  @type websocket_options :: [
+          enabled: boolean(),
+          max_frame_size: pos_integer(),
+          validate_text_frames: boolean(),
+          compress: boolean()
+        ]
 
   @typedoc """
   Options to configure the deflate library used for HTTP compression
   """
-  @type deflate_options :: [deflate_option()]
-  @typep deflate_option ::
-           {:level, :zlib.zlevel()}
-           | {:window_bits, :zlib.zwindowbits()}
-           | {:memory_level, :zlib.zmemlevel()}
-           | {:strategy, :zlib.zstrategy()}
+  @type deflate_options :: [
+          level: :zlib.zlevel(),
+          window_bits: :zlib.zwindowbits(),
+          memory_level: :zlib.zmemlevel(),
+          strategy: :zlib.zstrategy()
+        ]
 
   require Logger
 
