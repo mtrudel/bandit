@@ -5,11 +5,11 @@ defmodule Bandit.Pipeline do
 
   @type plug_def :: {module(), Plug.opts()}
   @type transport_info ::
-          {boolean(), ThousandIsland.Transport.socket_info(),
+          {secure? :: boolean(), ThousandIsland.Transport.socket_info(),
            ThousandIsland.Transport.socket_info(), ThousandIsland.Telemetry.t()}
-  @type request_target :: {scheme(), host(), Plug.Conn.port_number(), path()}
+  @type request_target ::
+          {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
-  @type host :: Plug.Conn.host() | nil
   @type path :: String.t() | :*
 
   @spec run(
@@ -19,27 +19,36 @@ defmodule Bandit.Pipeline do
           request_target(),
           Plug.Conn.headers(),
           plug_def()
-        ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, tuple()} | {:error, term()}
+        ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
-         {:ok, conn} <- call_plug(conn, plug),
+         conn <- call_plug(conn, plug),
          {:ok, :no_upgrade} <- maybe_upgrade(conn) do
-      commit_response(conn, plug)
+      {:ok, commit_response(conn)}
     end
   end
 
+  @spec build_conn(
+          Plug.Conn.adapter(),
+          transport_info(),
+          Plug.Conn.method(),
+          request_target(),
+          Plug.Conn.headers()
+        ) :: {:ok, Plug.Conn.t()} | {:error, String.t()}
   defp build_conn({mod, req}, transport_info, method, request_target, headers) do
     with {:ok, scheme} <- determine_scheme(transport_info, request_target),
          version <- mod.get_http_protocol(req),
          {:ok, host, port} <-
            determine_host_and_port(transport_info, version, request_target, headers),
-         {:ok, path, query} <- determine_path_and_query(request_target) do
+         {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
       {_, _, %{address: remote_ip}, _} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
 
+  @spec determine_scheme(transport_info(), request_target()) ::
+          {:ok, String.t()} | {:error, String.t()}
   defp determine_scheme({secure?, _, _, _}, {scheme, _, _, _}) do
     case {scheme, secure?} do
       {nil, true} -> {:ok, "https"}
@@ -50,8 +59,15 @@ defmodule Bandit.Pipeline do
     end
   end
 
+  @spec determine_host_and_port(
+          transport_info(),
+          version :: atom(),
+          request_target(),
+          Plug.Conn.headers()
+        ) ::
+          {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
   defp determine_host_and_port({_, local_info, _, _}, version, {_, nil, nil, _}, headers) do
-    with host_header when not is_nil(host_header) <- Bandit.Headers.get_header(headers, "host"),
+    with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
       {:ok, host, port || local_info[:port]}
     else
@@ -69,9 +85,11 @@ defmodule Bandit.Pipeline do
   defp determine_host_and_port({_, local_info, _, _}, _version, {_, host, port, _}, _headers),
     do: {:ok, to_string(host), port || local_info[:port]}
 
-  defp determine_path_and_query({_, _, _, :*}), do: {:ok, "*", nil}
+  @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
+  defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
   defp determine_path_and_query({_, _, _, path}), do: split_path(path)
 
+  @spec split_path(String.t()) :: {String.t(), nil | String.t()}
   defp split_path(path) do
     path
     |> to_string()
@@ -79,13 +97,21 @@ defmodule Bandit.Pipeline do
     |> hd()
     |> :binary.split("?")
     |> case do
-      [path, query] -> {:ok, path, query}
-      [path] -> {:ok, path, nil}
+      [path, query] -> {path, query}
+      [path] -> {path, nil}
     end
   end
 
-  defp call_plug(%Plug.Conn{} = conn, {plug, plug_opts}), do: {:ok, plug.call(conn, plug_opts)}
+  @spec call_plug(Plug.Conn.t(), plug_def()) :: Plug.Conn.t() | no_return()
+  defp call_plug(%Plug.Conn{} = conn, {plug, plug_opts}) do
+    case plug.call(conn, plug_opts) do
+      %Plug.Conn{} = conn -> conn
+      other -> raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(other)}")
+    end
+  end
 
+  @spec maybe_upgrade(Plug.Conn.t()) ::
+          {:ok, :no_upgrade} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, any()}
   defp maybe_upgrade(
          %Plug.Conn{
            state: :upgraded,
@@ -104,32 +130,28 @@ defmodule Bandit.Pipeline do
         {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
-        %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
+        _ = %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
         {:error, reason}
     end
   end
 
   defp maybe_upgrade(_conn), do: {:ok, :no_upgrade}
 
-  defp commit_response(conn, {plug, _plug_opts}), do: commit_response(conn, plug)
-
-  defp commit_response(conn, plug) do
+  @spec commit_response(Plug.Conn.t()) :: Plug.Conn.t() | no_return()
+  defp commit_response(conn) do
     case conn do
       %Plug.Conn{state: :unset} ->
         raise(Plug.Conn.NotSentError)
 
       %Plug.Conn{state: :set} ->
-        {:ok, Plug.Conn.send_resp(conn)}
+        Plug.Conn.send_resp(conn)
 
       %Plug.Conn{state: :chunked, adapter: {mod, req}} ->
         mod.chunk(req, "")
-        {:ok, conn}
+        conn
 
       %Plug.Conn{} ->
-        {:ok, conn}
-
-      other ->
-        raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(other)}")
+        conn
     end
   end
 end

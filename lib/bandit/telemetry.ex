@@ -235,4 +235,10 @@ defmodule Bandit.Telemetry do
   defp event(suffix, measurements, metadata) do
     :telemetry.execute([@app_name | suffix], measurements, metadata)
   end
+
+  @doc false
+  @spec telemetry_span_context(t()) :: reference()
+  def telemetry_span_context(span) do
+    span.telemetry_span_context
+  end
 end

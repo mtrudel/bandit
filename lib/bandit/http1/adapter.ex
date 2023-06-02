@@ -339,7 +339,7 @@ defmodule Bandit.HTTP1.Adapter do
         else: headers
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
-    ThousandIsland.Socket.send(socket, [header_iodata, response])
+    _ = ThousandIsland.Socket.send(socket, [header_iodata, response])
 
     metrics =
       req.metrics
@@ -379,8 +379,8 @@ defmodule Bandit.HTTP1.Adapter do
     if offset + length <= size do
       headers = [{"content-length", length |> to_string()} | headers]
       {header_iodata, header_metrics} = response_header(version, status, headers)
-      ThousandIsland.Socket.send(socket, header_iodata)
-      ThousandIsland.Socket.sendfile(socket, path, offset, length)
+      _ = ThousandIsland.Socket.send(socket, header_iodata)
+      _ = ThousandIsland.Socket.sendfile(socket, path, offset, length)
 
       metrics =
         req.metrics
@@ -402,7 +402,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     headers = [{"transfer-encoding", "chunked"} | headers]
     {header_iodata, header_metrics} = response_header(version, status, headers)
-    ThousandIsland.Socket.send(socket, header_iodata)
+    _ = ThousandIsland.Socket.send(socket, header_iodata)
 
     metrics =
       req.metrics
@@ -416,7 +416,7 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def chunk(%__MODULE__{socket: socket}, chunk) do
     byte_size = chunk |> IO.iodata_length() |> Integer.to_string(16)
-    ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
+    _ = ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
     :ok
   end
 

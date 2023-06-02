@@ -4,7 +4,13 @@ defmodule Bandit.WebSocket.Frame do
   alias Bandit.WebSocket.Frame
 
   @typedoc "Indicates an opcode"
-  @type opcode :: non_neg_integer()
+  @type opcode ::
+          (binary :: 0x2)
+          | (connection_close :: 0x8)
+          | (continuation :: 0x0)
+          | (ping :: 0x9)
+          | (pong :: 0xA)
+          | (text :: 0x1)
 
   @typedoc "A valid WebSocket frame"
   @type frame ::
@@ -16,7 +22,7 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Pong.t()
 
   @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()}
+          {{:ok, frame()}, iodata()} | {{:error, term()}, iodata()} | nil
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
           payload::binary-size(length), rest::binary>>,
@@ -44,6 +50,7 @@ defmodule Bandit.WebSocket.Frame do
     to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
   end
 
+  # nil is used to indicate for Stream.unfold/2 that the frame deserialization is finished
   def deserialize(<<>>, _max_frame_size) do
     nil
   end
@@ -145,7 +152,7 @@ defmodule Bandit.WebSocket.Frame do
     def serialize(frame)
   end
 
-  @spec serialize(frame()) :: iodata()
+  @spec serialize(frame()) :: iolist()
   def serialize(frame) do
     frame
     |> Serializable.serialize()

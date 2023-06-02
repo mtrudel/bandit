@@ -128,6 +128,7 @@ defmodule Bandit.HTTP2.StreamCollection do
     end
   end
 
+  @dialyzer {:nowarn_function, next_local_stream_id: 1}
   @spec next_local_stream_id(t()) :: Stream.stream_id()
   def next_local_stream_id(collection), do: collection.last_local_stream_id + 2
 

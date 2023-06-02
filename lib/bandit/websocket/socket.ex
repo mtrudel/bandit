@@ -23,32 +23,32 @@ defimpl Bandit.WebSocket.Socket, for: ThousandIsland.Socket do
   alias Bandit.WebSocket.Frame
 
   def send_frame(socket, {:text, data}, compressed) do
-    do_send_frame(socket, %Frame.Text{fin: true, data: data, compressed: compressed})
+    _ = do_send_frame(socket, %Frame.Text{fin: true, data: data, compressed: compressed})
     [send_text_frame_count: 1, send_text_frame_bytes: IO.iodata_length(data)]
   end
 
   def send_frame(socket, {:binary, data}, compressed) do
-    do_send_frame(socket, %Frame.Binary{fin: true, data: data, compressed: compressed})
+    _ = do_send_frame(socket, %Frame.Binary{fin: true, data: data, compressed: compressed})
     [send_binary_frame_count: 1, send_binary_frame_bytes: IO.iodata_length(data)]
   end
 
   def send_frame(socket, {:ping, data}, false) do
-    do_send_frame(socket, %Frame.Ping{data: data})
+    _ = do_send_frame(socket, %Frame.Ping{data: data})
     [send_ping_frame_count: 1, send_ping_frame_bytes: IO.iodata_length(data)]
   end
 
   def send_frame(socket, {:pong, data}, false) do
-    do_send_frame(socket, %Frame.Pong{data: data})
+    _ = do_send_frame(socket, %Frame.Pong{data: data})
     [send_pong_frame_count: 1, send_pong_frame_bytes: IO.iodata_length(data)]
   end
 
   def close(socket, {code, detail}) when is_integer(code) do
-    do_send_frame(socket, %Frame.ConnectionClose{code: code, reason: detail})
+    _ = do_send_frame(socket, %Frame.ConnectionClose{code: code, reason: detail})
     ThousandIsland.Socket.shutdown(socket, :write)
   end
 
   def close(socket, code) when is_integer(code) do
-    do_send_frame(socket, %Frame.ConnectionClose{code: code})
+    _ = do_send_frame(socket, %Frame.ConnectionClose{code: code})
     ThousandIsland.Socket.shutdown(socket, :write)
   end
 

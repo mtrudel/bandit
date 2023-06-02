@@ -23,7 +23,7 @@ defmodule Bandit.HTTP2.Frame do
           | Frame.Unknown.t()
 
   @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()} | {{:error, Connection.error()}, iodata()}
+          {{:ok, frame()}, iodata()} | {{:error, Connection.error()}, iodata()} | nil
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
           payload::binary-size(length), rest::binary>>,
@@ -65,6 +65,7 @@ defmodule Bandit.HTTP2.Frame do
      rest}
   end
 
+  # nil is used to indicate for Stream.unfold/2 that the frame deserialization is finished
   def deserialize(<<>>, _max_frame_size) do
     nil
   end
@@ -95,7 +96,7 @@ defmodule Bandit.HTTP2.Frame do
     def serialize(frame, max_frame_size)
   end
 
-  @spec serialize(frame(), non_neg_integer()) :: iodata()
+  @spec serialize(frame(), non_neg_integer()) :: iolist()
   def serialize(frame, max_frame_size) do
     frame
     |> Serializable.serialize(max_frame_size)

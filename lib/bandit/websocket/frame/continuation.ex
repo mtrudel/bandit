@@ -4,7 +4,7 @@ defmodule Bandit.WebSocket.Frame.Continuation do
   defstruct fin: nil, data: <<>>
 
   @typedoc "A WebSocket continuation frame"
-  @type t :: %__MODULE__{fin: boolean(), data: binary()}
+  @type t :: %__MODULE__{fin: boolean(), data: iodata()}
 
   @spec deserialize(boolean(), boolean(), iodata()) :: {:ok, t()} | {:error, term()}
   def deserialize(fin, false, payload) do
@@ -16,8 +16,9 @@ defmodule Bandit.WebSocket.Frame.Continuation do
   end
 
   defimpl Bandit.WebSocket.Frame.Serializable do
-    alias Bandit.WebSocket.Frame.Continuation
+    alias Bandit.WebSocket.Frame
 
-    def serialize(%Continuation{} = frame), do: [{0x0, frame.fin, false, frame.data}]
+    @spec serialize(@for.t()) :: [{Frame.opcode(), boolean(), boolean(), iodata()}]
+    def serialize(%@for{} = frame), do: [{0x0, frame.fin, false, frame.data}]
   end
 end
