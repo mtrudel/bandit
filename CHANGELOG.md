@@ -1,5 +1,11 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.5 (2 Jun 2023)
+
+### Enhancements
+
+* Total overhaul of typespecs throughout the library (thanks @asakura!)
+
 ## 1.0.0-pre.4 (23 May 2023)
 
 ### Enhancements
