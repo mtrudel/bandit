@@ -8,11 +8,17 @@ defmodule Bandit.InitialHandler do
 
   require Logger
 
+  @type on_switch_handler ::
+          {:switch, bandit_http_handler(), data :: term(), state :: term()}
+          | {:switch, bandit_http_handler(), state :: term()}
+
+  @type bandit_http_handler :: Bandit.HTTP1.Handler | Bandit.HTTP2.Handler
+
   # Attempts to guess the protocol in use, returning the applicable next handler and any
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   @impl ThousandIsland.Handler
   @spec handle_connection(ThousandIsland.Socket.t(), state :: term()) ::
-          ThousandIsland.Handler.handler_result()
+          ThousandIsland.Handler.handler_result() | on_switch_handler()
   def handle_connection(socket, state) do
     case {state.http_1_enabled, state.http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
       {_, _, _, :likely_tls} ->
