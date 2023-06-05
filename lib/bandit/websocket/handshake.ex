@@ -4,10 +4,14 @@ defmodule Bandit.WebSocket.Handshake do
 
   import Plug.Conn
 
+  @type extensions :: [{String.t(), [{String.t(), String.t() | true}]}]
+
+  @spec valid_upgrade?(Plug.Conn.t()) :: boolean()
   def valid_upgrade?(%Plug.Conn{} = conn) do
     validate_upgrade(conn) == :ok
   end
 
+  @spec validate_upgrade(Plug.Conn.t()) :: :ok | {:error, String.t()}
   defp validate_upgrade(conn) do
     # Cases from RFC6455§4.2.1
     with {:http_version, :"HTTP/1.1"} <- {:http_version, get_http_protocol(conn)},
@@ -28,12 +32,15 @@ defmodule Bandit.WebSocket.Handshake do
     end
   end
 
+  @spec handshake(Plug.Conn.t(), keyword(), keyword()) ::
+          {:ok, Plug.Conn.t(), Keyword.t()} | {:error, String.t()}
   def handshake(%Plug.Conn{} = conn, opts, websocket_opts) do
     with :ok <- validate_upgrade(conn) do
       do_handshake(conn, opts, websocket_opts)
     end
   end
 
+  @spec do_handshake(Plug.Conn.t(), keyword(), keyword()) :: {:ok, Plug.Conn.t(), keyword()}
   defp do_handshake(conn, opts, websocket_opts) do
     requested_extensions = requested_extensions(conn)
 
@@ -48,6 +55,7 @@ defmodule Bandit.WebSocket.Handshake do
     {:ok, conn, Keyword.put(opts, :compress, negotiated_params)}
   end
 
+  @spec requested_extensions(Plug.Conn.t()) :: extensions()
   defp requested_extensions(%Plug.Conn{} = conn) do
     conn
     |> get_req_header("sec-websocket-extensions")
@@ -64,6 +72,7 @@ defmodule Bandit.WebSocket.Handshake do
     end)
   end
 
+  @spec split_params([String.t()]) :: [{String.t(), String.t() | true}]
   defp split_params(params) do
     params
     |> Enum.map(fn param ->
@@ -77,6 +86,7 @@ defmodule Bandit.WebSocket.Handshake do
     end)
   end
 
+  @spec send_handshake(Plug.Conn.t(), extensions()) :: Plug.Conn.t()
   defp send_handshake(%Plug.Conn{} = conn, extensions) do
     # Taken from RFC6455§4.2.2/5. Note that we can take for granted the existence of the
     # sec-websocket-key header in the request, since we check for it in the handshake? call above
@@ -94,6 +104,7 @@ defmodule Bandit.WebSocket.Handshake do
     |> send_resp()
   end
 
+  @spec put_websocket_extension_header(Plug.Conn.t(), extensions()) :: Plug.Conn.t()
   defp put_websocket_extension_header(conn, []), do: conn
 
   defp put_websocket_extension_header(conn, extensions) do
@@ -115,6 +126,7 @@ defmodule Bandit.WebSocket.Handshake do
     put_resp_header(conn, "sec-websocket-extensions", extensions)
   end
 
+  @spec header_contains?(Plug.Conn.t(), field :: String.t(), value :: String.t()) :: boolean()
   defp header_contains?(conn, field, value) do
     value = String.downcase(value, :ascii)
 
