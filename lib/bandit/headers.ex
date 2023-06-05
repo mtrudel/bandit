@@ -2,6 +2,7 @@ defmodule Bandit.Headers do
   @moduledoc false
   # Conveniences for dealing with headers
 
+  @spec is_port_number(integer()) :: Macro.t()
   defguardp is_port_number(port) when Bitwise.band(port, 0xFFFF) === port
 
   @spec get_header(Plug.Conn.headers(), header :: binary()) :: binary() | nil
@@ -53,6 +54,7 @@ defmodule Bandit.Headers do
     end
   end
 
+  @spec parse_content_length(binary()) :: {:ok, length :: integer()} | {:error, String.t()}
   defp parse_content_length(value) do
     case Integer.parse(value) do
       {length, ""} when length >= 0 ->

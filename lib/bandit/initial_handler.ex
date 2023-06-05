@@ -8,9 +8,17 @@ defmodule Bandit.InitialHandler do
 
   require Logger
 
+  @type on_switch_handler ::
+          {:switch, bandit_http_handler(), data :: term(), state :: term()}
+          | {:switch, bandit_http_handler(), state :: term()}
+
+  @type bandit_http_handler :: Bandit.HTTP1.Handler | Bandit.HTTP2.Handler
+
   # Attempts to guess the protocol in use, returning the applicable next handler and any
   # data consumed in the course of guessing which must be processed by the actual protocol handler
   @impl ThousandIsland.Handler
+  @spec handle_connection(ThousandIsland.Socket.t(), state :: term()) ::
+          ThousandIsland.Handler.handler_result() | on_switch_handler()
   def handle_connection(socket, state) do
     case {state.http_1_enabled, state.http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
       {_, _, _, :likely_tls} ->
@@ -35,20 +43,22 @@ defmodule Bandit.InitialHandler do
   end
 
   # Returns the protocol as negotiated via ALPN, if applicable
+  @spec alpn_protocol(ThousandIsland.Socket.t()) ::
+          Bandit.HTTP2.Handler | Bandit.HTTP1.Handler | :no_match
   defp alpn_protocol(socket) do
     case ThousandIsland.Socket.negotiated_protocol(socket) do
-      {:ok, "h2"} ->
-        Bandit.HTTP2.Handler
-
-      {:ok, "http/1.1"} ->
-        Bandit.HTTP1.Handler
-
-      _ ->
-        :no_match
+      {:ok, "h2"} -> Bandit.HTTP2.Handler
+      {:ok, "http/1.1"} -> Bandit.HTTP1.Handler
+      _ -> :no_match
     end
   end
 
   # Returns the protocol as suggested by received data, if possible
+  @spec sniff_wire(ThousandIsland.Socket.t()) ::
+          Bandit.HTTP2.Handler
+          | :likely_tls
+          | {:no_match, binary()}
+          | {:error, :closed | :timeout | :inet.posix()}
   defp sniff_wire(socket) do
     case ThousandIsland.Socket.recv(socket, 24) do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} -> Bandit.HTTP2.Handler

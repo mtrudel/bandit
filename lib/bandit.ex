@@ -68,7 +68,7 @@ defmodule Bandit do
   ## Setting up an HTTPS Server
 
   By far the most common stumbling block encountered when setting up an HTTPS server involves
-  configuring key and certificate data.  Bandit is comparatively easy to set up in this regard,
+  configuring key and certificate data. Bandit is comparatively easy to set up in this regard,
   with a working example looking similar to the following:
 
   ```elixir
