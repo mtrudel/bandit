@@ -13,7 +13,7 @@ defmodule Bandit.Clock do
   If the timestamp doesn't exist in the ETS table or the table doesn't exist
   the timestamp is newly created for every request
   """
-  @spec date_header() :: {header :: String.t(), date :: String.t()}
+  @spec date_header() :: {header :: binary(), date :: binary()}
   def date_header do
     date =
       try do
@@ -39,12 +39,16 @@ defmodule Bandit.Clock do
     run()
   end
 
+  @spec run() :: no_return()
   defp run do
-    update_header()
+    _ = update_header()
     Process.sleep(1_000)
     run()
   end
 
+  @spec get_date_header() :: String.t()
   defp get_date_header, do: Calendar.strftime(DateTime.utc_now(), "%a, %d %b %Y %X GMT")
+
+  @spec update_header() :: true
   defp update_header, do: :ets.insert(__MODULE__, {:date_header, get_date_header()})
 end
