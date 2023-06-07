@@ -286,22 +286,46 @@ defmodule Bandit.HTTP1.Adapter do
   # Internal Reading
   ##################
 
-  @dialyzer {:no_improper_lists, read: 5}
-  defp read(socket, to_read, opts \\ [], bytes_read \\ 0, already_read \\ []) do
+  @spec read(
+          ThousandIsland.Socket.t(),
+          non_neg_integer(),
+          [read_length: non_neg_integer(), read_timeout: timeout()],
+          non_neg_integer(),
+          iodata()
+        ) ::
+          {:ok, iolist()}
+          | {:error, :closed | :timeout | :inet.posix()}
+  defp read(socket, to_read, opts \\ [], _bytes_read \\ 0, already_read \\ []) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
+    do_read(socket, read_size, read_timeout, to_read, already_read)
+  end
 
-    with {:ok, chunk} <- ThousandIsland.Socket.recv(socket, read_size, read_timeout) do
-      remaining_bytes = to_read - byte_size(chunk)
-      bytes_read = bytes_read + byte_size(chunk)
+  @dialyzer {:no_improper_lists, do_read: 5}
+  @spec do_read(
+          ThousandIsland.Socket.t(),
+          non_neg_integer(),
+          timeout(),
+          non_neg_integer(),
+          iolist()
+        ) ::
+          {:ok, iolist()}
+          | {:error, :closed | :timeout | :inet.posix()}
+  defp do_read(socket, read_size, read_timeout, remaining_bytes, already_read)
+       when remaining_bytes > 0 do
+    case ThousandIsland.Socket.recv(socket, read_size, read_timeout) do
+      {:ok, chunk} ->
+        do_read(socket, read_size, read_timeout, remaining_bytes - byte_size(chunk), [
+          already_read | chunk
+        ])
 
-      if remaining_bytes > 0 do
-        read(socket, remaining_bytes, opts, bytes_read, [already_read | chunk])
-      else
-        {:ok, [already_read | chunk]}
-      end
+      err ->
+        err
     end
   end
+
+  defp do_read(_socket, _read_size, _read_timeout, _remaining_bytes, already_read),
+    do: {:ok, already_read}
 
   ##################
   # Response Sending
