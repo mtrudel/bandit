@@ -298,7 +298,10 @@ defmodule Bandit.HTTP1.Adapter do
   defp read(socket, to_read, opts \\ [], _bytes_read \\ 0, already_read \\ []) do
     read_size = min(to_read, Keyword.get(opts, :read_length, 1_000_000))
     read_timeout = Keyword.get(opts, :read_timeout)
-    do_read(socket, read_size, read_timeout, to_read, already_read)
+    # when to_read is 0, we still want to read at least 1 byte
+    # or everything which is already in the buffer of the socket
+    remaining_bytes = max(to_read, 1)
+    do_read(socket, read_size, read_timeout, remaining_bytes, already_read)
   end
 
   @dialyzer {:no_improper_lists, do_read: 5}
@@ -315,7 +318,12 @@ defmodule Bandit.HTTP1.Adapter do
        when remaining_bytes > 0 do
     case ThousandIsland.Socket.recv(socket, read_size, read_timeout) do
       {:ok, chunk} ->
-        do_read(socket, read_size, read_timeout, remaining_bytes - byte_size(chunk), [
+        remaining_bytes = remaining_bytes - byte_size(chunk)
+        # we don't want to read more than we need, otherwise we would
+        # get a timeout error
+        read_size = min(read_size, remaining_bytes)
+
+        do_read(socket, read_size, read_timeout, remaining_bytes, [
           already_read | chunk
         ])
 
