@@ -1661,7 +1661,7 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
-    test "resets stream if scheme does not match transport", context do
+    test "uses :scheme even if it does not match transport", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1672,7 +1672,10 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["scheme"] == "http"
     end
 
     test "derives host from host header", context do
@@ -1938,7 +1941,7 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
-    test "resets stream if scheme does not match transport", context do
+    test "uses :scheme even if it does not match transport", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1949,7 +1952,10 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["scheme"] == "http"
     end
 
     test "derives host from :authority header, even if it differs from host header", context do
