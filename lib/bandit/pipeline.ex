@@ -52,10 +52,8 @@ defmodule Bandit.Pipeline do
   defp determine_scheme({secure?, _, _, _}, {scheme, _, _, _}) do
     case {scheme, secure?} do
       {nil, true} -> {:ok, "https"}
-      {"https", true} -> {:ok, "https"}
       {nil, false} -> {:ok, "http"}
-      {"http", false} -> {:ok, "http"}
-      _ -> {:error, "request target scheme does not agree with transport"}
+      {scheme, _} -> {:ok, scheme}
     end
   end
 

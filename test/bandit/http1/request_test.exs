@@ -201,10 +201,11 @@ defmodule HTTP1RequestTest do
     end
 
     @tag capture_log: true
-    test "returns 400 if URI scheme does not match the transport", context do
+    test "uses request-line scheme even if it does not match the transport", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "https://banana/echo_components")
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["scheme"] == "https"
     end
 
     test "derives host from the URI, even if it differs from host header", context do
