@@ -1,5 +1,13 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.6 (8 Jun 2023)
+
+### Changes
+
+* Always use the declaed scheme if declared in a request-line or `:scheme`
+  pseudo-header (#159)
+* Internal tidying (thanks @asakura!)
+
 ## 1.0.0-pre.5 (2 Jun 2023)
 
 ### Enhancements
