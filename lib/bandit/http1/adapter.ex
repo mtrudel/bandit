@@ -475,7 +475,12 @@ defmodule Bandit.HTTP1.Adapter do
   def push(_req, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.peer_info(socket)
+  def get_peer_data(%__MODULE__{socket: socket}) do
+    case ThousandIsland.Socket.peer_info(socket) do
+      peer_info when is_map(peer_info) -> peer_info
+      error -> raise "Unable to obtain peer info: #{inspect(error)}"
+    end
+  end
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
