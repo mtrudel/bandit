@@ -324,27 +324,27 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
-  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
+  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, body) do
     start_time = Bandit.Telemetry.monotonic_time()
 
-    {response, headers, compression_metrics} =
-      case {response, req.content_encoding} do
-        {response, content_encoding} when response != <<>> and not is_nil(content_encoding) ->
+    {body, headers, compression_metrics} =
+      case {body, req.content_encoding} do
+        {body, content_encoding} when body != <<>> and not is_nil(content_encoding) ->
           metrics = %{
-            resp_uncompressed_body_bytes: IO.iodata_length(response),
+            resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding
           }
 
           deflate_options = Keyword.get(req.opts.http_1, :deflate_options, [])
-          response = Bandit.Compression.compress(response, req.content_encoding, deflate_options)
+          body = Bandit.Compression.compress(body, req.content_encoding, deflate_options)
           headers = [{"content-encoding", req.content_encoding} | headers]
-          {response, headers, metrics}
+          {body, headers, metrics}
 
         _ ->
-          {response, headers, %{}}
+          {body, headers, %{}}
       end
 
-    body_bytes = IO.iodata_length(response)
+    body_bytes = IO.iodata_length(body)
 
     headers =
       if add_content_length?(status),
@@ -352,7 +352,7 @@ defmodule Bandit.HTTP1.Adapter do
         else: headers
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
-    _ = ThousandIsland.Socket.send(socket, [header_iodata, response])
+    _ = ThousandIsland.Socket.send(socket, [header_iodata, body])
 
     metrics =
       req.metrics
