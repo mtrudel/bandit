@@ -105,9 +105,11 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
+    response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
+
     {body, headers, compression_metrics} =
-      case {body, adapter.content_encoding} do
-        {body, content_encoding} when body != <<>> and not is_nil(content_encoding) ->
+      case {body, adapter.content_encoding, response_content_encoding_header} do
+        {body, content_encoding, nil} when body != <<>> and not is_nil(content_encoding) ->
           metrics = %{
             resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding

@@ -244,6 +244,31 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
     end
 
+    test "does no encoding if content-encoding header already present in response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_content_encoding"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"content-encoding", "deflate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Assert that we did not try to compress the body
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
     test "falls back to no encoding if no encodings provided", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -316,6 +341,12 @@ defmodule HTTP2ProtocolTest do
 
     def send_big_body(conn) do
       conn |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_content_encoding(conn) do
+      conn
+      |> put_resp_header("content-encoding", "deflate")
+      |> send_resp(200, String.duplicate("a", 10_000))
     end
 
     test "sends multiple DATA frames with last one end of stream when chunking", context do

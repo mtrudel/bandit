@@ -326,10 +326,11 @@ defmodule Bandit.HTTP1.Adapter do
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, body) do
     start_time = Bandit.Telemetry.monotonic_time()
+    response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
     {body, headers, compression_metrics} =
-      case {body, req.content_encoding} do
-        {body, content_encoding} when body != <<>> and not is_nil(content_encoding) ->
+      case {body, req.content_encoding, response_content_encoding_header} do
+        {body, content_encoding, nil} when body != <<>> and not is_nil(content_encoding) ->
           metrics = %{
             resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding
