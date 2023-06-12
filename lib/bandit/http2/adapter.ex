@@ -124,8 +124,11 @@ defmodule Bandit.HTTP2.Adapter do
           {body, headers, %{}}
       end
 
+    body_bytes = IO.iodata_length(body)
+    headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
+
     adapter =
-      if IO.iodata_length(body) == 0 do
+      if body_bytes == 0 do
         adapter
         |> send_headers(status, headers, true)
       else

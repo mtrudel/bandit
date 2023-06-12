@@ -120,7 +120,14 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
 
-      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "2"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
 
@@ -145,6 +152,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -177,6 +185,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "46"},
                 {"content-encoding", "gzip"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -203,6 +212,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "46"},
                 {"content-encoding", "x-gzip"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -229,6 +239,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -261,6 +272,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "10000"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"content-encoding", "deflate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -285,6 +297,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "10000"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -308,6 +321,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "10000"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -333,6 +347,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "10000"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -340,12 +355,45 @@ defmodule HTTP2ProtocolTest do
     end
 
     def send_big_body(conn) do
-      conn |> send_resp(200, String.duplicate("a", 10_000))
+      conn
+      |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
     end
 
     def send_content_encoding(conn) do
       conn
       |> put_resp_header("content-encoding", "deflate")
+      |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "replaces any incorrect provided content-length headers", context do
+      context = https_server(context, http_2_options: [compress: false])
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(
+        socket,
+        1,
+        :get,
+        "/send_incorrect_content_length",
+        context[:port]
+      )
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "10000"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    def send_incorrect_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "10001")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
@@ -620,6 +668,7 @@ defmodule HTTP2ProtocolTest do
       assert [
                {":status", "200"},
                {"date", _date},
+               {"content-length", "2"},
                {"cache-control", "max-age=0, private, must-revalidate"},
                {"giant", ^random_string}
              ] = headers
@@ -729,6 +778,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "2"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -1092,6 +1142,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"content-length", "2"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"cookie", "a=b"},
                 {"cookie", "c=d"},
@@ -1114,6 +1165,7 @@ defmodule HTTP2ProtocolTest do
        [
          {":status", "200"},
          {"date", _date},
+         {"content-length", "2"},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -1130,6 +1182,7 @@ defmodule HTTP2ProtocolTest do
        [
          {":status", "200"},
          {"date", _date},
+         {"content-length", "2"},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], _ctx} = SimpleH2Client.recv_headers(socket, ctx)
 
