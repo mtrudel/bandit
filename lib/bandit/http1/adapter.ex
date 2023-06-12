@@ -337,20 +337,16 @@ defmodule Bandit.HTTP1.Adapter do
           }
 
           deflate_options = Keyword.get(req.opts.http_1, :deflate_options, [])
-          body = Bandit.Compression.compress(body, req.content_encoding, deflate_options)
+          deflated_body = Bandit.Compression.compress(body, req.content_encoding, deflate_options)
           headers = [{"content-encoding", req.content_encoding} | headers]
-          {body, headers, metrics}
+          {deflated_body, headers, metrics}
 
         _ ->
           {body, headers, %{}}
       end
 
     body_bytes = IO.iodata_length(body)
-
-    headers =
-      if add_content_length?(status),
-        do: [{"content-length", to_string(body_bytes)} | headers],
-        else: headers
+    headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
     _ = ThousandIsland.Socket.send(socket, [header_iodata, body])
@@ -365,12 +361,6 @@ defmodule Bandit.HTTP1.Adapter do
 
     {:ok, nil, %{req | state: :sent, metrics: metrics}}
   end
-
-  # Per RFC9110§8.6
-  defp add_content_length?(status) when status in 100..199, do: false
-  defp add_content_length?(204), do: false
-  defp add_content_length?(304), do: false
-  defp add_content_length?(_), do: true
 
   @impl Plug.Conn.Adapter
   def send_file(

@@ -83,4 +83,18 @@ defmodule Bandit.Headers do
   end
 
   defp parse_integer(rest, total), do: {total, rest}
+
+  def add_content_length(headers, length, status) do
+    headers = Enum.reject(headers, &(elem(&1, 0) == "content-length"))
+
+    if add_content_length?(status),
+      do: [{"content-length", to_string(length)} | headers],
+      else: headers
+  end
+
+  # Per RFC9110§8.6
+  defp add_content_length?(status) when status in 100..199, do: false
+  defp add_content_length?(204), do: false
+  defp add_content_length?(304), do: false
+  defp add_content_length?(_), do: true
 end
