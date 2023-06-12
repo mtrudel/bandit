@@ -15,7 +15,7 @@ defmodule Bandit.Headers do
 
   # Covers IPv6 addresses, like `[::1]:4000` as defined in RFC3986.
   @spec parse_hostlike_header(host_header :: binary()) ::
-          {:ok, binary(), nil | integer()} | {:error, String.t()}
+          {:ok, Plug.Conn.host(), nil | Plug.Conn.port_number()} | {:error, String.t()}
   def parse_hostlike_header("[" <> _ = host_header) do
     host_header
     |> :binary.split("]:")
@@ -46,7 +46,8 @@ defmodule Bandit.Headers do
     end
   end
 
-  @spec get_content_length(Plug.Conn.headers()) :: {:ok, nil | integer()} | {:error, String.t()}
+  @spec get_content_length(Plug.Conn.headers()) ::
+          {:ok, nil | non_neg_integer()} | {:error, String.t()}
   def get_content_length(headers) do
     case get_header(headers, "content-length") do
       nil -> {:ok, nil}
@@ -54,14 +55,14 @@ defmodule Bandit.Headers do
     end
   end
 
-  @spec parse_content_length(binary()) :: {:ok, length :: integer()} | {:error, String.t()}
+  @spec parse_content_length(binary()) :: {:ok, non_neg_integer()} | {:error, String.t()}
   defp parse_content_length(value) do
     case parse_integer(value) do
-      {length, ""} when length >= 0 ->
+      {length, ""} ->
         {:ok, length}
 
-      {length, rest} ->
-        if rest |> Plug.Conn.Utils.list() |> Enum.all?(&(&1 == to_string(length))),
+      {length, _rest} ->
+        if value |> Plug.Conn.Utils.list() |> Enum.all?(&(&1 == to_string(length))),
           do: {:ok, length},
           else: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
@@ -72,18 +73,22 @@ defmodule Bandit.Headers do
 
   # Parses non-negative integers from strings. Return the valid portion of an
   # integer and the remaining string as a tuple like `{123, ""}` or `:error`.
-  def parse_integer(<<digit::8, rest::binary>>) when digit >= ?0 and digit <= ?9 do
+  @spec parse_integer(String.t()) :: {non_neg_integer(), rest :: String.t()} | :error
+  defp parse_integer(<<digit::8, rest::binary>>) when digit >= ?0 and digit <= ?9 do
     parse_integer(rest, digit - ?0)
   end
 
-  def parse_integer(_), do: :error
+  defp parse_integer(_), do: :error
 
+  @spec parse_integer(String.t(), non_neg_integer()) :: {non_neg_integer(), String.t()}
   defp parse_integer(<<digit::8, rest::binary>>, total) when digit >= ?0 and digit <= ?9 do
     parse_integer(rest, total * 10 + digit - ?0)
   end
 
   defp parse_integer(rest, total), do: {total, rest}
 
+  @spec add_content_length(Plug.Conn.headers(), non_neg_integer(), Plug.Conn.int_status()) ::
+          Plug.Conn.headers()
   def add_content_length(headers, length, status) do
     headers = Enum.reject(headers, &(elem(&1, 0) == "content-length"))
 
@@ -93,6 +98,7 @@ defmodule Bandit.Headers do
   end
 
   # Per RFC9110§8.6
+  @spec add_content_length?(Plug.Conn.int_status()) :: boolean()
   defp add_content_length?(status) when status in 100..199, do: false
   defp add_content_length?(204), do: false
   defp add_content_length?(304), do: false
