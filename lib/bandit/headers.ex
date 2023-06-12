@@ -61,7 +61,7 @@ defmodule Bandit.Headers do
         {:ok, length}
 
       {length, rest} ->
-        if rest |> Plug.Conn.Utils.list() |> all?(to_string(length)),
+        if rest |> Plug.Conn.Utils.list() |> Enum.all?(&(&1 == to_string(length))),
           do: {:ok, length},
           else: {:error, "invalid content-length header (RFC9112§6.3.5)"}
 
@@ -69,12 +69,6 @@ defmodule Bandit.Headers do
         {:error, "invalid content-length header (RFC9112§6.3.5)"}
     end
   end
-
-  # Checks if all values in a list are equal to a given value.
-  @spec all?([binary()], binary()) :: boolean()
-  defp all?([value | rest], value), do: all?(rest, value)
-  defp all?([], _str), do: true
-  defp all?(_values, _value), do: false
 
   # Parses non-negative integers from strings. Return the valid portion of an
   # integer and the remaining string as a tuple like `{123, ""}` or `:error`.
