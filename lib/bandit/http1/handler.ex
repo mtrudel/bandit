@@ -84,7 +84,7 @@ defmodule Bandit.HTTP1.Handler do
     request_limit = Keyword.get(state.opts.http_1, :max_requests, 0)
     under_limit = request_limit == 0 || requests_processed < request_limit
 
-    if under_limit && Bandit.HTTP1.Adapter.keepalive?(req) do
+    if under_limit && req.keepalive do
       {:continue, Map.put(state, :requests_processed, requests_processed)}
     else
       {:close, state}

@@ -477,12 +477,6 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def get_peer_data(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.peer_info(socket)
 
-  def get_local_data(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.local_info(socket)
-
-  def secure?(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.secure?(socket)
-
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
-
-  def keepalive?(%__MODULE__{keepalive: keepalive}), do: keepalive
 end
