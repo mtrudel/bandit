@@ -63,8 +63,15 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp build_transport_info(socket) do
-    {ThousandIsland.Socket.secure?(socket), ThousandIsland.Socket.local_info(socket),
-     ThousandIsland.Socket.peer_info(socket), ThousandIsland.Socket.telemetry_span(socket)}
+    secure? = ThousandIsland.Socket.secure?(socket)
+    telemetry_span = ThousandIsland.Socket.telemetry_span(socket)
+
+    with local_info when is_map(local_info) <- ThousandIsland.Socket.local_info(socket),
+         peer_info when is_map(peer_info) <- ThousandIsland.Socket.peer_info(socket) do
+      {secure?, local_info, peer_info, telemetry_span}
+    else
+      error -> raise "Unable to obtain local/peer info: #{inspect(error)}"
+    end
   end
 
   defp code_for_reason(:timeout), do: 408
@@ -84,7 +91,7 @@ defmodule Bandit.HTTP1.Handler do
     request_limit = Keyword.get(state.opts.http_1, :max_requests, 0)
     under_limit = request_limit == 0 || requests_processed < request_limit
 
-    if under_limit && Bandit.HTTP1.Adapter.keepalive?(req) do
+    if under_limit && req.keepalive do
       {:continue, Map.put(state, :requests_processed, requests_processed)}
     else
       {:close, state}
