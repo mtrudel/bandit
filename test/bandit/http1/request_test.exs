@@ -841,6 +841,20 @@ defmodule HTTP1RequestTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "does no encoding if content-encoding header already present in response", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_content_encoding",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      # Assert that we did not try to compress the body
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     test "falls back to no encoding if no encodings match", context do
       response =
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "a, b, c"}])
@@ -870,7 +884,30 @@ defmodule HTTP1RequestTest do
     end
 
     def send_big_body(conn) do
-      send_resp(conn, 200, String.duplicate("a", 10_000))
+      conn
+      |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_content_encoding(conn) do
+      conn
+      |> put_resp_header("content-encoding", "deflate")
+      |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "replaces any incorrect provided content-length headers", context do
+      response = Req.get!(context.req, url: "/send_incorrect_content_length")
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    def send_incorrect_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "10001")
+      |> send_resp(200, String.duplicate("a", 10_000))
     end
 
     test "writes out a response with no content-length header for 204 responses", context do

@@ -324,35 +324,32 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
-  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, response) do
+  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, body) do
     start_time = Bandit.Telemetry.monotonic_time()
+    response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
-    {response, headers, compression_metrics} =
-      case {response, req.content_encoding} do
-        {response, content_encoding} when response != <<>> and not is_nil(content_encoding) ->
+    {body, headers, compression_metrics} =
+      case {body, req.content_encoding, response_content_encoding_header} do
+        {body, content_encoding, nil} when body != <<>> and not is_nil(content_encoding) ->
           metrics = %{
-            resp_uncompressed_body_bytes: IO.iodata_length(response),
+            resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding
           }
 
           deflate_options = Keyword.get(req.opts.http_1, :deflate_options, [])
-          response = Bandit.Compression.compress(response, req.content_encoding, deflate_options)
+          deflated_body = Bandit.Compression.compress(body, req.content_encoding, deflate_options)
           headers = [{"content-encoding", req.content_encoding} | headers]
-          {response, headers, metrics}
+          {deflated_body, headers, metrics}
 
         _ ->
-          {response, headers, %{}}
+          {body, headers, %{}}
       end
 
-    body_bytes = IO.iodata_length(response)
-
-    headers =
-      if add_content_length?(status),
-        do: [{"content-length", to_string(body_bytes)} | headers],
-        else: headers
+    body_bytes = IO.iodata_length(body)
+    headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 
     {header_iodata, header_metrics} = response_header(version, status, headers)
-    _ = ThousandIsland.Socket.send(socket, [header_iodata, response])
+    _ = ThousandIsland.Socket.send(socket, [header_iodata, body])
 
     metrics =
       req.metrics
@@ -364,12 +361,6 @@ defmodule Bandit.HTTP1.Adapter do
 
     {:ok, nil, %{req | state: :sent, metrics: metrics}}
   end
-
-  # Per RFC9110§8.6
-  defp add_content_length?(status) when status in 100..199, do: false
-  defp add_content_length?(204), do: false
-  defp add_content_length?(304), do: false
-  defp add_content_length?(_), do: true
 
   @impl Plug.Conn.Adapter
   def send_file(
