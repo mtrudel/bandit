@@ -465,7 +465,7 @@ defmodule HTTP2PlugTest do
     {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
     {:ok, {ip, port}} = :ssl.sockname(socket)
 
-    assert body == inspect(%{address: ip, port: port, ssl_cert: nil})
+    assert body == inspect({ip, port})
   end
 
   def peer_data(conn) do

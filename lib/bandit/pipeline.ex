@@ -42,7 +42,7 @@ defmodule Bandit.Pipeline do
            determine_host_and_port(transport_info, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      {_, _, %{address: remote_ip}, _} = transport_info
+      {_, _, {remote_ip, _port}, _} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
@@ -64,14 +64,14 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers()
         ) ::
           {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port({_, local_info, _, _}, version, {_, nil, nil, _}, headers) do
+  defp determine_host_and_port({_, {_ip, local_port}, _, _}, version, {_, nil, nil, _}, headers) do
     with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
-      {:ok, host, port || local_info[:port]}
+      {:ok, host, port || local_port}
     else
       nil ->
         case version do
-          :"HTTP/1.0" -> {:ok, "", local_info[:port]}
+          :"HTTP/1.0" -> {:ok, "", local_port}
           _ -> {:error, "No host header"}
         end
 
@@ -80,8 +80,13 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp determine_host_and_port({_, local_info, _, _}, _version, {_, host, port, _}, _headers),
-    do: {:ok, to_string(host), port || local_info[:port]}
+  defp determine_host_and_port(
+         {_, {_ip, local_port}, _, _},
+         _version,
+         {_, host, port, _},
+         _headers
+       ),
+       do: {:ok, to_string(host), port || local_port}
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}

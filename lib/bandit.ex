@@ -406,10 +406,10 @@ defmodule Bandit do
   defp bound_address(scheme, nil), do: scheme
 
   defp bound_address(scheme, pid) do
-    {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
+    {:ok, {address, port}} = ThousandIsland.listener_info(pid)
 
     case address do
-      {:local, unix_path} -> "#{unix_path} (#{scheme}+unix)"
+      :local -> "#{_unix_path = port} (#{scheme}+unix)"
       address -> "#{:inet.ntoa(address)}:#{port} (#{scheme})"
     end
   end

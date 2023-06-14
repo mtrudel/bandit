@@ -29,7 +29,11 @@ defmodule Bandit.MixProject do
 
   defp deps do
     [
-      {:thousand_island, "~> 1.0-pre"},
+      {
+        :thousand_island,
+        # TODO must be replaced with actual version when the thousand_island is released
+        github: "asakura/thousand_island", branch: "pull_signature_for_local_peer_info"
+      },
       {:plug, "~> 1.14"},
       {:websock, "~> 0.5"},
       {:hpax, "~> 0.1.1"},

@@ -26,7 +26,7 @@ defmodule ServerTest do
 
   test "server logs connection error detail log at startup" do
     pid = start_supervised!({Bandit, scheme: :http, plug: __MODULE__})
-    {:ok, %{address: address, port: port}} = ThousandIsland.listener_info(pid)
+    {:ok, {address, port}} = ThousandIsland.listener_info(pid)
 
     logs =
       capture_log(fn ->
