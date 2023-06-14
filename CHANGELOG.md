@@ -1,5 +1,26 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.7 (14 Jun 2023)
+
+## Enhancements
+
+* Refactor HTTP/1 read routines (#158 & #166, thanks @asakura!)
+* Improve logging on WebSocket upgrade errors (#149)
+
+## Changes
+
+* Override any content-length headers that may have been set by Plug (#165)
+* Send content-length on HTTP/2 responses where appropriate (#165)
+
+## Fixes
+
+* Send correct content-length header when sending deflated response (#151)
+* Do not attempt to deflate if Plug sends a content-encoding header (#165)
+* Improve corner case handling of content-length request header (#163, thanks
+  @ryanwinchester!)
+* Handle case where ThousandIsland returns error tuples on some helper routines
+  (#162)
+
 ## 1.0.0-pre.6 (8 Jun 2023)
 
 ### Changes
