@@ -18,9 +18,9 @@ defmodule Bandit.WebSocket.Handshake do
          {:method, "GET"} <- {:method, conn.method},
          {:host_header, header} when header != [] <- {:host_header, get_req_header(conn, "host")},
          {:upgrade_header, true} <-
-           {:upgrade_header, header_contains?(conn, "upgrade", "websocket")},
+           {:upgrade_header, header_contains(conn, "upgrade", "websocket")},
          {:connection_header, true} <-
-           {:connection_header, header_contains?(conn, "connection", "upgrade")},
+           {:connection_header, header_contains(conn, "connection", "upgrade")},
          {:sec_websocket_key_header, true} <-
            {:sec_websocket_key_header,
             match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key"))},
@@ -28,7 +28,8 @@ defmodule Bandit.WebSocket.Handshake do
            {:sec_websocket_version_header, get_req_header(conn, "sec-websocket-version")} do
       :ok
     else
-      {step, _detail} -> {:error, "WebSocket upgrade failed: error in #{step} check"}
+      {step, detail} ->
+        {:error, "WebSocket upgrade failed: error in #{step} check: #{inspect(detail)}"}
     end
   end
 
@@ -126,13 +127,18 @@ defmodule Bandit.WebSocket.Handshake do
     put_resp_header(conn, "sec-websocket-extensions", extensions)
   end
 
-  @spec header_contains?(Plug.Conn.t(), field :: String.t(), value :: String.t()) :: boolean()
-  defp header_contains?(conn, field, value) do
+  @spec header_contains(Plug.Conn.t(), field :: String.t(), value :: String.t()) ::
+          true | binary()
+  defp header_contains(conn, field, value) do
     value = String.downcase(value, :ascii)
 
     conn
     |> get_req_header(field)
     |> Enum.flat_map(&Plug.Conn.Utils.list/1)
     |> Enum.any?(&(String.downcase(&1, :ascii) == value))
+    |> case do
+      true -> true
+      false -> "Did not find #{field} in #{value}"
+    end
   end
 end
