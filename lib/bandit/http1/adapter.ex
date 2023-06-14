@@ -229,8 +229,9 @@ defmodule Bandit.HTTP1.Adapter do
       metrics =
         Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-      with to_read = min(body_remaining, max_desired_bytes - byte_size(buffer)),
-           {:ok, iolist} <- read(req.socket, to_read, [], read_size, read_timeout) do
+      to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
+
+      with {:ok, iolist} <- read(req.socket, to_read, [], read_size, read_timeout) do
         result = IO.iodata_to_binary([buffer | iolist])
         result_size = byte_size(result)
         body_remaining = body_remaining - result_size - byte_size(buffer)
