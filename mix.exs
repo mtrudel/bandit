@@ -4,7 +4,7 @@ defmodule Bandit.MixProject do
   def project do
     [
       app: :bandit,
-      version: "1.0.0-pre.7",
+      version: "1.0.0-pre.8",
       elixir: "~> 1.12",
       start_permanent: Mix.env() == :prod,
       deps: deps(),

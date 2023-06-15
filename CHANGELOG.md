@@ -1,5 +1,11 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.8 (15 Jun 2023)
+
+## Fixes
+
+* Further improve logging on WebSocket upgrade errors (#149)
+
 ## 1.0.0-pre.7 (14 Jun 2023)
 
 ## Enhancements
