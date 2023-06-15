@@ -130,15 +130,15 @@ defmodule Bandit.WebSocket.Handshake do
   @spec header_contains(Plug.Conn.t(), field :: String.t(), value :: String.t()) ::
           true | binary()
   defp header_contains(conn, field, value) do
-    value = String.downcase(value, :ascii)
+    downcase_value = String.downcase(value, :ascii)
+    header = get_req_header(conn, field)
 
-    conn
-    |> get_req_header(field)
+    header
     |> Enum.flat_map(&Plug.Conn.Utils.list/1)
-    |> Enum.any?(&(String.downcase(&1, :ascii) == value))
+    |> Enum.any?(&(String.downcase(&1, :ascii) == downcase_value))
     |> case do
       true -> true
-      false -> "Did not find #{field} in #{value}"
+      false -> "Did not find '#{value}' in '#{header}'"
     end
   end
 end

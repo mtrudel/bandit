@@ -607,13 +607,13 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in upgrade_header check: \"Did not find upgrade in websocket\""}
+                  "WebSocket upgrade failed: error in upgrade_header check: \"Did not find 'websocket' in 'NOPE'\""}
 
           Process.sleep(100)
         end)
 
       assert errors =~
-               "WebSocket upgrade failed: error in upgrade_header check: \\\"Did not find upgrade in websocket\\\""
+               "WebSocket upgrade failed: error in upgrade_header check: \\\"Did not find 'websocket' in 'NOPE'\\\""
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
@@ -637,13 +637,13 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in connection_header check: \"Did not find connection in upgrade\""}
+                  "WebSocket upgrade failed: error in connection_header check: \"Did not find 'upgrade' in 'NOPE'\""}
 
           Process.sleep(100)
         end)
 
       assert errors =~
-               "WebSocket upgrade failed: error in connection_header check: \\\"Did not find connection in upgrade\\\""
+               "WebSocket upgrade failed: error in connection_header check: \\\"Did not find 'upgrade' in 'NOPE'\\\""
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
