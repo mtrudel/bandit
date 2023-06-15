@@ -26,7 +26,7 @@ defmodule WebsocketAutobahnTest do
   test "autobahn test suite" do
     # We can't use ServerHelpers since we need to bind on all interfaces
     {:ok, server_pid} = start_supervised({Bandit, plug: __MODULE__, port: 0})
-    {:ok, %{port: port}} = ThousandIsland.listener_info(server_pid)
+    {:ok, {_address, port}} = ThousandIsland.listener_info(server_pid)
 
     random_string = :rand.uniform(0x100000000) |> Integer.to_string(36) |> String.downcase()
     tmp_path = Path.join(System.tmp_dir!(), "autobahn-#{random_string}")
