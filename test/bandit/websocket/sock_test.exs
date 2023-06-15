@@ -160,6 +160,20 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule InitRestartCloseWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:stop, {:shutdown, :restart}, :init}
+    end
+
+    @tag capture_log: true
+    test "can close a connection by returning an {:shutdown, :restart} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitRestartCloseWebSock)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule InitAbnormalCloseWithCodeWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, :abnormal, 5555, :init}
