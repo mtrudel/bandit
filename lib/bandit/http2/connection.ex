@@ -355,11 +355,11 @@ defmodule Bandit.HTTP2.Connection do
     secure? = ThousandIsland.Socket.secure?(socket)
     telemetry_span = ThousandIsland.Socket.telemetry_span(socket)
 
-    with local_info when is_map(local_info) <- ThousandIsland.Socket.local_info(socket),
-         peer_info when is_map(peer_info) <- ThousandIsland.Socket.peer_info(socket) do
+    with {:ok, local_info} <- ThousandIsland.Socket.sockname(socket),
+         {:ok, peer_info} <- ThousandIsland.Socket.peername(socket) do
       {secure?, local_info, peer_info, telemetry_span}
     else
-      error -> raise "Unable to obtain local/peer info: #{inspect(error)}"
+      {:error, reason} -> raise "Unable to obtain local/peer info: #{inspect(reason)}"
     end
   end
 
