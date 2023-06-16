@@ -547,14 +547,14 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
 
-  def to_plug_peer_data({:local, path}, cert),
+  defp to_plug_peer_data({:local, path}, cert),
     do: %{address: {:local, path}, port: 0, ssl_cert: cert}
 
-  def to_plug_peer_data({:unspec, <<>>}, cert),
+  defp to_plug_peer_data({:unspec, <<>>}, cert),
     do: %{address: :unspec, port: 0, ssl_cert: cert}
 
-  def to_plug_peer_data({:undefined, term}, cert),
+  defp to_plug_peer_data({:undefined, term}, cert),
     do: %{address: {:undefined, term}, port: 0, ssl_cert: cert}
 
-  def to_plug_peer_data({ip, port}, cert), do: %{address: ip, port: port, ssl_cert: cert}
+  defp to_plug_peer_data({ip, port}, cert), do: %{address: ip, port: port, ssl_cert: cert}
 end
