@@ -43,6 +43,7 @@ defmodule Bandit.WebSocket.Frame.ConnectionClose do
 
     @spec serialize(@for.t()) :: [{Frame.opcode(), boolean(), boolean(), iodata()}]
     def serialize(%@for{code: nil}), do: [{0x8, true, false, <<>>}]
+    def serialize(%@for{reason: nil} = frame), do: [{0x8, true, false, <<frame.code::16>>}]
     def serialize(%@for{} = frame), do: [{0x8, true, false, [<<frame.code::16>>, frame.reason]}]
   end
 end

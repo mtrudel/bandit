@@ -205,6 +205,9 @@ defmodule Bandit.WebSocket.Connection do
       {:stop, :normal, code, websock_state} ->
         do_stop(code, :normal, socket, %{connection | websock_state: websock_state})
 
+      {:stop, {:shutdown, :restart}, websock_state} ->
+        do_stop(1012, :normal, socket, %{connection | websock_state: websock_state})
+
       {:stop, reason, websock_state} ->
         do_error(1011, reason, socket, %{connection | websock_state: websock_state})
 
