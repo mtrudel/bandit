@@ -1,5 +1,15 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.9 (16 Jun 2023)
+
+## Changes
+
+* Use new ThousandIsland APIs for socket info (#167, thanks @asakura!)
+
+## Fixes
+
+* Handle nil connection close reason when closing a WebSocket
+
 ## 1.0.0-pre.8 (15 Jun 2023)
 
 ## Fixes
