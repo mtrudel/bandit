@@ -95,7 +95,6 @@ defmodule Bandit.HTTP1.Adapter do
     case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
         with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
-          # decode_packet expects a binary, so convert it to one
           req = %{req | buffer: req.buffer <> chunk}
           do_read_headers(req, type, headers, method, request_target)
         end
