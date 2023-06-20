@@ -509,33 +509,8 @@ defmodule Bandit.HTTP1.Adapter do
   @spec get_peer_data(t()) :: Plug.Conn.Adapter.peer_data()
   def get_peer_data(%__MODULE__{peer: peer}), do: peer
 
-  @spec get_local_data(t()) :: Plug.Conn.Adapter.peer_data() | no_return()
-  def get_local_data(%__MODULE__{socket: socket}) do
-    case ThousandIsland.Socket.sockname(socket) do
-      {:ok, spec} ->
-        Bandit.Plug.to_peer_data(spec, get_peer_cert!(socket))
-
-      {:error, reason} ->
-        raise "Unable to obtain local info: #{inspect(reason)}"
-    end
-  end
-
   def secure?(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.secure?(socket)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
-
-  @spec get_peer_cert!(ThousandIsland.Socket.t()) :: nil | :public_key.der_encoded() | no_return()
-  defp get_peer_cert!(socket) do
-    case ThousandIsland.Socket.peercert(socket) do
-      {:ok, cert} ->
-        cert
-
-      {:error, :no_peercert} ->
-        nil
-
-      {:error, reason} ->
-        raise "Unable to obtain peer cert: #{inspect(reason)}"
-    end
-  end
 end
