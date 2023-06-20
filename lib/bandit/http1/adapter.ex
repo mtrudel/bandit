@@ -510,6 +510,9 @@ defmodule Bandit.HTTP1.Adapter do
         {:ok, cert} ->
           cert
 
+        {:error, :no_peercert} ->
+          nil
+
         {:error, reason} ->
           raise "Unable to obtain peer cert: #{inspect(reason)}"
       end
