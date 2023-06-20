@@ -77,11 +77,18 @@ defmodule Bandit.HTTP2.Stream do
         opts
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         {_, _, peer, connection_span} <- transport_info,
+         {_, _, peer, peer_cert, connection_span} <- transport_info,
          span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
          content_encoding <- negotiate_content_encoding(headers, opts),
-         req <- Bandit.HTTP2.Adapter.init(self(), peer, stream.stream_id, content_encoding, opts),
+         req <-
+           Bandit.HTTP2.Adapter.init(
+             self(),
+             Bandit.Plug.to_peer_data(peer, peer_cert),
+             stream.stream_id,
+             content_encoding,
+             opts
+           ),
          {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}

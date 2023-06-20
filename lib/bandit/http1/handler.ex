@@ -6,7 +6,8 @@ defmodule Bandit.HTTP1.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
-    {_, _, _, connection_span} = transport_info = build_transport_info(socket)
+    {_secure?, _local_info, peer_info, peer_cert, connection_span} =
+      transport_info = build_transport_info(socket)
 
     span =
       Bandit.Telemetry.start_span(:request, %{}, %{
@@ -15,6 +16,7 @@ defmodule Bandit.HTTP1.Handler do
 
     req = %Bandit.HTTP1.Adapter{
       socket: socket,
+      peer: Bandit.Plug.to_peer_data(peer_info, peer_cert),
       buffer: data,
       opts: state.opts,
       websocket_enabled: state.websocket_enabled
@@ -68,9 +70,24 @@ defmodule Bandit.HTTP1.Handler do
 
     with {:ok, local_info} <- ThousandIsland.Socket.sockname(socket),
          {:ok, peer_info} <- ThousandIsland.Socket.peername(socket) do
-      {secure?, local_info, peer_info, telemetry_span}
+      peer_cert = if secure?, do: get_peer_cert!(socket), else: nil
+      {secure?, local_info, peer_info, peer_cert, telemetry_span}
     else
       {:error, reason} -> raise "Unable to obtain local/peer info: #{inspect(reason)}"
+    end
+  end
+
+  @spec get_peer_cert!(ThousandIsland.Socket.t()) :: nil | :public_key.der_encoded() | no_return()
+  defp get_peer_cert!(socket) do
+    case ThousandIsland.Socket.peercert(socket) do
+      {:ok, cert} ->
+        cert
+
+      {:error, :no_peercert} ->
+        nil
+
+      {:error, reason} ->
+        raise "Unable to obtain peer cert: #{inspect(reason)}"
     end
   end
 

@@ -5,8 +5,10 @@ defmodule Bandit.Pipeline do
 
   @type plug_def :: {module(), Plug.opts()}
   @type transport_info ::
-          {secure? :: boolean(), ThousandIsland.Transport.socket_info(),
-           ThousandIsland.Transport.socket_info(), ThousandIsland.Telemetry.t()}
+          {secure? :: boolean(), local_info :: ThousandIsland.Transport.socket_info(),
+           peer_info :: ThousandIsland.Transport.socket_info(),
+           peer_cert :: :public_key.der_encoded() | nil,
+           telemetry_span :: ThousandIsland.Telemetry.t()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -42,14 +44,17 @@ defmodule Bandit.Pipeline do
            determine_host_and_port(transport_info, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      {_, _, {remote_ip, _port}, _} = transport_info
+      {_secure?, _local_info, {remote_ip, _port}, _peer_cert, _telemetry_span} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
 
   @spec determine_scheme(transport_info(), request_target()) ::
           {:ok, String.t()} | {:error, String.t()}
-  defp determine_scheme({secure?, _, _, _}, {scheme, _, _, _}) do
+  defp determine_scheme(
+         {secure?, _local_info, _remote_info, _peer_cert, _telemetry_span},
+         {scheme, _, _, _}
+       ) do
     case {scheme, secure?} do
       {nil, true} -> {:ok, "https"}
       {nil, false} -> {:ok, "http"}
@@ -64,7 +69,12 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers()
         ) ::
           {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port({_, {_ip, local_port}, _, _}, version, {_, nil, nil, _}, headers) do
+  defp determine_host_and_port(
+         {_secure?, {_ip, local_port}, _remote_info, _peer_cert, _telemetry_span},
+         version,
+         {_, nil, nil, _},
+         headers
+       ) do
     with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
       {:ok, host, port || local_port}
@@ -81,7 +91,7 @@ defmodule Bandit.Pipeline do
   end
 
   defp determine_host_and_port(
-         {_, {_ip, local_port}, _, _},
+         {_secure?, {_ip, local_port}, _remote_info, _peer_cert, _telemetry_span},
          _version,
          {_, host, port, _},
          _headers

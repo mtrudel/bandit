@@ -357,9 +357,23 @@ defmodule Bandit.HTTP2.Connection do
 
     with {:ok, local_info} <- ThousandIsland.Socket.sockname(socket),
          {:ok, peer_info} <- ThousandIsland.Socket.peername(socket) do
-      {secure?, local_info, peer_info, telemetry_span}
+      peer_cert = if secure?, do: get_peer_cert!(socket), else: nil
+      {secure?, local_info, peer_info, peer_cert, telemetry_span}
     else
       {:error, reason} -> raise "Unable to obtain local/peer info: #{inspect(reason)}"
+    end
+  end
+
+  defp get_peer_cert!(socket) do
+    case ThousandIsland.Socket.peercert(socket) do
+      {:ok, cert} ->
+        cert
+
+      {:error, :no_peercert} ->
+        nil
+
+      {:error, reason} ->
+        raise "Unable to obtain peer cert: #{inspect(reason)}"
     end
   end
 
