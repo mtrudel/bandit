@@ -234,7 +234,7 @@ defmodule Bandit.HTTP1.Adapter do
       with {:ok, iolist} <- read(req.socket, to_read, [], read_size, read_timeout) do
         result = IO.iodata_to_binary([buffer | iolist])
         result_size = byte_size(result)
-        body_remaining = body_remaining - result_size - byte_size(buffer)
+        body_remaining = body_remaining - result_size + byte_size(buffer)
 
         if body_remaining > 0 do
           metrics = Map.update(metrics, :req_body_bytes, result_size, &(&1 + result_size))
