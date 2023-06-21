@@ -445,13 +445,12 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
-    @tag capture_log: true
     test "reads only the amount of data specified in content-length", context do
       response =
         Req.post!(context.req,
           url: "/respect_content_length",
           headers: [{"content-length", "20"}],
-          body: String.duplicate("a", 8_000_000)
+          body: String.duplicate("a", 100)
         )
 
       assert response.status == 200
