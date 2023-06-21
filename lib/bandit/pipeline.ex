@@ -89,8 +89,8 @@ defmodule Bandit.Pipeline do
        do: {:ok, to_string(host), port || determine_local_port(local_info)}
 
   @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: integer()
-  defp determine_local_port({ip, port}) when ip not in [:local, :unspec, :undefined], do: port
-  defp determine_local_port(_local_info), do: _default_fallback_port = 0
+  defp determine_local_port({family, _}) when family in [:local, :unspec, :undefined], do: 0
+  defp determine_local_port({_ip, port}), do: port
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
