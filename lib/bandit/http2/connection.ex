@@ -25,6 +25,8 @@ defmodule Bandit.HTTP2.Connection do
             recv_window_size: 65_535,
             streams: %StreamCollection{},
             pending_sends: [],
+            transport_info: nil,
+            peer_data: nil,
             plug: nil,
             opts: []
 
@@ -42,13 +44,23 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: StreamCollection.t(),
           pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
+          transport_info: Bandit.Pipeline.transport_info(),
+          peer_data: Plug.Conn.Adapter.peer_data(),
           plug: Bandit.Pipeline.plug_def(),
           opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()}
+  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()} | no_return()
   def init(socket, plug, opts) do
+    peer_data =
+      case Bandit.SocketHelpers.peer_data(socket) do
+        {:ok, peer_data} -> peer_data
+        {:error, reason} -> raise "Unable to obtain peer data: #{inspect(reason)}"
+      end
+
     connection = %__MODULE__{
+      transport_info: build_transport_info(socket),
+      peer_data: peer_data,
       plug: plug,
       opts: opts,
       local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, []))
@@ -189,13 +201,11 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream),
-         transport_info <- build_transport_info(socket),
-         {:ok, peer_data} <- Bandit.SocketHelpers.peer_data(socket),
          {:ok, stream} <-
            Stream.recv_headers(
              stream,
-             transport_info,
-             peer_data,
+             connection.transport_info,
+             connection.peer_data,
              headers,
              end_stream,
              connection.plug,

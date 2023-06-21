@@ -507,7 +507,7 @@ defmodule Bandit.HTTP1.Adapter do
   def get_peer_data(%__MODULE__{socket: socket}) do
     case Bandit.SocketHelpers.peer_data(socket) do
       {:ok, peer_data} -> peer_data
-      {:error, reason} -> raise "Unable to obtain peer info: #{inspect(reason)}"
+      {:error, reason} -> raise "Unable to obtain peer data: #{inspect(reason)}"
     end
   end
 
