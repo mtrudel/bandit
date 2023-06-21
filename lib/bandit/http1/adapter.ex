@@ -208,6 +208,29 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   def read_req_body(
+        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: body_remaining} = req,
+        _opts
+      )
+      when body_remaining < 0 do
+    buffer_size = byte_size(buffer)
+    # Since we read to much data and body_remaining is negative, we can add it to the buffer_size
+    # to get the content-length of the body
+    binary_size = buffer_size + body_remaining
+
+    <<body::binary-size(binary_size), _rest::bitstring>> = buffer
+
+    time = Bandit.Telemetry.monotonic_time()
+
+    metrics =
+      req.metrics
+      |> Map.update(:req_body_bytes, binary_size, &(&1 + binary_size))
+      |> Map.put_new(:req_body_start_time, time)
+      |> Map.put(:req_body_end_time, time)
+
+    {:ok, body, %{req | state: :body_read, buffer: <<>>, metrics: metrics}}
+  end
+
+  def read_req_body(
         %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
         opts
       )
