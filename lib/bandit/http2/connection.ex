@@ -190,10 +190,12 @@ defmodule Bandit.HTTP2.Connection do
          true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream),
          transport_info <- build_transport_info(socket),
+         {:ok, peer_data} <- Bandit.SocketHelpers.peer_data(socket),
          {:ok, stream} <-
            Stream.recv_headers(
              stream,
              transport_info,
+             peer_data,
              headers,
              end_stream,
              connection.plug,
