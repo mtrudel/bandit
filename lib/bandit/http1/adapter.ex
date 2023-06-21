@@ -6,6 +6,7 @@ defmodule Bandit.HTTP1.Adapter do
   @behaviour Plug.Conn.Adapter
 
   defstruct state: :new,
+            transport_info: nil,
             socket: nil,
             buffer: <<>>,
             body_remaining: nil,
@@ -21,6 +22,7 @@ defmodule Bandit.HTTP1.Adapter do
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           state: state(),
+          transport_info: Bandit.TransportInfo.t(),
           socket: ThousandIsland.Socket.t(),
           buffer: binary(),
           body_remaining: nil | integer(),
@@ -504,12 +506,8 @@ defmodule Bandit.HTTP1.Adapter do
   def push(_req, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{socket: socket}) do
-    case Bandit.SocketHelpers.peer_data(socket) do
-      {:ok, peer_data} -> peer_data
-      {:error, reason} -> raise "Unable to obtain peer data: #{inspect(reason)}"
-    end
-  end
+  def get_peer_data(%__MODULE__{transport_info: transport_info}),
+    do: Bandit.TransportInfo.peer_data(transport_info)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
