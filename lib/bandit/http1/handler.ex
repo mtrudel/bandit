@@ -7,7 +7,7 @@ defmodule Bandit.HTTP1.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     {_secure?, _local_info, peer_info, peer_cert, connection_span} =
-      transport_info = Bandit.HTTP.build_transport_info(socket)
+      transport_info = Bandit.Pipeline.build_transport_info(socket)
 
     span =
       Bandit.Telemetry.start_span(:request, %{}, %{

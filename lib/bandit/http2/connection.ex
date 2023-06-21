@@ -189,7 +189,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream),
-         transport_info <- Bandit.HTTP.build_transport_info(socket),
+         transport_info <- Bandit.Pipeline.build_transport_info(socket),
          {:ok, stream} <-
            Stream.recv_headers(
              stream,
