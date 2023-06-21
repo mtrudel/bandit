@@ -2,7 +2,8 @@ defmodule Bandit.SocketHelpers do
   @moduledoc false
   # Conveniences for dealing with Thousand Island sockets
 
-  @spec peer_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.peer_data()
+  @spec peer_data(ThousandIsland.Socket.t()) ::
+          {:ok, Plug.Conn.Adapter.peer_data()} | {:error, term()}
   def peer_data(socket) do
     with {:ok, name} <- ThousandIsland.Socket.peername(socket),
          {:ok, cert} <- peer_cert(socket) do
@@ -15,7 +16,8 @@ defmodule Bandit.SocketHelpers do
     end
   end
 
-  @spec peer_cert(ThousandIsland.Socket.t()) :: nil | :public_key.der_encoded()
+  @spec peer_cert(ThousandIsland.Socket.t()) ::
+          {:ok, :public_key.der_encoded() | nil} | {:error, term()}
   defp peer_cert(socket) do
     case ThousandIsland.Socket.peercert(socket) do
       {:ok, cert} -> {:ok, cert}
