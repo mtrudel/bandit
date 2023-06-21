@@ -81,22 +81,16 @@ defmodule Bandit.Pipeline do
   end
 
   defp determine_host_and_port(
-         {_, {_ip, local_port}, _, _},
+         {_, local_info, _, _},
          _version,
          {_, host, port, _},
          _headers
        ),
-       do: {:ok, to_string(host), port || local_port}
+       do: {:ok, to_string(host), port || determine_local_port(local_info)}
 
   @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: integer()
-  defp determine_local_port(local_info) do
-    case local_info do
-      {:local, _} -> 0
-      {:unspec, _} -> 0
-      {:undefined, _} -> 0
-      {_ip, port} -> port
-    end
-  end
+  defp determine_local_port({ip, port}) when ip not in [:local, :unspec, :undefined], do: port
+  defp determine_local_port(_local_info), do: _default_fallback_port = 0
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
