@@ -189,7 +189,7 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
          true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream),
-         transport_info <- build_transport_info(socket),
+         transport_info <- Bandit.HTTP.build_transport_info(socket),
          {:ok, stream} <-
            Stream.recv_headers(
              stream,
@@ -348,32 +348,6 @@ defmodule Bandit.HTTP2.Connection do
         "Request contains overlong header(s)"}}
     else
       true
-    end
-  end
-
-  defp build_transport_info(socket) do
-    secure? = ThousandIsland.Socket.secure?(socket)
-    telemetry_span = ThousandIsland.Socket.telemetry_span(socket)
-
-    with {:ok, local_info} <- ThousandIsland.Socket.sockname(socket),
-         {:ok, peer_info} <- ThousandIsland.Socket.peername(socket) do
-      peer_cert = if secure?, do: get_peer_cert!(socket), else: nil
-      {secure?, local_info, peer_info, peer_cert, telemetry_span}
-    else
-      {:error, reason} -> raise "Unable to obtain local/peer info: #{inspect(reason)}"
-    end
-  end
-
-  defp get_peer_cert!(socket) do
-    case ThousandIsland.Socket.peercert(socket) do
-      {:ok, cert} ->
-        cert
-
-      {:error, :no_peercert} ->
-        nil
-
-      {:error, reason} ->
-        raise "Unable to obtain peer cert: #{inspect(reason)}"
     end
   end
 
