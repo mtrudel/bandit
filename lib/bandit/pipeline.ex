@@ -69,19 +69,14 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers()
         ) ::
           {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port(
-         {_secure?, {_ip, local_port}, _remote_info, _peer_cert, _telemetry_span},
-         version,
-         {_, nil, nil, _},
-         headers
-       ) do
+  defp determine_host_and_port({_, local_info, _, _}, version, {_, nil, nil, _}, headers) do
     with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
-      {:ok, host, port || local_port}
+      {:ok, host, port || determine_local_port(local_info)}
     else
       nil ->
         case version do
-          :"HTTP/1.0" -> {:ok, "", local_port}
+          :"HTTP/1.0" -> {:ok, "", determine_local_port(local_info)}
           _ -> {:error, "No host header"}
         end
 
@@ -97,6 +92,16 @@ defmodule Bandit.Pipeline do
          _headers
        ),
        do: {:ok, to_string(host), port || local_port}
+
+  @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: integer()
+  defp determine_local_port(local_info) do
+    case local_info do
+      {:local, _} -> 0
+      {:unspec, _} -> 0
+      {:undefined, _} -> 0
+      {_ip, port} -> port
+    end
+  end
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
