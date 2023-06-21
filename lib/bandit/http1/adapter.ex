@@ -193,37 +193,28 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   def read_req_body(
-        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
-        _opts
-      ) do
-    time = Bandit.Telemetry.monotonic_time()
-
-    metrics =
-      req.metrics
-      |> Map.update(:req_body_bytes, byte_size(buffer), &(&1 + byte_size(buffer)))
-      |> Map.put_new(:req_body_start_time, time)
-      |> Map.put(:req_body_end_time, time)
-
-    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, metrics: metrics}}
-  end
-
-  def read_req_body(
         %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: body_remaining} = req,
         _opts
       )
-      when body_remaining < 0 do
-    buffer_size = byte_size(buffer)
-    # Since we read to much data and body_remaining is negative, we can add it to the buffer_size
-    # to get the content-length of the body
-    binary_size = buffer_size + body_remaining
+      when body_remaining <= 0 do
+    {body, body_size} =
+      if body_remaining == 0 do
+        {buffer, byte_size(buffer)}
+      else
+        body_size = byte_size(buffer) + body_remaining
 
-    <<body::binary-size(binary_size), _rest::bitstring>> = buffer
+        # Since we read to much data and body_remaining is negative, we can add it to the buffer_size
+        # to get the content-length of the body
+        <<body::binary-size(body_size), _rest::bitstring>> = buffer
+
+        {body, body_size}
+      end
 
     time = Bandit.Telemetry.monotonic_time()
 
     metrics =
       req.metrics
-      |> Map.update(:req_body_bytes, binary_size, &(&1 + binary_size))
+      |> Map.update(:req_body_bytes, body_size, &(&1 + body_size))
       |> Map.put_new(:req_body_start_time, time)
       |> Map.put(:req_body_end_time, time)
 
