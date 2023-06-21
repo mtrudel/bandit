@@ -445,6 +445,25 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+    @tag capture_log: true
+    test "reads only the amount of data specified in content-length", context do
+      response =
+        Req.post!(context.req,
+          url: "/respect_content_length",
+          headers: [{"content-length", "20"}],
+          body: String.duplicate("a", 8_000_000)
+        )
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def respect_content_length(conn) do
+      assert Plug.Conn.get_req_header(conn, "content-length") == ["20"]
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("a", 20)
+      send_resp(conn, 200, "OK")
+    end
+
     # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     @tag capture_log: true
     test "rejects a request with non-matching multiple content lengths", context do
