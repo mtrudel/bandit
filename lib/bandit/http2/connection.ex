@@ -26,7 +26,7 @@ defmodule Bandit.HTTP2.Connection do
             streams: %StreamCollection{},
             pending_sends: [],
             transport_info: nil,
-            peer_data: nil,
+            telemetry_span: nil,
             plug: nil,
             opts: []
 
@@ -44,26 +44,26 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: StreamCollection.t(),
           pending_sends: [{Stream.stream_id(), iodata(), boolean(), fun()}],
-          transport_info: Bandit.Pipeline.transport_info(),
-          peer_data: Plug.Conn.Adapter.peer_data(),
+          transport_info: Bandit.TransportInfo.t(),
+          telemetry_span: ThousandIsland.Telemetry.t(),
           plug: Bandit.Pipeline.plug_def(),
           opts: keyword()
         }
 
   @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()} | no_return()
   def init(socket, plug, opts) do
-    peer_data =
-      case Bandit.SocketHelpers.peer_data(socket) do
-        {:ok, peer_data} -> peer_data
-        {:error, reason} -> raise "Unable to obtain peer data: #{inspect(reason)}"
+    transport_info =
+      case Bandit.TransportInfo.init(socket) do
+        {:ok, transport_info} -> transport_info
+        {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
       end
 
     connection = %__MODULE__{
-      transport_info: build_transport_info(socket),
-      peer_data: peer_data,
+      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
+      transport_info: transport_info,
+      telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
-      opts: opts,
-      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, []))
+      opts: opts
     }
 
     # Send SETTINGS frame per RFC9113§3.4
@@ -205,7 +205,7 @@ defmodule Bandit.HTTP2.Connection do
            Stream.recv_headers(
              stream,
              connection.transport_info,
-             connection.peer_data,
+             connection.telemetry_span,
              headers,
              end_stream,
              connection.plug,
@@ -360,18 +360,6 @@ defmodule Bandit.HTTP2.Connection do
         "Request contains overlong header(s)"}}
     else
       true
-    end
-  end
-
-  defp build_transport_info(socket) do
-    secure? = ThousandIsland.Socket.secure?(socket)
-    telemetry_span = ThousandIsland.Socket.telemetry_span(socket)
-
-    with {:ok, local_info} <- ThousandIsland.Socket.sockname(socket),
-         {:ok, peer_info} <- ThousandIsland.Socket.peername(socket) do
-      {secure?, local_info, peer_info, telemetry_span}
-    else
-      {:error, reason} -> raise "Unable to obtain local/peer info: #{inspect(reason)}"
     end
   end
 

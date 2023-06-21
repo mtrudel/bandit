@@ -45,8 +45,8 @@ defmodule Bandit.HTTP2.Stream do
 
   @spec recv_headers(
           t(),
-          Bandit.Pipeline.transport_info(),
-          Plug.Conn.Adapter.peer_data(),
+          Bandit.TransportInfo.t(),
+          ThousandIsland.Telemetry.t(),
           Plug.Conn.headers(),
           boolean,
           Bandit.Pipeline.plug_def(),
@@ -55,7 +55,7 @@ defmodule Bandit.HTTP2.Stream do
   def recv_headers(
         %__MODULE__{state: state} = stream,
         _transport_info,
-        _peer_data,
+        _connection_span,
         trailers,
         true,
         _plug,
@@ -73,19 +73,24 @@ defmodule Bandit.HTTP2.Stream do
   def recv_headers(
         %__MODULE__{state: :idle} = stream,
         transport_info,
-        peer_data,
+        connection_span,
         headers,
         _end_stream,
         plug,
         opts
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         {_, _, _, connection_span} <- transport_info,
          span <- start_span(connection_span, stream.stream_id),
          {:ok, content_length} <- get_content_length(headers, stream.stream_id),
          content_encoding <- negotiate_content_encoding(headers, opts),
          req <-
-           Bandit.HTTP2.Adapter.init(self(), peer_data, stream.stream_id, content_encoding, opts),
+           Bandit.HTTP2.Adapter.init(
+             self(),
+             transport_info,
+             stream.stream_id,
+             content_encoding,
+             opts
+           ),
          {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
@@ -95,7 +100,7 @@ defmodule Bandit.HTTP2.Stream do
   def recv_headers(
         %__MODULE__{},
         _transport_info,
-        _peer_data,
+        _connection_span,
         _headers,
         _end_stream,
         _plug,
