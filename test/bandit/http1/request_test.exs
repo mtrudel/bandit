@@ -453,6 +453,7 @@ defmodule HTTP1RequestTest do
           headers: [{"content-length", "20"}],
           body: String.duplicate("a", 8_000_000)
         )
+
       assert response.status == 200
       assert response.body == "OK"
     end
