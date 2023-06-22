@@ -396,7 +396,7 @@ defmodule HTTP1RequestTest do
     end
   end
 
-  describe "request body" do
+  describe "content-length request bodies" do
     test "reads a zero length body properly", context do
       response = Req.get!(context.req, url: "/expect_no_body")
 
@@ -504,6 +504,22 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK")
     end
 
+
+    test "reading request body multiple times works as expected", context do
+      response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
+
+      assert response.status == 200
+    end
+
+    def multiple_body_read(conn) do
+      {:ok, body, conn} = read_body(conn)
+      assert body == "OK"
+      assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
+      conn |> send_resp(200, body)
+    end
+  end
+
+  describe "chunked request bodies" do
     test "reads a chunked body properly", context do
       stream =
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
@@ -520,19 +536,6 @@ defmodule HTTP1RequestTest do
       {:ok, body, conn} = Plug.Conn.read_body(conn)
       assert body == String.duplicate("0123456789", 800_000)
       send_resp(conn, 200, "OK")
-    end
-
-    test "reading request body multiple times works as expected", context do
-      response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
-
-      assert response.status == 200
-    end
-
-    def multiple_body_read(conn) do
-      {:ok, body, conn} = read_body(conn)
-      assert body == "OK"
-      assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
-      conn |> send_resp(200, body)
     end
   end
 
