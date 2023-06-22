@@ -464,6 +464,24 @@ defmodule Bandit.HTTP1.Adapter do
     :ok
   end
 
+  @impl Plug.Conn.Adapter
+  def inform(%__MODULE__{version: :"HTTP/1.0"}, _status, _headers), do: {:error, :not_supported}
+
+  def inform(%__MODULE__{socket: socket, version: version} = req, status, headers) do
+    start_time = Bandit.Telemetry.monotonic_time()
+
+    {header_iodata, header_metrics} = response_header(version, status, headers)
+    _ = ThousandIsland.Socket.send(socket, header_iodata)
+
+    metrics =
+      req.metrics
+      |> Map.merge(header_metrics)
+      |> Map.put(:resp_start_time, start_time)
+      |> Map.put(:resp_body_bytes, 0)
+
+    {:ok, nil, %{req | metrics: metrics}}
+  end
+
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
 
   defp response_header(version, status, headers) do
@@ -492,9 +510,6 @@ defmodule Bandit.HTTP1.Adapter do
 
     {[resp_line, headers], metrics}
   end
-
-  @impl Plug.Conn.Adapter
-  def inform(_req, _status, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
   def upgrade(%Bandit.HTTP1.Adapter{websocket_enabled: true} = req, :websocket, opts),

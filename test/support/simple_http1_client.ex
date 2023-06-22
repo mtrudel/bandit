@@ -30,6 +30,10 @@ defmodule SimpleHTTP1Client do
 
   def recv_reply(socket) do
     {:ok, response} = :gen_tcp.recv(socket, 0)
+    parse_response(socket, response)
+  end
+
+  def parse_response(socket, response) do
     [status_line | headers] = String.split(response, "\r\n")
     <<_version::binary-size(8), " ", status::binary>> = status_line
     {headers, rest} = Enum.split_while(headers, &(&1 != ""))

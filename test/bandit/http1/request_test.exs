@@ -1024,6 +1024,38 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  test "sending informational responses", context do
+    client = SimpleHTTP1Client.tcp_client(context)
+    SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
+
+    assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
+    assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
+    assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.parse_response(client, rest)
+  end
+
+  test "does not send informational responses to HTTP/1.0 clients", context do
+    client = SimpleHTTP1Client.tcp_client(context)
+    SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"], "1.0")
+
+    assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.recv_reply(client)
+  end
+
+  def send_inform(conn) do
+    conn = conn |> inform(100, [{"x-from", "inform"}])
+    conn |> send_resp(200, "Informer")
+  end
+
+  test "reading HTTP version", context do
+    response = Req.get!(context.req, url: "/report_version")
+
+    assert response.status == 200
+    assert response.body == "HTTP/1.1"
+  end
+
+  def report_version(conn) do
+    send_resp(conn, 200, conn |> get_http_protocol() |> to_string())
+  end
+
   test "reading peer data", context do
     # Use a manually built request so we can read the local port
     client = SimpleHTTP1Client.tcp_client(context)
