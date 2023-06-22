@@ -4,9 +4,6 @@ defmodule Bandit.Pipeline do
   # functionality relating to `Plug.Conn` management
 
   @type plug_def :: {module(), Plug.opts()}
-  @type transport_info ::
-          {secure? :: boolean(), ThousandIsland.Transport.socket_info(),
-           ThousandIsland.Transport.socket_info(), ThousandIsland.Telemetry.t()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -14,7 +11,7 @@ defmodule Bandit.Pipeline do
 
   @spec run(
           Plug.Conn.adapter(),
-          transport_info(),
+          Bandit.TransportInfo.t(),
           Plug.Conn.method(),
           request_target(),
           Plug.Conn.headers(),
@@ -30,7 +27,7 @@ defmodule Bandit.Pipeline do
 
   @spec build_conn(
           Plug.Conn.adapter(),
-          transport_info(),
+          Bandit.TransportInfo.t(),
           Plug.Conn.method(),
           request_target(),
           Plug.Conn.headers()
@@ -42,14 +39,14 @@ defmodule Bandit.Pipeline do
            determine_host_and_port(transport_info, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      {_, _, {remote_ip, _port}, _} = transport_info
+      %Bandit.TransportInfo{sockname: {remote_ip, _port}} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
 
-  @spec determine_scheme(transport_info(), request_target()) ::
+  @spec determine_scheme(Bandit.TransportInfo.t(), request_target()) ::
           {:ok, String.t()} | {:error, String.t()}
-  defp determine_scheme({secure?, _, _, _}, {scheme, _, _, _}) do
+  defp determine_scheme(%Bandit.TransportInfo{secure?: secure?}, {scheme, _, _, _}) do
     case {scheme, secure?} do
       {nil, true} -> {:ok, "https"}
       {nil, false} -> {:ok, "http"}
@@ -58,13 +55,18 @@ defmodule Bandit.Pipeline do
   end
 
   @spec determine_host_and_port(
-          transport_info(),
+          Bandit.TransportInfo.t(),
           version :: atom(),
           request_target(),
           Plug.Conn.headers()
         ) ::
           {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port({_, local_info, _, _}, version, {_, nil, nil, _}, headers) do
+  defp determine_host_and_port(
+         %Bandit.TransportInfo{sockname: local_info},
+         version,
+         {_, nil, nil, _},
+         headers
+       ) do
     with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
       {:ok, host, port || determine_local_port(local_info)}
@@ -81,7 +83,7 @@ defmodule Bandit.Pipeline do
   end
 
   defp determine_host_and_port(
-         {_, local_info, _, _},
+         %Bandit.TransportInfo{sockname: local_info},
          _version,
          {_, host, port, _},
          _headers

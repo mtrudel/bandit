@@ -1024,6 +1024,20 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  test "reading peer data", context do
+    # Use a manually built request so we can read the local port
+    client = SimpleHTTP1Client.tcp_client(context)
+    SimpleHTTP1Client.send(client, "GET", "/peer_data", ["host: localhost"])
+    {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+    {:ok, {ip, port}} = :inet.sockname(client)
+
+    assert body == inspect(%{address: ip, port: port, ssl_cert: nil})
+  end
+
+  def peer_data(conn) do
+    send_resp(conn, 200, conn |> get_peer_data() |> inspect())
+  end
+
   describe "abnormal handler processes" do
     @tag capture_log: true
     test "returns a 500 if the plug raises an exception", context do

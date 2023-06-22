@@ -7,7 +7,7 @@ defmodule Bandit.HTTP2.Adapter do
   @behaviour Plug.Conn.Adapter
 
   defstruct connection: nil,
-            peer: nil,
+            transport_info: nil,
             stream_id: nil,
             end_stream: false,
             content_encoding: nil,
@@ -17,7 +17,7 @@ defmodule Bandit.HTTP2.Adapter do
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           connection: pid(),
-          peer: Plug.Conn.Adapter.peer_data(),
+          transport_info: Bandit.TransportInfo.t(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
           content_encoding: String.t() | nil,
@@ -25,10 +25,10 @@ defmodule Bandit.HTTP2.Adapter do
           opts: keyword()
         }
 
-  def init(connection, peer, stream_id, content_encoding, opts) do
+  def init(connection, transport_info, stream_id, content_encoding, opts) do
     %__MODULE__{
       connection: connection,
-      peer: peer,
+      transport_info: transport_info,
       stream_id: stream_id,
       content_encoding: content_encoding,
       opts: opts
@@ -217,7 +217,8 @@ defmodule Bandit.HTTP2.Adapter do
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{peer: peer}), do: peer
+  def get_peer_data(%__MODULE__{transport_info: transport_info}),
+    do: Bandit.TransportInfo.peer_data(transport_info)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
