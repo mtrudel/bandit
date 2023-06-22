@@ -83,22 +83,16 @@ defmodule Bandit.Pipeline do
   end
 
   defp determine_host_and_port(
-         %Bandit.TransportInfo{sockname: {_ip, local_port}},
+         %Bandit.TransportInfo{sockname: local_info},
          _version,
          {_, host, port, _},
          _headers
        ),
-       do: {:ok, to_string(host), port || local_port}
+       do: {:ok, to_string(host), port || determine_local_port(local_info)}
 
   @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: integer()
-  defp determine_local_port(local_info) do
-    case local_info do
-      {:local, _} -> 0
-      {:unspec, _} -> 0
-      {:undefined, _} -> 0
-      {_ip, port} -> port
-    end
-  end
+  defp determine_local_port({family, _}) when family in [:local, :unspec, :undefined], do: 0
+  defp determine_local_port({_ip, port}), do: port
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
