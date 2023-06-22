@@ -26,7 +26,7 @@ defmodule Bandit.HTTP2.StreamTask do
   # at creation time to ensure this invariant
   @spec start_link(
           Bandit.HTTP2.Adapter.t(),
-          Bandit.Pipeline.transport_info(),
+          Bandit.TransportInfo.t(),
           Plug.Conn.headers(),
           Bandit.Pipeline.plug_def(),
           Bandit.Telemetry.t()

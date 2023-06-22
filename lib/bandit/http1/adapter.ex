@@ -6,6 +6,7 @@ defmodule Bandit.HTTP1.Adapter do
   @behaviour Plug.Conn.Adapter
 
   defstruct state: :new,
+            transport_info: nil,
             socket: nil,
             buffer: <<>>,
             body_remaining: nil,
@@ -21,6 +22,7 @@ defmodule Bandit.HTTP1.Adapter do
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           state: state(),
+          transport_info: Bandit.TransportInfo.t(),
           socket: ThousandIsland.Socket.t(),
           buffer: binary(),
           body_remaining: nil | integer(),
@@ -503,60 +505,10 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def push(_req, _path, _headers), do: {:error, :not_supported}
 
-  @spec get_peer_cert!(t()) :: nil | :public_key.der_encoded() | no_return()
-  defp get_peer_cert!(%__MODULE__{socket: socket} = req) do
-    if secure?(req) do
-      case ThousandIsland.Socket.peercert(socket) do
-        {:ok, cert} ->
-          cert
-
-        {:error, :no_peercert} ->
-          nil
-
-        {:error, reason} ->
-          raise "Unable to obtain peer cert: #{inspect(reason)}"
-      end
-    else
-      nil
-    end
-  end
-
   @impl Plug.Conn.Adapter
-  @spec get_peer_data(t()) :: Plug.Conn.Adapter.peer_data() | no_return()
-  def get_peer_data(%__MODULE__{socket: socket} = req) do
-    case ThousandIsland.Socket.peername(socket) do
-      {:ok, spec} ->
-        to_plug_peer_data(spec, get_peer_cert!(req))
-
-      {:error, reason} ->
-        raise "Unable to obtain peer info: #{inspect(reason)}"
-    end
-  end
-
-  @spec get_local_data(t()) :: Plug.Conn.Adapter.peer_data() | no_return()
-  def get_local_data(%__MODULE__{socket: socket} = req) do
-    case ThousandIsland.Socket.sockname(socket) do
-      {:ok, spec} ->
-        to_plug_peer_data(spec, get_peer_cert!(req))
-
-      {:error, reason} ->
-        raise "Unable to obtain local info: #{inspect(reason)}"
-    end
-  end
-
-  def secure?(%__MODULE__{socket: socket}), do: ThousandIsland.Socket.secure?(socket)
+  def get_peer_data(%__MODULE__{transport_info: transport_info}),
+    do: Bandit.TransportInfo.peer_data(transport_info)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{version: version}), do: version
-
-  defp to_plug_peer_data({:local, path}, cert),
-    do: %{address: {:local, path}, port: 0, ssl_cert: cert}
-
-  defp to_plug_peer_data({:unspec, <<>>}, cert),
-    do: %{address: :unspec, port: 0, ssl_cert: cert}
-
-  defp to_plug_peer_data({:undefined, term}, cert),
-    do: %{address: {:undefined, term}, port: 0, ssl_cert: cert}
-
-  defp to_plug_peer_data({ip, port}, cert), do: %{address: ip, port: port, ssl_cert: cert}
 end

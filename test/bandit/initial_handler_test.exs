@@ -86,6 +86,8 @@ defmodule InitialHandlerTest do
         capture_log(fn ->
           base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
           _ = Req.get(context.req, url: "/report_version", base_url: base_url)
+
+          Process.sleep(250)
         end)
 
       assert warnings =~ "Connection that looks like TLS received on a clear channel"
