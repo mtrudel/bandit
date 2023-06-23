@@ -235,6 +235,17 @@ defmodule Bandit.HTTP1.Adapter do
         result = IO.iodata_to_binary([buffer | iolist])
         result_size = byte_size(result)
         body_remaining = body_remaining - result_size
+        # + byte_size(buffer)
+
+        unquote(
+          if Mix.env() in [:dev, :test] do
+            quote do
+              if var!(body_remaining) < 0 do
+                raise "body_remaining < 0: #{var!(body_remaining)}"
+              end
+            end
+          end
+        )
 
         if body_remaining > 0 do
           metrics = Map.update(metrics, :req_body_bytes, result_size, &(&1 + result_size))
