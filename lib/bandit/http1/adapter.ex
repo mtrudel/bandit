@@ -96,7 +96,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
-        with {:ok, chunk} <- read_available(req.socket) do
+        with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
           req = %{req | buffer: req.buffer <> chunk}
           do_read_headers(req, type, headers, method, request_target)
         end
@@ -201,7 +201,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     with {:ok, to_return, buffer, body_remaining} <-
            do_read_content_length_body(req.socket, req.buffer, body_remaining, opts) do
-      if buffer == <<>> && body_remaining == 0 do
+      if byte_size(buffer) == 0 && body_remaining == 0 do
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
@@ -224,7 +224,11 @@ defmodule Bandit.HTTP1.Adapter do
     metrics =
       Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    with {:ok, body, buffer} <- do_read_chunked_body(req.socket, req.buffer, <<>>, opts) do
+    read_size = Keyword.get(opts, :read_length, 1_000_000)
+    read_timeout = Keyword.get(opts, :read_timeout)
+
+    with {:ok, body, buffer} <-
+           do_read_chunked_body(req.socket, req.buffer, <<>>, read_size, read_timeout) do
       body = IO.iodata_to_binary(body)
 
       metrics =
@@ -255,17 +259,19 @@ defmodule Bandit.HTTP1.Adapter do
     else
       # We need to read off the wire
       bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
+      read_size = Keyword.get(opts, :read_length, 1_000_000)
+      read_timeout = Keyword.get(opts, :read_timeout)
 
-      with {:ok, iolist} <- read(socket, bytes_to_read, [], opts) do
+      with {:ok, iolist} <- read(socket, bytes_to_read, [], read_size, read_timeout) do
         to_return = IO.iodata_to_binary([buffer | iolist])
-        body_remaining = body_remaining - IO.iodata_length(iolist)
+        body_remaining = body_remaining - (byte_size(to_return) - byte_size(buffer))
         {:ok, to_return, <<>>, body_remaining}
       end
     end
   end
 
-  @dialyzer {:no_improper_lists, do_read_chunked_body: 4}
-  defp do_read_chunked_body(socket, buffer, body, opts) do
+  @dialyzer {:no_improper_lists, do_read_chunked_body: 5}
+  defp do_read_chunked_body(socket, buffer, body, read_size, read_timeout) do
     case :binary.split(buffer, "\r\n") do
       ["0", _] ->
         {:ok, IO.iodata_to_binary(body), buffer}
@@ -275,28 +281,28 @@ defmodule Bandit.HTTP1.Adapter do
 
         case rest do
           <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-            do_read_chunked_body(socket, rest, [body, next_chunk], opts)
+            do_read_chunked_body(socket, rest, [body, next_chunk], read_size, read_timeout)
 
           _ ->
             to_read = chunk_size - byte_size(rest)
 
             if to_read > 0 do
-              with {:ok, iolist} <- read(socket, to_read, [], opts) do
+              with {:ok, iolist} <- read(socket, to_read, [], read_size, read_timeout) do
                 buffer = IO.iodata_to_binary([buffer | iolist])
-                do_read_chunked_body(socket, buffer, body, opts)
+                do_read_chunked_body(socket, buffer, body, read_size, read_timeout)
               end
             else
-              with {:ok, chunk} <- read_available(socket, opts) do
+              with {:ok, chunk} <- read_available(socket, read_timeout) do
                 buffer = buffer <> chunk
-                do_read_chunked_body(socket, buffer, body, opts)
+                do_read_chunked_body(socket, buffer, body, read_size, read_timeout)
               end
             end
         end
 
       _ ->
-        with {:ok, chunk} <- read_available(socket, opts) do
+        with {:ok, chunk} <- read_available(socket, read_timeout) do
           buffer = buffer <> chunk
-          do_read_chunked_body(socket, buffer, body, opts)
+          do_read_chunked_body(socket, buffer, body, read_size, read_timeout)
         end
     end
   end
@@ -306,24 +312,21 @@ defmodule Bandit.HTTP1.Adapter do
   ##################
 
   @compile {:inline, read_available: 2}
-  @spec read_available(ThousandIsland.Socket.t(), keyword()) ::
+  @spec read_available(ThousandIsland.Socket.t(), timeout()) ::
           {:ok, binary()} | {:error, :closed | :timeout | :inet.posix()}
-  defp read_available(socket, opts \\ []) do
-    ThousandIsland.Socket.recv(socket, 0, Keyword.get(opts, :read_timeout))
+  defp read_available(socket, read_timeout) do
+    ThousandIsland.Socket.recv(socket, 0, read_timeout)
   end
 
-  @dialyzer {:no_improper_lists, read: 4}
-  @spec read(ThousandIsland.Socket.t(), non_neg_integer(), iolist(), keyword()) ::
+  @dialyzer {:no_improper_lists, read: 5}
+  @spec read(ThousandIsland.Socket.t(), non_neg_integer(), iolist(), non_neg_integer(), timeout()) ::
           {:ok, iolist()} | {:error, :closed | :timeout | :inet.posix()}
-  defp read(socket, to_read, already_read, opts) do
-    read_size = Keyword.get(opts, :read_length, 1_000_000)
-    read_timeout = Keyword.get(opts, :read_timeout)
-
+  defp read(socket, to_read, already_read, read_size, read_timeout) do
     with {:ok, chunk} <- ThousandIsland.Socket.recv(socket, min(to_read, read_size), read_timeout) do
       remaining_bytes = to_read - byte_size(chunk)
 
       if remaining_bytes > 0 do
-        read(socket, remaining_bytes, [already_read | chunk], opts)
+        read(socket, remaining_bytes, [already_read | chunk], read_size, read_timeout)
       else
         {:ok, [already_read | chunk]}
       end
@@ -344,7 +347,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     {body, headers, compression_metrics} =
       case {body, req.content_encoding, response_content_encoding_header} do
-        {body, content_encoding, nil} when body != <<>> and not is_nil(content_encoding) ->
+        {body, content_encoding, nil} when byte_size(body) > 0 and not is_nil(content_encoding) ->
           metrics = %{
             resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding
