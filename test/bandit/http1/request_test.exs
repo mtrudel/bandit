@@ -1028,6 +1028,7 @@ defmodule HTTP1RequestTest do
     client = SimpleHTTP1Client.tcp_client(context)
     SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
 
+    Process.sleep(100)
     assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
     assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
     assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.parse_response(client, rest)
