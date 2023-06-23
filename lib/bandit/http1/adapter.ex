@@ -96,7 +96,7 @@ defmodule Bandit.HTTP1.Adapter do
 
     case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
-        with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
+        with {:ok, chunk} <- read_available(req.socket) do
           req = %{req | buffer: req.buffer <> chunk}
           do_read_headers(req, type, headers, method, request_target)
         end
@@ -194,37 +194,14 @@ defmodule Bandit.HTTP1.Adapter do
     {:ok, <<>>, %{req | metrics: metrics}}
   end
 
-  def read_req_body(
-        %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
-        opts
-      )
+  def read_req_body(%__MODULE__{state: :headers_read, body_remaining: body_remaining} = req, opts)
       when is_number(body_remaining) do
     metrics =
       Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
-
-    result =
-      if byte_size(buffer) >= max_desired_bytes || body_remaining == 0 do
-        # We can satisfy the read request entirely from our buffer
-        bytes_to_return = min(max_desired_bytes, byte_size(buffer))
-        <<to_return::binary-size(bytes_to_return), rest::binary>> = buffer
-        {:ok, to_return, rest, body_remaining}
-      else
-        # We need to read off the wire
-        bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
-        read_size = Keyword.get(opts, :read_length, 1_000_000)
-        read_timeout = Keyword.get(opts, :read_timeout)
-
-        with {:ok, iolist} <- read(req.socket, bytes_to_read, [], read_size, read_timeout) do
-          to_return = IO.iodata_to_binary([buffer | iolist])
-          body_remaining = body_remaining - IO.iodata_length(iolist)
-          {:ok, to_return, <<>>, body_remaining}
-        end
-      end
-
-    with {:ok, to_return, new_buffer, body_remaining} <- result do
-      if new_buffer == <<>> && body_remaining == 0 do
+    with {:ok, to_return, buffer, body_remaining} <-
+           do_read_content_length_body(req.socket, req.buffer, body_remaining, opts) do
+      if buffer == <<>> && body_remaining == 0 do
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
@@ -238,31 +215,21 @@ defmodule Bandit.HTTP1.Adapter do
           |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
 
         {:more, to_return,
-         %{req | buffer: new_buffer, body_remaining: body_remaining, metrics: metrics}}
+         %{req | buffer: buffer, body_remaining: body_remaining, metrics: metrics}}
       end
     end
   end
 
-  def read_req_body(
-        %__MODULE__{
-          state: :headers_read,
-          body_encoding: "chunked",
-          socket: socket,
-          buffer: buffer
-        } = req,
-        opts
-      ) do
-    start_time = Bandit.Telemetry.monotonic_time()
-    read_size = Keyword.get(opts, :read_length, 1_000_000)
-    read_timeout = Keyword.get(opts, :read_timeout)
+  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
+    metrics =
+      Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    with {:ok, body, buffer} <- do_read_chunk(socket, buffer, <<>>, read_size, read_timeout) do
+    with {:ok, body, buffer} <- do_read_chunked_body(req.socket, req.buffer, <<>>, opts) do
       body = IO.iodata_to_binary(body)
 
       metrics =
-        req.metrics
+        metrics
         |> Map.put(:req_body_bytes, byte_size(body))
-        |> Map.put(:req_body_start_time, start_time)
         |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
       {:ok, body, %{req | buffer: buffer, metrics: metrics}}
@@ -276,8 +243,29 @@ defmodule Bandit.HTTP1.Adapter do
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
-  @dialyzer {:no_improper_lists, do_read_chunk: 5}
-  defp do_read_chunk(socket, buffer, body, read_size, read_timeout) do
+  @dialyzer {:no_improper_lists, do_read_content_length_body: 4}
+  defp do_read_content_length_body(socket, buffer, body_remaining, opts) do
+    max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
+
+    if byte_size(buffer) >= max_desired_bytes || body_remaining == 0 do
+      # We can satisfy the read request entirely from our buffer
+      bytes_to_return = min(max_desired_bytes, byte_size(buffer))
+      <<to_return::binary-size(bytes_to_return), rest::binary>> = buffer
+      {:ok, to_return, rest, body_remaining}
+    else
+      # We need to read off the wire
+      bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
+
+      with {:ok, iolist} <- read(socket, bytes_to_read, [], opts) do
+        to_return = IO.iodata_to_binary([buffer | iolist])
+        body_remaining = body_remaining - IO.iodata_length(iolist)
+        {:ok, to_return, <<>>, body_remaining}
+      end
+    end
+  end
+
+  @dialyzer {:no_improper_lists, do_read_chunked_body: 4}
+  defp do_read_chunked_body(socket, buffer, body, opts) do
     case :binary.split(buffer, "\r\n") do
       ["0", _] ->
         {:ok, IO.iodata_to_binary(body), buffer}
@@ -287,28 +275,28 @@ defmodule Bandit.HTTP1.Adapter do
 
         case rest do
           <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-            do_read_chunk(socket, rest, [body, next_chunk], read_size, read_timeout)
+            do_read_chunked_body(socket, rest, [body, next_chunk], opts)
 
           _ ->
             to_read = chunk_size - byte_size(rest)
 
             if to_read > 0 do
-              with {:ok, iolist} <- read(socket, to_read, [], read_size, read_timeout) do
+              with {:ok, iolist} <- read(socket, to_read, [], opts) do
                 buffer = IO.iodata_to_binary([buffer | iolist])
-                do_read_chunk(socket, buffer, body, read_size, read_timeout)
+                do_read_chunked_body(socket, buffer, body, opts)
               end
             else
-              with {:ok, chunk} <- read_available(socket, read_timeout) do
+              with {:ok, chunk} <- read_available(socket, opts) do
                 buffer = buffer <> chunk
-                do_read_chunk(socket, buffer, body, read_size, read_timeout)
+                do_read_chunked_body(socket, buffer, body, opts)
               end
             end
         end
 
       _ ->
-        with {:ok, chunk} <- read_available(socket, read_timeout) do
+        with {:ok, chunk} <- read_available(socket, opts) do
           buffer = buffer <> chunk
-          do_read_chunk(socket, buffer, body, read_size, read_timeout)
+          do_read_chunked_body(socket, buffer, body, opts)
         end
     end
   end
@@ -318,26 +306,24 @@ defmodule Bandit.HTTP1.Adapter do
   ##################
 
   @compile {:inline, read_available: 2}
-  @spec read_available(ThousandIsland.Socket.t(), timeout()) ::
+  @spec read_available(ThousandIsland.Socket.t(), keyword()) ::
           {:ok, binary()} | {:error, :closed | :timeout | :inet.posix()}
-  defp read_available(socket, read_timeout) do
-    ThousandIsland.Socket.recv(socket, 0, read_timeout)
+  defp read_available(socket, opts \\ []) do
+    ThousandIsland.Socket.recv(socket, 0, Keyword.get(opts, :read_timeout))
   end
 
-  @dialyzer {:no_improper_lists, read: 5}
-  @spec read(
-          ThousandIsland.Socket.t(),
-          non_neg_integer(),
-          iolist(),
-          non_neg_integer(),
-          timeout()
-        ) :: {:ok, iolist()} | {:error, :closed | :timeout | :inet.posix()}
-  defp read(socket, to_read, already_read, read_size, read_timeout) do
+  @dialyzer {:no_improper_lists, read: 4}
+  @spec read(ThousandIsland.Socket.t(), non_neg_integer(), iolist(), keyword()) ::
+          {:ok, iolist()} | {:error, :closed | :timeout | :inet.posix()}
+  defp read(socket, to_read, already_read, opts) do
+    read_size = Keyword.get(opts, :read_length, 1_000_000)
+    read_timeout = Keyword.get(opts, :read_timeout)
+
     with {:ok, chunk} <- ThousandIsland.Socket.recv(socket, min(to_read, read_size), read_timeout) do
       remaining_bytes = to_read - byte_size(chunk)
 
       if remaining_bytes > 0 do
-        read(socket, remaining_bytes, [already_read | chunk], read_size, read_timeout)
+        read(socket, remaining_bytes, [already_read | chunk], opts)
       else
         {:ok, [already_read | chunk]}
       end
