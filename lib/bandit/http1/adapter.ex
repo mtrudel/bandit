@@ -195,62 +195,50 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   def read_req_body(
-        %__MODULE__{state: :headers_read, buffer: buffer, body_remaining: 0} = req,
-        _opts
-      ) do
-    time = Bandit.Telemetry.monotonic_time()
-
-    metrics =
-      req.metrics
-      |> Map.update(:req_body_bytes, byte_size(buffer), &(&1 + byte_size(buffer)))
-      |> Map.put_new(:req_body_start_time, time)
-      |> Map.put(:req_body_end_time, time)
-
-    {:ok, buffer, %{req | state: :body_read, buffer: <<>>, metrics: metrics}}
-  end
-
-  def read_req_body(
         %__MODULE__{state: :headers_read, body_remaining: body_remaining, buffer: buffer} = req,
         opts
       )
       when is_number(body_remaining) do
+    metrics =
+      Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
+
     max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
-    read_size = Keyword.get(opts, :read_length, 1_000_000)
-    read_timeout = Keyword.get(opts, :read_timeout)
 
-    if byte_size(buffer) >= max_desired_bytes do
-      <<to_return::binary-size(max_desired_bytes), rest::binary>> = buffer
+    result =
+      if byte_size(buffer) >= max_desired_bytes || body_remaining == 0 do
+        # We can satisfy the read request entirely from our buffer
+        bytes_to_return = min(max_desired_bytes, byte_size(buffer))
+        <<to_return::binary-size(bytes_to_return), rest::binary>> = buffer
+        {:ok, to_return, rest, body_remaining}
+      else
+        # We need to read off the wire
+        bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
+        read_size = Keyword.get(opts, :read_length, 1_000_000)
+        read_timeout = Keyword.get(opts, :read_timeout)
 
-      metrics =
-        req.metrics
-        |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
-        |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
-
-      {:more, to_return, %{req | buffer: rest, metrics: metrics}}
-    else
-      metrics =
-        Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
-
-      to_read = min(body_remaining, max_desired_bytes - byte_size(buffer))
-
-      with {:ok, iolist} <- read(req.socket, to_read, [], read_size, read_timeout) do
-        result = IO.iodata_to_binary([buffer | iolist])
-        result_size = byte_size(result)
-        body_remaining = body_remaining - result_size
-
-        if body_remaining > 0 do
-          metrics = Map.update(metrics, :req_body_bytes, result_size, &(&1 + result_size))
-
-          {:more, result, %{req | buffer: <<>>, body_remaining: body_remaining, metrics: metrics}}
-        else
-          metrics =
-            metrics
-            |> Map.update(:req_body_bytes, byte_size(result), &(&1 + byte_size(result)))
-            |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
-
-          {:ok, result,
-           %{req | state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
+        with {:ok, iolist} <- read(req.socket, bytes_to_read, [], read_size, read_timeout) do
+          to_return = IO.iodata_to_binary([buffer | iolist])
+          body_remaining = body_remaining - IO.iodata_length(iolist)
+          {:ok, to_return, <<>>, body_remaining}
         end
+      end
+
+    with {:ok, to_return, new_buffer, body_remaining} <- result do
+      if new_buffer == <<>> && body_remaining == 0 do
+        metrics =
+          metrics
+          |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
+          |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
+
+        {:ok, to_return,
+         %{req | state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
+      else
+        metrics =
+          metrics
+          |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
+
+        {:more, to_return,
+         %{req | buffer: new_buffer, body_remaining: body_remaining, metrics: metrics}}
       end
     end
   end

@@ -483,27 +483,63 @@ defmodule HTTP1RequestTest do
       assert response.status == 400
     end
 
-    test "reads a content-length encoded body properly when more of it arrives than we want to read",
+    test "handles the case where we ask for less than is already in the buffer", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "POST /in_buffer_read HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABCDE"
+      )
+
+      assert {:ok, "200 OK", _, "A,BCDE"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def in_buffer_read(conn) do
+      {:more, first, conn} = Plug.Conn.read_body(conn, length: 1)
+      {:ok, second, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "#{first},#{second}")
+    end
+
+    test "handles the case where we ask for more than is already in the buffer", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "POST /beyond_buffer_read HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nAB"
+      )
+
+      Process.sleep(100)
+      :gen_tcp.send(client, "CDE")
+
+      assert {:ok, "200 OK", _, "ABC,D,E"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def beyond_buffer_read(conn) do
+      {:more, first, conn} = Plug.Conn.read_body(conn, length: 3)
+      {:more, second, conn} = Plug.Conn.read_body(conn, length: 1)
+      {:ok, third, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "#{first},#{second},#{third}")
+    end
+
+    test "handles the case where we read from the network in smaller chunks than we return",
          context do
-      response =
-        Req.post!(context.req,
-          url: "/expect_big_body",
-          body: String.duplicate("0123456789", 800_000)
-        )
+      client = SimpleHTTP1Client.tcp_client(context)
 
-      assert response.status == 200
-      assert response.body == "OK"
+      :gen_tcp.send(
+        client,
+        "POST /read_one_byte_at_a_time HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\n"
+      )
+
+      Process.sleep(100)
+      :gen_tcp.send(client, "ABCDE")
+
+      assert {:ok, "200 OK", _, "ABCDE"} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    def expect_big_body(conn) do
-      assert Plug.Conn.get_req_header(conn, "content-length") == ["8000000"]
-      {:more, body, conn} = Plug.Conn.read_body(conn, length: 1000)
-      assert body == String.duplicate("0123456789", 100)
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
-      assert body == String.duplicate("0123456789", 800_000 - 100)
-      send_resp(conn, 200, "OK")
+    def read_one_byte_at_a_time(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn, length: 5, read_length: 1)
+      send_resp(conn, 200, body)
     end
-
 
     test "reading request body multiple times works as expected", context do
       response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
