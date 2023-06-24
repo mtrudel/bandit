@@ -541,6 +541,41 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, body)
     end
 
+    test "handles the case where the declared content length is longer than what is sent",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "POST /send_less_than_we_declare HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
+      )
+
+      assert {:ok, "200 OK", _, "timeout"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def send_less_than_we_declare(conn) do
+      {:error, :timeout} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "timeout")
+    end
+
+    @tag :skip
+    test "handles the case where the declared content length is less than what is sent",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      :gen_tcp.send(
+        client,
+        "POST /send_more_than_we_declare HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\nABCDE"
+      )
+
+      assert {:ok, "200 OK", _, "ABC"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def send_more_than_we_declare(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, body)
+    end
+
     test "reading request body multiple times works as expected", context do
       response = Req.post!(context.req, url: "/multiple_body_read", body: "OK")
 
