@@ -48,7 +48,7 @@ defmodule WebSocketProtocolTest do
         <<>> -> nil
         <<byte::binary-size(1), rest::binary>> -> {byte, rest}
       end)
-      |> Enum.each(fn byte -> :gen_tcp.send(client, byte) end)
+      |> Enum.each(fn byte -> Transport.send(client, byte) end)
 
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
@@ -59,11 +59,11 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       # Send one and a half frames
-      :gen_tcp.send(client, <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4>>)
+      Transport.send(client, <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4>>)
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
 
       # Now send the rest of the second frame
-      :gen_tcp.send(client, <<1::1, 2::7, 0::32>> <> "OK")
+      Transport.send(client, <<1::1, 2::7, 0::32>> <> "OK")
 
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
@@ -73,7 +73,7 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
       # Send two text frames at once one byte at a time
-      :gen_tcp.send(
+      Transport.send(
         client,
         <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK" <> <<8::4, 1::4, 1::1, 2::7, 0::32>> <> "OK"
       )

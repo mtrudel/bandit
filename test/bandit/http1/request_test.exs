@@ -14,7 +14,7 @@ defmodule HTTP1RequestTest do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
       client = SimpleHTTP1Client.tcp_client(context)
-      :gen_tcp.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
@@ -486,7 +486,7 @@ defmodule HTTP1RequestTest do
     test "handles the case where we ask for less than is already in the buffer", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(
+      Transport.send(
         client,
         "POST /in_buffer_read HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABCDE"
       )
@@ -503,13 +503,13 @@ defmodule HTTP1RequestTest do
     test "handles the case where we ask for more than is already in the buffer", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(
+      Transport.send(
         client,
         "POST /beyond_buffer_read HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nAB"
       )
 
       Process.sleep(100)
-      :gen_tcp.send(client, "CDE")
+      Transport.send(client, "CDE")
 
       assert {:ok, "200 OK", _, "ABC,D,E"} = SimpleHTTP1Client.recv_reply(client)
     end
@@ -525,13 +525,13 @@ defmodule HTTP1RequestTest do
          context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(
+      Transport.send(
         client,
         "POST /read_one_byte_at_a_time HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\n"
       )
 
       Process.sleep(100)
-      :gen_tcp.send(client, "ABCDE")
+      Transport.send(client, "ABCDE")
 
       assert {:ok, "200 OK", _, "ABCDE"} = SimpleHTTP1Client.recv_reply(client)
     end
@@ -545,7 +545,7 @@ defmodule HTTP1RequestTest do
          context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(
+      Transport.send(
         client,
         "POST /send_less_than_we_declare HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
       )
@@ -563,7 +563,7 @@ defmodule HTTP1RequestTest do
          context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      :gen_tcp.send(
+      Transport.send(
         client,
         "POST /send_more_than_we_declare HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\nABCDE"
       )
@@ -1136,7 +1136,7 @@ defmodule HTTP1RequestTest do
     client = SimpleHTTP1Client.tcp_client(context)
     SimpleHTTP1Client.send(client, "GET", "/peer_data", ["host: localhost"])
     {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-    {:ok, {ip, port}} = :inet.sockname(client)
+    {:ok, {ip, port}} = Transport.sockname(client)
 
     assert body == inspect(%{address: ip, port: port, ssl_cert: nil})
   end
@@ -1249,7 +1249,7 @@ defmodule HTTP1RequestTest do
       # Use a manually built request so we can count exact bytes
       request = "GET /send_200 HTTP/1.1\r\nhost: localhost\r\n\r\n"
       client = SimpleHTTP1Client.tcp_client(context)
-      :gen_tcp.send(client, request)
+      Transport.send(client, request)
       Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
@@ -1492,7 +1492,7 @@ defmodule HTTP1RequestTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
       client = SimpleHTTP1Client.tcp_client(context)
-      :gen_tcp.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
@@ -1512,7 +1512,7 @@ defmodule HTTP1RequestTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
       client = SimpleHTTP1Client.tcp_client(context)
-      :gen_tcp.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
+      Transport.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
       Process.sleep(1100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)

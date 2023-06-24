@@ -463,7 +463,7 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_simple_headers(socket, 1, :get, "/peer_data", context.port)
     SimpleH2Client.recv_headers(socket)
     {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-    {:ok, {ip, port}} = :ssl.sockname(socket)
+    {:ok, {ip, port}} = Transport.sockname(socket)
 
     assert body == inspect(%{address: ip, port: port, ssl_cert: nil})
   end
@@ -703,7 +703,8 @@ defmodule HTTP2PlugTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      :ssl.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      Transport.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+
       Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)

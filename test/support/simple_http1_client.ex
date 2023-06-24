@@ -1,35 +1,16 @@
 defmodule SimpleHTTP1Client do
   @moduledoc false
 
-  def tcp_client(context) do
-    {:ok, socket} =
-      :gen_tcp.connect(~c"localhost", context[:port], active: false, mode: :binary, nodelay: true)
-
-    socket
-  end
-
-  def tls_client(context, protocols) do
-    {:ok, socket} =
-      :ssl.connect(~c"localhost", context[:port],
-        active: false,
-        mode: :binary,
-        nodelay: true,
-        verify: :verify_peer,
-        cacertfile: Path.join(__DIR__, "../support/ca.pem"),
-        alpn_advertised_protocols: protocols
-      )
-
-    socket
-  end
+  defdelegate tcp_client(context), to: Transport
 
   def send(socket, verb, request_target, headers \\ [], version \\ "1.1") do
-    :gen_tcp.send(socket, "#{verb} #{request_target} HTTP/#{version}\r\n")
-    Enum.each(headers, &:gen_tcp.send(socket, &1 <> "\r\n"))
-    :gen_tcp.send(socket, "\r\n")
+    Transport.send(socket, "#{verb} #{request_target} HTTP/#{version}\r\n")
+    Enum.each(headers, &Transport.send(socket, &1 <> "\r\n"))
+    Transport.send(socket, "\r\n")
   end
 
   def recv_reply(socket) do
-    {:ok, response} = :gen_tcp.recv(socket, 0)
+    {:ok, response} = Transport.recv(socket, 0)
     parse_response(socket, response)
   end
 
@@ -64,7 +45,7 @@ defmodule SimpleHTTP1Client do
               response
 
             pending ->
-              {:ok, response} = :gen_tcp.recv(socket, pending)
+              {:ok, response} = Transport.recv(socket, pending)
               rest <> response
           end
       end
@@ -73,6 +54,6 @@ defmodule SimpleHTTP1Client do
   end
 
   def connection_closed_for_reading?(client) do
-    :gen_tcp.recv(client, 0) == {:error, :closed}
+    Transport.recv(client, 0) == {:error, :closed}
   end
 end

@@ -3,7 +3,7 @@ defmodule SimpleWebSocketClient do
 
   alias Bandit.WebSocket.Frame
 
-  defdelegate tcp_client(context), to: SimpleHTTP1Client
+  defdelegate tcp_client(context), to: Transport
 
   def http1_handshake(client, module, params \\ [], deflate \\ false) do
     params = Keyword.put(params, :websock, module)
@@ -24,7 +24,7 @@ defmodule SimpleWebSocketClient do
     )
 
     # Because we don't want to consume any more than our headers, we can't use SimpleHTTP1Client
-    {:ok, response} = :gen_tcp.recv(client, 216)
+    {:ok, response} = Transport.recv(client, 216)
 
     [
       "HTTP/1.1 101 Switching Protocols",
@@ -36,22 +36,22 @@ defmodule SimpleWebSocketClient do
       ""
     ] = String.split(response, "\r\n")
 
-    case :gen_tcp.recv(client, 2) do
+    case Transport.recv(client, 2) do
       {:ok, "\r\n"} ->
         {:ok, false}
 
       {:ok, "se"} when deflate ->
-        {:ok, "c-websocket-extensions: permessage-deflate\r\n\r\n"} = :gen_tcp.recv(client, 46)
+        {:ok, "c-websocket-extensions: permessage-deflate\r\n\r\n"} = Transport.recv(client, 46)
         {:ok, true}
     end
   end
 
   def connection_closed_for_reading?(client) do
-    :gen_tcp.recv(client, 0) == {:error, :closed}
+    Transport.recv(client, 0) == {:error, :closed}
   end
 
   def connection_closed_for_writing?(client) do
-    :gen_tcp.send(client, <<>>) == {:error, :closed}
+    Transport.send(client, <<>>) == {:error, :closed}
   end
 
   def recv_text_frame(client) do
@@ -90,7 +90,7 @@ defmodule SimpleWebSocketClient do
   end
 
   defp recv_frame(client) do
-    {:ok, header} = :gen_tcp.recv(client, 2)
+    {:ok, header} = Transport.recv(client, 2)
     <<flags::4, opcode::4, 0::1, length::7>> = header
 
     {:ok, data} =
@@ -99,15 +99,15 @@ defmodule SimpleWebSocketClient do
           {:ok, <<>>}
 
         126 ->
-          {:ok, <<length::16>>} = :gen_tcp.recv(client, 2)
-          :gen_tcp.recv(client, length)
+          {:ok, <<length::16>>} = Transport.recv(client, 2)
+          Transport.recv(client, length)
 
         127 ->
-          {:ok, <<length::64>>} = :gen_tcp.recv(client, 8)
-          :gen_tcp.recv(client, length)
+          {:ok, <<length::64>>} = Transport.recv(client, 8)
+          Transport.recv(client, length)
 
         length ->
-          :gen_tcp.recv(client, length)
+          Transport.recv(client, length)
       end
 
     {:ok, flags, opcode, data}
@@ -148,6 +148,11 @@ defmodule SimpleWebSocketClient do
         size -> <<1::1, 127::7, size::64>>
       end
 
-    :gen_tcp.send(client, [<<flags::4, opcode::4>>, mask_flag_and_size, <<mask::32>>, masked_data])
+    Transport.send(client, [
+      <<flags::4, opcode::4>>,
+      mask_flag_and_size,
+      <<mask::32>>,
+      masked_data
+    ])
   end
 end
