@@ -12,7 +12,8 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    {:ok, connection} = Connection.init(socket, state.plug, state.opts.http_2)
+    {:ok, connection} =
+      Connection.init(socket, state.plug, state.opts.http_2, Map.get(state, :initial_request))
 
     {:continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
   end

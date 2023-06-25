@@ -25,6 +25,8 @@ defmodule Bandit.HTTP1.Handler do
            req <- %{req | transport_info: transport_info},
            {:ok, headers, method, request_target, req} <-
              Bandit.HTTP1.Adapter.read_headers(req),
+           {:ok, :no_upgrade} <-
+             maybe_upgrade_h2c(req, transport_info, method, request_target, headers),
            {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
              Bandit.Pipeline.run(
                {Bandit.HTTP1.Adapter, req},
@@ -54,6 +56,16 @@ defmodule Bandit.HTTP1.Handler do
             )
 
           {:switch, Bandit.WebSocket.Handler, state}
+
+        {:ok, :h2c, remote_settings_payload, initial_request} ->
+          Bandit.Telemetry.stop_span(span, req.metrics)
+
+          state =
+            state
+            |> Map.put(:remote_settings_payload, remote_settings_payload)
+            |> Map.put(:initial_request, initial_request)
+
+          {:switch, Bandit.HTTP2.Handler, state}
       end
     rescue
       exception ->
@@ -85,6 +97,32 @@ defmodule Bandit.HTTP1.Handler do
       {:continue, Map.put(state, :requests_processed, requests_processed)}
     else
       {:close, state}
+    end
+  end
+
+  defp maybe_upgrade_h2c(req, transport_info, method, request_target, headers) do
+    with {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
+         %Bandit.TransportInfo{secure?: false} <- transport_info,
+         {:ok, connection_headers} <- Bandit.Headers.get_connection_header_keys(headers),
+         {:settings, [{"http2-settings", settings_payload}]} <-
+           {:settings, Enum.filter(headers, fn {key, _value} -> key == "http2-settings" end)},
+         {:ok, settings_payload} <- Base.url_decode64(settings_payload),
+         resp_headers = [{"connection", "Upgrade"}, {"upgrade", "h2c"}],
+         {:ok, _sent_body, _req} <- Bandit.HTTP1.Adapter.send_resp(req, 101, resp_headers, <<>>) do
+      headers =
+        Enum.reject(headers, fn {key, _value} ->
+          key == "connection" || key in connection_headers
+        end)
+
+      initial_request = {method, request_target, headers}
+
+      {:ok, :h2c, settings_payload, initial_request}
+    else
+      %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
+      {:upgrade, _} -> {:ok, :no_upgrade}
+      {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
+      :error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
+      {:error, error} -> {:error, error}
     end
   end
 

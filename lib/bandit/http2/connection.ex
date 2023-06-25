@@ -33,6 +33,9 @@ defmodule Bandit.HTTP2.Connection do
   @typedoc "A description of a connection error"
   @type error :: {:connection, Errors.error_code(), String.t()}
 
+  @type initial_request ::
+          {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers()}
+
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
           local_settings: Settings.t(),
@@ -50,28 +53,40 @@ defmodule Bandit.HTTP2.Connection do
           opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()} | no_return()
-  def init(socket, plug, opts) do
+  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword(), initial_request() | nil, binary()) ::
+          {:ok, t()} | {:error, String.t()} | no_return()
+  def init(socket, plug, opts, initial_request \\ nil, remote_settings_payload \\ <<>>) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
         {:ok, transport_info} -> transport_info
         {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
       end
 
-    connection = %__MODULE__{
-      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
-      transport_info: transport_info,
-      telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
-      plug: plug,
-      opts: opts
-    }
+    case Frame.Settings.deserialize(0, 0, remote_settings_payload) do
+      {:ok, %{settings: remote_settings}} ->
+        connection = %__MODULE__{
+          local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
+          remote_settings: remote_settings,
+          transport_info: transport_info,
+          telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
+          plug: plug,
+          opts: opts
+        }
 
-    # Send SETTINGS frame per RFC9113§3.4
-    _ =
-      %Frame.Settings{ack: false, settings: connection.local_settings}
-      |> send_frame(socket, connection)
+        # Send SETTINGS frame per RFC9113§3.4
+        _ =
+          %Frame.Settings{ack: false, settings: connection.local_settings}
+          |> send_frame(socket, connection)
 
-    {:ok, connection}
+        if is_nil(initial_request) do
+          {:ok, connection}
+        else
+          handle_initial_request(initial_request, connection)
+        end
+
+      {:error, {:connection, _, _}} ->
+        {:error, "Invalid remote settings payload"}
+    end
   end
 
   #
@@ -512,5 +527,29 @@ defmodule Bandit.HTTP2.Connection do
 
   defp send_frame(frame, socket, connection) do
     Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
+  end
+
+  defp handle_initial_request({method, request_target, headers}, connection) do
+    with {:path, {_, _, _, path}} <- {:path, request_target},
+         headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers],
+         {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
+         true <- accept_stream?(connection),
+         true <- accept_headers?(headers, connection.opts, stream),
+         {:ok, stream} <-
+           Stream.recv_headers(
+             stream,
+             connection.transport_info,
+             connection.telemetry_span,
+             headers,
+             true,
+             connection.plug,
+             connection.opts
+           ),
+         stream = %{stream | state: :remote_closed},
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, %{connection | streams: streams}}
+    else
+      _error -> {:error, "Invalid initial request"}
+    end
   end
 end
