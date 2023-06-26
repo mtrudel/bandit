@@ -26,7 +26,7 @@ defmodule Bandit.HTTP1.Handler do
            {:ok, headers, method, request_target, req} <-
              Bandit.HTTP1.Adapter.read_headers(req),
            {:ok, :no_upgrade} <-
-             maybe_upgrade_h2c(req, transport_info, method, request_target, headers),
+             maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers),
            {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
              Bandit.Pipeline.run(
                {Bandit.HTTP1.Adapter, req},
@@ -100,8 +100,9 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  defp maybe_upgrade_h2c(req, transport_info, method, request_target, headers) do
-    with {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
+  defp maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers) do
+    with {:http_2_enabled, true} <- {:http_2_enabled, state.http_2_enabled},
+         {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
          %Bandit.TransportInfo{secure?: false} <- transport_info,
          {:ok, connection_headers} <- Bandit.Headers.get_connection_header_keys(headers),
          {:settings, [{"http2-settings", settings_payload}]} <-
@@ -118,8 +119,9 @@ defmodule Bandit.HTTP1.Handler do
 
       {:ok, :h2c, settings_payload, initial_request}
     else
-      %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
+      {:http_2_enabled, false} -> {:ok, :no_upgrade}
       {:upgrade, _} -> {:ok, :no_upgrade}
+      %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
       {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
       :error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
       {:error, error} -> {:error, error}

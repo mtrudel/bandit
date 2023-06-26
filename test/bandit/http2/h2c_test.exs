@@ -68,4 +68,19 @@ defmodule H2CTest do
 
     assert {:ok, "400 Bad Request", _, <<>>} = SimpleHTTP1Client.recv_reply(client)
   end
+
+  test "ignores h2c when http2 is disabled", context do
+    context = http_server(context, http_2_options: [enabled: false])
+
+    client = SimpleHTTP1Client.tcp_client(context)
+
+    SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+      "Connection: Upgrade, HTTP2-Settings",
+      "Host: banana",
+      "Upgrade: h2c",
+      "HTTP2-Settings: "
+    ])
+
+    assert {:ok, "200 OK", _, "HTTP/1.1"} = SimpleHTTP1Client.recv_reply(client)
+  end
 end
