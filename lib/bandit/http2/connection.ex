@@ -54,7 +54,7 @@ defmodule Bandit.HTTP2.Connection do
         }
 
   @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword(), initial_request() | nil, binary()) ::
-          {:ok, t()} | {:error, String.t()} | no_return()
+          {:ok, t()} | {:close, term()} | {:error, term(), term()} | no_return()
   def init(socket, plug, opts, initial_request \\ nil, remote_settings_payload \\ <<>>) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
@@ -81,11 +81,11 @@ defmodule Bandit.HTTP2.Connection do
         if is_nil(initial_request) do
           {:ok, connection}
         else
-          handle_initial_request(initial_request, connection)
+          handle_initial_request(initial_request, socket, connection)
         end
 
       {:error, {:connection, _, _}} ->
-        {:error, "Invalid remote settings payload"}
+        {:close, "Invalid remote settings payload"}
     end
   end
 
@@ -529,8 +529,8 @@ defmodule Bandit.HTTP2.Connection do
     Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
   end
 
-  defp handle_initial_request({method, request_target, headers}, connection) do
-    with {:path, {_, _, _, path}} <- {:path, request_target},
+  defp handle_initial_request({method, request_target, headers}, socket, connection) do
+    with {:path, {_, _, _, path}} = {:path, request_target},
          headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers],
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
          true <- accept_stream?(connection),
@@ -549,7 +549,17 @@ defmodule Bandit.HTTP2.Connection do
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}
     else
-      _error -> {:error, "Invalid initial request"}
+      {:error, {:connection, error_code, error_message}} ->
+        shutdown_connection(error_code, error_message, socket, connection)
+
+      {:error, {:stream, stream_id, error_code, error_message}} ->
+        {:continue, connection} =
+          handle_stream_error(stream_id, error_code, error_message, socket, connection)
+
+        {:ok, connection}
+
+      {:error, error} ->
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
   end
 end
