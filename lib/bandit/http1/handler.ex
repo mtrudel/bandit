@@ -57,7 +57,7 @@ defmodule Bandit.HTTP1.Handler do
 
           {:switch, Bandit.WebSocket.Handler, state}
 
-        {:ok, :h2c, remote_settings_payload, initial_request} ->
+        {:ok, :h2c, req, remote_settings_payload, initial_request} ->
           Bandit.Telemetry.stop_span(span, req.metrics)
 
           state =
@@ -108,22 +108,36 @@ defmodule Bandit.HTTP1.Handler do
          {:settings, [{"http2-settings", settings_payload}]} <-
            {:settings, Enum.filter(headers, fn {key, _value} -> key == "http2-settings" end)},
          {:ok, settings_payload} <- Base.url_decode64(settings_payload),
+         {:ok, body, req} <- do_read_req_body(req),
          resp_headers = [{"connection", "Upgrade"}, {"upgrade", "h2c"}],
-         {:ok, _sent_body, _req} <- Bandit.HTTP1.Adapter.send_resp(req, 101, resp_headers, <<>>) do
+         {:ok, _sent_body, req} <- Bandit.HTTP1.Adapter.send_resp(req, 101, resp_headers, <<>>) do
       headers =
         Enum.reject(headers, fn {key, _value} ->
           key == "connection" || key in connection_headers
         end)
 
-      initial_request = {method, request_target, headers}
+      initial_request = {method, request_target, headers, body}
 
-      {:ok, :h2c, settings_payload, initial_request}
+      {:ok, :h2c, req, settings_payload, initial_request}
     else
       {:http_2_enabled, false} -> {:ok, :no_upgrade}
       {:upgrade, _} -> {:ok, :no_upgrade}
       %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
       {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
       :error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
+      {:error, error} -> {:error, error}
+    end
+  end
+
+  # This function is only used during h2c upgrades
+  defp do_read_req_body(req, acc \\ <<>>)
+
+  defp do_read_req_body(_req, acc) when byte_size(acc) > 8_000_000, do: {:error, :body_too_large}
+
+  defp do_read_req_body(req, acc) do
+    case Bandit.HTTP1.Adapter.read_req_body(req, []) do
+      {:ok, chunk, req} -> {:ok, acc <> chunk, req}
+      {:more, chunk, req} -> do_read_req_body(req, acc <> chunk)
       {:error, error} -> {:error, error}
     end
   end

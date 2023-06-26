@@ -34,7 +34,7 @@ defmodule Bandit.HTTP2.Connection do
   @type error :: {:connection, Errors.error_code(), String.t()}
 
   @type initial_request ::
-          {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers()}
+          {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), binary()}
 
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
@@ -224,6 +224,7 @@ defmodule Bandit.HTTP2.Connection do
              headers,
              end_stream,
              connection.plug,
+             nil,
              connection.opts
            ),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
@@ -529,10 +530,11 @@ defmodule Bandit.HTTP2.Connection do
     Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
   end
 
-  defp handle_initial_request({method, request_target, headers}, socket, connection) do
-    with {:path, {_, _, _, path}} = {:path, request_target},
-         headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers],
-         {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
+  defp handle_initial_request({method, request_target, headers, body}, socket, connection) do
+    {_, _, _, path} = request_target
+    headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
+
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
          true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream),
          {:ok, stream} <-
@@ -543,6 +545,7 @@ defmodule Bandit.HTTP2.Connection do
              headers,
              true,
              connection.plug,
+             body,
              connection.opts
            ),
          stream = %{stream | state: :remote_closed},
