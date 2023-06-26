@@ -969,7 +969,7 @@ defmodule WebSocketWebSockTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      :gen_tcp.close(client)
+      Transport.close(client)
 
       assert_receive {:error, :closed}
     end

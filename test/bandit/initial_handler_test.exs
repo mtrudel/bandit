@@ -22,8 +22,8 @@ defmodule InitialHandlerTest do
     test "closes connection on HTTP/2 request if so configured", context do
       context = https_server(context, http_2_options: [enabled: false])
       socket = SimpleH2Client.tls_client(context)
-      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert Transport.recv(socket, 0) == {:error, :closed}
     end
   end
 
@@ -47,8 +47,8 @@ defmodule InitialHandlerTest do
     @tag :capture_log
     test "closes with an error if HTTP/1.1 is attempted over an h2 ALPN connection", context do
       socket = SimpleH2Client.tls_client(context)
-      :ssl.send(socket, "GET / HTTP/1.1\r\n")
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      Transport.send(socket, "GET / HTTP/1.1\r\n")
+      assert Transport.recv(socket, 0) == {:error, :closed}
     end
   end
 
@@ -71,9 +71,9 @@ defmodule InitialHandlerTest do
 
     @tag :capture_log
     test "closes with an error if HTTP2 is attempted over a HTTP/1.1 connection", context do
-      socket = SimpleHTTP1Client.tls_client(context, ["http/1.1"])
-      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      socket = Transport.tls_client(context, ["http/1.1"])
+      Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert Transport.recv(socket, 0) == {:error, :closed}
     end
   end
 

@@ -17,26 +17,30 @@ defmodule HTTP2ProtocolTest do
         <<>> -> nil
         <<byte::binary-size(2), rest::binary>> -> {byte, rest}
       end)
-      |> Enum.each(fn byte -> :ssl.send(socket, byte) end)
+      |> Enum.each(fn byte -> Transport.send(socket, byte) end)
 
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+
+      assert Transport.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
     end
 
     test "it should handle cases where multiple frames arrive in the same packet", context do
       socket = SimpleH2Client.tls_client(context)
 
       # Send connection preface, client settings & ping frame all in one
-      :ssl.send(
+      Transport.send(
         socket,
         "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n" <>
           <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
       )
 
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+
+      assert Transport.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
     end
   end
 
@@ -44,7 +48,7 @@ defmodule HTTP2ProtocolTest do
     @tag capture_log: true
     test "it should ignore unknown frame types", context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
+      Transport.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
       assert SimpleH2Client.connection_alive?(socket)
     end
 
@@ -54,7 +58,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
       # Send a bogus SETTINGS frame
-      :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
+      Transport.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
@@ -63,7 +67,7 @@ defmodule HTTP2ProtocolTest do
          context do
       socket = SimpleH2Client.tls_client(context)
       Process.sleep(1500)
-      assert :ssl.recv(socket, 0) == {:error, :closed}
+      assert Transport.recv(socket, 0) == {:error, :closed}
     end
 
     @tag capture_log: true
@@ -109,8 +113,8 @@ defmodule HTTP2ProtocolTest do
   describe "settings exchange" do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
-      :ssl.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
     end
   end
 
@@ -648,17 +652,17 @@ defmodule HTTP2ProtocolTest do
 
       # We assume that 60k of random data will get hpacked down into somewhere
       # between 49152 and 65536 bytes, so we'll need 3 packets total
-      {:ok, <<16_384::24, 1::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, header_fragment} = :ssl.recv(socket, 16_384)
+      {:ok, <<16_384::24, 1::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
+      {:ok, header_fragment} = Transport.recv(socket, 16_384)
 
-      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, fragment_1} = :ssl.recv(socket, 16_384)
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
+      {:ok, fragment_1} = Transport.recv(socket, 16_384)
 
-      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, fragment_2} = :ssl.recv(socket, 16_384)
+      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
+      {:ok, fragment_2} = Transport.recv(socket, 16_384)
 
-      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = :ssl.recv(socket, 9)
-      {:ok, fragment_3} = :ssl.recv(socket, length)
+      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
+      {:ok, fragment_3} = Transport.recv(socket, length)
 
       {:ok, headers, _ctx} =
         [header_fragment, fragment_1, fragment_2, fragment_3]
@@ -691,7 +695,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send unadorned headers
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
 
       assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -702,7 +706,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with priority
-      :ssl.send(socket, [
+      Transport.send(socket, [
         <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
         <<0, 0, 0, 3, 5>>,
         headers
@@ -717,7 +721,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with padding
-      :ssl.send(socket, [
+      Transport.send(socket, [
         <<0, 0, IO.iodata_length(headers) + 5, 1, 0x0D, 0, 0, 0, 1>>,
         <<4>>,
         headers,
@@ -733,7 +737,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with padding and priority
-      :ssl.send(socket, [
+      Transport.send(socket, [
         <<0, 0, IO.iodata_length(headers) + 10, 1, 0x2D, 0, 0, 0, 1>>,
         <<4, 0, 0, 0, 0, 1>>,
         headers,
@@ -770,9 +774,9 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
 
       assert {:ok, 1, false,
               [
@@ -823,7 +827,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with padding and priority
-      :ssl.send(socket, [
+      Transport.send(socket, [
         <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
         <<0, 0, 0, 1, 5>>,
         headers
@@ -869,7 +873,10 @@ defmodule HTTP2ProtocolTest do
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      :ssl.send(socket, <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
+      Transport.send(
+        socket,
+        <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>
+      )
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
     end
@@ -883,7 +890,7 @@ defmodule HTTP2ProtocolTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      :ssl.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      Transport.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
@@ -1338,8 +1345,8 @@ defmodule HTTP2ProtocolTest do
     test "the server should acknowledge a client's SETTINGS frames", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      :ssl.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
-      assert :ssl.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+      Transport.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
+      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
     end
   end
 
@@ -1348,7 +1355,7 @@ defmodule HTTP2ProtocolTest do
     test "the server should reject any received PUSH_PROMISE frames", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      :ssl.send(socket, <<0, 0, 7, 5, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>)
+      Transport.send(socket, <<0, 0, 7, 5, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -1357,8 +1364,10 @@ defmodule HTTP2ProtocolTest do
   describe "PING frames" do
     test "the server should acknowledge a client's PING frames", context do
       socket = SimpleH2Client.setup_connection(context)
-      :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
-      assert :ssl.recv(socket, 17) == {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      Transport.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+
+      assert Transport.recv(socket, 17) ==
+               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
     end
   end
 
@@ -1695,8 +1704,8 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      Transport.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -1708,8 +1717,8 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -1720,7 +1729,7 @@ defmodule HTTP2ProtocolTest do
 
       headers = headers_for_header_read_test(context)
 
-      :ssl.send(socket, [<<0, 0, IO.iodata_length(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
+      Transport.send(socket, [<<0, 0, IO.iodata_length(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
