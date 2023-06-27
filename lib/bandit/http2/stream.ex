@@ -50,7 +50,6 @@ defmodule Bandit.HTTP2.Stream do
           Plug.Conn.headers(),
           boolean,
           Bandit.Pipeline.plug_def(),
-          binary() | nil,
           keyword()
         ) :: {:ok, t()} | {:error, Connection.error()} | {:error, error()}
   def recv_headers(
@@ -60,7 +59,6 @@ defmodule Bandit.HTTP2.Stream do
         trailers,
         true,
         _plug,
-        _premature_req_body,
         _opts
       )
       when state in [:open, :local_closed] do
@@ -79,7 +77,6 @@ defmodule Bandit.HTTP2.Stream do
         headers,
         _end_stream,
         plug,
-        premature_req_body,
         opts
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
@@ -92,7 +89,6 @@ defmodule Bandit.HTTP2.Stream do
              transport_info,
              stream.stream_id,
              content_encoding,
-             premature_req_body,
              opts
            ),
          {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
@@ -108,7 +104,6 @@ defmodule Bandit.HTTP2.Stream do
         _headers,
         _end_stream,
         _plug,
-        _premature_req_body,
         _opts
       ) do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}

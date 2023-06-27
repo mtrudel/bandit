@@ -108,7 +108,7 @@ defmodule Bandit.HTTP1.Handler do
          {:settings, [{"http2-settings", settings_payload}]} <-
            {:settings, Enum.filter(headers, fn {key, _value} -> key == "http2-settings" end)},
          {:ok, settings_payload} <- Base.url_decode64(settings_payload),
-         {:ok, body, req} <- do_read_req_body(req),
+         {:ok, data, req} <- do_read_req_body(req),
          resp_headers = [{"connection", "Upgrade"}, {"upgrade", "h2c"}],
          {:ok, _sent_body, req} <- Bandit.HTTP1.Adapter.send_resp(req, 101, resp_headers, <<>>) do
       headers =
@@ -116,7 +116,7 @@ defmodule Bandit.HTTP1.Handler do
           key == "connection" || key in connection_headers
         end)
 
-      initial_request = {method, request_target, headers, body}
+      initial_request = {method, request_target, headers, data}
 
       {:ok, :h2c, req, settings_payload, initial_request}
     else

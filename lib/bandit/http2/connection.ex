@@ -326,7 +326,7 @@ defmodule Bandit.HTTP2.Connection do
     {:continue, connection}
   end
 
-  defp handle_headers(headers, stream, end_stream, connection, body \\ nil) do
+  defp handle_headers(headers, stream, end_stream, connection) do
     with true <- accept_stream?(connection),
          true <- accept_headers?(headers, connection.opts, stream) do
       Stream.recv_headers(
@@ -336,7 +336,6 @@ defmodule Bandit.HTTP2.Connection do
         headers,
         end_stream,
         connection.plug,
-        body,
         connection.opts
       )
     end
@@ -534,13 +533,14 @@ defmodule Bandit.HTTP2.Connection do
     Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
   end
 
-  defp handle_initial_request({method, request_target, headers, body}, socket, connection) do
+  defp handle_initial_request({method, request_target, headers, data}, socket, connection) do
     {_, _, _, path} = request_target
     headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
 
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
-         {:ok, stream} <- handle_headers(headers, stream, true, connection, body),
-         stream = %{stream | state: :remote_closed},
+         {:ok, stream} <- handle_headers(headers, stream, true, connection),
+         {:ok, stream, _stream_window_increment} <- Stream.recv_data(stream, data),
+         {:ok, stream} <- Stream.recv_end_of_stream(stream, true),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}
     else

@@ -9,7 +9,6 @@ defmodule Bandit.HTTP2.Adapter do
   defstruct connection: nil,
             transport_info: nil,
             stream_id: nil,
-            premature_req_body: nil,
             end_stream: false,
             content_encoding: nil,
             metrics: %{},
@@ -20,19 +19,17 @@ defmodule Bandit.HTTP2.Adapter do
           connection: pid(),
           transport_info: Bandit.TransportInfo.t(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
-          premature_req_body: binary() | nil,
           end_stream: boolean(),
           content_encoding: String.t() | nil,
           metrics: map(),
           opts: keyword()
         }
 
-  def init(connection, transport_info, stream_id, content_encoding, premature_req_body, opts) do
+  def init(connection, transport_info, stream_id, content_encoding, opts) do
     %__MODULE__{
       connection: connection,
       transport_info: transport_info,
       stream_id: stream_id,
-      premature_req_body: premature_req_body,
       content_encoding: content_encoding,
       opts: opts
     }
@@ -51,14 +48,10 @@ defmodule Bandit.HTTP2.Adapter do
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{end_stream: true}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
-  def read_req_body(%__MODULE__{premature_req_body: nil} = adapter, opts) do
+  def read_req_body(%__MODULE__{} = adapter, opts) do
     timeout = Keyword.get(opts, :read_timeout, 15_000)
     length = Keyword.get(opts, :length, 8_000_000)
     do_read_req_body(adapter, timeout, length, [])
-  end
-
-  def read_req_body(%__MODULE__{} = adapter, _opts) do
-    {:ok, adapter.premature_req_body, %{adapter | premature_req_body: nil}}
   end
 
   defp do_read_req_body(adapter, timeout, remaining_length, acc) do
