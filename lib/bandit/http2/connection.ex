@@ -53,39 +53,39 @@ defmodule Bandit.HTTP2.Connection do
           opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword(), initial_request() | nil, binary()) ::
+  @spec init(
+          Socket.t(),
+          Bandit.Pipeline.plug_def(),
+          keyword(),
+          initial_request() | nil,
+          Settings.t() | nil
+        ) ::
           {:ok, t()} | {:close, term()} | {:error, term(), term()} | no_return()
-  def init(socket, plug, opts, initial_request \\ nil, remote_settings_payload \\ <<>>) do
+  def init(socket, plug, opts, initial_request \\ nil, remote_settings \\ nil) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
         {:ok, transport_info} -> transport_info
         {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
       end
 
-    case Frame.Settings.deserialize(0, 0, remote_settings_payload) do
-      {:ok, %{settings: remote_settings}} ->
-        connection = %__MODULE__{
-          local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
-          remote_settings: remote_settings,
-          transport_info: transport_info,
-          telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
-          plug: plug,
-          opts: opts
-        }
+    connection = %__MODULE__{
+      local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
+      remote_settings: remote_settings || %Settings{},
+      transport_info: transport_info,
+      telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
+      plug: plug,
+      opts: opts
+    }
 
-        # Send SETTINGS frame per RFC9113§3.4
-        _ =
-          %Frame.Settings{ack: false, settings: connection.local_settings}
-          |> send_frame(socket, connection)
+    # Send SETTINGS frame per RFC9113§3.4
+    _ =
+      %Frame.Settings{ack: false, settings: connection.local_settings}
+      |> send_frame(socket, connection)
 
-        if is_nil(initial_request) do
-          {:ok, connection}
-        else
-          handle_initial_request(initial_request, socket, connection)
-        end
-
-      {:error, {:connection, _, _}} ->
-        {:close, "Invalid remote settings payload"}
+    if is_nil(initial_request) do
+      {:ok, connection}
+    else
+      handle_initial_request(initial_request, socket, connection)
     end
   end
 

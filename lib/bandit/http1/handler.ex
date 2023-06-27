@@ -57,12 +57,12 @@ defmodule Bandit.HTTP1.Handler do
 
           {:switch, Bandit.WebSocket.Handler, state}
 
-        {:ok, :h2c, req, remote_settings_payload, initial_request} ->
+        {:ok, :h2c, req, remote_settings, initial_request} ->
           Bandit.Telemetry.stop_span(span, req.metrics)
 
           state =
             state
-            |> Map.put(:remote_settings_payload, remote_settings_payload)
+            |> Map.put(:remote_settings, remote_settings)
             |> Map.put(:initial_request, initial_request)
 
           {:switch, Bandit.HTTP2.Handler, state}
@@ -105,9 +105,7 @@ defmodule Bandit.HTTP1.Handler do
          {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
          %Bandit.TransportInfo{secure?: false} <- transport_info,
          {:ok, connection_headers} <- Bandit.Headers.get_connection_header_keys(headers),
-         {:settings, [{"http2-settings", settings_payload}]} <-
-           {:settings, Enum.filter(headers, fn {key, _value} -> key == "http2-settings" end)},
-         {:ok, settings_payload} <- Base.url_decode64(settings_payload),
+         {:ok, remote_settings} <- get_h2c_remote_settings(headers),
          {:ok, data, req} <- do_read_req_body(req),
          resp_headers = [{"connection", "Upgrade"}, {"upgrade", "h2c"}],
          {:ok, _sent_body, req} <- Bandit.HTTP1.Adapter.send_resp(req, 101, resp_headers, <<>>) do
@@ -118,13 +116,11 @@ defmodule Bandit.HTTP1.Handler do
 
       initial_request = {method, request_target, headers, data}
 
-      {:ok, :h2c, req, settings_payload, initial_request}
+      {:ok, :h2c, req, remote_settings, initial_request}
     else
       {:http_2_enabled, false} -> {:ok, :no_upgrade}
       {:upgrade, _} -> {:ok, :no_upgrade}
       %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
-      {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
-      :error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
       {:error, error} -> {:error, error}
     end
   end
@@ -139,6 +135,19 @@ defmodule Bandit.HTTP1.Handler do
       {:ok, chunk, req} -> {:ok, acc <> chunk, req}
       {:more, chunk, req} -> do_read_req_body(req, acc <> chunk)
       {:error, error} -> {:error, error}
+    end
+  end
+
+  defp get_h2c_remote_settings(headers) do
+    with {:settings, [{"http2-settings", settings_payload}]} <-
+           {:settings, Enum.filter(headers, fn {key, _value} -> key == "http2-settings" end)},
+         {:ok, remote_settings} <- Base.url_decode64(settings_payload, padding: false),
+         {:ok, %{settings: remote_settings}} <-
+           Bandit.HTTP2.Frame.Settings.deserialize(0, 0, remote_settings) do
+      {:ok, remote_settings}
+    else
+      {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
+      _error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
     end
   end
 

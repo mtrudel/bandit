@@ -86,6 +86,37 @@ defmodule H2CTest do
       assert {:ok, 1, false, _headers, _recv_ctx} = SimpleH2Client.recv_headers(client)
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "req_body"}
     end
+
+    @tag :capture_log
+    test "fails with invalid url_base64 value in HTTP2-Settings header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+        "Connection: Upgrade, HTTP2-Settings",
+        "Host: banana",
+        "Upgrade: h2c",
+        "HTTP2-Settings: mumbojumbo!"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "fails with invalid settings in HTTP2-Settings header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+        "Connection: Upgrade, HTTP2-Settings",
+        "Host: banana",
+        "Upgrade: h2c",
+        "HTTP2-Settings: YWxpd2FzaGVyZQ"
+      ])
+
+      {:ok, upgrade_response} = Transport.recv(client, 0)
+
+      assert {:ok, "400 Bad Request", _headers, <<>>} =
+               SimpleHTTP1Client.parse_response(client, upgrade_response)
+    end
   end
 
   @tag :capture_log
