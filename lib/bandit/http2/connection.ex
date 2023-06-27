@@ -214,19 +214,7 @@ defmodule Bandit.HTTP2.Connection do
          {:hpack, {:ok, headers, recv_hpack_state}} <-
            {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         true <- accept_stream?(connection),
-         true <- accept_headers?(headers, connection.opts, stream),
-         {:ok, stream} <-
-           Stream.recv_headers(
-             stream,
-             connection.transport_info,
-             connection.telemetry_span,
-             headers,
-             end_stream,
-             connection.plug,
-             nil,
-             connection.opts
-           ),
+         {:ok, stream} <- handle_headers(headers, stream, end_stream, connection),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
@@ -336,6 +324,22 @@ defmodule Bandit.HTTP2.Connection do
     Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})")
 
     {:continue, connection}
+  end
+
+  defp handle_headers(headers, stream, end_stream, connection, body \\ nil) do
+    with true <- accept_stream?(connection),
+         true <- accept_headers?(headers, connection.opts, stream) do
+      Stream.recv_headers(
+        stream,
+        connection.transport_info,
+        connection.telemetry_span,
+        headers,
+        end_stream,
+        connection.plug,
+        body,
+        connection.opts
+      )
+    end
   end
 
   defp accept_stream?(connection) do
@@ -535,19 +539,7 @@ defmodule Bandit.HTTP2.Connection do
     headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
 
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
-         true <- accept_stream?(connection),
-         true <- accept_headers?(headers, connection.opts, stream),
-         {:ok, stream} <-
-           Stream.recv_headers(
-             stream,
-             connection.transport_info,
-             connection.telemetry_span,
-             headers,
-             true,
-             connection.plug,
-             body,
-             connection.opts
-           ),
+         {:ok, stream} <- handle_headers(headers, stream, true, connection, body),
          stream = %{stream | state: :remote_closed},
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}
