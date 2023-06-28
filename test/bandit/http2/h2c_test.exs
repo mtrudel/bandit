@@ -106,7 +106,7 @@ defmodule H2CTest do
 
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert errors =~ "Invalid http2-settings value as per RFC7540§3.2.1"
+      assert errors =~ "Invalid http2-settings value (RFC7540§3.2.1)"
     end
 
     test "fails with invalid settings in HTTP2-Settings header", context do
@@ -129,7 +129,7 @@ defmodule H2CTest do
       assert {:ok, "400 Bad Request", _headers, <<>>} =
                SimpleHTTP1Client.parse_response(client, upgrade_response)
 
-      assert errors =~ "Invalid http2-settings value as per RFC7540§3.2.1"
+      assert errors =~ "Invalid http2-settings value (RFC7540§3.2.1)"
     end
   end
 
@@ -150,7 +150,7 @@ defmodule H2CTest do
       end)
 
     assert {:ok, "400 Bad Request", _, <<>>} = SimpleHTTP1Client.recv_reply(client)
-    assert errors =~ "h2c is only supported on http"
+    assert errors =~ "h2c must use http (RFC7540§3.2)"
   end
 
   test "ignores h2c when http2 is disabled", context do

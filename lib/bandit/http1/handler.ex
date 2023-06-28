@@ -120,7 +120,7 @@ defmodule Bandit.HTTP1.Handler do
     else
       {:http_2_enabled, false} -> {:ok, :no_upgrade}
       {:upgrade, _} -> {:ok, :no_upgrade}
-      %Bandit.TransportInfo{secure?: true} -> {:error, "h2c is only supported on http"}
+      %Bandit.TransportInfo{secure?: true} -> {:error, "h2c must use http (RFC7540§3.2)"}
       {:error, error} -> {:error, error}
     end
   end
@@ -146,8 +146,8 @@ defmodule Bandit.HTTP1.Handler do
            Bandit.HTTP2.Frame.Settings.deserialize(0, 0, remote_settings) do
       {:ok, remote_settings}
     else
-      {:settings, _} -> {:error, "Expected exactly 1 http2-settings header as per RFC7540§3.2.1"}
-      _error -> {:error, "Invalid http2-settings value as per RFC7540§3.2.1"}
+      {:settings, _} -> {:error, "Expected exactly 1 http2-settings header (RFC7540§3.2.1)"}
+      _error -> {:error, "Invalid http2-settings value (RFC7540§3.2.1)"}
     end
   end
 
