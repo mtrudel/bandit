@@ -89,6 +89,28 @@ defmodule H2CTest do
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "req_body"}
     end
 
+    test "fails when initial upgrade request body too large", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleHTTP1Client.send(client, "GET", "/echo_body", [
+            "Connection: Upgrade, HTTP2-Settings",
+            "Host: banana",
+            "Upgrade: h2c",
+            "HTTP2-Settings: ",
+            "Content-Length: 9000000"
+          ])
+
+          Transport.send(client, String.duplicate("a", 9_000_000))
+          Process.sleep(100)
+        end)
+
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+      assert errors =~ "body_too_large"
+    end
+
     test "fails with invalid url_base64 value in HTTP2-Settings header", context do
       client = SimpleHTTP1Client.tcp_client(context)
 

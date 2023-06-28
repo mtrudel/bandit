@@ -128,7 +128,7 @@ defmodule Bandit.HTTP1.Handler do
   # This function is only used during h2c upgrades
   defp do_read_req_body(req, acc \\ <<>>)
 
-  defp do_read_req_body(_req, acc) when byte_size(acc) > 8_000_000, do: {:error, :body_too_large}
+  defp do_read_req_body(_req, acc) when byte_size(acc) >= 8_000_000, do: {:error, :body_too_large}
 
   defp do_read_req_body(req, acc) do
     case Bandit.HTTP1.Adapter.read_req_body(req, []) do
