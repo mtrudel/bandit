@@ -251,22 +251,30 @@ defmodule Bandit.HTTP1.Adapter do
   defp do_read_content_length_body(socket, buffer, body_remaining, opts) do
     max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
 
-    if byte_size(buffer) >= max_desired_bytes || body_remaining == 0 do
-      # We can satisfy the read request entirely from our buffer
-      bytes_to_return = min(max_desired_bytes, byte_size(buffer))
-      <<to_return::binary-size(bytes_to_return), rest::binary>> = buffer
-      {:ok, to_return, rest, body_remaining}
-    else
-      # We need to read off the wire
-      bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
-      read_size = Keyword.get(opts, :read_length, 1_000_000)
-      read_timeout = Keyword.get(opts, :read_timeout)
+    cond do
+      body_remaining < 0 ->
+        # We have read more bytes than content-length suggested should have been sent. This is
+        # veering into request smuggling territory and should never happen with a well behaved
+        # client. The safest thing to do is just error
+        {:error, :excess_body_read}
 
-      with {:ok, iolist} <- read(socket, bytes_to_read, [], read_size, read_timeout) do
-        to_return = IO.iodata_to_binary([buffer | iolist])
-        body_remaining = body_remaining - (byte_size(to_return) - byte_size(buffer))
-        {:ok, to_return, <<>>, body_remaining}
-      end
+      byte_size(buffer) >= max_desired_bytes || body_remaining == 0 ->
+        # We can satisfy the read request entirely from our buffer
+        bytes_to_return = min(max_desired_bytes, byte_size(buffer))
+        <<to_return::binary-size(bytes_to_return), rest::binary>> = buffer
+        {:ok, to_return, rest, body_remaining}
+
+      true ->
+        # We need to read off the wire
+        bytes_to_read = min(max_desired_bytes - byte_size(buffer), body_remaining)
+        read_size = Keyword.get(opts, :read_length, 1_000_000)
+        read_timeout = Keyword.get(opts, :read_timeout)
+
+        with {:ok, iolist} <- read(socket, bytes_to_read, [], read_size, read_timeout) do
+          to_return = IO.iodata_to_binary([buffer | iolist])
+          body_remaining = body_remaining - (byte_size(to_return) - byte_size(buffer))
+          {:ok, to_return, <<>>, body_remaining}
+        end
     end
   end
 
