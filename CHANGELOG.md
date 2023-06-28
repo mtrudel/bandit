@@ -1,5 +1,27 @@
 # Changelog for 0.7.x
 
+## 1.0.0-pre.10 (28 Jun 2023)
+
+## Enhancements
+
+* Add support for `Plug.Conn.inform/3` on HTTP/1 connections (#180)
+* Add support for h2c upgrades (#186, thanks @alisinabh!)
+* Internal refactoring of HTTP/1 content-length encoded body reads (#184, #190,
+  thanks @asakura & @moogle19!)
+
+## Changes
+
+* Bump Thousand Island to 1.0.0-pre.6 (gaining support for suspend/resume API)
+* Drop Elixir 1.12 as a supported target (it should continue to work, but is no
+  longer covered by CI)
+
+## Fixes
+
+* Fix crash when Plug used `Plug.Conn.get_peer_data/1` function on HTTP/1
+  connections (#170, thanks @moogle19!)
+* Fix port behaviour when connecting over unix socket (#176, thanks @asakura
+  & @ibarchenkov!)
+
 ## 1.0.0-pre.9 (16 Jun 2023)
 
 ## Changes
