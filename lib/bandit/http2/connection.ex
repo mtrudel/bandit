@@ -33,6 +33,9 @@ defmodule Bandit.HTTP2.Connection do
   @typedoc "A description of a connection error"
   @type error :: {:connection, Errors.error_code(), String.t()}
 
+  @type initial_request ::
+          {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), binary()}
+
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
           local_settings: Settings.t(),
@@ -50,8 +53,15 @@ defmodule Bandit.HTTP2.Connection do
           opts: keyword()
         }
 
-  @spec init(Socket.t(), Bandit.Pipeline.plug_def(), keyword()) :: {:ok, t()} | no_return()
-  def init(socket, plug, opts) do
+  @spec init(
+          Socket.t(),
+          Bandit.Pipeline.plug_def(),
+          keyword(),
+          initial_request() | nil,
+          Settings.t() | nil
+        ) ::
+          {:ok, t()} | {:close, term()} | {:error, term(), term()} | no_return()
+  def init(socket, plug, opts, initial_request \\ nil, remote_settings \\ nil) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
         {:ok, transport_info} -> transport_info
@@ -60,6 +70,7 @@ defmodule Bandit.HTTP2.Connection do
 
     connection = %__MODULE__{
       local_settings: struct!(Settings, Keyword.get(opts, :default_local_settings, [])),
+      remote_settings: remote_settings || %Settings{},
       transport_info: transport_info,
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
@@ -71,7 +82,11 @@ defmodule Bandit.HTTP2.Connection do
       %Frame.Settings{ack: false, settings: connection.local_settings}
       |> send_frame(socket, connection)
 
-    {:ok, connection}
+    if is_nil(initial_request) do
+      {:ok, connection}
+    else
+      handle_initial_request(initial_request, socket, connection)
+    end
   end
 
   #
@@ -199,18 +214,7 @@ defmodule Bandit.HTTP2.Connection do
          {:hpack, {:ok, headers, recv_hpack_state}} <-
            {:hpack, HPAX.decode(block, connection.recv_hpack_state)},
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         true <- accept_stream?(connection),
-         true <- accept_headers?(headers, connection.opts, stream),
-         {:ok, stream} <-
-           Stream.recv_headers(
-             stream,
-             connection.transport_info,
-             connection.telemetry_span,
-             headers,
-             end_stream,
-             connection.plug,
-             connection.opts
-           ),
+         {:ok, stream} <- handle_headers(headers, stream, end_stream, connection),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
@@ -320,6 +324,21 @@ defmodule Bandit.HTTP2.Connection do
     Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})")
 
     {:continue, connection}
+  end
+
+  defp handle_headers(headers, stream, end_stream, connection) do
+    with true <- accept_stream?(connection),
+         true <- accept_headers?(headers, connection.opts, stream) do
+      Stream.recv_headers(
+        stream,
+        connection.transport_info,
+        connection.telemetry_span,
+        headers,
+        end_stream,
+        connection.plug,
+        connection.opts
+      )
+    end
   end
 
   defp accept_stream?(connection) do
@@ -512,5 +531,30 @@ defmodule Bandit.HTTP2.Connection do
 
   defp send_frame(frame, socket, connection) do
     Socket.send(socket, Frame.serialize(frame, connection.remote_settings.max_frame_size))
+  end
+
+  defp handle_initial_request({method, request_target, headers, data}, socket, connection) do
+    {_, _, _, path} = request_target
+    headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
+
+    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
+         {:ok, stream} <- handle_headers(headers, stream, true, connection),
+         {:ok, stream, _stream_window_increment} <- Stream.recv_data(stream, data),
+         {:ok, stream} <- Stream.recv_end_of_stream(stream, true),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
+      {:ok, %{connection | streams: streams}}
+    else
+      {:error, {:connection, error_code, error_message}} ->
+        shutdown_connection(error_code, error_message, socket, connection)
+
+      {:error, {:stream, stream_id, error_code, error_message}} ->
+        {:continue, connection} =
+          handle_stream_error(stream_id, error_code, error_message, socket, connection)
+
+        {:ok, connection}
+
+      {:error, error} ->
+        shutdown_connection(Errors.internal_error(), error, socket, connection)
+    end
   end
 end

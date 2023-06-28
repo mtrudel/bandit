@@ -55,6 +55,23 @@ defmodule Bandit.Headers do
     end
   end
 
+  @spec get_connection_header_keys(Plug.Conn.headers()) ::
+          {:ok, [String.t()]} | {:error, String.t()}
+  def get_connection_header_keys(headers) do
+    case Bandit.Headers.get_header(headers, "connection") do
+      nil ->
+        {:error, "Expected connection header"}
+
+      value ->
+        header_keys =
+          value
+          |> String.downcase()
+          |> Plug.Conn.Utils.list()
+
+        {:ok, header_keys}
+    end
+  end
+
   @spec parse_content_length(binary()) :: {:ok, non_neg_integer()} | {:error, String.t()}
   defp parse_content_length(value) do
     case parse_integer(value) do
