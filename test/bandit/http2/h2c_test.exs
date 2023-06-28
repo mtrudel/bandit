@@ -2,6 +2,8 @@ defmodule H2CTest do
   use ExUnit.Case, async: false
   use ServerHelpers
 
+  import ExUnit.CaptureLog
+
   def echo_protocol(conn) do
     conn
     |> send_resp(200, to_string(get_http_protocol(conn)))
@@ -87,51 +89,68 @@ defmodule H2CTest do
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "req_body"}
     end
 
-    @tag :capture_log
     test "fails with invalid url_base64 value in HTTP2-Settings header", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
-        "Connection: Upgrade, HTTP2-Settings",
-        "Host: banana",
-        "Upgrade: h2c",
-        "HTTP2-Settings: mumbojumbo!"
-      ])
+      errors =
+        capture_log(fn ->
+          SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+            "Connection: Upgrade, HTTP2-Settings",
+            "Host: banana",
+            "Upgrade: h2c",
+            "HTTP2-Settings: mumbojumbo!"
+          ])
+
+          Process.sleep(100)
+        end)
 
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+      assert errors =~ "Invalid http2-settings value as per RFC7540§3.2.1"
     end
 
-    @tag :capture_log
     test "fails with invalid settings in HTTP2-Settings header", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
-        "Connection: Upgrade, HTTP2-Settings",
-        "Host: banana",
-        "Upgrade: h2c",
-        "HTTP2-Settings: YWxpd2FzaGVyZQ"
-      ])
+      errors =
+        capture_log(fn ->
+          SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+            "Connection: Upgrade, HTTP2-Settings",
+            "Host: banana",
+            "Upgrade: h2c",
+            "HTTP2-Settings: YWxpd2FzaGVyZQ"
+          ])
+
+          Process.sleep(100)
+        end)
 
       {:ok, upgrade_response} = Transport.recv(client, 0)
 
       assert {:ok, "400 Bad Request", _headers, <<>>} =
                SimpleHTTP1Client.parse_response(client, upgrade_response)
+
+      assert errors =~ "Invalid http2-settings value as per RFC7540§3.2.1"
     end
   end
 
-  @tag :capture_log
   test "rejects h2c over TLS", context do
     context = https_server(context)
     client = Transport.tls_client(context, ["http/1.1"])
 
-    SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
-      "Connection: Upgrade, HTTP2-Settings",
-      "Host: banana",
-      "Upgrade: h2c",
-      "HTTP2-Settings: "
-    ])
+    errors =
+      capture_log(fn ->
+        SimpleHTTP1Client.send(client, "GET", "/echo_protocol", [
+          "Connection: Upgrade, HTTP2-Settings",
+          "Host: banana",
+          "Upgrade: h2c",
+          "HTTP2-Settings: "
+        ])
+
+        Process.sleep(100)
+      end)
 
     assert {:ok, "400 Bad Request", _, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    assert errors =~ "h2c is only supported on http"
   end
 
   test "ignores h2c when http2 is disabled", context do
