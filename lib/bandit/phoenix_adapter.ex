@@ -12,15 +12,19 @@ defmodule Bandit.PhoenixAdapter do
   ```
 
   Once Bandit is included as a dependency of your Phoenix project, add the following `adapter:`
-  line to your endpoint configuration in `config/config.exs`:
+  line to your endpoint configuration in `config/config.exs`, as in the following example:
 
   ```
+  # config/config.exs
+
   config :your_app, YourAppWeb.Endpoint,
-    adapter: Bandit.PhoenixAdapter
+    adapter: Bandit.PhoenixAdapter, # <---- ADD THIS LINE
+    url: [host: "localhost"],
+    render_errors: ...
   ```
 
-  That's it! After restarting Phoenix you should see the startup message indicate that it is being
-  served by Bandit, and everything should 'just work'. Note that if you have set any exotic
+  That's it! **After restarting Phoenix you should see the startup message indicate that it is being
+  served by Bandit**, and everything should 'just work'. Note that if you have set any exotic
   configuration options within your endpoint, you may need to update that configuration to work
   with Bandit; see below for details.
 
