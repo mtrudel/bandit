@@ -24,14 +24,20 @@ defmodule Bandit do
       ```elixir
       {:bandit, "~> 1.0-pre"}
       ```
-  2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`:
+  2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`, as
+     in the following example:
 
-       ```elixir
-       config :your_app, YourAppWeb.Endpoint,
-         adapter: Bandit.PhoenixAdapter
-       ```
-  3. That's it! You should now see messages at startup indicating that Phoenix is
-     using Bandit to serve your endpoint, and everything should 'just work'. Note
+      ```
+      # config/config.exs
+
+      config :your_app, YourAppWeb.Endpoint,
+        adapter: Bandit.PhoenixAdapter, # <---- ADD THIS LINE
+        url: [host: "localhost"],
+        render_errors: ...
+      ```
+
+  3. That's it! **You should now see messages at startup indicating that Phoenix is
+     using Bandit to serve your endpoint**, and everything should 'just work'. Note
      that if you have set any exotic configuration options within your endpoint,
      you may need to update that configuration to work with Bandit; see the
      `Bandit.PhoenixAdapter` documentation for more information.
