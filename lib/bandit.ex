@@ -157,7 +157,7 @@ defmodule Bandit do
   """
   @type options :: [
           plug: module() | {module(), Plug.opts()},
-          scheme: scheme(),
+          scheme: :http | :https,
           port: :inet.port_number(),
           ip: :inet.socket_address(),
           keyfile: binary(),
@@ -171,8 +171,6 @@ defmodule Bandit do
           http_2_options: http_2_options(),
           websocket_options: websocket_options()
         ]
-
-  @type scheme :: :http | :https
 
   @typedoc """
   Options to configure the HTTP/1 stack in Bandit
@@ -263,6 +261,8 @@ defmodule Bandit do
           memory_level: :zlib.zmemlevel(),
           strategy: :zlib.zstrategy()
         ]
+
+  @typep scheme :: :http | :https
 
   require Logger
 
