@@ -58,7 +58,7 @@ foundational work that is approachable & understandable by users above it in the
   9113](https://datatracker.ietf.org/doc/html/rfc9113) & [RFC
   9110](https://datatracker.ietf.org/doc/html/rfc9110), comprehensively covered
   by automated [h2spec](https://github.com/summerwind/h2spec) conformance
-  testing. Though deprecated, Bandit also supports h2c upgrades as
+  testing. Though deprecated by later RFCs, Bandit also supports h2c upgrades as
   specified in [RFC7540](https://datatracker.ietf.org/doc/html/rfc7540)
 * Support for HTTP content encoding compression on both HTTP/1.x and HTTP/2.
   gzip and deflate methods are supported per
