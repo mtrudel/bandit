@@ -64,6 +64,12 @@ defmodule Bandit.MixProject do
   end
 
   defp docs do
-    [main: "Bandit", logo: "assets/ex_doc_logo.png"]
+    [
+      extras: [
+        "CHANGELOG.md": [title: "Changelog"]
+      ],
+      main: "Bandit",
+      logo: "assets/ex_doc_logo.png"
+    ]
   end
 end

@@ -1,4 +1,6 @@
 defmodule Bandit do
+  @external_resource Path.join([__DIR__, "../README.md"])
+
   @moduledoc """
   Bandit is an HTTP server for Plug and WebSock apps.
 
@@ -12,99 +14,7 @@ defmodule Bandit do
   any) they would like to change when starting a Bandit server. The sparseness of the Bandit API
   should not be taken as an indicator of the comprehensiveness or robustness of the project.
 
-  ## Using Bandit With Phoenix
-
-  Bandit fully supports Phoenix. Phoenix applications which use WebSockets for
-  features such as Channels or LiveView require Phoenix 1.7 or later.
-
-  Using Bandit to host your Phoenix application couldn't be simpler:
-
-  1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
-
-      ```elixir
-      {:bandit, "~> 1.0-pre"}
-      ```
-  2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`, as
-     in the following example:
-
-      ```
-      # config/config.exs
-
-      config :your_app, YourAppWeb.Endpoint,
-        adapter: Bandit.PhoenixAdapter, # <---- ADD THIS LINE
-        url: [host: "localhost"],
-        render_errors: ...
-      ```
-
-  3. That's it! **You should now see messages at startup indicating that Phoenix is
-     using Bandit to serve your endpoint**, and everything should 'just work'. Note
-     that if you have set any exotic configuration options within your endpoint,
-     you may need to update that configuration to work with Bandit; see the
-     `Bandit.PhoenixAdapter` documentation for more information.
-
-  ## Using Bandit With Plug Applications
-
-  Using Bandit to host your own Plug is very straightforward. Assuming you have a Plug module
-  implemented already, you can host it within Bandit by adding something similar to the following
-  to your application's `Application.start/2` function:
-
-  ```elixir
-  def start(_type, _args) do
-    children = [
-      {Bandit, plug: MyPlug}
-    ]
-
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-    Supervisor.start_link(children, opts)
-  end
-  ```
-
-  For details about writing Plug based applications, consult the excellent [Plug
-  documentation](https://hexdocs.pm/plug/) for plenty of examples & tips to get started.
-  Bandit supports the complete Plug API & should work correctly with any Plug-based
-  application. If you encounter errors using Bandit your Plug app, please do get in touch by
-  filing an issue on the Bandit [GitHub project](https://github.com/mtrudel/bandit) (especially if
-  the error does not occur with another HTTP server such as Cowboy).
-
-  ## Configuration
-
-  A number of options are defined when starting a server. The complete list is
-  defined by the `t:Bandit.options/0` type.
-
-  ## Setting up an HTTPS Server
-
-  By far the most common stumbling block encountered when setting up an HTTPS server involves
-  configuring key and certificate data. Bandit is comparatively easy to set up in this regard,
-  with a working example looking similar to the following:
-
-  ```elixir
-  def start(_type, _args) do
-    children = [
-      {Bandit,
-       plug: MyPlug,
-       scheme: :https,
-       certfile: "/absolute/path/to/cert.pem",
-       keyfile: "/absolute/path/to/key.pem"
-    ]
-
-    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-    Supervisor.start_link(children, opts)
-  end
-  ```
-
-  ## WebSocket Support
-
-  Bandit supports WebSocket implementations via the
-  [WebSock](https://hexdocs.pm/websock/WebSock.html) and
-  [WebSockAdapter](https://hexdocs.pm/websock_adapter/WebSockAdapter.html) libraries, which
-  provide a generic abstraction for WebSockets (very similar to how Plug is a generic abstraction
-  on top of HTTP). Bandit fully supports all aspects of these libraries.
-
-  Applications should validate that the connection represents a valid WebSocket request
-  before attempting an upgrade (Bandit will validate the connection as part of the upgrade
-  process, but does not provide any capacity for an application to be notified if the upgrade is
-  not successful). If an application wishes to negotiate WebSocket subprotocols or otherwise set
-  any response headers, it should do so before upgrading.
+  #{@external_resource |> File.read!() |> String.split("<!-- MDOC -->") |> Enum.fetch!(1)}
   """
 
   @typedoc """

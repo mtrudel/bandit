@@ -75,6 +75,8 @@ Any Phoenix or Plug app should work with Bandit as a drop-in replacement for
 Cowboy; exceptions to this are errors (if you find one, please [file an
 issue!](https://github.com/mtrudel/bandit/issues)).
 
+<!-- MDOC -->
+
 ## Using Bandit With Phoenix
 
 Bandit fully supports Phoenix. Phoenix applications which use WebSockets for
@@ -106,9 +108,10 @@ Using Bandit to host your Phoenix application couldn't be simpler:
 
 ## Using Bandit With Plug Applications
 
-Using Bandit to host your own Plug is very straightforward. Assuming you have a Plug module
-implemented already, you can host it within Bandit by adding something similar to the following
-to your application's `Application.start/2` function:
+Using Bandit to host your own Plug is very straightforward. Assuming you have
+a Plug module implemented already, you can host it within Bandit by adding
+something similar to the following to your application's `Application.start/2`
+function:
 
 ```elixir
 def start(_type, _args) do
@@ -121,15 +124,39 @@ def start(_type, _args) do
 end
 ```
 
-Bandit takes a number of options at startup, which are described in detail in the Bandit
-[documentation](https://hexdocs.pm/bandit/Bandit.html).
-
 For less formal usage, you can also start Bandit using the same configuration
 options via the `Bandit.start_link/1` function:
 
 ```elixir
 # Start an http server on the default port 4000, serving MyApp.MyPlug
 Bandit.start_link(plug: MyPlug)
+```
+
+## Configuration
+
+A number of options are defined when starting a server. The complete list is
+defined by the [`t:Bandit.options/0`](https://hexdocs.pm/bandit/Bandit.html#summary) type.
+
+## Setting up an HTTPS Server
+
+By far the most common stumbling block encountered when setting up an HTTPS
+server involves configuring key and certificate data. Bandit is comparatively
+easy to set up in this regard, with a working example looking similar to the
+following:
+
+```elixir
+def start(_type, _args) do
+  children = [
+    {Bandit,
+     plug: MyPlug,
+     scheme: :https,
+     certfile: "/absolute/path/to/cert.pem",
+     keyfile: "/absolute/path/to/key.pem"
+  ]
+
+  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+  Supervisor.start_link(children, opts)
+end
 ```
 
 ## WebSocket Support
@@ -143,6 +170,8 @@ If you wish to interact with WebSockets at a more fundamental level, the
 provides a generic abstraction for WebSockets (very similar to how Plug is
 a generic abstraction on top of HTTP). Bandit fully supports all aspects of
 these libraries. 
+
+<!-- MDOC -->
 
 ## Implementation Details
 

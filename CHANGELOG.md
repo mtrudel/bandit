@@ -1,4 +1,4 @@
-# Changelog for 0.7.x
+# Changelog for 1.0.0-pre
 
 ## 1.0.0-pre.10 (28 Jun 2023)
 
@@ -97,7 +97,7 @@
 ### Enhancements
 
 * Respect read timeout for HTTP/1 keepalives (#140)
-* Support Websock 0.5.1, including support for optional c:Websock.terminate/2`
+* Support Websock 0.5.1, including support for optional `c:WebSock.terminate/2`
   (#131)
 
 ### Changes
@@ -116,6 +116,8 @@
 ### Changes
 
 * Update Thousand Island dependency to 1.0-pre
+
+# Changelog for 0.7.x
 
 ## 0.7.7 (11 Apr 2023)
 
@@ -168,7 +170,7 @@
 ### Changes
 
 * Calling `Plug.Conn` adapter functions for HTTP/2 based requests are no longer
-  restricted to being called from the process which called `Plug.call/2`
+  restricted to being called from the process which called `c:Plug.call/2`
 
 ### Enhancements
 
