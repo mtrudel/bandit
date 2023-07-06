@@ -1,7 +1,9 @@
 defmodule Bandit.Clock do
   @moduledoc false
-  # Task which updates an ETS table with the current
-  # HTTP header timestamp once a second
+  # Task which updates an ETS table with the current pre-formatted HTTP header
+  # timestamp once a second. This saves the individual request processes from
+  # having to construct this themselves, since it is a surprisingly expensive
+  # operation
 
   use Task, restart: :permanent
 

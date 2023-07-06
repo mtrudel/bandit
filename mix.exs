@@ -66,8 +66,25 @@ defmodule Bandit.MixProject do
   defp docs do
     [
       extras: [
-        "CHANGELOG.md": [title: "Changelog"]
+        "CHANGELOG.md": [title: "Changelog"],
+        "README.md": [title: "README"],
+        "lib/bandit/http1/README.md": [
+          filename: "HTTP1_README.md",
+          title: "HTTP/1 Implementation Notes"
+        ],
+        "lib/bandit/http2/README.md": [
+          filename: "HTTP2_README.md",
+          title: "HTTP/2 Implementation Notes"
+        ],
+        "lib/bandit/websocket/README.md": [
+          filename: "WebSocket_README.md",
+          title: "WebSocket Implementation Notes"
+        ]
       ],
+      groups_for_extras: [
+        "Implementation Notes": Path.wildcard("lib/bandit/*/README.md")
+      ],
+      skip_undefined_reference_warnings_on: Path.wildcard("lib/bandit/*/README.md"),
       main: "Bandit",
       logo: "assets/ex_doc_logo.png"
     ]

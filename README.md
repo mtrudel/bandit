@@ -175,9 +175,18 @@ these libraries.
 
 ## Implementation Details
 
-Bandit's HTTP/2 implementation is described in detail in its own
-[README](lib/bandit/http2/README.md). Similar documentation for the HTTP/1.x and
-WebSocket implementations is a work in progress.
+Bandit primarily consists of three protocol-specific implmenetations, one each
+for [HTTP/1][], [HTTP/2][] and [WebSockets][]. Each of these implementations is
+largely distinct from one another, and is described in its own README linked
+above.
+
+If you're just taking a casual look at Bandit or trying to understand how an
+HTTP server works, the [HTTP/1][] implementation is likely the best place to
+start exploring.
+
+[HTTP/1]: lib/bandit/http1/README.md
+[HTTP/2]: lib/bandit/http2/README.md
+[WebSockets]: lib/bandit/websocket/README.md
 
 ## Contributing
 
