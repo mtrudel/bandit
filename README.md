@@ -175,7 +175,7 @@ these libraries.
 
 ## Implementation Details
 
-Bandit primarily consists of three protocol-specific implmenetations, one each
+Bandit primarily consists of three protocol-specific implementations, one each
 for [HTTP/1][], [HTTP/2][] and [WebSockets][]. Each of these implementations is
 largely distinct from one another, and is described in its own README linked
 above.
