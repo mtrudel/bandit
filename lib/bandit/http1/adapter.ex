@@ -320,7 +320,7 @@ defmodule Bandit.HTTP1.Adapter do
   ##################
 
   @compile {:inline, read_available: 2}
-  @spec read_available(ThousandIsland.Socket.t(), timeout()) ::
+  @spec read_available(ThousandIsland.Socket.t(), timeout() | nil) ::
           {:ok, binary()} | {:error, :closed | :timeout | :inet.posix()}
   defp read_available(socket, read_timeout) do
     ThousandIsland.Socket.recv(socket, 0, read_timeout)

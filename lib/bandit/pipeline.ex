@@ -90,7 +90,7 @@ defmodule Bandit.Pipeline do
        ),
        do: {:ok, to_string(host), port || determine_local_port(local_info)}
 
-  @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: integer()
+  @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: :inet.port_number()
   defp determine_local_port({family, _}) when family in [:local, :unspec, :undefined], do: 0
   defp determine_local_port({_ip, port}), do: port
 
