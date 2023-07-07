@@ -22,7 +22,10 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Pong.t()
 
   @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()} | {{:more, binary()}, <<>>} | {{:error, term()}, iodata()} | nil
+          {{:ok, frame()}, iodata()}
+          | {{:more, binary()}, <<>>}
+          | {{:error, term()}, iodata()}
+          | nil
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
           payload::binary-size(length), rest::binary>>,
