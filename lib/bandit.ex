@@ -326,6 +326,8 @@ defmodule Bandit do
 
     case address do
       :local -> "#{_unix_path = port} (#{scheme}+unix)"
+      :undefined -> "#{inspect(port)} (#{scheme}+undefined)"
+      :unspec -> "unspec (#{scheme})"
       address -> "#{:inet.ntoa(address)}:#{port} (#{scheme})"
     end
   end
