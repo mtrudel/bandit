@@ -302,7 +302,7 @@ defmodule Bandit do
     arg
     |> Keyword.get(:plug)
     |> case do
-      nil -> raise "A value for is required for :plug"
+      nil -> raise "A value is required for :plug"
       {plug, plug_options} -> {plug, plug.init(plug_options)}
       plug -> {plug, plug.init([])}
     end
