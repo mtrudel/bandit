@@ -151,7 +151,7 @@ def start(_type, _args) do
      plug: MyPlug,
      scheme: :https,
      certfile: "/absolute/path/to/cert.pem",
-     keyfile: "/absolute/path/to/key.pem"
+     keyfile: "/absolute/path/to/key.pem"}
   ]
 
   opts = [strategy: :one_for_one, name: MyApp.Supervisor]
