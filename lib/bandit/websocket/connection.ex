@@ -14,7 +14,7 @@ defmodule Bandit.WebSocket.Connection do
             metrics: %{}
 
   @typedoc "Connection state"
-  @type state :: :open | :closing
+  @type state :: :open | :closing | :closed
 
   @typedoc "Encapsulates the state of a WebSocket connection"
   @type t :: %__MODULE__{
@@ -124,7 +124,7 @@ defmodule Bandit.WebSocket.Connection do
           end
 
         _ = do_stop(reply_code, :remote, socket, connection)
-        {:close, %{connection | state: :closing}}
+        {:close, %{connection | state: :closed}}
 
       %Frame.Ping{} = frame ->
         connection =
@@ -239,7 +239,7 @@ defmodule Bandit.WebSocket.Connection do
       Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: reason})
     end
 
-    {:error, reason, %{connection | state: :closing}}
+    {:error, reason, %{connection | state: :closed}}
   end
 
   defp maybe_wrap_reason(:timeout), do: :timeout
