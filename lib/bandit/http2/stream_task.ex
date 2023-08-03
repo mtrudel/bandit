@@ -66,7 +66,7 @@ defmodule Bandit.HTTP2.StreamTask do
          adapter <- {Bandit.HTTP2.Adapter, req},
          {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} <-
            Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
-      Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
+      Bandit.Telemetry.stop_span(span, req.metrics, %{conn: conn})
       :ok
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason

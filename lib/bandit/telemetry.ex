@@ -32,7 +32,6 @@ defmodule Bandit.Telemetry do
 
       * `monotonic_time`: The time of this event, in `:native` units
       * `duration`: The span duration, in `:native` units
-      * `conn`: The `Plug.Conn` representing this connection
       * `req_header_end_time`: The time that header reading completed, in `:native` units
       * `req_body_start_time`: The time that request body reading started, in `:native` units.
       * `req_body_end_time`: The time that request body reading completed, in `:native` units
@@ -61,6 +60,8 @@ defmodule Bandit.Telemetry do
       * `telemetry_span_context`: A unique identifier for this span
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
+      * `conn`: The `Plug.Conn` representing this connection
+      * `stream_id`: The stream ID of the request, if part of an HTTP/2 connection
       * `error`: The error that caused the span to end, if it ended in error
 
   The following events may be emitted within this span:

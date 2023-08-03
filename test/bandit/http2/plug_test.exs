@@ -551,7 +551,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
@@ -560,6 +559,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   stream_id: integer()
                 }}
              ]
@@ -578,7 +578,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -590,6 +589,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   stream_id: integer()
                 }}
              ]
@@ -612,7 +612,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -624,6 +623,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   stream_id: integer()
                 }}
              ]
@@ -646,7 +646,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -660,6 +659,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   stream_id: integer()
                 }}
              ]
@@ -677,7 +677,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
@@ -686,6 +685,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   stream_id: integer()
                 }}
              ]

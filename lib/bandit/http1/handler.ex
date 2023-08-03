@@ -36,7 +36,7 @@ defmodule Bandit.HTTP1.Handler do
                headers,
                state.plug
              ) do
-        Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
+        Bandit.Telemetry.stop_span(span, req.metrics, %{conn: conn})
         maybe_keepalive(req, state)
       else
         {:error, reason} ->
@@ -45,7 +45,7 @@ defmodule Bandit.HTTP1.Handler do
           {:error, reason, state}
 
         {:ok, :websocket, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn, upgrade_opts} ->
-          Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
+          Bandit.Telemetry.stop_span(span, req.metrics, %{conn: conn})
 
           state =
             state

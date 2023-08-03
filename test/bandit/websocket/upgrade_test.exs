@@ -68,7 +68,6 @@ defmodule WebSocketUpgradeTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 66,
                   req_header_end_time: integer(),
                   req_header_bytes: 141,
@@ -80,7 +79,8 @@ defmodule WebSocketUpgradeTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
