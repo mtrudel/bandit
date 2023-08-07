@@ -385,6 +385,8 @@ defmodule Bandit.HTTP1.Adapter do
           {body, headers, %{}}
       end
 
+    compress = Keyword.get(req.opts.http_1, :compress, true)
+    headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
     body_bytes = IO.iodata_length(body)
     headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 

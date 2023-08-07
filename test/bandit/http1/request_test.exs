@@ -794,6 +794,7 @@ defmodule HTTP1RequestTest do
               [
                 date: string(),
                 "content-length": "85",
+                vary: "accept-encoding",
                 "cache-control": "max-age=0, private, must-revalidate"
               ],
               "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.HTTP1.Adapter\"}"}
@@ -849,6 +850,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
 
       deflate_context = :zlib.open()
       :ok = :zlib.deflateInit(deflate_context)
@@ -868,6 +870,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -878,6 +881,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "x-gzip"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -891,6 +895,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
 
       deflate_context = :zlib.open()
       :ok = :zlib.deflateInit(deflate_context)
@@ -909,6 +914,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -923,6 +929,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -937,6 +944,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -947,6 +955,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -961,7 +970,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == nil
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -972,6 +981,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -990,6 +1000,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
       assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
       assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+      assert Bandit.Headers.get_header(response.headers, "vary") == nil
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -1314,7 +1325,7 @@ defmodule HTTP1RequestTest do
                   req_header_end_time: integer(),
                   req_header_bytes: 19,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 110,
+                  resp_header_bytes: 133,
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1349,7 +1360,7 @@ defmodule HTTP1RequestTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 0,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 110,
+                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1388,7 +1399,7 @@ defmodule HTTP1RequestTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 110,
+                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1423,7 +1434,7 @@ defmodule HTTP1RequestTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 110,
+                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1462,7 +1473,7 @@ defmodule HTTP1RequestTest do
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
                   resp_line_bytes: 17,
-                  resp_header_bytes: 135,
+                  resp_header_bytes: 158,
                   resp_uncompressed_body_bytes: 2,
                   resp_body_bytes: 22,
                   resp_compression_method: "gzip",

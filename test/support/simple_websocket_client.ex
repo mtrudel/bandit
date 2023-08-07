@@ -24,11 +24,12 @@ defmodule SimpleWebSocketClient do
     )
 
     # Because we don't want to consume any more than our headers, we can't use SimpleHTTP1Client
-    {:ok, response} = Transport.recv(client, 216)
+    {:ok, response} = Transport.recv(client, 239)
 
     [
       "HTTP/1.1 101 Switching Protocols",
       "date: " <> _date,
+      "vary: accept-encoding",
       "cache-control: max-age=0, private, must-revalidate",
       "upgrade: websocket",
       "connection: Upgrade",
