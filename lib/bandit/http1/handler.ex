@@ -23,8 +23,8 @@ defmodule Bandit.HTTP1.Handler do
     try do
       with {:ok, transport_info} <- Bandit.TransportInfo.init(socket),
            req <- %{req | transport_info: transport_info},
-           {:ok, headers, method, request_target, req} <-
-             Bandit.HTTP1.Adapter.read_headers(req),
+           {:ok, method, request_target, req} <- Bandit.HTTP1.Adapter.read_request_line(req),
+           {:ok, headers, req} <- Bandit.HTTP1.Adapter.read_headers(req),
            {:ok, :no_upgrade} <-
              maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers),
            {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
