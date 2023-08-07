@@ -926,6 +926,30 @@ defmodule HTTP1RequestTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "does no encoding if a strong etag is present in the response", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_strong_etag",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      # Assert that we did not try to compress the body
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "does content encoding if a weak etag is present in the response", context do
+      response =
+        Req.get!(context.req, url: "/send_weak_etag", headers: [{"accept-encoding", "gzip"}])
+
+      assert response.status == 200
+      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
+      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
+    end
+
     test "falls back to no encoding if no encodings match", context do
       response =
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "a, b, c"}])
@@ -964,6 +988,18 @@ defmodule HTTP1RequestTest do
       conn
       |> put_resp_header("content-encoding", "deflate")
       |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_strong_etag(conn) do
+      conn
+      |> put_resp_header("etag", "\"1234\"")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_weak_etag(conn) do
+      conn
+      |> put_resp_header("etag", "W/\"1234\"")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
