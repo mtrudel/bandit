@@ -60,7 +60,14 @@ defmodule Bandit.Telemetry do
       * `telemetry_span_context`: A unique identifier for this span
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
-      * `conn`: The `Plug.Conn` representing this connection
+      * `method`: The HTTP method of the request. If Bandit could not determine the method, this
+        will be nil
+      * `request_target`: The raw request target for the request. Returned as a tuple comprising the
+        constituent parts of the request target: `{scheme, host, port, path}`. If Bandit could not
+        determine the request target, this will be nil
+      * `status`: The numeric response status code of the response
+      * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
+        is also set
       * `stream_id`: The stream ID of the request, if part of an HTTP/2 connection
       * `error`: The error that caused the span to end, if it ended in error
 
