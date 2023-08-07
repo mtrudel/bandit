@@ -360,10 +360,16 @@ defmodule Bandit.HTTP1.Adapter do
         _strong_etag -> true
       end
 
+    response_indicates_no_transform =
+      case Bandit.Headers.get_header(headers, "cache-control") do
+        nil -> false
+        header -> "no-transform" in Plug.Conn.Utils.list(header)
+      end
+
     {body, headers, compression_metrics} =
       case {body, req.content_encoding, response_content_encoding_header,
-            response_has_strong_etag} do
-        {body, content_encoding, nil, false}
+            response_has_strong_etag, response_indicates_no_transform} do
+        {body, content_encoding, nil, false, false}
         when byte_size(body) > 0 and not is_nil(content_encoding) ->
           metrics = %{
             resp_uncompressed_body_bytes: IO.iodata_length(body),
