@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.Stream do
             pending_content_length: nil,
             span: nil
 
-  defmodule StreamError, do: defexception([:message])
+  defmodule StreamError, do: defexception([:message, :method, :request_target, :status])
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
@@ -306,7 +306,13 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def stream_terminated(%__MODULE__{} = stream, {%StreamError{} = error, _}) do
-    Bandit.Telemetry.stop_span(stream.span, %{}, %{error: error.message})
+    Bandit.Telemetry.stop_span(stream.span, %{}, %{
+      error: error.message,
+      method: error.method,
+      request_target: error.request_target,
+      status: error.status
+    })
+
     Logger.warning("Stream #{stream.stream_id} encountered a stream error (#{inspect(error)})")
     {:ok, %{stream | state: :closed, pid: nil}, Errors.protocol_error()}
   end
