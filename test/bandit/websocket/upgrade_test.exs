@@ -80,7 +80,11 @@ defmodule WebSocketUpgradeTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  status: 101,
+                  method: "GET",
+                  request_target:
+                    {nil, nil, nil, "/?websock=Elixir.WebSocketUpgradeTest.MyNoopWebSock"}
                 }}
              ]
     end
