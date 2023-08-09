@@ -35,7 +35,7 @@ defmodule H2CTest do
         "HTTP2-Settings: "
       ])
 
-      {:ok, upgrade_response} = Transport.recv(client, 108)
+      {:ok, upgrade_response} = Transport.recv(client, 131)
 
       assert {:ok, "101 Switching Protocols", headers, <<>>} =
                SimpleHTTP1Client.parse_response(client, upgrade_response)
@@ -73,7 +73,7 @@ defmodule H2CTest do
 
       Transport.send(client, "req_body")
 
-      {:ok, upgrade_response} = Transport.recv(client, 108)
+      {:ok, upgrade_response} = Transport.recv(client, 131)
 
       assert {:ok, "101 Switching Protocols", headers, <<>>} =
                SimpleHTTP1Client.parse_response(client, upgrade_response)

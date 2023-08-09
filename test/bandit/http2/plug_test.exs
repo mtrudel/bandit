@@ -125,6 +125,7 @@ defmodule HTTP2PlugTest do
     assert [
              {"date", date},
              {"content-length", "0"},
+             {"vary", "accept-encoding"},
              {"cache-control", "max-age=0, private, must-revalidate"},
              {"X-Response-Header", "Response"}
            ] = response.headers
@@ -145,6 +146,7 @@ defmodule HTTP2PlugTest do
 
     assert [
              {"content-length", "0"},
+             {"vary", "accept-encoding"},
              {"cache-control", "max-age=0, private, must-revalidate"},
              {"date", "Tue, 27 Sep 2022 07:17:32 GMT"}
            ] = response.headers

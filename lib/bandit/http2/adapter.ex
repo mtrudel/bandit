@@ -107,9 +107,24 @@ defmodule Bandit.HTTP2.Adapter do
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
+    response_has_strong_etag =
+      case Bandit.Headers.get_header(headers, "etag") do
+        nil -> false
+        "\W" <> _rest -> false
+        _strong_etag -> true
+      end
+
+    response_indicates_no_transform =
+      case Bandit.Headers.get_header(headers, "cache-control") do
+        nil -> false
+        header -> "no-transform" in Plug.Conn.Utils.list(header)
+      end
+
     {body, headers, compression_metrics} =
-      case {body, adapter.content_encoding, response_content_encoding_header} do
-        {body, content_encoding, nil} when body != <<>> and not is_nil(content_encoding) ->
+      case {body, adapter.content_encoding, response_content_encoding_header,
+            response_has_strong_etag, response_indicates_no_transform} do
+        {body, content_encoding, nil, false, false}
+        when body != <<>> and not is_nil(content_encoding) ->
           metrics = %{
             resp_uncompressed_body_bytes: IO.iodata_length(body),
             resp_compression_method: content_encoding
@@ -124,6 +139,8 @@ defmodule Bandit.HTTP2.Adapter do
           {body, headers, %{}}
       end
 
+    compress = Keyword.get(adapter.opts, :compress, true)
+    headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
     body_bytes = IO.iodata_length(body)
     headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 

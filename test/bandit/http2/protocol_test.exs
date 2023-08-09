@@ -129,6 +129,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "2"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -157,6 +158,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
+                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -190,6 +192,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
+                {"vary", "accept-encoding"},
                 {"content-encoding", "gzip"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -217,6 +220,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
+                {"vary", "accept-encoding"},
                 {"content-encoding", "x-gzip"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -244,6 +248,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
+                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -277,8 +282,91 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "10000"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"content-encoding", "deflate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Assert that we did not try to compress the body
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    test "does no encoding if a strong etag is present in response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_strong_etag"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "10000"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"etag", "\"1234\""}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Assert that we did not try to compress the body
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
+    test "does content encoding if a weak etag is present in the response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_weak_etag"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "46"},
+                {"vary", "accept-encoding"},
+                {"content-encoding", "gzip"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"etag", "W/\"1234\""}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      expected = :zlib.gzip(String.duplicate("a", 10_000))
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
+    test "does no encoding if cache-control: no-transform is present in the response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_no_transform"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "10000"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "no-transform"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
       # Assert that we did not try to compress the body
@@ -302,6 +390,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "10000"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -326,6 +415,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "10000"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -368,6 +458,24 @@ defmodule HTTP2ProtocolTest do
       conn
       |> put_resp_header("content-encoding", "deflate")
       |> put_resp_header("content-length", "10000")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_strong_etag(conn) do
+      conn
+      |> put_resp_header("etag", "\"1234\"")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_weak_etag(conn) do
+      conn
+      |> put_resp_header("etag", "W/\"1234\"")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_no_transform(conn) do
+      conn
+      |> put_resp_header("cache-control", "no-transform")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
@@ -673,6 +781,7 @@ defmodule HTTP2ProtocolTest do
                {":status", "200"},
                {"date", _date},
                {"content-length", "2"},
+               {"vary", "accept-encoding"},
                {"cache-control", "max-age=0, private, must-revalidate"},
                {"giant", ^random_string}
              ] = headers
@@ -783,6 +892,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "2"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -1150,6 +1260,7 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "2"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"cookie", "a=b"},
                 {"cookie", "c=d"},
@@ -1173,6 +1284,7 @@ defmodule HTTP2ProtocolTest do
          {":status", "200"},
          {"date", _date},
          {"content-length", "2"},
+         {"vary", "accept-encoding"},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -1190,6 +1302,7 @@ defmodule HTTP2ProtocolTest do
          {":status", "200"},
          {"date", _date},
          {"content-length", "2"},
+         {"vary", "accept-encoding"},
          {"cache-control", "max-age=0, private, must-revalidate"}
        ], _ctx} = SimpleH2Client.recv_headers(socket, ctx)
 
