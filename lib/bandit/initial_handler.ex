@@ -20,7 +20,10 @@ defmodule Bandit.InitialHandler do
   @spec handle_connection(ThousandIsland.Socket.t(), state :: term()) ::
           ThousandIsland.Handler.handler_result() | on_switch_handler()
   def handle_connection(socket, state) do
-    case {state.http_1_enabled, state.http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
+    http_1_enabled = Keyword.get(state.opts.http_1, :enabled, true)
+    http_2_enabled = Keyword.get(state.opts.http_2, :enabled, true)
+
+    case {http_1_enabled, http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
       {_, _, _, :likely_tls} ->
         Logger.warning("Connection that looks like TLS received on a clear channel")
         {:close, state}

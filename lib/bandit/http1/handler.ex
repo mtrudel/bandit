@@ -13,12 +13,7 @@ defmodule Bandit.HTTP1.Handler do
         connection_telemetry_span_context: connection_span.telemetry_span_context
       })
 
-    req = %Bandit.HTTP1.Adapter{
-      socket: socket,
-      buffer: data,
-      opts: state.opts,
-      websocket_enabled: state.websocket_enabled
-    }
+    req = %Bandit.HTTP1.Adapter{socket: socket, buffer: data, opts: state.opts}
 
     try do
       with {:ok, transport_info} <- Bandit.TransportInfo.init(socket),
@@ -101,8 +96,9 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers) do
-    with {:http_2_enabled, true} <- {:http_2_enabled, state.http_2_enabled},
-         {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
+    with {:upgrade, "h2c"} <- {:upgrade, Bandit.Headers.get_header(headers, "upgrade")},
+         {:http_2_enabled, true} <-
+           {:http_2_enabled, Keyword.get(state.opts.http_2, :enabled, true)},
          %Bandit.TransportInfo{secure?: false} <- transport_info,
          {:ok, connection_headers} <- Bandit.Headers.get_connection_header_keys(headers),
          {:ok, remote_settings} <- get_h2c_remote_settings(headers),

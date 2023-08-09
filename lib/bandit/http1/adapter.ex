@@ -16,7 +16,6 @@ defmodule Bandit.HTTP1.Adapter do
             content_encoding: nil,
             upgrade: nil,
             metrics: %{},
-            websocket_enabled: false,
             opts: []
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
@@ -32,7 +31,6 @@ defmodule Bandit.HTTP1.Adapter do
           content_encoding: String.t(),
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           metrics: %{},
-          websocket_enabled: boolean(),
           opts: %{
             required(:http_1) => Bandit.http_1_options(),
             required(:websocket) => Bandit.websocket_options()
@@ -514,8 +512,13 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def upgrade(%Bandit.HTTP1.Adapter{websocket_enabled: true} = req, :websocket, opts),
-    do: {:ok, %{req | upgrade: {:websocket, opts, req.opts.websocket}}}
+  def upgrade(req, :websocket, opts) do
+    if Keyword.get(req.opts.websocket, :enabled, true) do
+      {:ok, %{req | upgrade: {:websocket, opts, req.opts.websocket}}}
+    else
+      {:error, :not_supported}
+    end
+  end
 
   def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
 
