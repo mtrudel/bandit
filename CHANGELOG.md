@@ -1,5 +1,19 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.11 (11 Aug 2023)
+
+## Changes
+
+* **BREAKING CHANGE** Move `conn` value in telemetry events from measurements to metadata
+
+## Enhancements
+
+* Add `method`, `request_target` and `status` fields to telemetry metadata on HTTP stop events
+* Improve RFC compliance regarding cache-related headers on deflated responses (#207, thanks @tanguilp!)
+* Bump to Thousand Island `1.0.0-pre.6`
+* Doc improvements (particularly around implementation notes)
+* Typespec improvements (thanks @moogle19!)
+
 ## 1.0.0-pre.10 (28 Jun 2023)
 
 ## Enhancements
