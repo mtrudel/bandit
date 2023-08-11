@@ -52,22 +52,35 @@ defmodule Bandit.HTTP2.StreamTask do
 
   def run(req, transport_info, all_headers, plug, span) do
     with {:ok, request_target} <- build_request_target(all_headers),
-         {:ok, pseudo_headers, headers} <- split_headers(all_headers),
-         :ok <- pseudo_headers_all_request(pseudo_headers),
-         :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
-         :ok <- exactly_one_instance_of(pseudo_headers, ":method"),
-         :ok <- exactly_one_instance_of(pseudo_headers, ":path"),
-         method <- Bandit.Headers.get_header(pseudo_headers, ":method"),
-         :ok <- headers_all_lowercase(headers),
-         :ok <- no_connection_headers(headers),
-         :ok <- valid_te_header(headers),
-         headers <- combine_cookie_crumbs(headers),
-         req <- Bandit.HTTP2.Adapter.add_end_header_metric(req),
-         adapter <- {Bandit.HTTP2.Adapter, req},
-         {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} <-
-           Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
-      Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
-      :ok
+         method <- Bandit.Headers.get_header(all_headers, ":method") do
+      with {:ok, pseudo_headers, headers} <- split_headers(all_headers),
+           :ok <- pseudo_headers_all_request(pseudo_headers),
+           :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
+           :ok <- exactly_one_instance_of(pseudo_headers, ":method"),
+           :ok <- exactly_one_instance_of(pseudo_headers, ":path"),
+           :ok <- headers_all_lowercase(headers),
+           :ok <- no_connection_headers(headers),
+           :ok <- valid_te_header(headers),
+           headers <- combine_cookie_crumbs(headers),
+           req <- Bandit.HTTP2.Adapter.add_end_header_metric(req),
+           adapter <- {Bandit.HTTP2.Adapter, req},
+           {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} <-
+             Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
+        Bandit.Telemetry.stop_span(span, req.metrics, %{
+          conn: conn,
+          method: method,
+          request_target: request_target,
+          status: conn.status
+        })
+
+        :ok
+      else
+        {:error, reason} ->
+          raise Bandit.HTTP2.Stream.StreamError,
+            message: reason,
+            method: method,
+            request_target: request_target
+      end
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason
     end

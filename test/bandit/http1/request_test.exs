@@ -1320,7 +1320,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 24,
                   req_header_end_time: integer(),
                   req_header_bytes: 19,
@@ -1332,7 +1331,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {nil, nil, nil, "/send_200"}
                 }}
              ]
     end
@@ -1352,7 +1355,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
@@ -1367,7 +1369,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {nil, nil, nil, "/do_read_body"}
                 }}
              ]
     end
@@ -1391,7 +1397,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
@@ -1406,7 +1411,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {nil, nil, nil, "/do_read_body"}
                 }}
              ]
     end
@@ -1426,7 +1435,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
@@ -1441,7 +1449,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {nil, nil, nil, "/do_read_body"}
                 }}
              ]
     end
@@ -1465,7 +1477,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: integer(),
                   req_header_end_time: integer(),
                   req_header_bytes: integer(),
@@ -1482,7 +1493,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {nil, nil, nil, "/do_read_body"}
                 }}
              ]
     end
@@ -1501,7 +1516,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 32,
                   req_header_end_time: integer(),
                   req_header_bytes: 49,
@@ -1512,7 +1526,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {nil, nil, nil, "/send_chunked_200"}
                 }}
              ]
     end
@@ -1531,7 +1549,6 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_line_bytes: 30,
                   req_header_end_time: integer(),
                   req_header_bytes: 49,
@@ -1543,7 +1560,11 @@ defmodule HTTP1RequestTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {nil, nil, nil, "/send_full_file"}
                 }}
              ]
     end
@@ -1563,7 +1584,10 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: string()
+                  error: string(),
+                  status: 400,
+                  method: "GET",
+                  request_target: {nil, nil, nil, "/"}
                 }}
              ]
     end
@@ -1583,7 +1607,10 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: :timeout
+                  error: :timeout,
+                  status: 408,
+                  method: "GET",
+                  request_target: {nil, nil, nil, "/"}
                 }}
              ]
     end

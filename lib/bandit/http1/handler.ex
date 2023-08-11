@@ -20,59 +20,85 @@ defmodule Bandit.HTTP1.Handler do
       websocket_enabled: state.websocket_enabled
     }
 
-    try do
-      with {:ok, transport_info} <- Bandit.TransportInfo.init(socket),
-           req <- %{req | transport_info: transport_info},
-           {:ok, headers, method, request_target, req} <-
-             Bandit.HTTP1.Adapter.read_headers(req),
-           {:ok, :no_upgrade} <-
-             maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers),
-           {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
-             Bandit.Pipeline.run(
-               {Bandit.HTTP1.Adapter, req},
-               transport_info,
-               method,
-               request_target,
-               headers,
-               state.plug
-             ) do
-        Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
-        maybe_keepalive(req, state)
-      else
-        {:error, reason} ->
-          _ = attempt_to_send_fallback(req, code_for_reason(reason))
-          Bandit.Telemetry.stop_span(span, %{}, %{error: reason})
-          {:error, reason, state}
+    with {:ok, transport_info} <- Bandit.TransportInfo.init(socket),
+         req <- %{req | transport_info: transport_info},
+         {:ok, method, request_target, req} <- Bandit.HTTP1.Adapter.read_request_line(req) do
+      try do
+        with {:ok, headers, req} <- Bandit.HTTP1.Adapter.read_headers(req),
+             {:ok, :no_upgrade} <-
+               maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers),
+             {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
+               Bandit.Pipeline.run(
+                 {Bandit.HTTP1.Adapter, req},
+                 transport_info,
+                 method,
+                 request_target,
+                 headers,
+                 state.plug
+               ) do
+          Bandit.Telemetry.stop_span(span, req.metrics, %{
+            conn: conn,
+            status: conn.status,
+            method: method,
+            request_target: request_target
+          })
 
-        {:ok, :websocket, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn, upgrade_opts} ->
-          Bandit.Telemetry.stop_span(span, Map.put(req.metrics, :conn, conn))
+          maybe_keepalive(req, state)
+        else
+          {:error, reason} ->
+            code = code_for_reason(reason)
+            _ = attempt_to_send_fallback(req, code)
 
-          state =
-            state
-            |> Map.put(:upgrade_opts, upgrade_opts)
-            |> Map.put(
-              :origin_telemetry_span_context,
-              Bandit.Telemetry.telemetry_span_context(span)
-            )
+            Bandit.Telemetry.stop_span(span, %{}, %{
+              error: reason,
+              status: code,
+              method: method,
+              request_target: request_target
+            })
 
-          {:switch, Bandit.WebSocket.Handler, state}
+            {:error, reason, state}
 
-        {:ok, :h2c, req, remote_settings, initial_request} ->
-          Bandit.Telemetry.stop_span(span, req.metrics)
+          {:ok, :websocket, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn, upgrade_opts} ->
+            Bandit.Telemetry.stop_span(span, req.metrics, %{
+              conn: conn,
+              status: conn.status,
+              method: method,
+              request_target: request_target
+            })
 
-          state =
-            state
-            |> Map.put(:remote_settings, remote_settings)
-            |> Map.put(:initial_request, initial_request)
+            state =
+              state
+              |> Map.put(:upgrade_opts, upgrade_opts)
+              |> Map.put(
+                :origin_telemetry_span_context,
+                Bandit.Telemetry.telemetry_span_context(span)
+              )
 
-          {:switch, Bandit.HTTP2.Handler, state}
+            {:switch, Bandit.WebSocket.Handler, state}
+
+          {:ok, :h2c, req, remote_settings, initial_request} ->
+            Bandit.Telemetry.stop_span(span, req.metrics)
+
+            state =
+              state
+              |> Map.put(:remote_settings, remote_settings)
+              |> Map.put(:initial_request, initial_request)
+
+            {:switch, Bandit.HTTP2.Handler, state}
+        end
+      rescue
+        exception ->
+          # Raise here so that users can see useful stacktraces
+          _ = attempt_to_send_fallback(req, 500)
+          Bandit.Telemetry.span_exception(span, :exit, exception, __STACKTRACE__)
+          reraise(exception, __STACKTRACE__)
       end
-    rescue
-      exception ->
-        # Raise here so that users can see useful stacktraces
-        _ = attempt_to_send_fallback(req, 500)
-        Bandit.Telemetry.span_exception(span, :exit, exception, __STACKTRACE__)
-        reraise(exception, __STACKTRACE__)
+    else
+      {:error, reason} ->
+        code = code_for_reason(reason)
+        _ = attempt_to_send_fallback(req, code)
+        Bandit.Telemetry.stop_span(span, %{}, %{error: reason, code: code})
+        {:error, reason, state}
     end
   end
 

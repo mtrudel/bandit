@@ -43,8 +43,37 @@ defmodule Bandit.HTTP1.Adapter do
   # Header Reading
   ################
 
+  def read_request_line(req, method \\ nil, request_target \\ nil) do
+    packet_size = Keyword.get(req.opts.http_1, :max_request_line_length, 10_000)
+
+    case :erlang.decode_packet(:http_bin, req.buffer, packet_size: packet_size) do
+      {:more, _len} ->
+        with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
+          read_request_line(%{req | buffer: req.buffer <> chunk}, method, request_target)
+        end
+
+      {:ok, {:http_request, method, request_target, version}, rest} ->
+        with {:ok, version} <- get_version(version),
+             {:ok, request_target} <- resolve_request_target(request_target) do
+          bytes_read = byte_size(req.buffer) - byte_size(rest)
+          metrics = Map.update(req.metrics, :req_line_bytes, bytes_read, &(&1 + bytes_read))
+          req = %{req | buffer: rest, version: version, metrics: metrics}
+          {:ok, to_string(method), request_target, req}
+        end
+
+      {:ok, {:http_error, reason}, _rest} ->
+        {:error, "request line read error: #{inspect(reason)}"}
+
+      {:error, :invalid} ->
+        {:error, :request_uri_too_long}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   def read_headers(req) do
-    with {:ok, headers, method, request_target, %__MODULE__{} = req} <- do_read_headers(req),
+    with {:ok, headers, %__MODULE__{} = req} <- do_read_headers(req),
          {:ok, body_size} <- Bandit.Headers.get_content_length(headers) do
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
 
@@ -60,17 +89,15 @@ defmodule Bandit.HTTP1.Adapter do
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, method, request_target, %{req | state: :no_body}}
+          {:ok, headers, %{req | state: :no_body}}
 
         {body_size, nil} ->
           body_remaining = body_size - byte_size(req.buffer)
 
-          {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_remaining: body_remaining}}
+          {:ok, headers, %{req | state: :headers_read, body_remaining: body_remaining}}
 
         {nil, body_encoding} ->
-          {:ok, headers, method, request_target,
-           %{req | state: :headers_read, body_encoding: body_encoding}}
+          {:ok, headers, %{req | state: :headers_read, body_encoding: body_encoding}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -79,35 +106,14 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  @dialyzer {:no_improper_lists, do_read_headers: 5}
-  defp do_read_headers(
-         req,
-         type \\ :http_bin,
-         headers \\ [],
-         method \\ nil,
-         request_target \\ nil
-       ) do
-    # Figure out how to limit this read based on if we're reading request line or headers
-    packet_size =
-      case method do
-        nil -> Keyword.get(req.opts.http_1, :max_request_line_length, 10_000)
-        _ -> Keyword.get(req.opts.http_1, :max_header_length, 10_000)
-      end
+  defp do_read_headers(req, headers \\ []) do
+    packet_size = Keyword.get(req.opts.http_1, :max_header_length, 10_000)
 
-    case :erlang.decode_packet(type, req.buffer, packet_size: packet_size) do
+    case :erlang.decode_packet(:httph_bin, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
         with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
           req = %{req | buffer: req.buffer <> chunk}
-          do_read_headers(req, type, headers, method, request_target)
-        end
-
-      {:ok, {:http_request, method, request_target, version}, rest} ->
-        with {:ok, version} <- get_version(version),
-             {:ok, request_target} <- resolve_request_target(request_target) do
-          bytes_read = byte_size(req.buffer) - byte_size(rest)
-          metrics = Map.update(req.metrics, :req_line_bytes, bytes_read, &(&1 + bytes_read))
-          req = %{req | buffer: rest, version: version, metrics: metrics}
-          do_read_headers(req, :httph_bin, headers, method, request_target)
+          do_read_headers(req, headers)
         end
 
       {:ok, {:http_header, _, header, _, value}, rest} ->
@@ -117,7 +123,7 @@ defmodule Bandit.HTTP1.Adapter do
         headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
 
         if length(headers) <= Keyword.get(req.opts.http_1, :max_header_count, 50) do
-          do_read_headers(req, :httph_bin, headers, to_string(method), request_target)
+          do_read_headers(req, headers)
         else
           {:error, :too_many_headers}
         end
@@ -131,16 +137,13 @@ defmodule Bandit.HTTP1.Adapter do
           |> Map.put(:req_header_end_time, Bandit.Telemetry.monotonic_time())
 
         req = %{req | state: :headers_read, buffer: rest, metrics: metrics}
-        {:ok, headers, method, request_target, req}
+        {:ok, headers, req}
 
       {:ok, {:http_error, reason}, _rest} ->
         {:error, "header read error: #{inspect(reason)}"}
 
       {:error, :invalid} ->
-        case method do
-          nil -> {:error, :request_uri_too_long}
-          _ -> {:error, :header_too_long}
-        end
+        {:error, :header_too_long}
 
       {:error, reason} ->
         {:error, reason}

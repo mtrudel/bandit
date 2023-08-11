@@ -553,7 +553,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
@@ -562,6 +561,10 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {"https", "localhost", integer(), "/send_200"},
                   stream_id: integer()
                 }}
              ]
@@ -580,7 +583,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -592,6 +594,10 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {"https", "localhost", integer(), "/do_read_body"},
                   stream_id: integer()
                 }}
              ]
@@ -614,7 +620,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -626,6 +631,10 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {"https", "localhost", integer(), "/do_read_body"},
                   stream_id: integer()
                 }}
              ]
@@ -648,7 +657,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
@@ -662,6 +670,10 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "POST",
+                  request_target: {"https", "localhost", integer(), "/do_read_body"},
                   stream_id: integer()
                 }}
              ]
@@ -679,7 +691,6 @@ defmodule HTTP2PlugTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  conn: struct_like(Plug.Conn, []),
                   req_header_end_time: integer(),
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
@@ -688,6 +699,10 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {"https", "localhost", integer(), "/send_full_file"},
                   stream_id: integer()
                 }}
              ]
@@ -715,6 +730,9 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  status: nil,
+                  method: "GET",
+                  request_target: {"https", "127.0.0.1", integer(), "/hello_world"},
                   stream_id: integer(),
                   error: string()
                 }}
