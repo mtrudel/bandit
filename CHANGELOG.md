@@ -1,5 +1,12 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.12 (12 Aug 2023)
+
+## Fixes
+
+* Bump ThousandIsland to 1.0.0-pre.7 to fix leaking file descriptors on
+  `Plug.Conn.sendfile/5` calls (thanks @Hermanverschooten!)
+
 ## 1.0.0-pre.11 (11 Aug 2023)
 
 ## Changes
