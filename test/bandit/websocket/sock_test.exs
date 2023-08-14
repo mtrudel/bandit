@@ -174,6 +174,22 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule InitCloseWithCodeAndMessagesWebSock do
+      use NoopWebSock
+
+      def init(_opts), do: {:stop, :normal, 5555, [{:text, "first"}, {:text, "second"}], :init}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and messages", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseWithCodeAndMessagesWebSock)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule InitCloseWithRestartWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, {:shutdown, :restart}, :init}
@@ -208,6 +224,27 @@ defmodule WebSocketWebSockTest do
     test "can close a connection by returning a stop tuple with a code and detail", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, InitCloseWithCodeAndDetailWebSock)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<5555::16, "BOOM"::binary>>}
+
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule InitCloseWithCodeAndDetailAndMessagesWebSock do
+      use NoopWebSock
+
+      def init(_opts),
+        do: {:stop, :normal, {5555, "BOOM"}, [{:text, "first"}, {:text, "second"}], :init}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and detail and messages",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseWithCodeAndDetailAndMessagesWebSock)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
                {:ok, <<5555::16, "BOOM"::binary>>}
@@ -412,6 +449,25 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleInCloseWithCodeAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_in(_data, state),
+        do: {:stop, :normal, 5555, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and messages", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithCodeAndMessagesWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleInCloseWithRestartWebSock do
       use NoopWebSock
       def handle_in(_data, state), do: {:stop, {:shutdown, :restart}, state}
@@ -452,6 +508,33 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithCodeAndDetailWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<5555::16, "BOOM"::binary>>}
+
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInCloseWithCodeAndDetailAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_in(_data, state),
+        do: {:stop, :normal, {5555, "BOOM"}, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and detail and messages",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(
+        client,
+        HandleInCloseWithCodeAndDetailAndMessagesWebSock
+      )
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
                {:ok, <<5555::16, "BOOM"::binary>>}
@@ -688,6 +771,26 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleControlCloseWithCodeAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_control(_data, state),
+        do: {:stop, :normal, 5555, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and messages", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWithCodeAndMessagesWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleControlCloseWithRestartWebSock do
       use NoopWebSock
       def handle_control(_data, state), do: {:stop, {:shutdown, :restart}, state}
@@ -731,6 +834,34 @@ defmodule WebSocketWebSockTest do
 
       SimpleWebSocketClient.send_ping_frame(client, "OK")
       _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<5555::16, "BOOM"::binary>>}
+
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleControlCloseWithCodeAndDetailAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_control(_data, state),
+        do: {:stop, :normal, {5555, "BOOM"}, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and detail and messages",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(
+        client,
+        HandleControlCloseWithCodeAndDetailAndMessagesWebSock
+      )
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
                {:ok, <<5555::16, "BOOM"::binary>>}
@@ -928,6 +1059,30 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleInfoCloseWithCodeAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+
+      def handle_info(_data, state),
+        do: {:stop, :normal, 5555, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and messages", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWithCodeAndMessagesWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleInfoCloseWithRestartWebSock do
       use NoopWebSock
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
@@ -980,6 +1135,38 @@ defmodule WebSocketWebSockTest do
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
       pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
       Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<5555::16, "BOOM"::binary>>}
+
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInfoCloseWithCodeAndDetailAndMessagesWebSock do
+      use NoopWebSock
+
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+
+      def handle_info(_data, state),
+        do: {:stop, :normal, {5555, "BOOM"}, [{:text, "first"}, {:text, "second"}], state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and detail and messages",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleWebSocketClient.http1_handshake(
+        client,
+        HandleInfoCloseWithCodeAndDetailAndMessagesWebSock
+      )
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "first"}
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "second"}
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
                {:ok, <<5555::16, "BOOM"::binary>>}

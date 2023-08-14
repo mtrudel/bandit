@@ -205,6 +205,12 @@ defmodule Bandit.WebSocket.Connection do
       {:stop, :normal, code, websock_state} ->
         do_stop(code, :normal, socket, %{connection | websock_state: websock_state})
 
+      {:stop, :normal, code, msg, websock_state} ->
+        case do_deflate(msg, socket, %{connection | websock_state: websock_state}) do
+          {:continue, connection} -> do_stop(code, :normal, socket, connection)
+          other -> other
+        end
+
       {:stop, {:shutdown, :restart}, websock_state} ->
         do_stop(1012, :normal, socket, %{connection | websock_state: websock_state})
 
@@ -213,6 +219,12 @@ defmodule Bandit.WebSocket.Connection do
 
       {:stop, reason, code, websock_state} ->
         do_error(code, reason, socket, %{connection | websock_state: websock_state})
+
+      {:stop, reason, code, msg, websock_state} ->
+        case do_deflate(msg, socket, %{connection | websock_state: websock_state}) do
+          {:continue, connection} -> do_error(code, reason, socket, connection)
+          other -> other
+        end
     end
   end
 
