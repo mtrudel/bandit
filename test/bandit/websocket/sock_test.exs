@@ -147,6 +147,20 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule InitAbnormalCloseWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:stop, :abnormal, :init}
+    end
+
+    @tag capture_log: true
+    test "can close a connection with an error by returning an abnormal stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitAbnormalCloseWebSock)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule InitCloseWithCodeWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, :normal, 5555, :init}
@@ -160,15 +174,14 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
-    defmodule InitRestartCloseWebSock do
+    defmodule InitCloseWithRestartWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, {:shutdown, :restart}, :init}
     end
 
-    @tag capture_log: true
     test "can close a connection by returning an {:shutdown, :restart} tuple", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, InitRestartCloseWebSock)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseWithRestartWebSock)
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
@@ -368,6 +381,22 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleInAbnormalCloseWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:stop, :abnormal, state}
+    end
+
+    @tag capture_log: true
+    test "can close a connection with an error by returning an abnormal stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInAbnormalCloseWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleInCloseWithCodeWebSock do
       use NoopWebSock
       def handle_in(_data, state), do: {:stop, :normal, 5555, state}
@@ -376,6 +405,36 @@ defmodule WebSocketWebSockTest do
     test "can close a connection by returning a stop tuple with a code", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithCodeWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInCloseWithRestartWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:stop, {:shutdown, :restart}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :restart} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithRestartWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInCloseWithCodeAndNilDetailWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:stop, :normal, {5555, nil}, state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and nil detail", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithCodeAndNilDetailWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
@@ -596,6 +655,23 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleControlAbnormalCloseWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:stop, :abnormal, state}
+    end
+
+    @tag capture_log: true
+    test "can close a connection with an error by returning an abnormal stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlAbnormalCloseWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleControlCloseWithCodeWebSock do
       use NoopWebSock
       def handle_control(_data, state), do: {:stop, :normal, 5555, state}
@@ -604,6 +680,38 @@ defmodule WebSocketWebSockTest do
     test "can close a connection by returning a stop tuple with a code", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWithCodeWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleControlCloseWithRestartWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:stop, {:shutdown, :restart}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :restart} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWithRestartWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleControlCloseWithCodeAndNilDetailWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:stop, :normal, {5555, nil}, state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and nil detail", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWithCodeAndNilDetailWebSock)
 
       SimpleWebSocketClient.send_ping_frame(client, "OK")
       _ = SimpleWebSocketClient.recv_pong_frame(client)
@@ -781,6 +889,26 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleInfoAbnormalCloseWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:stop, :abnormal, state}
+    end
+
+    @tag capture_log: true
+    test "can close a connection with an error by returning an abnormal stop tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoAbnormalCloseWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleInfoCloseWithCodeWebSock do
       use NoopWebSock
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
@@ -790,6 +918,44 @@ defmodule WebSocketWebSockTest do
     test "can close a connection by returning a stop tuple with a code", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWithCodeWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<5555::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInfoCloseWithRestartWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:stop, {:shutdown, :restart}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :restart} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWithRestartWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInfoCloseWithCodeAndNilDetailWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:stop, :normal, {5555, nil}, state}
+    end
+
+    test "can close a connection by returning a stop tuple with a code and nil detail", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWithCodeAndNilDetailWebSock)
 
       SimpleWebSocketClient.send_text_frame(client, "whoami")
       {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
