@@ -1,5 +1,11 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.13 (15 Aug 2023)
+
+### Enhancements
+
+* Add ability to send preamble frames when closing a WebSock connection (#211)
+
 ## 1.0.0-pre.12 (12 Aug 2023)
 
 ## Fixes
