@@ -465,8 +465,7 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def chunk(%__MODULE__{socket: socket}, chunk) do
     byte_size = chunk |> IO.iodata_length() |> Integer.to_string(16)
-    _ = ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
-    :ok
+    ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
   end
 
   @impl Plug.Conn.Adapter
