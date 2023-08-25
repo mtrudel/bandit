@@ -41,6 +41,21 @@ defmodule Bandit.PhoenixAdapter do
   `t:Bandit.options/0` for details.
   """
 
+  @doc """
+  Returns the Bandit server proccess for the provided scheme within the given Phoenix Endpoint
+  """
+  @spec bandit_pid(module()) ::
+          {:ok, Supervisor.child() | :restarting | :undefined} | {:error, :no_server_found}
+  def bandit_pid(endpoint, scheme \\ :http) do
+    endpoint
+    |> Supervisor.which_children()
+    |> Enum.find(fn {id, _, _, _} -> id == {endpoint, scheme} end)
+    |> case do
+      {_, pid, _, _} -> {:ok, pid}
+      nil -> {:error, :no_server_found}
+    end
+  end
+
   @doc false
   def child_specs(endpoint, config) do
     plug = resolve_plug(config[:code_reloader], endpoint)
