@@ -1126,6 +1126,34 @@ defmodule HTTP1RequestTest do
       conn
     end
 
+    test "returns socket errors on chunk calls", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleHTTP1Client.send(client, "GET", "/erroring_chunk", ["host: localhost"])
+          Process.sleep(500)
+          assert {:ok, "200 OK", _headers, "2\r\nOK\r\n"} = SimpleHTTP1Client.recv_reply(client)
+        end)
+
+      assert errors == ""
+    end
+
+    def erroring_chunk(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(200)
+        |> chunk("OK")
+
+      # This is a pretty bogus wayr to get an error out of socket sending, but it's easy to set up
+      {_, adapter} = conn.adapter
+      ThousandIsland.Socket.close(adapter.socket)
+
+      assert {:error, :closed} == chunk(conn, "NOT OK")
+
+      conn
+    end
+
     test "writes out a sent file for the entire file with content length", context do
       response = Req.get!(context.req, url: "/send_full_file")
 
