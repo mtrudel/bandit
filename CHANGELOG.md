@@ -1,5 +1,16 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.14 (28 Aug 2023)
+
+### Enhancements
+
+* Add `Bandit.PhoenixAdapter.bandit_pid/2` (#212)
+* Return errors to `Plug.Conn.Adapter.chunk/2` HTTP/1 calls (#216)
+
+### Changes
+
+* `Plug.Conn` function calls must come from the process on which `Plug.call/2` was called (#217, reverts #117)
+
 ## 1.0.0-pre.13 (15 Aug 2023)
 
 ### Enhancements
