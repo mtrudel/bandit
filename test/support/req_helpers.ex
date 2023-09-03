@@ -29,12 +29,11 @@ defmodule ReqHelpers do
       end
 
       defp build_req(context) do
-        Req.new(
+        Req.Request.new([])
+        |> Req.Request.append_request_steps(base_url: &Req.Steps.put_base_url/1)
+        |> Req.Request.register_options([:base_url, :finch])
+        |> Req.Request.merge_options(
           base_url: context.base,
-          retry: false,
-          compressed: false,
-          raw: true,
-          follow_redirects: false,
           finch: context.test
         )
       end
