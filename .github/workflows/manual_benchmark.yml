@@ -59,7 +59,7 @@ jobs:
     - name: Install nghttp2
       run: sudo apt-get install nghttp2
     - name: Checkout code
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with: 
         repository: mtrudel/benchmark
     - name: Setup Elixir
