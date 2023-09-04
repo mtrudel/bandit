@@ -12,7 +12,7 @@ defmodule HTTP2PlugTest do
 
   test "reading request headers", context do
     response =
-      Req.head!(context.req, url: "/header_read_test", headers: [{"X-Request-Header", "Request"}])
+      Req.head!(context.req, url: "/header_read_test", headers: [{"x-request-header", "Request"}])
 
     assert response.status == 200
   end
@@ -121,14 +121,15 @@ defmodule HTTP2PlugTest do
     response = Req.head!(context.req, url: "/header_write_test")
 
     assert response.status == 200
+    assert map_size(response.headers) == 5
 
-    assert [
-             {"date", date},
-             {"content-length", "0"},
-             {"vary", "accept-encoding"},
-             {"cache-control", "max-age=0, private, must-revalidate"},
-             {"X-Response-Header", "Response"}
-           ] = response.headers
+    assert %{
+             "date" => [date],
+             "content-length" => ["0"],
+             "vary" => ["accept-encoding"],
+             "cache-control" => ["max-age=0, private, must-revalidate"],
+             "X-Response-Header" => ["Response"]
+           } = response.headers
 
     assert TestHelpers.valid_date_header?(date)
   end
@@ -144,12 +145,12 @@ defmodule HTTP2PlugTest do
 
     assert response.status == 200
 
-    assert [
-             {"content-length", "0"},
-             {"vary", "accept-encoding"},
-             {"cache-control", "max-age=0, private, must-revalidate"},
-             {"date", "Tue, 27 Sep 2022 07:17:32 GMT"}
-           ] = response.headers
+    assert response.headers == %{
+             "content-length" => ["0"],
+             "vary" => ["accept-encoding"],
+             "cache-control" => ["max-age=0, private, must-revalidate"],
+             "date" => ["Tue, 27 Sep 2022 07:17:32 GMT"]
+           }
   end
 
   def date_header_test(conn) do
@@ -648,7 +649,7 @@ defmodule HTTP2PlugTest do
       Req.post!(context.req,
         url: "/do_read_body",
         body: String.duplicate("a", 80),
-        compressed: true
+        headers: [{"accept-encoding", "gzip"}]
       )
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)

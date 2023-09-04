@@ -351,7 +351,7 @@ defmodule HTTP1RequestTest do
       response =
         Req.get!(context.req,
           url: "/expect_headers/a//b/c?abc=def",
-          headers: [{"X-Fruit", "banana"}]
+          headers: [{"x-fruit", "banana"}]
         )
 
       assert response.status == 200
@@ -590,7 +590,7 @@ defmodule HTTP1RequestTest do
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
         |> Stream.take(8)
 
-      response = Req.post!(context.req, url: "/expect_chunked_body", body: {:stream, stream})
+      response = Req.post!(context.req, url: "/expect_chunked_body", body: stream)
 
       assert response.status == 200
       assert response.body == "OK"
@@ -822,7 +822,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
 
-      date = Bandit.Headers.get_header(response.headers, "date")
+      [date] = response.headers["date"]
       assert TestHelpers.valid_date_header?(date)
     end
 
@@ -831,7 +831,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
 
-      date = Bandit.Headers.get_header(response.headers, "date")
+      [date] = response.headers["date"]
       assert date == "Tue, 27 Sep 2022 07:17:32 GMT"
     end
 
@@ -848,9 +848,9 @@ defmodule HTTP1RequestTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["34"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
 
       deflate_context = :zlib.open()
       :ok = :zlib.deflateInit(deflate_context)
@@ -868,9 +868,9 @@ defmodule HTTP1RequestTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "gzip"}])
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -879,9 +879,9 @@ defmodule HTTP1RequestTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "x-gzip"}])
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "x-gzip"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["x-gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -893,9 +893,9 @@ defmodule HTTP1RequestTest do
         )
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "34"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["34"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
 
       deflate_context = :zlib.open()
       :ok = :zlib.deflateInit(deflate_context)
@@ -912,9 +912,9 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/send_big_body")
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -927,9 +927,9 @@ defmodule HTTP1RequestTest do
 
       # Assert that we did not try to compress the body
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "deflate"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -942,9 +942,9 @@ defmodule HTTP1RequestTest do
 
       # Assert that we did not try to compress the body
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -953,9 +953,9 @@ defmodule HTTP1RequestTest do
         Req.get!(context.req, url: "/send_weak_etag", headers: [{"accept-encoding", "gzip"}])
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "46"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == "gzip"
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
@@ -968,9 +968,9 @@ defmodule HTTP1RequestTest do
 
       # Assert that we did not try to compress the body
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -979,9 +979,9 @@ defmodule HTTP1RequestTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "a, b, c"}])
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == "accept-encoding"
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -998,9 +998,9 @@ defmodule HTTP1RequestTest do
         )
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
-      assert Bandit.Headers.get_header(response.headers, "content-encoding") == nil
-      assert Bandit.Headers.get_header(response.headers, "vary") == nil
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == nil
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -1039,7 +1039,7 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/send_incorrect_content_length")
 
       assert response.status == 200
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "10000"
+      assert response.headers["content-length"] == ["10000"]
       assert response.body == String.duplicate("a", 10_000)
     end
 
@@ -1054,7 +1054,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 204
       assert response.body == ""
-      assert is_nil(Bandit.Headers.get_header(response.headers, "content-length"))
+      assert response.headers["content-length"] == nil
     end
 
     def send_204(conn) do
@@ -1066,7 +1066,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 304
       assert response.body == ""
-      assert is_nil(Bandit.Headers.get_header(response.headers, "content-length"))
+      assert response.headers["content-length"] == nil
     end
 
     def send_304(conn) do
@@ -1078,7 +1078,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == ""
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
+      assert response.headers["content-length"] == ["0"]
     end
 
     def send_200(conn) do
@@ -1090,7 +1090,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 301
       assert response.body == ""
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
+      assert response.headers["content-length"] == ["0"]
     end
 
     def send_301(conn) do
@@ -1102,7 +1102,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 401
       assert response.body == ""
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "0"
+      assert response.headers["content-length"] == ["0"]
     end
 
     def send_401(conn) do
@@ -1114,7 +1114,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == "OK"
-      assert Bandit.Headers.get_header(response.headers, "transfer-encoding") == "chunked"
+      assert response.headers["transfer-encoding"] == ["chunked"]
     end
 
     def send_chunked_200(conn) do
@@ -1159,7 +1159,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == "ABCDEF"
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "6"
+      assert response.headers["content-length"] == ["6"]
     end
 
     def send_full_file(conn) do
@@ -1172,7 +1172,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 200
       assert response.body == "BCD"
-      assert Bandit.Headers.get_header(response.headers, "content-length") == "3"
+      assert response.headers["content-length"] == ["3"]
     end
 
     def send_file(conn) do
@@ -1453,7 +1453,7 @@ defmodule HTTP1RequestTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
       stream = Stream.repeatedly(fn -> "a" end) |> Stream.take(80)
-      Req.post!(context.req, url: "/do_read_body", body: {:stream, stream})
+      Req.post!(context.req, url: "/do_read_body", body: stream)
 
       Process.sleep(100)
 
@@ -1494,7 +1494,7 @@ defmodule HTTP1RequestTest do
       Req.post!(context.req,
         url: "/do_read_body",
         body: String.duplicate("a", 80),
-        compressed: true
+        headers: [{"accept-encoding", "gzip"}]
       )
 
       Process.sleep(100)
