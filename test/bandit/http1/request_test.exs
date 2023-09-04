@@ -348,12 +348,11 @@ defmodule HTTP1RequestTest do
 
   describe "request headers" do
     test "reads headers properly", context do
-      req = context.req
-
-      # manually put header to avoid warning on invalid (mixed-case) header name
       response =
-        put_in(req.headers["X-Fruit"], ["banana"])
-        |> Req.get!(url: "/expect_headers/a//b/c?abc=def")
+        Req.get!(context.req,
+          url: "/expect_headers/a//b/c?abc=def",
+          headers: [{"x-fruit", "banana"}]
+        )
 
       assert response.status == 200
       assert response.body == "OK"
