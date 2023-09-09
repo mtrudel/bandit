@@ -39,7 +39,7 @@ defmodule Bandit.Pipeline do
            determine_host_and_port(transport_info, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      %Bandit.TransportInfo{sockname: {remote_ip, _port}} = transport_info
+      %Bandit.TransportInfo{peername: {remote_ip, _port}} = transport_info
       {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
     end
   end
