@@ -1,5 +1,11 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.15 (9 Sep 2023)
+
+### Fixes
+
+* Fix issue with setting remote IP at connection startup (#227, thanks @jimc64!)
+
 ## 1.0.0-pre.14 (28 Aug 2023)
 
 ### Enhancements
