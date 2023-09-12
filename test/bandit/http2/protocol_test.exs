@@ -1982,7 +1982,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
-    test "derives port from underlying transport if no port specified in host header", context do
+    test "derives port from schema default if no port specified in host header", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1996,7 +1996,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-      assert Jason.decode!(body)["port"] == context.port
+      assert Jason.decode!(body)["port"] == 443
     end
 
     test "sets path and query string properly when no query string is present", context do
@@ -2218,7 +2218,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
-    test "derives port from underlying transport if no port specified in host header", context do
+    test "derives port from schema default if no port specified in host header", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -2232,7 +2232,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-      assert Jason.decode!(body)["port"] == context.port
+      assert Jason.decode!(body)["port"] == 443
     end
 
     test "sets path and query string properly when no query string is present", context do
