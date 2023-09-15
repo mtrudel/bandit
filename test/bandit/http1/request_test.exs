@@ -115,18 +115,18 @@ defmodule HTTP1RequestTest do
       assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    test "derives port from underlying transport if no port specified in host header", context do
+    test "derives port from schema default if no port specified in host header", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["port"] == context[:port]
+      assert Jason.decode!(body)["port"] == 80
     end
 
-    test "derives port from underlying transport if no host header set in HTTP/1.0", context do
+    test "derives port from schema default if no host header set in HTTP/1.0", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/echo_components", [], "1.0")
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["port"] == context[:port]
+      assert Jason.decode!(body)["port"] == 80
     end
 
     test "sets path and query string properly when no query string is present", context do
@@ -193,13 +193,6 @@ defmodule HTTP1RequestTest do
   end
 
   describe "absolute-form request target (RFC9112§3.2.2)" do
-    test "derives scheme from underlying transport", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components")
-      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["scheme"] == "http"
-    end
-
     @tag capture_log: true
     test "uses request-line scheme even if it does not match the transport", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -252,11 +245,11 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
-    test "derives port from underlying transport if no port specified in the URI", context do
+    test "derives port from schema default if no port specified in the URI", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", ["host: banana"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["port"] == context[:port]
+      assert Jason.decode!(body)["port"] == 80
     end
 
     test "sets path and query string properly when no query string is present", context do

@@ -35,8 +35,7 @@ defmodule Bandit.Pipeline do
   defp build_conn({mod, req}, transport_info, method, request_target, headers) do
     with {:ok, scheme} <- determine_scheme(transport_info, request_target),
          version <- mod.get_http_protocol(req),
-         {:ok, host, port} <-
-           determine_host_and_port(transport_info, version, request_target, headers),
+         {:ok, host, port} <- determine_host_and_port(scheme, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
       %Bandit.TransportInfo{peername: {remote_ip, _port}} = transport_info
@@ -55,25 +54,20 @@ defmodule Bandit.Pipeline do
   end
 
   @spec determine_host_and_port(
-          Bandit.TransportInfo.t(),
+          scheme :: binary(),
           version :: atom(),
           request_target(),
           Plug.Conn.headers()
         ) ::
           {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port(
-         %Bandit.TransportInfo{sockname: local_info},
-         version,
-         {_, nil, nil, _},
-         headers
-       ) do
+  defp determine_host_and_port(scheme, version, {_, nil, nil, _}, headers) do
     with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
          {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
-      {:ok, host, port || determine_local_port(local_info)}
+      {:ok, host, port || URI.default_port(scheme)}
     else
       nil ->
         case version do
-          :"HTTP/1.0" -> {:ok, "", determine_local_port(local_info)}
+          :"HTTP/1.0" -> {:ok, "", URI.default_port(scheme)}
           _ -> {:error, "No host header"}
         end
 
@@ -82,17 +76,8 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp determine_host_and_port(
-         %Bandit.TransportInfo{sockname: local_info},
-         _version,
-         {_, host, port, _},
-         _headers
-       ),
-       do: {:ok, to_string(host), port || determine_local_port(local_info)}
-
-  @spec determine_local_port(ThousandIsland.Transport.socket_info()) :: Plug.Conn.port_number()
-  defp determine_local_port({family, _}) when family in [:local, :unspec, :undefined], do: 0
-  defp determine_local_port({_ip, port}), do: port
+  defp determine_host_and_port(scheme, _version, {_, host, port, _}, _headers),
+    do: {:ok, to_string(host), port || URI.default_port(scheme)}
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
