@@ -638,13 +638,12 @@ defmodule HTTP1RequestTest do
           )
 
           assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in method check: \"POST\""}
+                 ~> {:ok, "400 Bad Request", list(), "HTTP method POST unsupported"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "WebSocket upgrade failed: error in method check: \\\"POST\\\""
+      assert errors =~ "HTTP method POST unsupported"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
@@ -668,13 +667,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in upgrade_header check: \"Did not find 'websocket' in 'NOPE'\""}
+                  "'upgrade' header must contain 'websocket', got [\"NOPE\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in upgrade_header check: \\\"Did not find 'websocket' in 'NOPE'\\\""
+      assert errors =~ "'upgrade' header must contain 'websocket', got [\\\"NOPE\\\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
@@ -698,13 +696,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in connection_header check: \"Did not find 'upgrade' in 'NOPE'\""}
+                  "'connection' header must contain 'upgrade', got [\"NOPE\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in connection_header check: \\\"Did not find 'upgrade' in 'NOPE'\\\""
+      assert errors =~ "'connection' header must contain 'upgrade', got [\\\"NOPE\\\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
@@ -726,13 +723,12 @@ defmodule HTTP1RequestTest do
           )
 
           assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in sec_websocket_key_header check: false"}
+                 ~> {:ok, "400 Bad Request", list(), "'sec-websocket-key' header is absent"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "WebSocket upgrade failed: error in sec_websocket_key_header check: false"
+      assert errors =~ "'sec-websocket-key' header is absent"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
@@ -756,13 +752,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in sec_websocket_version_header check: [\"99\"]"}
+                  "'sec-websocket-version' header must equal '13', got [\"99\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in sec_websocket_version_header check: [\\\"99\\\"]"
+      assert errors =~ "'sec-websocket-version' header must equal '13', got [\\\"99\\\"]"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do

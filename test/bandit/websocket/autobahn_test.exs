@@ -16,10 +16,7 @@ defmodule WebsocketAutobahnTest do
 
   @impl Plug
   def call(conn, _opts) do
-    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
-      true -> Plug.Conn.upgrade_adapter(conn, :websocket, {EchoWebSock, :ok, compress: true})
-      false -> Plug.Conn.send_resp(conn, 204, <<>>)
-    end
+    Plug.Conn.upgrade_adapter(conn, :websocket, {EchoWebSock, :ok, compress: true})
   end
 
   @tag capture_log: true
