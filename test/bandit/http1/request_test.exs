@@ -901,6 +901,26 @@ defmodule HTTP1RequestTest do
       assert response.body == expected
     end
 
+    test "writes out an encoded response for an iolist body", context do
+      response =
+        Req.get!(context.req, url: "/send_iolist_body", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["34"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
+
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert response.body == expected
+    end
+
     test "falls back to no encoding if no encodings provided", context do
       response = Req.get!(context.req, url: "/send_big_body")
 
@@ -1001,6 +1021,12 @@ defmodule HTTP1RequestTest do
       conn
       |> put_resp_header("content-length", "10000")
       |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_iolist_body(conn) do
+      conn
+      |> put_resp_header("content-length", "10000")
+      |> send_resp(200, List.duplicate("a", 10_000))
     end
 
     def send_content_encoding(conn) do
@@ -1115,6 +1141,23 @@ defmodule HTTP1RequestTest do
         conn
         |> send_chunked(200)
         |> chunk("OK")
+
+      conn
+    end
+
+    test "writes out a chunked iolist response", context do
+      response = Req.get!(context.req, url: "/send_chunked_200_iolist")
+
+      assert response.status == 200
+      assert response.body == "OK"
+      assert response.headers["transfer-encoding"] == ["chunked"]
+    end
+
+    def send_chunked_200_iolist(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(200)
+        |> chunk(["OK"])
 
       conn
     end
