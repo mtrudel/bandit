@@ -11,7 +11,7 @@ defmodule Bandit.Compression do
     |> Enum.find(&(&1 in ~w(deflate gzip x-gzip)))
   end
 
-  @spec compress(binary(), String.t(), Bandit.deflate_options()) :: iodata()
+  @spec compress(iolist(), String.t(), Bandit.deflate_options()) :: iodata()
   def compress(response, "deflate", opts) do
     deflate_context = :zlib.open()
 

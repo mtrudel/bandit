@@ -369,13 +369,15 @@ defmodule Bandit.HTTP1.Adapter do
         header -> "no-transform" in Plug.Conn.Utils.list(header)
       end
 
+    raw_body_bytes = IO.iodata_length(body)
+
     {body, headers, compression_metrics} =
       case {body, req.content_encoding, response_content_encoding_header,
             response_has_strong_etag, response_indicates_no_transform} do
         {body, content_encoding, nil, false, false}
-        when byte_size(body) > 0 and not is_nil(content_encoding) ->
+        when raw_body_bytes > 0 and not is_nil(content_encoding) ->
           metrics = %{
-            resp_uncompressed_body_bytes: IO.iodata_length(body),
+            resp_uncompressed_body_bytes: raw_body_bytes,
             resp_compression_method: content_encoding
           }
 

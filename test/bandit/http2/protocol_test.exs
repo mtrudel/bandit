@@ -264,6 +264,40 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
     end
 
+    test "writes out a response with deflate encoding for an iolist body", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_iolist_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "34"},
+                {"vary", "accept-encoding"},
+                {"content-encoding", "deflate"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      deflate_context = :zlib.open()
+      :ok = :zlib.deflateInit(deflate_context)
+
+      expected =
+        deflate_context
+        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
+        |> IO.iodata_to_binary()
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+    end
+
     test "does no encoding if content-encoding header already present in response", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -454,6 +488,11 @@ defmodule HTTP2ProtocolTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
+    def send_iolist_body(conn) do
+      conn
+      |> send_resp(200, List.duplicate("a", 10_000))
+    end
+
     def send_content_encoding(conn) do
       conn
       |> put_resp_header("content-encoding", "deflate")
@@ -526,6 +565,26 @@ defmodule HTTP2ProtocolTest do
       |> chunk("OK")
       |> elem(1)
       |> chunk("DOKEE")
+      |> elem(1)
+    end
+
+    test "sends multiple DATA frames when sending iolist chunks", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/iolist_chunk_response", context.port)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "DOKEE"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    end
+
+    def iolist_chunk_response(conn) do
+      conn
+      |> send_chunked(200)
+      |> chunk(["OK"])
+      |> elem(1)
+      |> chunk(["DOKEE"])
       |> elem(1)
     end
 

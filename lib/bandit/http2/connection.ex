@@ -485,7 +485,7 @@ defmodule Bandit.HTTP2.Connection do
          {data_to_send, bytes_to_send, rest} <- split_data(data, max_bytes_to_send),
          {:ok, stream} <- Stream.send_data(stream, bytes_to_send),
          connection <- %{connection | send_window_size: connection_window_size - bytes_to_send},
-         end_stream_to_send <- end_stream && rest == <<>>,
+         end_stream_to_send <- end_stream && byte_size(rest) == 0,
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream_to_send),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       _ =

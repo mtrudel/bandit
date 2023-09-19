@@ -120,13 +120,15 @@ defmodule Bandit.HTTP2.Adapter do
         header -> "no-transform" in Plug.Conn.Utils.list(header)
       end
 
+    raw_body_bytes = IO.iodata_length(body)
+
     {body, headers, compression_metrics} =
       case {body, adapter.content_encoding, response_content_encoding_header,
             response_has_strong_etag, response_indicates_no_transform} do
         {body, content_encoding, nil, false, false}
-        when body != <<>> and not is_nil(content_encoding) ->
+        when raw_body_bytes > 0 and not is_nil(content_encoding) ->
           metrics = %{
-            resp_uncompressed_body_bytes: IO.iodata_length(body),
+            resp_uncompressed_body_bytes: raw_body_bytes,
             resp_compression_method: content_encoding
           }
 
@@ -215,7 +217,7 @@ defmodule Bandit.HTTP2.Adapter do
     # details) and closing the stream here carves closest to the underlying HTTP/1.1 behaviour
     # (RFC9112§7.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC9113§8.1)
     # so this entire section of the API is a bit slanty regardless.
-    _ = send_data(adapter, chunk, chunk == <<>>)
+    _ = send_data(adapter, chunk, IO.iodata_length(chunk) == 0)
     :ok
   end
 
