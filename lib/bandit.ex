@@ -303,9 +303,19 @@ defmodule Bandit do
     |> Keyword.get(:plug)
     |> case do
       nil -> raise "A value is required for :plug"
-      {plug, plug_options} -> {plug, plug.init(plug_options)}
-      plug -> {plug, plug.init([])}
+      {plug_fn, plug_options} when is_function(plug_fn, 2) -> {plug_fn, plug_options}
+      plug_fn when is_function(plug_fn) -> {plug_fn, []}
+      {plug, plug_options} when is_atom(plug) -> validate_plug(plug, plug_options)
+      plug when is_atom(plug) -> validate_plug(plug, [])
+      other -> raise "Invalid value for plug: #{inspect(other)}"
     end
+  end
+
+  defp validate_plug(plug, plug_options) do
+    if !function_exported?(plug, :init, 1), do: raise("plug module does not define init/1")
+    if !function_exported?(plug, :call, 2), do: raise("plug module does not define call/2")
+
+    {plug, plug.init(plug_options)}
   end
 
   @spec parse_as_number(binary() | integer()) :: integer()

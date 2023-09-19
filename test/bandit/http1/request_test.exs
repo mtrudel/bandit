@@ -10,6 +10,29 @@ defmodule HTTP1RequestTest do
   setup :http_server
   setup :req_http1_client
 
+  describe "plug definitions" do
+    test "runs module plugs", context do
+      response = Req.get!(context.req, url: "/hello_world")
+      assert response.status == 200
+      assert response.body == "OK module"
+    end
+
+    def hello_world(conn) do
+      send_resp(conn, 200, "OK module")
+    end
+
+    test "runs function plugs", context do
+      context =
+        context
+        |> http_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
+        |> Enum.into(context)
+
+      response = Req.get!(context.req, url: "/", base_url: context.base)
+      assert response.status == 200
+      assert response.body == "OK function"
+    end
+  end
+
   describe "invalid requests" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
