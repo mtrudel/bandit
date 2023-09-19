@@ -1,5 +1,15 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.16 (18 Sep 2023)
+
+### Changes
+
+* Use protocol default port in the event that no port is provided in host header (#228)
+
+### Fixes
+
+* Improve handling of iolist response bodies (#231, thanks @travelmassive!)
+
 ## 1.0.0-pre.15 (9 Sep 2023)
 
 ### Fixes
