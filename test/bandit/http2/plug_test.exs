@@ -10,6 +10,29 @@ defmodule HTTP2PlugTest do
   setup :https_server
   setup :req_h2_client
 
+  describe "plug definitions" do
+    test "runs module plugs", context do
+      response = Req.get!(context.req, url: "/hello_world")
+      assert response.status == 200
+      assert response.body == "OK module"
+    end
+
+    def hello_world(conn) do
+      send_resp(conn, 200, "OK module")
+    end
+
+    test "runs function plugs", context do
+      context =
+        context
+        |> https_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
+        |> Enum.into(context)
+
+      response = Req.get!(context.req, url: "/", base_url: context.base)
+      assert response.status == 200
+      assert response.body == "OK function"
+    end
+  end
+
   test "reading request headers", context do
     response =
       Req.head!(context.req, url: "/header_read_test", headers: [{"x-request-header", "Request"}])

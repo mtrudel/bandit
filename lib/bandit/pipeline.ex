@@ -3,7 +3,7 @@ defmodule Bandit.Pipeline do
   # Provides a common pipeline for HTTP/1.1 and h2 adapters, factoring together shared
   # functionality relating to `Plug.Conn` management
 
-  @type plug_def :: {module(), Plug.opts()}
+  @type plug_def :: {function() | module(), Plug.opts()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -97,10 +97,17 @@ defmodule Bandit.Pipeline do
   end
 
   @spec call_plug(Plug.Conn.t(), plug_def()) :: Plug.Conn.t() | no_return()
-  defp call_plug(%Plug.Conn{} = conn, {plug, plug_opts}) do
+  defp call_plug(%Plug.Conn{} = conn, {plug, plug_opts}) when is_atom(plug) do
     case plug.call(conn, plug_opts) do
       %Plug.Conn{} = conn -> conn
       other -> raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(other)}")
+    end
+  end
+
+  defp call_plug(%Plug.Conn{} = conn, {plug_fn, plug_opts}) when is_function(plug_fn) do
+    case plug_fn.(conn, plug_opts) do
+      %Plug.Conn{} = conn -> conn
+      other -> raise("Expected Plug function to return %Plug.Conn{} but got: #{inspect(other)}")
     end
   end
 
