@@ -12,6 +12,7 @@ defmodule Bandit.HTTP1.Adapter do
             body_remaining: nil,
             body_encoding: nil,
             version: nil,
+            method: nil,
             keepalive: false,
             content_encoding: nil,
             upgrade: nil,
@@ -28,6 +29,7 @@ defmodule Bandit.HTTP1.Adapter do
           body_remaining: nil | integer(),
           body_encoding: nil | binary(),
           version: nil | :"HTTP/1.1" | :"HTTP/1.0",
+          method: Plug.Conn.method() | nil,
           keepalive: boolean(),
           content_encoding: String.t(),
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
@@ -43,22 +45,23 @@ defmodule Bandit.HTTP1.Adapter do
   # Header Reading
   ################
 
-  def read_request_line(req, method \\ nil, request_target \\ nil) do
+  def read_request_line(req, request_target \\ nil) do
     packet_size = Keyword.get(req.opts.http_1, :max_request_line_length, 10_000)
 
     case :erlang.decode_packet(:http_bin, req.buffer, packet_size: packet_size) do
       {:more, _len} ->
         with {:ok, chunk} <- read_available(req.socket, _read_timeout = nil) do
-          read_request_line(%{req | buffer: req.buffer <> chunk}, method, request_target)
+          read_request_line(%{req | buffer: req.buffer <> chunk}, request_target)
         end
 
       {:ok, {:http_request, method, request_target, version}, rest} ->
         with {:ok, version} <- get_version(version),
              {:ok, request_target} <- resolve_request_target(request_target) do
+          method = to_string(method)
           bytes_read = byte_size(req.buffer) - byte_size(rest)
           metrics = Map.update(req.metrics, :req_line_bytes, bytes_read, &(&1 + bytes_read))
-          req = %{req | buffer: rest, version: version, metrics: metrics}
-          {:ok, to_string(method), request_target, req}
+          req = %{req | buffer: rest, version: version, method: method, metrics: metrics}
+          {:ok, request_target, req}
         end
 
       {:ok, {:http_error, reason}, _rest} ->

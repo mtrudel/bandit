@@ -22,16 +22,16 @@ defmodule Bandit.HTTP1.Handler do
 
     with {:ok, transport_info} <- Bandit.TransportInfo.init(socket),
          req <- %{req | transport_info: transport_info},
-         {:ok, method, request_target, req} <- Bandit.HTTP1.Adapter.read_request_line(req) do
+         {:ok, request_target, req} <- Bandit.HTTP1.Adapter.read_request_line(req) do
       try do
         with {:ok, headers, req} <- Bandit.HTTP1.Adapter.read_headers(req),
              {:ok, :no_upgrade} <-
-               maybe_upgrade_h2c(state, req, transport_info, method, request_target, headers),
+               maybe_upgrade_h2c(state, req, transport_info, req.method, request_target, headers),
              {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, req}} = conn} <-
                Bandit.Pipeline.run(
                  {Bandit.HTTP1.Adapter, req},
                  transport_info,
-                 method,
+                 req.method,
                  request_target,
                  headers,
                  state.plug
@@ -39,7 +39,7 @@ defmodule Bandit.HTTP1.Handler do
           Bandit.Telemetry.stop_span(span, req.metrics, %{
             conn: conn,
             status: conn.status,
-            method: method,
+            method: req.method,
             request_target: request_target
           })
 
@@ -52,7 +52,7 @@ defmodule Bandit.HTTP1.Handler do
             Bandit.Telemetry.stop_span(span, %{}, %{
               error: reason,
               status: code,
-              method: method,
+              method: req.method,
               request_target: request_target
             })
 
@@ -62,7 +62,7 @@ defmodule Bandit.HTTP1.Handler do
             Bandit.Telemetry.stop_span(span, req.metrics, %{
               conn: conn,
               status: conn.status,
-              method: method,
+              method: req.method,
               request_target: request_target
             })
 
