@@ -355,7 +355,7 @@ defmodule Bandit.HTTP1.Adapter do
   def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
   def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
 
-  def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, body) do
+  def send_resp(%__MODULE__{} = req, status, headers, body) do
     start_time = Bandit.Telemetry.monotonic_time()
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
@@ -398,14 +398,22 @@ defmodule Bandit.HTTP1.Adapter do
     body_bytes = IO.iodata_length(body)
     headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 
-    {header_iodata, header_metrics} = response_header(version, status, headers)
-    _ = ThousandIsland.Socket.send(socket, [header_iodata, body])
+    {header_iodata, header_metrics} = response_header(req.version, status, headers)
+
+    {body_iodata, body_metrics} =
+      if send_resp_body?(req, status) do
+        {body, %{resp_body_bytes: body_bytes}}
+      else
+        {[], %{resp_body_bytes: 0}}
+      end
+
+    _ = ThousandIsland.Socket.send(req.socket, [header_iodata | body_iodata])
 
     metrics =
       req.metrics
       |> Map.merge(compression_metrics)
       |> Map.merge(header_metrics)
-      |> Map.put(:resp_body_bytes, body_bytes)
+      |> Map.merge(body_metrics)
       |> Map.put(:resp_start_time, start_time)
       |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
@@ -431,15 +439,22 @@ defmodule Bandit.HTTP1.Adapter do
       end
 
     if offset + length <= size do
-      headers = [{"content-length", length |> to_string()} | headers]
+      headers = Bandit.Headers.add_content_length(headers, length, status)
       {header_iodata, header_metrics} = response_header(version, status, headers)
       _ = ThousandIsland.Socket.send(socket, header_iodata)
-      _ = ThousandIsland.Socket.sendfile(socket, path, offset, length)
+
+      body_metrics =
+        if send_resp_body?(req, status) do
+          _ = ThousandIsland.Socket.sendfile(socket, path, offset, length)
+          %{resp_body_bytes: length}
+        else
+          %{resp_body_bytes: 0}
+        end
 
       metrics =
         req.metrics
         |> Map.merge(header_metrics)
-        |> Map.put(:resp_body_bytes, length)
+        |> Map.merge(body_metrics)
         |> Map.put(:resp_start_time, start_time)
         |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
@@ -464,14 +479,20 @@ defmodule Bandit.HTTP1.Adapter do
       |> Map.put(:resp_start_time, start_time)
       |> Map.put(:resp_body_bytes, 0)
 
-    {:ok, nil, %{req | state: :chunking_out, metrics: metrics}}
+    if send_resp_body?(req, status) do
+      {:ok, nil, %{req | state: :chunking_out, metrics: metrics}}
+    else
+      {:ok, nil, %{req | state: :sent, metrics: metrics}}
+    end
   end
 
   @impl Plug.Conn.Adapter
-  def chunk(%__MODULE__{socket: socket}, chunk) do
+  def chunk(%__MODULE__{state: :chunking_out, socket: socket}, chunk) do
     byte_size = chunk |> IO.iodata_length() |> Integer.to_string(16)
     ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
   end
+
+  def chunk(_, _), do: :ok
 
   @impl Plug.Conn.Adapter
   def inform(%__MODULE__{version: :"HTTP/1.0"}, _status, _headers), do: {:error, :not_supported}
@@ -519,6 +540,11 @@ defmodule Bandit.HTTP1.Adapter do
 
     {[resp_line, headers], metrics}
   end
+
+  defp send_resp_body?(%{method: "HEAD"}, _status), do: false
+  defp send_resp_body?(_req, 204), do: false
+  defp send_resp_body?(_req, 304), do: false
+  defp send_resp_body?(_req, _status), do: true
 
   @impl Plug.Conn.Adapter
   def upgrade(%Bandit.HTTP1.Adapter{websocket_enabled: true} = req, :websocket, opts),
