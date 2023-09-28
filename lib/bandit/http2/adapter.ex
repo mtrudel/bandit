@@ -10,6 +10,7 @@ defmodule Bandit.HTTP2.Adapter do
             transport_info: nil,
             stream_id: nil,
             end_stream: false,
+            method: nil,
             content_encoding: nil,
             metrics: %{},
             opts: []
@@ -20,6 +21,7 @@ defmodule Bandit.HTTP2.Adapter do
           transport_info: Bandit.TransportInfo.t(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
+          method: Plug.Conn.method() | nil,
           content_encoding: String.t() | nil,
           metrics: map(),
           opts: keyword()

@@ -52,7 +52,8 @@ defmodule Bandit.HTTP2.StreamTask do
 
   def run(req, transport_info, all_headers, plug, span) do
     with {:ok, request_target} <- build_request_target(all_headers),
-         method <- Bandit.Headers.get_header(all_headers, ":method") do
+         method <- Bandit.Headers.get_header(all_headers, ":method"),
+         req <- %{req | method: method} do
       with {:ok, pseudo_headers, headers} <- split_headers(all_headers),
            :ok <- pseudo_headers_all_request(pseudo_headers),
            :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
