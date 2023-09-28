@@ -169,40 +169,40 @@ defmodule Bandit.HTTP2.Adapter do
     %File.Stat{type: :regular, size: size} = File.stat!(path)
     length = if length == :all, do: size - offset, else: length
 
-    cond do
-      offset + length == size && offset == 0 ->
-        adapter = send_headers(adapter, status, headers, false)
+    adapter =
+      cond do
+        offset + length == size && offset == 0 ->
+          adapter = send_headers(adapter, status, headers, false)
 
-        adapter =
           path
           |> File.stream!([], 2048)
           |> Enum.reduce(adapter, fn chunk, adapter -> send_data(adapter, chunk, false) end)
           |> send_data(<<>>, true)
 
-        metrics =
-          adapter.metrics
-          |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
+        offset + length < size ->
+          case :file.open(path, [:raw, :binary]) do
+            {:ok, fd} ->
+              try do
+                with {:ok, data} <- :file.pread(fd, offset, length) do
+                  adapter
+                  |> send_headers(status, headers, false)
+                  |> send_data(data, true)
+                end
+              after
+                :file.close(fd)
+              end
 
-        {:ok, nil, %{adapter | metrics: metrics}}
+            {:error, reason} ->
+              {:error, reason}
+          end
 
-      offset + length < size ->
-        with {:ok, fd} <- :file.open(path, [:raw, :binary]),
-             {:ok, data} <- :file.pread(fd, offset, length) do
-          adapter =
-            adapter
-            |> send_headers(status, headers, false)
-            |> send_data(data, true)
+        true ->
+          raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
+      end
 
-          metrics =
-            adapter.metrics
-            |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
+    metrics = Map.put(adapter.metrics, :resp_end_time, Bandit.Telemetry.monotonic_time())
 
-          {:ok, nil, %{adapter | metrics: metrics}}
-        end
-
-      true ->
-        raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
-    end
+    {:ok, nil, %{adapter | metrics: metrics}}
   end
 
   @impl Plug.Conn.Adapter
