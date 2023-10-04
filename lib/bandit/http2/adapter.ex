@@ -149,7 +149,7 @@ defmodule Bandit.HTTP2.Adapter do
     headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
 
     adapter =
-      if body_bytes == 0 do
+      if body_bytes == 0 || !send_resp_body?(adapter, status) do
         adapter
         |> send_headers(status, headers, true)
       else
@@ -174,6 +174,9 @@ defmodule Bandit.HTTP2.Adapter do
 
     adapter =
       cond do
+        !send_resp_body?(adapter, status) ->
+          send_headers(adapter, status, headers, true)
+
         offset + length == size && offset == 0 ->
           adapter = send_headers(adapter, status, headers, false)
 
@@ -210,7 +213,11 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{} = adapter, status, headers) do
-    {:ok, nil, send_headers(adapter, status, headers, false)}
+    if send_resp_body?(adapter, status) do
+      {:ok, nil, send_headers(adapter, status, headers, false)}
+    else
+      {:ok, nil, send_headers(adapter, status, headers, true)}
+    end
   end
 
   @impl Plug.Conn.Adapter
@@ -220,6 +227,10 @@ defmodule Bandit.HTTP2.Adapter do
     # details) and closing the stream here carves closest to the underlying HTTP/1.1 behaviour
     # (RFC9112§7.1). The whole notion of chunked encoding is moot in HTTP/2 anyway (RFC9113§8.1)
     # so this entire section of the API is a bit slanty regardless.
+    #
+    # Moreover, if the caller is chunking out on a HEAD, 204 or 304 response, the underlying
+    # stream will have been closed in send_chunked/3 above, and so this call will return an
+    # `{:error, :not_owner}` error here (which we ignore, but it's still kinda odd)
     _ = send_data(adapter, chunk, IO.iodata_length(chunk) == 0)
     :ok
   end
@@ -244,6 +255,11 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
+
+  defp send_resp_body?(%{method: "HEAD"}, _status), do: false
+  defp send_resp_body?(_req, 204), do: false
+  defp send_resp_body?(_req, 304), do: false
+  defp send_resp_body?(_req, _status), do: true
 
   defp send_headers(adapter, status, headers, end_stream) do
     metrics =
