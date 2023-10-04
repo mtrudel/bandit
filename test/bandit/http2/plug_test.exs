@@ -263,6 +263,7 @@ defmodule HTTP2PlugTest do
     response = Req.get!(context.req, url: "/send_full_file")
 
     assert response.status == 200
+    assert response.headers["content-length"] == ["6"]
     assert response.body == "ABCDEF"
   end
 

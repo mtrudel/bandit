@@ -170,6 +170,7 @@ defmodule Bandit.HTTP2.Adapter do
   def send_file(%__MODULE__{} = adapter, status, headers, path, offset, length) do
     %File.Stat{type: :regular, size: size} = File.stat!(path)
     length = if length == :all, do: size - offset, else: length
+    headers = Bandit.Headers.add_content_length(headers, length, status)
 
     adapter =
       cond do
