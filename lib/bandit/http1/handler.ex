@@ -120,9 +120,24 @@ defmodule Bandit.HTTP1.Handler do
     under_limit = request_limit == 0 || requests_processed < request_limit
 
     if under_limit && req.keepalive do
-      {:continue, Map.put(state, :requests_processed, requests_processed)}
+      case ensure_body_read(req) do
+        :ok -> {:continue, Map.put(state, :requests_processed, requests_processed)}
+        {:error, :closed} -> {:close, state}
+        {:error, reason} -> {:error, reason, state}
+      end
     else
       {:close, state}
+    end
+  end
+
+  defp ensure_body_read(%{read_state: :no_body}), do: :ok
+  defp ensure_body_read(%{read_state: :body_read}), do: :ok
+
+  defp ensure_body_read(req) do
+    case Bandit.HTTP1.Adapter.read_req_body(req, []) do
+      {:ok, _data, _req} -> :ok
+      {:more, _data, req} -> ensure_body_read(req)
+      {:error, reason} -> {:error, reason}
     end
   end
 

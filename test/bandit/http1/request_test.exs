@@ -74,6 +74,40 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
+
+    test "unread content length bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "content-length: 6"
+      ])
+
+      Transport.send(client, "ABCDEF")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "unread chunked bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "6\r\nABCDEF\r\n0\r\n\r\n")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def echo_method(conn) do
+      send_resp(conn, 200, conn.method)
+    end
   end
 
   describe "origin-form request target (RFC9112§3.2.1)" do
@@ -574,6 +608,7 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, to_string(reason))
     end
 
+    @tag capture_log: true
     test "handles the case where the declared content length is less than what is sent",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
