@@ -1,11 +1,13 @@
 defmodule Bandit.HTTP1.Adapter do
   @moduledoc false
 
-  @type state :: :new | :headers_read | :no_body | :body_read | :sent | :chunking_out
+  @type read_state :: :unread | :headers_read | :no_body | :body_read
+  @type write_state :: :unwritten | :sent | :chunking_out
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct state: :new,
+  defstruct read_state: :unread,
+            write_state: :unwritten,
             transport_info: nil,
             socket: nil,
             buffer: <<>>,
@@ -21,7 +23,8 @@ defmodule Bandit.HTTP1.Adapter do
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
-          state: state(),
+          read_state: read_state(),
+          write_state: write_state(),
           transport_info: Bandit.TransportInfo.t(),
           socket: ThousandIsland.Socket.t(),
           buffer: binary(),
@@ -89,15 +92,15 @@ defmodule Bandit.HTTP1.Adapter do
 
       case {body_size, body_encoding} do
         {nil, nil} ->
-          {:ok, headers, %{req | state: :no_body}}
+          {:ok, headers, %{req | read_state: :no_body}}
 
         {body_size, nil} ->
           body_remaining = body_size - byte_size(req.buffer)
 
-          {:ok, headers, %{req | state: :headers_read, body_remaining: body_remaining}}
+          {:ok, headers, %{req | read_state: :headers_read, body_remaining: body_remaining}}
 
         {nil, body_encoding} ->
-          {:ok, headers, %{req | state: :headers_read, body_encoding: body_encoding}}
+          {:ok, headers, %{req | read_state: :headers_read, body_encoding: body_encoding}}
 
         {_content_length, _body_encoding} ->
           {:error,
@@ -136,7 +139,7 @@ defmodule Bandit.HTTP1.Adapter do
           |> Map.update(:req_header_bytes, bytes_read, &(&1 + bytes_read))
           |> Map.put(:req_header_end_time, Bandit.Telemetry.monotonic_time())
 
-        req = %{req | state: :headers_read, buffer: rest, metrics: metrics}
+        req = %{req | read_state: :headers_read, buffer: rest, metrics: metrics}
         {:ok, headers, req}
 
       {:ok, {:http_error, reason}, _rest} ->
@@ -185,7 +188,7 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   @spec read_req_body(t(), keyword()) ::
           {:ok, data :: binary(), t()} | {:more, data :: binary(), t()} | {:error, term()}
-  def read_req_body(%__MODULE__{state: :no_body} = req, _opts) do
+  def read_req_body(%__MODULE__{read_state: :no_body} = req, _opts) do
     time = Bandit.Telemetry.monotonic_time()
 
     metrics =
@@ -197,7 +200,10 @@ defmodule Bandit.HTTP1.Adapter do
     {:ok, <<>>, %{req | metrics: metrics}}
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, body_remaining: body_remaining} = req, opts)
+  def read_req_body(
+        %__MODULE__{read_state: :headers_read, body_remaining: body_remaining} = req,
+        opts
+      )
       when is_number(body_remaining) do
     metrics =
       Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
@@ -211,7 +217,7 @@ defmodule Bandit.HTTP1.Adapter do
           |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
         {:ok, to_return,
-         %{req | state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
+         %{req | read_state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
       else
         metrics =
           metrics
@@ -223,7 +229,7 @@ defmodule Bandit.HTTP1.Adapter do
     end
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: "chunked"} = req, opts) do
+  def read_req_body(%__MODULE__{read_state: :headers_read, body_encoding: "chunked"} = req, opts) do
     metrics =
       Map.put_new_lazy(req.metrics, :req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
@@ -239,11 +245,11 @@ defmodule Bandit.HTTP1.Adapter do
         |> Map.put(:req_body_bytes, byte_size(body))
         |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
-      {:ok, body, %{req | buffer: buffer, metrics: metrics}}
+      {:ok, body, %{req | read_state: :body_read, buffer: buffer, metrics: metrics}}
     end
   end
 
-  def read_req_body(%__MODULE__{state: :headers_read, body_encoding: body_encoding}, _opts)
+  def read_req_body(%__MODULE__{read_state: :headers_read, body_encoding: body_encoding}, _opts)
       when not is_nil(body_encoding) do
     {:error, :unsupported_transfer_encoding}
   end
@@ -349,8 +355,10 @@ defmodule Bandit.HTTP1.Adapter do
   ##################
 
   @impl Plug.Conn.Adapter
-  def send_resp(%__MODULE__{state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
-  def send_resp(%__MODULE__{state: :chunking_out}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
+  def send_resp(%__MODULE__{write_state: :sent}, _, _, _), do: raise(Plug.Conn.AlreadySentError)
+
+  def send_resp(%__MODULE__{write_state: :chunking_out}, _, _, _),
+    do: raise(Plug.Conn.AlreadySentError)
 
   def send_resp(%__MODULE__{socket: socket, version: version} = req, status, headers, body) do
     start_time = Bandit.Telemetry.monotonic_time()
@@ -406,7 +414,7 @@ defmodule Bandit.HTTP1.Adapter do
       |> Map.put(:resp_start_time, start_time)
       |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
-    {:ok, nil, %{req | state: :sent, metrics: metrics}}
+    {:ok, nil, %{req | write_state: :sent, metrics: metrics}}
   end
 
   @impl Plug.Conn.Adapter
@@ -440,7 +448,7 @@ defmodule Bandit.HTTP1.Adapter do
         |> Map.put(:resp_start_time, start_time)
         |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
-      {:ok, nil, %{req | state: :sent, metrics: metrics}}
+      {:ok, nil, %{req | write_state: :sent, metrics: metrics}}
     else
       {:error,
        "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"}
@@ -461,7 +469,7 @@ defmodule Bandit.HTTP1.Adapter do
       |> Map.put(:resp_start_time, start_time)
       |> Map.put(:resp_body_bytes, 0)
 
-    {:ok, nil, %{req | state: :chunking_out, metrics: metrics}}
+    {:ok, nil, %{req | write_state: :chunking_out, metrics: metrics}}
   end
 
   @impl Plug.Conn.Adapter
