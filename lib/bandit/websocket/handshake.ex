@@ -6,37 +6,10 @@ defmodule Bandit.WebSocket.Handshake do
 
   @type extensions :: [{String.t(), [{String.t(), String.t() | true}]}]
 
-  @spec valid_upgrade?(Plug.Conn.t()) :: boolean()
-  def valid_upgrade?(%Plug.Conn{} = conn) do
-    validate_upgrade(conn) == :ok
-  end
-
-  @spec validate_upgrade(Plug.Conn.t()) :: :ok | {:error, String.t()}
-  defp validate_upgrade(conn) do
-    # Cases from RFC6455§4.2.1
-    with {:http_version, :"HTTP/1.1"} <- {:http_version, get_http_protocol(conn)},
-         {:method, "GET"} <- {:method, conn.method},
-         {:host_header, header} when header != [] <- {:host_header, get_req_header(conn, "host")},
-         {:upgrade_header, true} <-
-           {:upgrade_header, header_contains(conn, "upgrade", "websocket")},
-         {:connection_header, true} <-
-           {:connection_header, header_contains(conn, "connection", "upgrade")},
-         {:sec_websocket_key_header, true} <-
-           {:sec_websocket_key_header,
-            match?([<<_::binary>>], get_req_header(conn, "sec-websocket-key"))},
-         {:sec_websocket_version_header, ["13"]} <-
-           {:sec_websocket_version_header, get_req_header(conn, "sec-websocket-version")} do
-      :ok
-    else
-      {step, detail} ->
-        {:error, "WebSocket upgrade failed: error in #{step} check: #{inspect(detail)}"}
-    end
-  end
-
   @spec handshake(Plug.Conn.t(), keyword(), keyword()) ::
           {:ok, Plug.Conn.t(), Keyword.t()} | {:error, String.t()}
   def handshake(%Plug.Conn{} = conn, opts, websocket_opts) do
-    with :ok <- validate_upgrade(conn) do
+    with :ok <- Bandit.WebSocket.UpgradeValidation.validate_upgrade(conn) do
       do_handshake(conn, opts, websocket_opts)
     end
   end
@@ -125,20 +98,5 @@ defmodule Bandit.WebSocket.Handshake do
       end)
 
     put_resp_header(conn, "sec-websocket-extensions", extensions)
-  end
-
-  @spec header_contains(Plug.Conn.t(), field :: String.t(), value :: String.t()) ::
-          true | binary()
-  defp header_contains(conn, field, value) do
-    downcase_value = String.downcase(value, :ascii)
-    header = get_req_header(conn, field)
-
-    header
-    |> Enum.flat_map(&Plug.Conn.Utils.list/1)
-    |> Enum.any?(&(String.downcase(&1, :ascii) == downcase_value))
-    |> case do
-      true -> true
-      false -> "Did not find '#{value}' in '#{header}'"
-    end
   end
 end

@@ -17,14 +17,14 @@ The HTTP request containing the upgrade request is first passed to the user's
 application as a standard Plug call. After inspecting the request and deeming it
 a suitable upgrade candidate (via whatever policy the application dictates), the
 user indicates a desire to upgrade the connection to a WebSocket by calling
-`Plug.Conn.upgrade_adapter/3` (this is most commonly done by calling
-`WebSockAdapter.upgrade/4`, which wraps this underlying call in
-a server-agnostic manner). At the conclusion of the `Plug.call/2` callback, 
-`Bandit.Pipeline` will then attempy to upgrade the underlying connection. As
-part of this upgrade process, `Bandit.DelegatingHandler` will switch the
-Handler for the connection to be `Bandit.WebSocket.Handler`. This will cause any
-future communication after the upgrade process to be handled directly by
-Bandit's WebSocket stack.
+`WebSockAdapter.upgrade/4`, which checks that the request is a valid WebSocket
+upgrade request, and then calls `Plug.Conn.upgrade_adapter/3` to signal to
+Bandit that the connection should be upgraded at the conclusion of the request.
+At the conclusion of the `Plug.call/2` callback, `Bandit.Pipeline` will then
+attempt to upgrade the underlying connection. As part of this upgrade process,
+`Bandit.DelegatingHandler` will switch the Handler for the connection to be
+`Bandit.WebSocket.Handler`. This will cause any future communication after the
+upgrade process to be handled directly by Bandit's WebSocket stack.
 
 ## Process model
 
@@ -41,7 +41,7 @@ modeled by the `Bandit.WebSocket.Connection` struct and module.
 
 All data subsequently received by the underlying [Thousand
 Island](https://github.com/mtrudel/thousand_island) library will result in
-a call to `Bandit.WebSocket.Handler.handle_data/3`, which will then attmept to
+a call to `Bandit.WebSocket.Handler.handle_data/3`, which will then attempt to
 parse the data into one or more WebSocket frames. Once a frame has been
 constructed, it is them passed through to the configured `WebSock` handler by
 way of the underlying `Bandit.WebSocket.Connection`.

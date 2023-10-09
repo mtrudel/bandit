@@ -6,16 +6,9 @@ defmodule WebSocketProtocolTest do
 
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
-
-    case Bandit.WebSocket.Handshake.valid_upgrade?(conn) do
-      true ->
-        websock = conn.query_params["websock"] |> String.to_atom()
-        compress = conn.query_params["compress"]
-        Plug.Conn.upgrade_adapter(conn, :websocket, {websock, conn.params, compress: compress})
-
-      false ->
-        Plug.Conn.send_resp(conn, 204, <<>>)
-    end
+    websock = conn.query_params["websock"] |> String.to_atom()
+    compress = conn.query_params["compress"]
+    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, conn.params, compress: compress})
   end
 
   # These websocks are used throughout these tests, so declare them top-level

@@ -10,6 +10,29 @@ defmodule HTTP1RequestTest do
   setup :http_server
   setup :req_http1_client
 
+  describe "plug definitions" do
+    test "runs module plugs", context do
+      response = Req.get!(context.req, url: "/hello_world")
+      assert response.status == 200
+      assert response.body == "OK module"
+    end
+
+    def hello_world(conn) do
+      send_resp(conn, 200, "OK module")
+    end
+
+    test "runs function plugs", context do
+      context =
+        context
+        |> http_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
+        |> Enum.into(context)
+
+      response = Req.get!(context.req, url: "/", base_url: context.base)
+      assert response.status == 200
+      assert response.body == "OK function"
+    end
+  end
+
   describe "invalid requests" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
@@ -50,6 +73,40 @@ defmodule HTTP1RequestTest do
       Process.sleep(1100)
 
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "unread content length bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "content-length: 6"
+      ])
+
+      Transport.send(client, "ABCDEF")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "unread chunked bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "6\r\nABCDEF\r\n0\r\n\r\n")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def echo_method(conn) do
+      send_resp(conn, 200, conn.method)
     end
   end
 
@@ -551,6 +608,7 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, to_string(reason))
     end
 
+    @tag capture_log: true
     test "handles the case where the declared content length is less than what is sent",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -638,13 +696,12 @@ defmodule HTTP1RequestTest do
           )
 
           assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in method check: \"POST\""}
+                 ~> {:ok, "400 Bad Request", list(), "HTTP method POST unsupported"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "WebSocket upgrade failed: error in method check: \\\"POST\\\""
+      assert errors =~ "HTTP method POST unsupported"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
@@ -668,13 +725,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in upgrade_header check: \"Did not find 'websocket' in 'NOPE'\""}
+                  "'upgrade' header must contain 'websocket', got [\"NOPE\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in upgrade_header check: \\\"Did not find 'websocket' in 'NOPE'\\\""
+      assert errors =~ "'upgrade' header must contain 'websocket', got [\\\"NOPE\\\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
@@ -698,13 +754,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in connection_header check: \"Did not find 'upgrade' in 'NOPE'\""}
+                  "'connection' header must contain 'upgrade', got [\"NOPE\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in connection_header check: \\\"Did not find 'upgrade' in 'NOPE'\\\""
+      assert errors =~ "'connection' header must contain 'upgrade', got [\\\"NOPE\\\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
@@ -726,13 +781,12 @@ defmodule HTTP1RequestTest do
           )
 
           assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in sec_websocket_key_header check: false"}
+                 ~> {:ok, "400 Bad Request", list(), "'sec-websocket-key' header is absent"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~ "WebSocket upgrade failed: error in sec_websocket_key_header check: false"
+      assert errors =~ "'sec-websocket-key' header is absent"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
@@ -756,13 +810,12 @@ defmodule HTTP1RequestTest do
 
           assert SimpleHTTP1Client.recv_reply(client)
                  ~> {:ok, "400 Bad Request", list(),
-                  "WebSocket upgrade failed: error in sec_websocket_version_header check: [\"99\"]"}
+                  "'sec-websocket-version' header must equal '13', got [\"99\"]"}
 
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "WebSocket upgrade failed: error in sec_websocket_version_header check: [\\\"99\\\"]"
+      assert errors =~ "'sec-websocket-version' header must equal '13', got [\\\"99\\\"]"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do
