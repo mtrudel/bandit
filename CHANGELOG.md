@@ -1,5 +1,19 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.17 (9 Oct 2023)
+
+### Enhancements
+
+* Support function based plugs & improve startup analysis of plug configuration
+  (#236)
+* Improve keepalive support when Plug does not read request bodies (#244)
+* Improve logic around not sending bodies on HEAD requests (#242)
+
+### Changes
+
+* Internal refactor of WebSocket validation (#229)
+
+
 ## 1.0.0-pre.16 (18 Sep 2023)
 
 ### Changes
