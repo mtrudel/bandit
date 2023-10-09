@@ -9,12 +9,12 @@ defmodule SimpleHTTP1Client do
     Transport.send(socket, "\r\n")
   end
 
-  def recv_reply(socket) do
+  def recv_reply(socket, head? \\ false) do
     {:ok, response} = Transport.recv(socket, 0)
-    parse_response(socket, response)
+    parse_response(socket, response, head?)
   end
 
-  def parse_response(socket, response) do
+  def parse_response(socket, response, head? \\ false) do
     [status_line | headers] = String.split(response, "\r\n")
     <<_version::binary-size(8), " ", status::binary>> = status_line
     {headers, rest} = Enum.split_while(headers, &(&1 != ""))
@@ -31,6 +31,9 @@ defmodule SimpleHTTP1Client do
       headers
       |> Keyword.get(:"content-length")
       |> case do
+        _ when head? ->
+          rest
+
         nil ->
           rest
 

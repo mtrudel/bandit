@@ -518,6 +518,21 @@ defmodule HTTP2ProtocolTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
+    test "sends expected content-length but no body for HEAD requests", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :head, "/send_big_body", context[:port])
+
+      assert {:ok, 1, true,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "10000"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
     test "replaces any incorrect provided content-length headers", context do
       context = https_server(context, http_2_options: [compress: false])
 
@@ -548,6 +563,103 @@ defmodule HTTP2ProtocolTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
+    test "sends no content-length header or body for 204 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_204", context[:port])
+
+      assert {:ok, 1, true,
+              [
+                {":status", "204"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    def send_204(conn) do
+      send_resp(conn, 204, "this is an invalid body")
+    end
+
+    test "sends no content-length header or body for 304 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_304", context[:port])
+
+      assert {:ok, 1, true,
+              [
+                {":status", "304"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    def send_304(conn) do
+      send_resp(conn, 304, "this is an invalid body")
+    end
+
+    test "sends headers but no body for a HEAD request to a file", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :head, "/send_file", context.port)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "6"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
+    def send_file(conn) do
+      conn
+      |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "sends no content-length header or body for a 204 request to a file", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_file_204", context.port)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "204"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
+    def send_file_204(conn) do
+      conn
+      |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "writes out headers but no body for a 304 request to a file", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_file_304", context.port)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "304"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
+    def send_file_304(conn) do
+      conn
+      |> send_file(304, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
     test "sends multiple DATA frames with last one end of stream when chunking", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -559,12 +671,71 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
     end
 
+    test "does not write out a body for a chunked response to a HEAD request", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :head, "/chunk_response", context.port)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
     def chunk_response(conn) do
       conn
       |> send_chunked(200)
       |> chunk("OK")
       |> elem(1)
       |> chunk("DOKEE")
+      |> elem(1)
+    end
+
+    test "does not write out a body for a chunked 204 response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/chunk_204", context[:port])
+
+      assert {:ok, 1, true,
+              [
+                {":status", "204"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
+    def chunk_204(conn) do
+      conn
+      |> send_chunked(204)
+      |> chunk("This is invalid")
+      |> elem(1)
+    end
+
+    test "does not write out a body for a chunked 304 response", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/chunk_304", context[:port])
+
+      assert {:ok, 1, true,
+              [
+                {":status", "304"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
+    def chunk_304(conn) do
+      conn
+      |> send_chunked(304)
+      |> chunk("This is invalid")
       |> elem(1)
     end
 
@@ -918,7 +1089,7 @@ defmodule HTTP2ProtocolTest do
 
     def headers_for_header_read_test(context) do
       headers = [
-        {":method", "HEAD"},
+        {":method", "GET"},
         {":path", "/header_read_test"},
         {":scheme", "https"},
         {":authority", "localhost:#{context.port}"},

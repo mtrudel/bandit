@@ -1107,6 +1107,14 @@ defmodule HTTP1RequestTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
+    test "sends expected content-length but no body for HEAD requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_big_body", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
+    end
+
     test "replaces any incorrect provided content-length headers", context do
       response = Req.get!(context.req, url: "/send_incorrect_content_length")
 
@@ -1121,28 +1129,30 @@ defmodule HTTP1RequestTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
-    test "writes out a response with no content-length header for 204 responses", context do
-      response = Req.get!(context.req, url: "/send_204")
+    test "writes out a response with no content-length header or body for 204 responses",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_204", ["host: localhost"])
 
-      assert response.status == 204
-      assert response.body == ""
-      assert response.headers["content-length"] == nil
+      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
     end
 
     def send_204(conn) do
-      send_resp(conn, 204, "")
+      send_resp(conn, 204, "this is an invalid body")
     end
 
-    test "writes out a response with no content-length header for 304 responses", context do
-      response = Req.get!(context.req, url: "/send_304")
+    test "writes out a response with no content-length header or body for 304 responses",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_304", ["host: localhost"])
 
-      assert response.status == 304
-      assert response.body == ""
-      assert response.headers["content-length"] == nil
+      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
     end
 
     def send_304(conn) do
-      send_resp(conn, 304, "")
+      send_resp(conn, 304, "this is an invalid body")
     end
 
     test "writes out a response with zero content-length for 200 responses", context do
@@ -1198,6 +1208,14 @@ defmodule HTTP1RequestTest do
       conn
     end
 
+    test "does not write out a body for a chunked response to a HEAD request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_chunked_200", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"transfer-encoding") == "chunked"
+    end
+
     test "writes out a chunked iolist response", context do
       response = Req.get!(context.req, url: "/send_chunked_200_iolist")
 
@@ -1251,9 +1269,48 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-length"] == ["6"]
     end
 
+    test "writes out headers but not body for files requested via HEAD request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
     def send_full_file(conn) do
       conn
       |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "does not write out a content-length header or body for files on a 204",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_204", ["host: localhost"])
+
+      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_full_file_204(conn) do
+      conn
+      |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "does not write out a content-length header or body for files on a 304",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_304", ["host: localhost"])
+
+      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_full_file_304(conn) do
+      conn
+      |> send_file(304, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
     test "writes out a sent file for parts of a file with content length", context do
