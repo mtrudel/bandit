@@ -137,7 +137,6 @@ defmodule Bandit.HTTP2.Connection do
     streams =
       connection.streams
       |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
-      |> StreamCollection.update_max_concurrent_streams(frame.settings.max_concurrent_streams)
 
     send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
 

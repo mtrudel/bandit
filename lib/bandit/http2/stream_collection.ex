@@ -10,7 +10,6 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   defstruct initial_recv_window_size: 65_535,
             initial_send_window_size: 65_535,
-            max_concurrent_streams: :infinity,
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
             stream_count: 0,
@@ -20,16 +19,10 @@ defmodule Bandit.HTTP2.StreamCollection do
   @type t :: %__MODULE__{
           initial_recv_window_size: non_neg_integer(),
           initial_send_window_size: non_neg_integer(),
-          max_concurrent_streams: non_neg_integer() | :infinity,
           last_remote_stream_id: Stream.stream_id(),
           last_local_stream_id: Stream.stream_id(),
           streams: %{Stream.stream_id() => Stream.t()}
         }
-
-  @spec update_max_concurrent_streams(t(), non_neg_integer()) :: t()
-  def update_max_concurrent_streams(collection, max_concurrent_streams) do
-    %{collection | max_concurrent_streams: max_concurrent_streams}
-  end
 
   @spec update_initial_send_window_size(t(), non_neg_integer()) :: t()
   def update_initial_send_window_size(collection, initial_send_window_size) do
