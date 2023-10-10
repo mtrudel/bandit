@@ -1,5 +1,11 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0-pre.18 (10 Oct 2023)
+
+### Fixes
+
+* Fix startup when plug module has not yet been loaded by the BEAM
+
 ## 1.0.0-pre.17 (9 Oct 2023)
 
 ### Enhancements
