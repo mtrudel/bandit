@@ -312,6 +312,7 @@ defmodule Bandit do
   end
 
   defp validate_plug(plug, plug_options) do
+    Code.ensure_loaded!(plug)
     if !function_exported?(plug, :init, 1), do: raise("plug module does not define init/1")
     if !function_exported?(plug, :call, 2), do: raise("plug module does not define call/2")
 
