@@ -1,5 +1,11 @@
 # Changelog for 1.0.0-pre
 
+## 1.0.0 (18 Oct 2023)
+
+### Changes
+
+* Remove internal tracking of remote `max_concurrent_streams` setting (#248)
+
 ## 1.0.0-pre.18 (10 Oct 2023)
 
 ### Fixes

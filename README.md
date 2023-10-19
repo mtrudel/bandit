@@ -87,7 +87,7 @@ Using Bandit to host your Phoenix application couldn't be simpler:
 1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
 
     ```elixir
-    {:bandit, "~> 1.0-pre"}
+    {:bandit, "~> 1.0"}
     ```
 2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`, as in the following example:
 
@@ -169,7 +169,7 @@ If you wish to interact with WebSockets at a more fundamental level, the
 [WebSockAdapter](https://hexdocs.pm/websock_adapter/WebSockAdapter.html) libraries
 provides a generic abstraction for WebSockets (very similar to how Plug is
 a generic abstraction on top of HTTP). Bandit fully supports all aspects of
-these libraries. 
+these libraries.
 
 <!-- MDOC -->
 
@@ -207,7 +207,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, "~> 1.0-pre"}
+    {:bandit, "~> 1.0"}
   ]
 end
 ```
