@@ -84,7 +84,7 @@ defmodule Bandit.MixProject do
       groups_for_extras: [
         "Implementation Notes": Path.wildcard("lib/bandit/*/README.md")
       ],
-      skip_undefined_reference_warnings_on: Path.wildcard("lib/bandit/*/README.md"),
+      skip_undefined_reference_warnings_on: Path.wildcard("**/*.md"),
       main: "Bandit",
       logo: "assets/ex_doc_logo.png"
     ]
