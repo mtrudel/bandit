@@ -11,7 +11,7 @@ defmodule Bandit.WebSocket.Handler do
     {websock, websock_opts, connection_opts} = state.upgrade_opts
 
     connection_opts
-    |> Keyword.take([:fullsweep_after])
+    |> Keyword.take([:fullsweep_after, :max_heap_size])
     |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
 
     connection_opts = Keyword.merge(state.opts.websocket, connection_opts)
