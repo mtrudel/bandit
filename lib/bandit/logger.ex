@@ -9,7 +9,7 @@ defmodule Bandit.Logger do
   for `Bandit.Telemetry`.
 
   The logging included in this module is concerned specifically with protocol level events.
-  Should you wish to log lower level transport concens, there are similar functions to these in
+  Should you wish to log lower level transport concerns, there are similar functions to these in
   the `ThousandIsland.Logger` module. Corresponding telemetry events are described in the
   module documentation for `ThousandIsland.Telemetry`.
   """
