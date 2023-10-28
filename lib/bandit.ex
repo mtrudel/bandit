@@ -293,7 +293,7 @@ defmodule Bandit do
         options
 
       {_, illegal_options} ->
-        raise "Unsupported keys(s) in #{name} config: #{inspect(Keyword.keys(illegal_options))}"
+        raise "Unsupported key(s) in #{name} config: #{inspect(Keyword.keys(illegal_options))}"
     end
   end
 
