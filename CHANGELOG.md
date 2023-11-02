@@ -1,3 +1,20 @@
+## 1.1.0 (2 Nov 2023)
+
+### Changes
+
+* Messages sent to Bandit HTTP/1 handlers no longer intentionally crash the
+  handler process but are now logged in the same manner as messages sent to a
+  no-op GenServer (#259)
+* Messages regarding normal termination of monitored processes are no longer
+  handled by the WebSocket handler, but are now passed to the configured
+  `c:WebSock.handle_info/2` callback (#259)
+
+### Enhancements
+
+* Add support for `Phoenix.Endpoint.server_info/1` (now in Phoenix main; #258)
+* Add support for `:max_heap_size` option in WebSocket handler (introduced in
+  websock_adapter 0.5.5; #255, thanks @v0idpwn!)
+
 ## 1.0.0 (18 Oct 2023)
 
 ### Changes
