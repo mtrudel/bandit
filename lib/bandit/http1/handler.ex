@@ -197,4 +197,31 @@ defmodule Bandit.HTTP1.Handler do
 
   def handle_info({:EXIT, _pid, :normal}, {socket, state}),
     do: {:noreply, {socket, state}, socket.read_timeout}
+
+  def handle_info(msg, state) do
+    # Copied verbatim from lib/elixir/lib/gen_server.ex
+    proc =
+      case Process.info(self(), :registered_name) do
+        {_, []} -> self()
+        {_, name} -> name
+      end
+
+    :logger.error(
+      %{
+        label: {GenServer, :no_handle_info},
+        report: %{
+          module: __MODULE__,
+          message: msg,
+          name: proc
+        }
+      },
+      %{
+        domain: [:otp, :elixir],
+        error_logger: %{tag: :error_msg},
+        report_cb: &GenServer.format_report/1
+      }
+    )
+
+    {:noreply, state}
+  end
 end

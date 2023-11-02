@@ -1451,7 +1451,7 @@ defmodule HTTP1RequestTest do
     # a single GenServer call & will complete before the handler process handles
     # the handle_info call returned by the spawned process. Look at the logged
     # errors instead
-    assert errors =~ ~r[\[error\] GenServer .* terminating]
+    assert errors =~ ~r[received unexpected message in handle_info/2]
   end
 
   def spawn_abnormal_child(conn) do
