@@ -87,9 +87,6 @@ defmodule Bandit.WebSocket.Handler do
   def handle_info({:plug_conn, :sent}, {socket, state}),
     do: {:noreply, {socket, state}, socket.read_timeout}
 
-  def handle_info({:EXIT, _pid, :normal}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
-
   def handle_info(msg, {socket, state}) do
     case Connection.handle_info(msg, socket, state.connection) do
       {:continue, connection_state} ->
