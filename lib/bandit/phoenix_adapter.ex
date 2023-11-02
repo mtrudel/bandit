@@ -56,6 +56,17 @@ defmodule Bandit.PhoenixAdapter do
     end
   end
 
+  @doc """
+  Returns the bound address and port of the Bandit server process for the provided
+  scheme within the given Phoenix Endpoint
+  """
+  def server_info(endpoint, scheme) do
+    case bandit_pid(endpoint, scheme) do
+      {:ok, pid} -> ThousandIsland.listener_info(pid)
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
   @doc false
   def child_specs(endpoint, config) do
     plug = resolve_plug(config[:code_reloader], endpoint)
