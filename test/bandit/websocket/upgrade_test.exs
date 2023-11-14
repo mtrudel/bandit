@@ -62,6 +62,8 @@ defmodule WebSocketUpgradeTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, MyNoopWebSock)
 
+      Process.sleep(100)
+
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [
                {[:bandit, :request, :stop],

@@ -19,11 +19,18 @@ defmodule InitialHandlerTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
-    test "closes connection on HTTP/2 request if so configured", context do
+    test "refuses connection on HTTP/2 request if so configured", context do
       context = https_server(context, http_2_options: [enabled: false])
-      socket = SimpleH2Client.tls_client(context)
-      Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert Transport.recv(socket, 0) == {:error, :closed}
+
+      assert {:error, {:tls_alert, {:no_application_protocol, _}}} =
+               :ssl.connect(~c"localhost", context[:port],
+                 active: false,
+                 mode: :binary,
+                 nodelay: true,
+                 verify: :verify_peer,
+                 cacertfile: Path.join(__DIR__, "../support/ca.pem"),
+                 alpn_advertised_protocols: ["h2"]
+               )
     end
   end
 
