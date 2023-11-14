@@ -1,3 +1,9 @@
+## 1.1.1 (14 Nov 2023)
+
+### Fixes
+
+* Do not advertise disabled protocols via ALPN (#263)
+
 ## 1.1.0 (2 Nov 2023)
 
 ### Changes
