@@ -248,9 +248,13 @@ defmodule Bandit do
           {ThousandIsland.Transports.TCP, transport_options, 4000}
 
         :https ->
+          supported_protocols =
+            if(http_2_enabled, do: ["h2"], else: []) ++
+              if http_1_enabled, do: ["http/1.1"], else: []
+
           transport_options =
             Keyword.take(arg, [:ip, :keyfile, :certfile, :otp_app, :cipher_suite])
-            |> Keyword.merge(alpn_preferred_protocols: ["h2", "http/1.1"])
+            |> Keyword.merge(alpn_preferred_protocols: supported_protocols)
             |> then(&(Keyword.get(thousand_island_options, :transport_options, []) ++ &1))
             |> Plug.SSL.configure()
             |> case do
