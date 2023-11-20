@@ -14,7 +14,6 @@ defmodule Bandit.MixProject do
       description: "A pure-Elixir HTTP server built for Plug & WebSock apps",
       source_url: "https://github.com/mtrudel/bandit",
       package: [
-        files: ["lib", "test", "mix.exs", "README*", "LICENSE*"],
         maintainers: ["Mat Trudel"],
         licenses: ["MIT"],
         links: %{"GitHub" => "https://github.com/mtrudel/bandit"}
