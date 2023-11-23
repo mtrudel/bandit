@@ -1336,7 +1336,7 @@ defmodule HTTP1RequestTest do
 
   test "sending informational responses", context do
     client = SimpleHTTP1Client.tcp_client(context)
-    SimpleHTTP1Client.send(client, "GET", "/send_inform!", ["host: localhost"])
+    SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
 
     Process.sleep(100)
     assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
@@ -1353,11 +1353,6 @@ defmodule HTTP1RequestTest do
 
   def send_inform(conn) do
     conn = conn |> inform(100, [{"x-from", "inform"}])
-    conn |> send_resp(200, "Informer")
-  end
-
-  def send_inform!(conn) do
-    conn = conn |> inform!(100, [{"x-from", "inform"}])
     conn |> send_resp(200, "Informer")
   end
 

@@ -505,10 +505,19 @@ defmodule Bandit.HTTP1.Adapter do
   @impl Plug.Conn.Adapter
   def inform(%__MODULE__{version: :"HTTP/1.0"}, _status, _headers), do: {:error, :not_supported}
 
-  def inform(%__MODULE__{socket: socket, version: version}, status, headers) do
-    {header_iodata, _header_metrics} = response_header(version, status, headers)
+  def inform(%__MODULE__{socket: socket, version: version} = req, status, headers) do
+    start_time = Bandit.Telemetry.monotonic_time()
+
+    {header_iodata, header_metrics} = response_header(version, status, headers)
     _ = ThousandIsland.Socket.send(socket, header_iodata)
-    :ok
+
+    metrics =
+      req.metrics
+      |> Map.merge(header_metrics)
+      |> Map.put(:resp_start_time, start_time)
+      |> Map.put(:resp_body_bytes, 0)
+
+    {:ok, %{req | metrics: metrics}}
   end
 
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
