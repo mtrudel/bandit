@@ -296,10 +296,10 @@ defmodule HTTP2PlugTest do
   end
 
   test "writes out a sent file for parts of a file", context do
-    response = Req.get!(context.req, url: "/send_file?offset=1&length=3")
+    response = Req.get!(context.req, url: "/send_file?offset=1&length=5")
 
     assert response.status == 200
-    assert response.body == "BCD"
+    assert response.body == "BCDEF"
   end
 
   @large_file_path Path.join([__DIR__, "../../support/sendfile_large"])

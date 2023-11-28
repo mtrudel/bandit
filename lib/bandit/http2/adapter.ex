@@ -185,7 +185,7 @@ defmodule Bandit.HTTP2.Adapter do
           |> Enum.reduce(adapter, fn chunk, adapter -> send_data(adapter, chunk, false) end)
           |> send_data(<<>>, true)
 
-        offset + length < size ->
+        offset + length <= size ->
           case :file.open(path, [:raw, :binary]) do
             {:ok, fd} ->
               try do
