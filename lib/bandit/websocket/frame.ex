@@ -184,26 +184,19 @@ defmodule Bandit.WebSocket.Frame do
     |> IO.iodata_to_binary()
   end
 
-  # note that we assume the mask integer is 32-bits and do not check
-  @spec mask( binary(), integer() ) :: binary()
+  # Note that we assume the mask integer is 32-bits and do not check.
+  @spec mask(binary(), integer()) :: binary()
   def mask(payload, mask_integer) do
-
-    # 1. Allocate the binary for the mask repetitions
     payload_size = byte_size(payload)
-                
-    mask_repetitions = case { div(payload_size,4), rem(payload_size,4)} do
-      {count_4_bytes, 0 } ->
-        count_4_bytes # payload length is a multiple of 4, so the mask will be fine
-      {count_4_bytes, _count_stragglers} ->
-       count_4_bytes + 1 # bump up by one mask size
-    end
-        
-    mask_binary = :binary.copy( <<mask_integer::32>>, mask_repetitions)
-              
-    # 2. Trim the binary if needed
-    fit_mask = :binary.part(mask_binary, 0, payload_size)
-        
-    # 3. XOR (in a nif) the payload and mask binary
-    masked_payload = :crypto.exor(payload, fit_mask)
+    count_4_bytes = div(payload_size, 4)
+
+    mask_repetitions = if rem(payload_size, 4) == 0, do: count_4_bytes, else: count_4_bytes + 1
+
+    fit_mask =
+      <<mask_integer::32>>
+      |> :binary.copy(mask_repetitions)
+      |> :binary.part(0, payload_size)
+
+    :crypto.exor(payload, fit_mask)
   end
 end
