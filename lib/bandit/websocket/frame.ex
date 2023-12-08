@@ -171,20 +171,8 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length) when length <= 65_535, do: <<0::1, 126::7, length::16>>
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
-  # Masking is done @mask_size bits at a time until there is less than that number of bits left.
-  # We then go 32 bits at a time until there is less than 32 bits left. We then go 8 bits at
-  # a time. This yields some significant perforamnce gains for only marginally more complexity
-  @mask_size 512
-
   # Note that masking is an involution, so we don't need a separate unmask function
-  def mask(payload, mask) when bit_size(payload) >= @mask_size do
-    payload
-    |> do_mask(String.duplicate(<<mask::32>>, div(@mask_size, 32)), [])
-    |> Enum.reverse()
-    |> IO.iodata_to_binary()
-  end
-
-  # Note that we assume the mask integer is 32-bits and do not check.
+  # Note too that we assume the mask integer is 32-bits and do not check.
   @spec mask(binary(), integer()) :: binary()
   def mask(payload, mask_integer) do
     payload_size = byte_size(payload)
