@@ -171,41 +171,20 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length) when length <= 65_535, do: <<0::1, 126::7, length::16>>
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
-  # Masking is done @mask_size bits at a time until there is less than that number of bits left.
-  # We then go 32 bits at a time until there is less than 32 bits left. We then go 8 bits at
-  # a time. This yields some significant perforamnce gains for only marginally more complexity
-  @mask_size 512
-
   # Note that masking is an involution, so we don't need a separate unmask function
-  def mask(payload, mask) when bit_size(payload) >= @mask_size do
-    payload
-    |> do_mask(String.duplicate(<<mask::32>>, div(@mask_size, 32)), [])
-    |> Enum.reverse()
-    |> IO.iodata_to_binary()
-  end
+  # Note too that we assume the mask integer is 32-bits and do not check.
+  @spec mask(binary(), integer()) :: binary()
+  def mask(payload, mask_integer) do
+    payload_size = byte_size(payload)
+    count_4_bytes = div(payload_size, 4)
 
-  def mask(payload, mask) do
-    payload
-    |> do_mask(<<mask::32>>, [])
-    |> Enum.reverse()
-    |> IO.iodata_to_binary()
-  end
+    mask_repetitions = if rem(payload_size, 4) == 0, do: count_4_bytes, else: count_4_bytes + 1
 
-  defp do_mask(
-         <<h::unquote(@mask_size), rest::binary>>,
-         <<int_mask::unquote(@mask_size)>> = mask,
-         acc
-       ) do
-    do_mask(rest, mask, [<<Bitwise.bxor(h, int_mask)::unquote(@mask_size)>> | acc])
-  end
+    fit_mask =
+      <<mask_integer::32>>
+      |> :binary.copy(mask_repetitions)
+      |> :binary.part(0, payload_size)
 
-  defp do_mask(<<h::32, rest::binary>>, <<int_mask::32, _mask_rest::binary>> = mask, acc) do
-    do_mask(rest, mask, [<<Bitwise.bxor(h, int_mask)::32>> | acc])
+    :crypto.exor(payload, fit_mask)
   end
-
-  defp do_mask(<<h::8, rest::binary>>, <<current::8, mask::24, _mask_rest::binary>>, acc) do
-    do_mask(rest, <<mask::24, current::8>>, [<<Bitwise.bxor(h, current)::8>> | acc])
-  end
-
-  defp do_mask(<<>>, _mask, acc), do: acc
 end
