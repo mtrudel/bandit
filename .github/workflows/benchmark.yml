@@ -30,7 +30,7 @@ jobs:
     - name: Run benchmark against base branch
       run: mix benchmark bandit@${{ github.event.pull_request.base.repo.clone_url }}@${{ github.event.pull_request.base.ref }} bandit@${{ github.event.pull_request.head.repo.clone_url }}@${{ github.event.pull_request.head.sha }}
     - name: Upload results file
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: http-benchmark.csv
         path: http-benchmark.csv
