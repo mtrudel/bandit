@@ -261,7 +261,7 @@ defmodule Bandit do
               {:ok, options} -> options
               {:error, message} -> raise "Plug.SSL.configure/1 encountered error: #{message}"
             end
-            |> Keyword.delete(:otp_app)
+            |> Enum.reject(&(is_tuple(&1) and elem(&1, 0) == :otp_app))
 
           {ThousandIsland.Transports.SSL, transport_options, 4040}
       end
