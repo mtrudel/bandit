@@ -1,3 +1,12 @@
+## 1.1.2 (20 Dec 2023)
+
+### Fixes
+
+* Fix support for proplist-style arguments (#277, thanks @jjcarstens!)
+* Speed up WebSocket framing (#272, thanks @crertel!)
+* Fix off-by-one error in HTTP2 sendfile (#269, thanks @OrangeDrangon!)
+* Improve mix file packaging (#266, thanks @patrickjaberg!)
+
 ## 1.1.1 (14 Nov 2023)
 
 ### Fixes
