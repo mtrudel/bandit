@@ -172,19 +172,23 @@ defmodule Bandit.WebSocket.Frame do
   defp mask_and_length(length), do: <<0::1, 127::7, length::64>>
 
   # Note that masking is an involution, so we don't need a separate unmask function
-  # Note too that we assume the mask integer is 32-bits and do not check.
   @spec mask(binary(), integer()) :: binary()
-  def mask(payload, mask_integer) do
-    payload_size = byte_size(payload)
-    count_4_bytes = div(payload_size, 4)
+  def mask(payload, mask) when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
+    mask(<<>>, payload, mask)
+  end
 
-    mask_repetitions = if rem(payload_size, 4) == 0, do: count_4_bytes, else: count_4_bytes + 1
+  defp mask(acc, <<h::32, rest::binary>>, mask) do
+    mask(<<acc::binary, (<<Bitwise.bxor(h, mask)::32>>)>>, rest, mask)
+  end
 
-    fit_mask =
-      <<mask_integer::32>>
-      |> :binary.copy(mask_repetitions)
-      |> :binary.part(0, payload_size)
+  for size <- [24, 16, 8] do
+    defp mask(acc, <<h::unquote(size)>>, mask) do
+      <<mask::unquote(size), _::binary>> = <<mask::32>>
+      <<acc::binary, (<<Bitwise.bxor(h, mask)::unquote(size)>>)>>
+    end
+  end
 
-    :crypto.exor(payload, fit_mask)
+  defp mask(acc, <<>>, _mask) do
+    acc
   end
 end
