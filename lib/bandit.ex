@@ -21,7 +21,7 @@ defmodule Bandit do
   Possible top-level options to configure a Bandit server
 
   * `plug`: The Plug to use to handle connections. Can be specified as:
-      *  `MyPlug`
+      * `MyPlug`
       * `{MyPlug, plug_opts}`
       * `{&fun/2, plug_opts}`
       * `&fun/2`
