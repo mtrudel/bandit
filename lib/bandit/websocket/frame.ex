@@ -173,7 +173,8 @@ defmodule Bandit.WebSocket.Frame do
 
   # Note that masking is an involution, so we don't need a separate unmask function
   @spec mask(binary(), integer()) :: binary()
-  def mask(payload, mask) when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
+  def mask(payload, mask)
+      when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
     mask(<<>>, payload, mask)
   end
 
