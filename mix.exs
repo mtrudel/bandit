@@ -16,7 +16,8 @@ defmodule Bandit.MixProject do
       package: [
         maintainers: ["Mat Trudel"],
         licenses: ["MIT"],
-        links: %{"GitHub" => "https://github.com/mtrudel/bandit"}
+        links: %{"GitHub" => "https://github.com/mtrudel/bandit"},
+        files: ["lib", "mix.exs", "README*", "LICENSE*", "CHANGELOG*"]
       ],
       docs: docs()
     ]
