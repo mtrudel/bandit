@@ -21,15 +21,31 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK module")
     end
 
-    test "runs function plugs", context do
+    test "runs plug: {fun/2, options}", context do
+      context =
+        context
+        |> http_server(plug: {fn conn, string -> send_resp(conn, 200, string) end, "hello"})
+        |> Enum.into(context)
+
+      assert Req.get!(context.req, url: "/", base_url: context.base).body == "hello"
+    end
+
+    test "runs plug: fun/2", context do
       context =
         context
         |> http_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
         |> Enum.into(context)
 
-      response = Req.get!(context.req, url: "/", base_url: context.base)
-      assert response.status == 200
-      assert response.body == "OK function"
+      assert Req.get!(context.req, url: "/", base_url: context.base).body == "OK function"
+    end
+
+    test "runs plug: fun/1", context do
+      context =
+        context
+        |> http_server(plug: fn conn -> send_resp(conn, 200, "OK function") end)
+        |> Enum.into(context)
+
+      assert Req.get!(context.req, url: "/", base_url: context.base).body == "OK function"
     end
   end
 

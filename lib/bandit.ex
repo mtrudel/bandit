@@ -20,7 +20,12 @@ defmodule Bandit do
   @typedoc """
   Possible top-level options to configure a Bandit server
 
-  * `plug`: The Plug to use to handle connections. Can be specified as `MyPlug` or `{MyPlug, plug_opts}`
+  * `plug`: The Plug to use to handle connections. Can be specified as:
+      *  `MyPlug`
+      * `{MyPlug, plug_opts}`
+      * `{&fun/2, plug_opts}`
+      * `&fun/2`
+      * `&fun/1`
   * `scheme`: One of `:http` or `:https`. If `:https` is specified, you will also need to specify
     valid `certfile` and `keyfile` values (or an equivalent value within
     `thousand_island_options.transport_options`). Defaults to `:http`
@@ -219,8 +224,8 @@ defmodule Bandit do
       Keyword.get(arg, :websocket_options, [])
       |> validate_options(@websocket_keys, :websocket_options)
 
-    {plug_mod, _} = plug = plug(arg)
-    display_plug = Keyword.get(arg, :display_plug, plug_mod)
+    {plug_mod_or_fun, _} = plug = plug(arg)
+    display_plug = Keyword.get(arg, :display_plug, plug_mod_or_fun)
     startup_log = Keyword.get(arg, :startup_log, :info)
 
     {http_1_enabled, http_1_options} = Keyword.pop(http_1_options, :enabled, true)
@@ -307,10 +312,11 @@ defmodule Bandit do
     |> Keyword.get(:plug)
     |> case do
       nil -> raise "A value is required for :plug"
-      {plug_fn, plug_options} when is_function(plug_fn, 2) -> {plug_fn, plug_options}
-      plug_fn when is_function(plug_fn) -> {plug_fn, []}
-      {plug, plug_options} when is_atom(plug) -> validate_plug(plug, plug_options)
       plug when is_atom(plug) -> validate_plug(plug, [])
+      {plug, plug_options} when is_atom(plug) -> validate_plug(plug, plug_options)
+      {plug_fn, plug_options} when is_function(plug_fn, 2) -> {plug_fn, plug_options}
+      plug_fn when is_function(plug_fn, 2) -> {plug_fn, []}
+      plug_fn when is_function(plug_fn, 1) -> {fn conn, [] -> plug_fn.(conn) end, []}
       other -> raise "Invalid value for plug: #{inspect(other)}"
     end
   end
