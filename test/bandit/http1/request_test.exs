@@ -11,7 +11,7 @@ defmodule HTTP1RequestTest do
   setup :req_http1_client
 
   describe "plug definitions" do
-    test "runs module plugs", context do
+    test "runs plug: module", context do
       response = Req.get!(context.req, url: "/hello_world")
       assert response.status == 200
       assert response.body == "OK module"
@@ -21,7 +21,7 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "OK module")
     end
 
-    test "runs plug: {fun/2, options}", context do
+    test "runs plug: {&fun/2, options}", context do
       context =
         context
         |> http_server(plug: {fn conn, string -> send_resp(conn, 200, string) end, "hello"})
@@ -30,7 +30,7 @@ defmodule HTTP1RequestTest do
       assert Req.get!(context.req, url: "/", base_url: context.base).body == "hello"
     end
 
-    test "runs plug: fun/2", context do
+    test "runs plug: &fun/2", context do
       context =
         context
         |> http_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
@@ -39,7 +39,7 @@ defmodule HTTP1RequestTest do
       assert Req.get!(context.req, url: "/", base_url: context.base).body == "OK function"
     end
 
-    test "runs plug: fun/1", context do
+    test "runs plug: &fun/1", context do
       context =
         context
         |> http_server(plug: fn conn -> send_resp(conn, 200, "OK function") end)

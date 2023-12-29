@@ -11,7 +11,7 @@ defmodule HTTP2PlugTest do
   setup :req_h2_client
 
   describe "plug definitions" do
-    test "runs module plugs", context do
+    test "runs plug: module", context do
       response = Req.get!(context.req, url: "/hello_world")
       assert response.status == 200
       assert response.body == "OK module"
@@ -21,7 +21,7 @@ defmodule HTTP2PlugTest do
       send_resp(conn, 200, "OK module")
     end
 
-    test "runs function plugs", context do
+    test "runs plug: &fun/2", context do
       context =
         context
         |> https_server(plug: fn conn, _ -> send_resp(conn, 200, "OK function") end)
