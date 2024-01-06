@@ -401,7 +401,7 @@ defmodule Bandit.HTTP2.Connection do
   #
   # Sending logic
   #
-  # All callers of functions below will be from stream tasks, looked up via pid
+  # All callers of functions below will be from stream processes, looked up via pid
   #
 
   #

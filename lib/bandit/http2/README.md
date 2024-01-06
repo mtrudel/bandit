@@ -1,7 +1,7 @@
 # HTTP/2 Handler
 
 Included in this folder is a complete `ThousandIsland.Handler` based implementation of HTTP/2 as
-defined in [RFC 9113](https://datatracker.ietf.org/doc/rfc9113). 
+defined in [RFC 9113](https://datatracker.ietf.org/doc/rfc9113).
 
 ## Process model
 
@@ -10,11 +10,11 @@ Within a Bandit server, an HTTP/2 connection is modeled as a set of processes:
 * 1 process per connection, a `Bandit.HTTP2.Handler` module implementing the
   `ThousandIsland.Handler` behaviour, and;
 * 1 process per stream (i.e.: per HTTP request) within the connection, implemented as
-  a `Bandit.HTTP2.StreamTask` Task
+  a `Bandit.HTTP2.StreamProcess` process
 
 The lifetimes of these processes correspond to their role; a connection process lives for as long
 as a client is connected, and a stream process lives only as long as is required to process
-a single stream request within a connection. 
+a single stream request within a connection.
 
 Connection processes are the 'root' of each connection's process group, and are supervised by
 Thousand Island in the same manner that `ThousandIsland.Handler` processes are usually supervised
@@ -40,12 +40,12 @@ looks like the following:
 2. Frames are parsed from these bytes by calling the `Bandit.HTTP2.Frame.deserialize/2`
    function. If successful, the parsed frame(s) are returned. We retain any unparsed bytes in
    a buffer in order to attempt parsing them upon receipt of subsequent data from the client
-3. Parsed frames are passed into the `Bandit.HTTP2.Connection` module along with a struct of 
-   same module. Frames are applied against this struct in a vaguely FSM-like manner, using pattern 
+3. Parsed frames are passed into the `Bandit.HTTP2.Connection` module along with a struct of
+   same module. Frames are applied against this struct in a vaguely FSM-like manner, using pattern
    matching within the `Bandit.HTTP2.Connection.handle_frame/3` function. Any side-effects of
    received frames are applied in these functions, and an updated connection struct is returned to
    represent the updated connection state. These side-effects can take the form of starting stream
-   tasks, conveying data to running stream tasks, responding to the client with various frames, or
+   processes, conveying data to running stream processes, responding to the client with various frames, or
    any number of other actions
 4. This process is repeated every time we receive data from the client until the
    `Bandit.HTTP2.Connection` module indicates that the connection should be closed, either
@@ -59,11 +59,11 @@ looks like the following:
 ## Processing requests
 
 The details of a particular stream are contained within a `Bandit.HTTP2.Stream` struct
-(as well as a `Bandit.HTTP2.StreamTask` process in the case of active streams). The
+(as well as a `Bandit.HTTP2.StreamProcess` process in the case of active streams). The
 `Bandit.HTTP2.StreamCollection` module manages a collection of streams, allowing for the memory
 efficient management of complete & yet unborn streams alongside active ones.
 
-Once a complete header block has been read, a `Bandit.HTTP2.StreamTask` is started to manage the
+Once a complete header block has been read, a `Bandit.HTTP2.StreamProcess` is started to manage the
 actual calling of the configured `Plug` module for this server, using the `Bandit.HTTP2.Adapter`
 module as the implementation of the `Plug.Conn.Adapter` behaviour. This adapter uses a simple
 `receive` pattern to listen for messages sent to it from the connection process, a pattern chosen

@@ -534,7 +534,7 @@ defmodule HTTP2PlugTest do
     # The return value here isn't relevant, since the HTTP call is done within
     # a single Task call & may complete before the spawned process exits. Look
     # at the logged errors instead
-    assert errors =~ ~r[\[error\] Task for stream .* crashed with :abnormal]
+    assert errors =~ ~r[\[error\] Process for stream .* crashed with :abnormal]
   end
 
   def spawn_abnormal_child(conn) do

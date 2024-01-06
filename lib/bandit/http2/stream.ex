@@ -11,7 +11,7 @@ defmodule Bandit.HTTP2.Stream do
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Connection, Errors, FlowControl, StreamTask}
+  alias Bandit.HTTP2.{Connection, Errors, FlowControl, StreamProcess}
 
   defstruct stream_id: nil,
             state: nil,
@@ -91,9 +91,12 @@ defmodule Bandit.HTTP2.Stream do
              content_encoding,
              opts
            ),
-         {:ok, pid} <- StreamTask.start_link(req, transport_info, headers, plug, span) do
+         {:ok, pid} <- StreamProcess.start_link(req, transport_info, headers, plug, span) do
       {:ok,
        %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
+    else
+      :ignore -> {:error, "Unable to start stream process"}
+      other -> other
     end
   end
 
@@ -152,7 +155,7 @@ defmodule Bandit.HTTP2.Stream do
 
   @spec recv_data(t(), binary()) :: {:ok, t(), non_neg_integer()} | {:error, Connection.error()}
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
-    StreamTask.recv_data(stream.pid, data)
+    StreamProcess.recv_data(stream.pid, data)
 
     {new_window, increment} =
       FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
@@ -195,7 +198,7 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def recv_rst_stream(%__MODULE__{} = stream, error_code) do
-    if is_pid(stream.pid), do: StreamTask.recv_rst_stream(stream.pid, error_code)
+    if is_pid(stream.pid), do: StreamProcess.recv_rst_stream(stream.pid, error_code)
     {:ok, %{stream | state: :closed, pid: nil}}
   end
 
@@ -203,14 +206,14 @@ defmodule Bandit.HTTP2.Stream do
           {:ok, t()} | {:error, Connection.error()}
   def recv_end_of_stream(%__MODULE__{state: :open} = stream, true) do
     with :ok <- verify_content_length(stream) do
-      StreamTask.recv_end_of_stream(stream.pid)
+      StreamProcess.recv_end_of_stream(stream.pid)
       {:ok, %{stream | state: :remote_closed}}
     end
   end
 
   def recv_end_of_stream(%__MODULE__{state: :local_closed} = stream, true) do
     with :ok <- verify_content_length(stream) do
-      StreamTask.recv_end_of_stream(stream.pid)
+      StreamProcess.recv_end_of_stream(stream.pid)
       {:ok, %{stream | state: :closed, pid: nil}}
     end
   end
@@ -335,7 +338,7 @@ defmodule Bandit.HTTP2.Stream do
         :ok
     end
 
-    Logger.error("Task for stream #{stream.stream_id} crashed with #{inspect(reason)}")
+    Logger.error("Process for stream #{stream.stream_id} crashed with #{inspect(reason)}")
 
     {:ok, %{stream | state: :closed, pid: nil}, Errors.internal_error()}
   end

@@ -1,26 +1,19 @@
-defmodule Bandit.HTTP2.StreamTask do
+defmodule Bandit.HTTP2.StreamProcess do
   @moduledoc false
-  # This Task is where an actual Plug is executed, within the context of an HTTP/2 stream. There
+  # This process is where an actual Plug is executed, within the context of an HTTP/2 stream. There
   # is a bit of split responsibility between this module and the `Bandit.HTTP2.Adapter` module
   # which merits explanation:
   #
-  # Broadly, this module is responsible for the execution of a Plug and does so within a Task
-  # process. Task is used in preference to GenServer here because of the shape of the
-  # `Plug.Conn.Adapter` API (implemented by the `Bandit.HTTP2.Adapter` module). Specifically, that
-  # API requires blocking semantics for the `Plug.Conn.Adapter.read_req_body/2`) call and expects
-  # it to block until some underlying condition has been met (the body has been read, a timeout
-  # has occurred, etc). The events which 'unblock' these conditions typically come from within the
-  # Connection, and are pushed down to streams as a fundamental design decision (rather than
-  # having stream processes query the connection directly). As such, it is much simpler for Task
-  # processes to wait in an imperative fashion using `receive` calls directly.
+  # Broadly, this module is responsible for the execution of a Plug and does so within a GenServer
+  # handle_continue call. The entirety of a Plug lifecycle takes place in this single call.
   #
-  # To contain these design decisions, the 'connection-facing' API for sending data to a stream
-  # process is expressed on this module (via the `recv_*` functions) even though the 'other half'
-  # of those calls exists in the `Bandit.HTTP2.Adapter` module. As a result, this module and the
-  # Handler module are fairly tightly coupled, but together they express clear APIs towards both
-  # Plug applications and the rest of Bandit.
+  # The 'connection-facing' API for sending data to a stream process is expressed on this module
+  # (via the `recv_*` functions) even though the 'other half' of those calls exists in the
+  # `Bandit.HTTP2.Adapter` module. As a result, this module and the Handler module are fairly
+  # tightly coupled, but together they express clear APIs towards both Plug applications and the
+  # rest of Bandit.
 
-  use Task
+  use GenServer, restart: :temporary
 
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
@@ -30,27 +23,31 @@ defmodule Bandit.HTTP2.StreamTask do
           Plug.Conn.headers(),
           Bandit.Pipeline.plug_def(),
           Bandit.Telemetry.t()
-        ) :: {:ok, pid()}
+        ) :: GenServer.on_start()
   def start_link(req, transport_info, headers, plug, span) do
-    Task.start_link(__MODULE__, :run, [req, transport_info, headers, plug, span])
+    GenServer.start_link(__MODULE__, {req, transport_info, headers, plug, span})
   end
 
-  # Let the stream task know that body data has arrived from the client. The other half of this
+  # Let the stream process know that body data has arrived from the client. The other half of this
   # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
   def recv_data(pid, data), do: send(pid, {:data, data})
 
-  # Let the stream task know that the client has set the end of stream flag. The other half of
+  # Let the stream process know that the client has set the end of stream flag. The other half of
   # this flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
   def recv_end_of_stream(pid), do: send(pid, :end_stream)
 
-  # Let the stream task know that the client has reset the stream. This will terminate the
+  # Let the stream process know that the client has reset the stream. This will terminate the
   # stream's handling process
   @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
-  def run(req, transport_info, all_headers, plug, span) do
+  def init(state) do
+    {:ok, state, {:continue, :run}}
+  end
+
+  def handle_continue(:run, {req, transport_info, all_headers, plug, span}) do
     with {:ok, request_target} <- build_request_target(all_headers),
          method <- Bandit.Headers.get_header(all_headers, ":method"),
          req <- %{req | method: method} do
@@ -74,7 +71,7 @@ defmodule Bandit.HTTP2.StreamTask do
           status: conn.status
         })
 
-        :ok
+        {:stop, :normal, {req, transport_info, all_headers, plug, span}}
       else
         {:error, reason} ->
           raise Bandit.HTTP2.Stream.StreamError,

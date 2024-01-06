@@ -44,9 +44,13 @@ defmodule Bandit.HTTP2.Adapter do
     }
   end
 
-  # As described in the header documentation for the `Bandit.HTTP2.StreamTask` module, we
-  # purposefully use raw `receive` message patterns here in order to facilitate an imperatively
-  # structured blocking interface. Comments inline.
+  # We purposefully use raw `receive` message patterns here in order to facilitate an imperatively
+  # structured blocking interface as required by `Plug.Conn.Adapter`. This is very unconventional
+  # but also safe, so long as the receive patterns expressed below are extremely tight.
+  #
+  # The events which 'unblock' these conditions come from within the Connection, and are pushed
+  # down to streams via calls on `Bandit.HTTP2.StreamProcess` as a fundamental design decision
+  # (rather than having stream processes query the connection directly).
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{end_stream: true}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
