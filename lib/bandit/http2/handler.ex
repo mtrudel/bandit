@@ -67,32 +67,29 @@ defmodule Bandit.HTTP2.Handler do
   def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do
     case Connection.send_headers(stream_id, pid, headers, end_stream, socket, state.connection) do
       {:ok, connection} ->
-        {:reply, :ok, {socket, %{state | connection: connection}}}
+        {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
 
       {:error, reason} ->
-        {:reply, {:error, reason}, {socket, state}}
+        {:reply, {:error, reason}, {socket, state}, socket.read_timeout}
     end
   end
 
   def handle_call({:send_data, stream_id, data, end_stream}, {pid, _tag} = from, {socket, state}) do
-    # It's possible that this send could not complete synchronously if we do not have enough space
-    # in either/both our connection or stream send windows. In this case Connection.send_data will
-    # return false as the second value of its result tuple, signaling that we should `:no_reply`
-    # to the caller. If/when the send window(s) are enlarged by the client and the data in the
-    # data from this call is sent successfully, the unblock function will be called & our caller
-    # process will be replied to. This ensures that we have backpressure all the way back to the
+    # In 'normal' cases where there is sufficient space in the send windows for this message to be
+    # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
+    # In cases where there is not enough space in either / both windows, Connection will call
+    # `unblock` at some point in the future once space opens up in the relevant window(s). This
+    # keeps this code simple in that we can blindly send noreply here and let Connection handle
+    # the separate cases. This ensures that we have backpressure all the way back to the
     # stream's handler process in the event of window overruns
     unblock = fn -> GenServer.reply(from, :ok) end
 
     case Connection.send_data(stream_id, pid, data, end_stream, unblock, socket, state.connection) do
-      {:ok, true, connection} ->
-        {:reply, :ok, {socket, %{state | connection: connection}}}
-
-      {:ok, false, connection} ->
-        {:noreply, {socket, %{state | connection: connection}}}
+      {:ok, connection} ->
+        {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
 
       {:error, reason} ->
-        {:reply, {:error, reason}, {socket, state}}
+        {:reply, {:error, reason}, {socket, state}, socket.read_timeout}
     end
   end
 

@@ -391,15 +391,8 @@ defmodule Bandit.HTTP2.Connection do
       {stream_id, rest, end_stream, on_unblock} = pending_send
 
       case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
-        {:ok, true, connection} ->
-          on_unblock.()
-          {:cont, {:continue, connection}}
-
-        {:ok, false, connection} ->
-          {:cont, {:continue, connection}}
-
-        {:error, error} ->
-          {:halt, {:error, error, connection}}
+        {:ok, connection} -> {:cont, {:continue, connection}}
+        {:error, error} -> {:halt, {:error, error, connection}}
       end
     end)
   end
@@ -468,7 +461,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   @spec send_data(Stream.stream_id(), pid(), iodata(), boolean(), fun(), Socket.t(), t()) ::
-          {:ok, boolean(), t()} | {:error, term()}
+          {:ok, t()} | {:error, term()}
   def send_data(stream_id, pid, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          :ok <- Stream.owner?(stream, pid) do
@@ -494,10 +487,11 @@ defmodule Bandit.HTTP2.Connection do
         end
 
       if byte_size(rest) == 0 do
-        {:ok, true, %{connection | streams: streams}}
+        on_unblock.()
+        {:ok, %{connection | streams: streams}}
       else
         pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
-        {:ok, false, %{connection | streams: streams, pending_sends: pending_sends}}
+        {:ok, %{connection | streams: streams, pending_sends: pending_sends}}
       end
     end
   end
