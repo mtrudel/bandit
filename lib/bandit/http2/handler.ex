@@ -1,10 +1,11 @@
 defmodule Bandit.HTTP2.Handler do
   @moduledoc false
-  # An HTTP/2 handler. Responsible for:
+  # An HTTP/2 handler, this module comprises the primary interface between Thousand Island and an
+  # HTTP connection. It is responsible for:
   #
+  # * All socket-level sending and receiving from the client
   # * Coordinating the parsing of frames & attendant error handling
   # * Tracking connection state as represented by `Bandit.HTTP2.Connection` structs
-  # * Marshalling send requests from child streams into the parent connection for processing
 
   use ThousandIsland.Handler
 
