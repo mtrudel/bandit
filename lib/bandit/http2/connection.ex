@@ -192,21 +192,6 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  def handle_frame(
-        %Frame.Headers{stream_id: stream_id, stream_dependency: stream_id},
-        socket,
-        connection
-      ) do
-    # This is no longer mentioned in RFC9113, but error anyway since it's squarely illogical
-    handle_stream_error(
-      stream_id,
-      Errors.protocol_error(),
-      "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
-      socket,
-      connection
-    )
-  end
-
   def handle_frame(%Frame.Headers{end_headers: true} = frame, socket, connection) do
     with block <- frame.fragment,
          end_stream <- frame.end_stream,
@@ -282,21 +267,6 @@ defmodule Bandit.HTTP2.Connection do
       {:error, error} ->
         shutdown_connection(Errors.internal_error(), error, socket, connection)
     end
-  end
-
-  def handle_frame(
-        %Frame.Priority{stream_id: stream_id, dependent_stream_id: stream_id},
-        socket,
-        connection
-      ) do
-    # This is no longer mentioned in RFC9113, but error anyway since it's squarely illogical
-    handle_stream_error(
-      stream_id,
-      Errors.protocol_error(),
-      "Stream cannot list itself as a dependency (RFC7540§5.3.1)",
-      socket,
-      connection
-    )
   end
 
   def handle_frame(%Frame.Priority{}, _socket, connection) do

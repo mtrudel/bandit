@@ -1142,21 +1142,6 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
     end
 
-    test "rejects HEADER frames which depend on itself", context do
-      socket = SimpleH2Client.setup_connection(context)
-      headers = headers_for_header_read_test(context)
-
-      # Send headers with padding and priority
-      Transport.send(socket, [
-        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
-        <<0, 0, 0, 1, 5>>,
-        headers
-      ])
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
     @tag capture_log: true
     test "closes with an error when receiving a zero stream ID",
          context do
@@ -1577,15 +1562,6 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_priority(socket, 1, 3, 4)
 
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
-    test "rejects PRIORITY frames which depend on itself", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      SimpleH2Client.send_priority(socket, 1, 1, 4)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
     end
   end
