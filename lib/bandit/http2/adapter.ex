@@ -29,12 +29,11 @@ defmodule Bandit.HTTP2.Adapter do
           opts: keyword()
         }
 
-  def init(connection, transport_info, stream_id, content_encoding, opts) do
+  def init(connection, transport_info, stream_id, opts) do
     %__MODULE__{
       connection: connection,
       transport_info: transport_info,
       stream_id: stream_id,
-      content_encoding: content_encoding,
       opts: opts
     }
   end

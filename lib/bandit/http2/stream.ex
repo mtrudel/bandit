@@ -79,15 +79,7 @@ defmodule Bandit.HTTP2.Stream do
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
          span <- start_span(connection_span, stream.stream_id),
-         content_encoding <- negotiate_content_encoding(headers, opts),
-         req <-
-           Bandit.HTTP2.Adapter.init(
-             self(),
-             transport_info,
-             stream.stream_id,
-             content_encoding,
-             opts
-           ),
+         req <- Bandit.HTTP2.Adapter.init(self(), transport_info, stream.stream_id, opts),
          {:ok, pid} <- StreamProcess.start_link(req, transport_info, headers, plug, span) do
       {:ok, %{stream | state: :open, pid: pid, span: span}}
     else
@@ -122,13 +114,6 @@ defmodule Bandit.HTTP2.Stream do
       connection_telemetry_span_context: connection_span.telemetry_span_context,
       stream_id: stream_id
     })
-  end
-
-  defp negotiate_content_encoding(headers, opts) do
-    Bandit.Compression.negotiate_content_encoding(
-      Bandit.Headers.get_header(headers, "accept-encoding"),
-      Keyword.get(opts, :compress, true)
-    )
   end
 
   # RFC9113§8.1 - no pseudo headers

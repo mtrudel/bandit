@@ -61,6 +61,8 @@ defmodule Bandit.HTTP2.StreamProcess do
            :ok <- valid_te_header(headers),
            {:ok, content_length} <- Bandit.Headers.get_content_length(headers),
            req <- %{req | pending_content_length: content_length},
+           content_encoding <- negotiate_content_encoding(headers, req.opts),
+           req <- %{req | content_encoding: content_encoding},
            headers <- combine_cookie_crumbs(headers),
            req <- Bandit.HTTP2.Adapter.add_end_header_metric(req),
            adapter <- {Bandit.HTTP2.Adapter, req},
@@ -175,6 +177,13 @@ defmodule Bandit.HTTP2.StreamProcess do
     if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
       do: :ok,
       else: {:error, "Received invalid TE header"}
+  end
+
+  defp negotiate_content_encoding(headers, opts) do
+    Bandit.Compression.negotiate_content_encoding(
+      Bandit.Headers.get_header(headers, "accept-encoding"),
+      Keyword.get(opts, :compress, true)
+    )
   end
 
   # Per RFC9113§8.2.3
