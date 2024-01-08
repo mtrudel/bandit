@@ -774,7 +774,7 @@ defmodule HTTP2PlugTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      Transport.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
       Process.sleep(100)
 
