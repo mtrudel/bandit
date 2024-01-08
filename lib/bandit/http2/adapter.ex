@@ -12,6 +12,7 @@ defmodule Bandit.HTTP2.Adapter do
             end_stream: false,
             method: nil,
             content_encoding: nil,
+            pending_content_length: nil,
             metrics: %{},
             opts: []
 
@@ -23,6 +24,7 @@ defmodule Bandit.HTTP2.Adapter do
           end_stream: boolean(),
           method: Plug.Conn.method() | nil,
           content_encoding: String.t() | nil,
+          pending_content_length: non_neg_integer() | nil,
           metrics: map(),
           opts: keyword()
         }
@@ -75,34 +77,56 @@ defmodule Bandit.HTTP2.Adapter do
         if remaining_length >= 0 do
           do_read_req_body(adapter, timeout, remaining_length, acc)
         else
-          bytes_read = IO.iodata_length(acc)
-
-          metrics =
-            adapter.metrics
-            |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
-
-          {:more, wrap_req_body(acc), %{adapter | metrics: metrics}}
+          return_more(acc, adapter)
         end
 
       :end_stream ->
         bytes_read = IO.iodata_length(acc)
 
-        metrics =
-          adapter.metrics
-          |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
-          |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
+        pending_content_length =
+          case adapter.pending_content_length do
+            nil -> nil
+            pending_content_length -> pending_content_length - bytes_read
+          end
 
-        {:ok, wrap_req_body(acc), %{adapter | end_stream: true, metrics: metrics}}
+        if pending_content_length in [nil, 0] do
+          metrics =
+            adapter.metrics
+            |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
+            |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
+
+          {:ok, wrap_req_body(acc),
+           %{
+             adapter
+             | end_stream: true,
+               pending_content_length: pending_content_length,
+               metrics: metrics
+           }}
+        else
+          raise Bandit.HTTP2.Stream.StreamError,
+            message: "Received end of stream with #{pending_content_length} byte(s) pending",
+            method: adapter.method
+        end
     after
-      timeout ->
-        bytes_read = IO.iodata_length(acc)
-
-        metrics =
-          adapter.metrics
-          |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
-
-        {:more, wrap_req_body(acc), %{adapter | metrics: metrics}}
+      timeout -> return_more(acc, adapter)
     end
+  end
+
+  defp return_more(data, adapter) do
+    bytes_read = IO.iodata_length(data)
+
+    pending_content_length =
+      case adapter.pending_content_length do
+        nil -> nil
+        pending_content_length -> pending_content_length - bytes_read
+      end
+
+    metrics =
+      adapter.metrics
+      |> Map.update(:req_body_bytes, bytes_read, &(&1 + bytes_read))
+
+    {:more, wrap_req_body(data),
+     %{adapter | metrics: metrics, pending_content_length: pending_content_length}}
   end
 
   defp wrap_req_body(data) do

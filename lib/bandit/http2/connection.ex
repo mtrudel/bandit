@@ -255,15 +255,6 @@ defmodule Bandit.HTTP2.Connection do
       {:error, {:connection, error_code, error_message}} ->
         shutdown_connection(error_code, error_message, socket, connection)
 
-      {:error, {:stream, stream_id, error_code, error_message}} ->
-        # If we're erroring out on a stream error, RFC9113§6.9 stipulates that we MUST take into
-        # account the sizes of errored frames. As such, ensure that we update our connection
-        # window to reflect that space taken up by this frame. We needn't worry about the stream's
-        # window since we're shutting it down anyway
-
-        connection = %{connection | recv_window_size: connection_recv_window_size}
-        handle_stream_error(stream_id, error_code, error_message, socket, connection)
-
       {:error, error} ->
         shutdown_connection(Errors.internal_error(), error, socket, connection)
     end

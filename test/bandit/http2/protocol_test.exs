@@ -848,9 +848,8 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, false, headers)
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
-
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag capture_log: true
@@ -866,9 +865,8 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, false, headers)
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
-
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag capture_log: true

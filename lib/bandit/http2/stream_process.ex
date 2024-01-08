@@ -59,6 +59,8 @@ defmodule Bandit.HTTP2.StreamProcess do
            :ok <- headers_all_lowercase(headers),
            :ok <- no_connection_headers(headers),
            :ok <- valid_te_header(headers),
+           {:ok, content_length} <- Bandit.Headers.get_content_length(headers),
+           req <- %{req | pending_content_length: content_length},
            headers <- combine_cookie_crumbs(headers),
            req <- Bandit.HTTP2.Adapter.add_end_header_metric(req),
            adapter <- {Bandit.HTTP2.Adapter, req},

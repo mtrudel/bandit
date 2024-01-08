@@ -18,7 +18,6 @@ defmodule Bandit.HTTP2.Stream do
             pid: nil,
             recv_window_size: nil,
             send_window_size: nil,
-            pending_content_length: nil,
             span: nil
 
   defmodule StreamError, do: defexception([:message, :method, :request_target, :status])
@@ -39,7 +38,6 @@ defmodule Bandit.HTTP2.Stream do
           pid: pid() | nil,
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
-          pending_content_length: non_neg_integer() | nil,
           span: Bandit.Telemetry.t()
         }
 
@@ -81,7 +79,6 @@ defmodule Bandit.HTTP2.Stream do
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
          span <- start_span(connection_span, stream.stream_id),
-         {:ok, content_length} <- get_content_length(headers, stream.stream_id),
          content_encoding <- negotiate_content_encoding(headers, opts),
          req <-
            Bandit.HTTP2.Adapter.init(
@@ -92,8 +89,7 @@ defmodule Bandit.HTTP2.Stream do
              opts
            ),
          {:ok, pid} <- StreamProcess.start_link(req, transport_info, headers, plug, span) do
-      {:ok,
-       %{stream | state: :open, pid: pid, pending_content_length: content_length, span: span}}
+      {:ok, %{stream | state: :open, pid: pid, span: span}}
     else
       :ignore -> {:error, "Unable to start stream process"}
       other -> other
@@ -128,14 +124,6 @@ defmodule Bandit.HTTP2.Stream do
     })
   end
 
-  # RFC9113§8.1.1 - content length must be valid
-  defp get_content_length(headers, stream_id) do
-    case Bandit.Headers.get_content_length(headers) do
-      {:ok, content_length} -> {:ok, content_length}
-      {:error, reason} -> {:error, {:stream, stream_id, Errors.protocol_error(), reason}}
-    end
-  end
-
   defp negotiate_content_encoding(headers, opts) do
     Bandit.Compression.negotiate_content_encoding(
       Bandit.Headers.get_header(headers, "accept-encoding"),
@@ -160,15 +148,7 @@ defmodule Bandit.HTTP2.Stream do
     {new_window, increment} =
       FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
 
-    pending_content_length =
-      case stream.pending_content_length do
-        nil -> nil
-        pending_content_length -> pending_content_length - byte_size(data)
-      end
-
-    {:ok,
-     %{stream | recv_window_size: new_window, pending_content_length: pending_content_length},
-     increment}
+    {:ok, %{stream | recv_window_size: new_window}, increment}
   end
 
   def recv_data(%__MODULE__{} = stream, _data) do
@@ -205,17 +185,13 @@ defmodule Bandit.HTTP2.Stream do
   @spec recv_end_of_stream(t(), boolean()) ::
           {:ok, t()} | {:error, Connection.error()}
   def recv_end_of_stream(%__MODULE__{state: :open} = stream, true) do
-    with :ok <- verify_content_length(stream) do
-      StreamProcess.recv_end_of_stream(stream.pid)
-      {:ok, %{stream | state: :remote_closed}}
-    end
+    StreamProcess.recv_end_of_stream(stream.pid)
+    {:ok, %{stream | state: :remote_closed}}
   end
 
   def recv_end_of_stream(%__MODULE__{state: :local_closed} = stream, true) do
-    with :ok <- verify_content_length(stream) do
-      StreamProcess.recv_end_of_stream(stream.pid)
-      {:ok, %{stream | state: :closed, pid: nil}}
-    end
+    StreamProcess.recv_end_of_stream(stream.pid)
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 
   def recv_end_of_stream(%__MODULE__{}, true) do
@@ -224,15 +200,6 @@ defmodule Bandit.HTTP2.Stream do
 
   def recv_end_of_stream(%__MODULE__{} = stream, false) do
     {:ok, stream}
-  end
-
-  defp verify_content_length(%__MODULE__{pending_content_length: nil}), do: :ok
-  defp verify_content_length(%__MODULE__{pending_content_length: 0}), do: :ok
-
-  defp verify_content_length(%__MODULE__{} = stream) do
-    {:error,
-     {:stream, stream.stream_id, Errors.protocol_error(),
-      "Received end of stream with #{stream.pending_content_length} byte(s) pending"}}
   end
 
   @spec owner?(t(), pid()) :: :ok | {:error, :not_owner}
