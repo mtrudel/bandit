@@ -4,6 +4,8 @@ defmodule Bandit.HTTP1.Handler do
 
   use ThousandIsland.Handler
 
+  @already_sent {:plug_conn, :sent}
+
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     connection_span = ThousandIsland.Socket.telemetry_span(socket)
@@ -109,9 +111,17 @@ defmodule Bandit.HTTP1.Handler do
   defp code_for_reason(_), do: 400
 
   defp attempt_to_send_fallback(req, code) do
-    Bandit.HTTP1.Adapter.send_resp(req, code, [], <<>>)
-  rescue
-    _ -> :ok
+    receive do
+      @already_sent ->
+        send(self(), @already_sent)
+    after
+      0 ->
+        try do
+          Bandit.HTTP1.Adapter.send_resp(req, code, [], <<>>)
+        rescue
+          _ -> :ok
+        end
+    end
   end
 
   defp maybe_keepalive(req, state) do
