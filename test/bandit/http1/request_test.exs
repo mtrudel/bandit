@@ -1394,6 +1394,20 @@ defmodule HTTP1RequestTest do
     end
 
     @tag capture_log: true
+    test "does not send an error response if the plug has already sent one before raising",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_and_raise_error", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_and_raise_error(conn) do
+      send_resp(conn, 200, "OK")
+      raise "boom"
+    end
+
+    @tag capture_log: true
     test "returns a 500 if the plug does not return anything", context do
       response = Req.get!(context.req, url: "/noop")
 
