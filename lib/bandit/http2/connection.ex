@@ -351,7 +351,7 @@ defmodule Bandit.HTTP2.Connection do
 
       {stream_id, rest, end_stream, on_unblock} = pending_send
 
-      case do_send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
+      case send_data(stream_id, rest, end_stream, on_unblock, socket, connection) do
         {:ok, connection} -> {:cont, {:continue, connection}}
         {:error, error} -> {:halt, {:error, error, connection}}
       end
@@ -392,20 +392,19 @@ defmodule Bandit.HTTP2.Connection do
   #
   # Sending logic
   #
-  # All callers of functions below will be from stream processes, looked up via pid
+  # All callers of functions below will be from stream processes
   #
 
   #
   # Stream-level sending
   #
 
-  @spec send_headers(Stream.stream_id(), pid(), Plug.Conn.headers(), boolean(), Socket.t(), t()) ::
+  @spec send_headers(Stream.stream_id(), Plug.Conn.headers(), boolean(), Socket.t(), t()) ::
           {:ok, t()} | {:error, term()}
-  def send_headers(stream_id, pid, headers, end_stream, socket, connection) do
+  def send_headers(stream_id, headers, end_stream, socket, connection) do
     with enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
          {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state),
          {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
-         :ok <- Stream.owner?(stream, pid),
          {:ok, stream} <- Stream.send_headers(stream),
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
@@ -421,16 +420,9 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  @spec send_data(Stream.stream_id(), pid(), iodata(), boolean(), fun(), Socket.t(), t()) ::
+  @spec send_data(Stream.stream_id(), iodata(), boolean(), fun(), Socket.t(), t()) ::
           {:ok, t()} | {:error, term()}
-  def send_data(stream_id, pid, data, end_stream, on_unblock, socket, connection) do
-    with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
-         :ok <- Stream.owner?(stream, pid) do
-      do_send_data(stream_id, data, end_stream, on_unblock, socket, connection)
-    end
-  end
-
-  defp do_send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
+  def send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
          stream_window_size <- Stream.get_send_window_size(stream),
          connection_window_size <- connection.send_window_size,

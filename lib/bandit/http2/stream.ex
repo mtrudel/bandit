@@ -187,10 +187,6 @@ defmodule Bandit.HTTP2.Stream do
     {:ok, stream}
   end
 
-  @spec owner?(t(), pid()) :: :ok | {:error, :not_owner}
-  def owner?(%__MODULE__{pid: pid}, pid), do: :ok
-  def owner?(%__MODULE__{}, _pid), do: {:error, :not_owner}
-
   @spec get_send_window_size(t()) :: non_neg_integer()
   def get_send_window_size(%__MODULE__{} = stream), do: stream.send_window_size
 

@@ -65,8 +65,8 @@ defmodule Bandit.HTTP2.Handler do
     Connection.shutdown_connection(Errors.no_error(), "Client timeout", socket, state.connection)
   end
 
-  def handle_call({:send_headers, stream_id, headers, end_stream}, {pid, _tag}, {socket, state}) do
-    case Connection.send_headers(stream_id, pid, headers, end_stream, socket, state.connection) do
+  def handle_call({:send_headers, stream_id, headers, end_stream}, _from, {socket, state}) do
+    case Connection.send_headers(stream_id, headers, end_stream, socket, state.connection) do
       {:ok, connection} ->
         {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
 
@@ -75,7 +75,7 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_call({:send_data, stream_id, data, end_stream}, {pid, _tag} = from, {socket, state}) do
+  def handle_call({:send_data, stream_id, data, end_stream}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
     # In cases where there is not enough space in either / both windows, Connection will call
@@ -85,7 +85,7 @@ defmodule Bandit.HTTP2.Handler do
     # stream's handler process in the event of window overruns
     unblock = fn -> GenServer.reply(from, :ok) end
 
-    case Connection.send_data(stream_id, pid, data, end_stream, unblock, socket, state.connection) do
+    case Connection.send_data(stream_id, data, end_stream, unblock, socket, state.connection) do
       {:ok, connection} ->
         {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
 
