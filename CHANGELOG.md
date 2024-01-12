@@ -1,3 +1,13 @@
+## 1.1.3 (12 Jan 2024)
+
+### Fixes
+
+* Do not send a fallback response if the plug has already sent one (#288 & #289, thanks @jclem!)
+
+### Changes
+
+* Packagaing improvements (#283, thanks @wojtekmach!)
+
 ## 1.1.2 (20 Dec 2023)
 
 ### Fixes
