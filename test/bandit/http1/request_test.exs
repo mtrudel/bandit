@@ -1394,7 +1394,7 @@ defmodule HTTP1RequestTest do
     end
 
     @tag capture_log: true
-    test "does not send an error resposne if the plug has already sent one before raising",
+    test "does not send an error response if the plug has already sent one before raising",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/send_and_raise_error", ["host: banana"])
