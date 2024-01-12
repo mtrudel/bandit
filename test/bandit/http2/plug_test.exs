@@ -95,6 +95,26 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, body)
   end
 
+  test "reading request body from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_body_read", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_body_read(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        read_body(conn)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
   test "reading request body respects length option", context do
     socket = SimpleH2Client.setup_connection(context)
 
@@ -215,6 +235,26 @@ defmodule HTTP2PlugTest do
     conn |> resp(200, "OK")
   end
 
+  test "sending a body from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_body", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_body(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        conn |> send_resp(200, "NOT OK")
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
   test "sending a chunk", context do
     response = Req.get!(context.req, url: "/chunk_test")
 
@@ -229,6 +269,48 @@ defmodule HTTP2PlugTest do
     |> elem(1)
     |> chunk("OK")
     |> elem(1)
+  end
+
+  test "setting a chunked response from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_set_chunk", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_set_chunk(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        conn |> send_chunked(200)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
+  test "sending a chunk from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_chunk", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_chunk(conn) do
+    conn = conn |> send_chunked(200)
+
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        conn |> chunk("NOT OK")
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> tap(conn, &chunk(&1, "OK"))
+    end
   end
 
   describe "upgrade handling" do
@@ -339,6 +421,27 @@ defmodule HTTP2PlugTest do
       String.to_integer(conn.params["offset"]),
       String.to_integer(conn.params["length"])
     )
+  end
+
+  test "sending a file from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_file", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_file(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        conn
+        |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
   end
 
   test "sending a body blocks on connection flow control", context do
@@ -471,6 +574,26 @@ defmodule HTTP2PlugTest do
   def send_inform(conn) do
     conn = conn |> inform(100, [{"x-from", "inform"}])
     conn |> send_resp(200, "Informer")
+  end
+
+  test "sending an inform response from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_inform", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_inform(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+        conn |> inform(100, [])
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
   end
 
   test "reading HTTP version", context do

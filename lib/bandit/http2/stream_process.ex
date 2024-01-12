@@ -48,6 +48,8 @@ defmodule Bandit.HTTP2.StreamProcess do
   end
 
   def handle_continue(:run, {req, transport_info, all_headers, plug, span}) do
+    req = %{req | owner_pid: self()}
+
     with {:ok, request_target} <- build_request_target(all_headers),
          method <- Bandit.Headers.get_header(all_headers, ":method"),
          req <- %{req | method: method} do

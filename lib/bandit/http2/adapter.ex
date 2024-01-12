@@ -7,6 +7,7 @@ defmodule Bandit.HTTP2.Adapter do
   @behaviour Plug.Conn.Adapter
 
   defstruct connection: nil,
+            owner_pid: nil,
             transport_info: nil,
             stream_id: nil,
             end_stream: false,
@@ -19,6 +20,7 @@ defmodule Bandit.HTTP2.Adapter do
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           connection: pid(),
+          owner_pid: pid() | nil,
           transport_info: Bandit.TransportInfo.t(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
@@ -56,6 +58,7 @@ defmodule Bandit.HTTP2.Adapter do
   def read_req_body(%__MODULE__{end_stream: true}, _opts), do: raise(Bandit.BodyAlreadyReadError)
 
   def read_req_body(%__MODULE__{} = adapter, opts) do
+    validate_calling_process!(adapter)
     timeout = Keyword.get(opts, :read_timeout, 15_000)
     length = Keyword.get(opts, :length, 8_000_000)
     do_read_req_body(adapter, timeout, length, [])
@@ -134,6 +137,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
+    validate_calling_process!(adapter)
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
     response_has_strong_etag =
@@ -195,6 +199,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_file(%__MODULE__{} = adapter, status, headers, path, offset, length) do
+    validate_calling_process!(adapter)
     %File.Stat{type: :regular, size: size} = File.stat!(path)
     length = if length == :all, do: size - offset, else: length
     headers = Bandit.Headers.add_content_length(headers, length, status)
@@ -240,6 +245,8 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{} = adapter, status, headers) do
+    validate_calling_process!(adapter)
+
     if send_resp_body?(adapter, status) do
       {:ok, nil, send_headers(adapter, status, headers, false)}
     else
@@ -258,6 +265,7 @@ defmodule Bandit.HTTP2.Adapter do
     # Moreover, if the caller is chunking out on a HEAD, 204 or 304 response, the underlying
     # stream will have been closed in send_chunked/3 above, and so this call will return an
     # `{:error, :not_owner}` error here (which we ignore, but it's still kinda odd)
+    validate_calling_process!(adapter)
 
     byte_size = chunk |> IO.iodata_length()
     adapter = send_data(adapter, chunk, byte_size == 0)
@@ -272,6 +280,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @impl Plug.Conn.Adapter
   def inform(adapter, status, headers) do
+    validate_calling_process!(adapter)
     headers = split_cookies(headers)
     headers = [{":status", to_string(status)} | headers]
 
@@ -341,5 +350,11 @@ defmodule Bandit.HTTP2.Adapter do
       {header, value} ->
         [{header, value}]
     end)
+  end
+
+  defp validate_calling_process!(adapter) do
+    if adapter.owner_pid != self() do
+      raise "Adapter functions may only be called by the stream owner"
+    end
   end
 end
