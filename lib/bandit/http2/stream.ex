@@ -17,8 +17,7 @@ defmodule Bandit.HTTP2.Stream do
             state: nil,
             pid: nil,
             recv_window_size: nil,
-            send_window_size: nil,
-            span: nil
+            send_window_size: nil
 
   defmodule StreamError, do: defexception([:message, :method, :request_target, :status])
 
@@ -37,8 +36,7 @@ defmodule Bandit.HTTP2.Stream do
           state: state(),
           pid: pid() | nil,
           recv_window_size: non_neg_integer(),
-          send_window_size: non_neg_integer(),
-          span: Bandit.Telemetry.t()
+          send_window_size: non_neg_integer()
         }
 
   @spec recv_headers(
@@ -78,10 +76,10 @@ defmodule Bandit.HTTP2.Stream do
         opts
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         span <- start_span(connection_span, stream.stream_id),
          req <- Bandit.HTTP2.Adapter.init(self(), transport_info, stream.stream_id, opts),
-         {:ok, pid} <- StreamProcess.start_link(req, transport_info, headers, plug, span) do
-      {:ok, %{stream | state: :open, pid: pid, span: span}}
+         {:ok, pid} <-
+           StreamProcess.start_link(req, transport_info, headers, plug, connection_span) do
+      {:ok, %{stream | state: :open, pid: pid}}
     else
       :ignore -> {:error, "Unable to start stream process"}
       other -> other
@@ -107,13 +105,6 @@ defmodule Bandit.HTTP2.Stream do
     else
       {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
     end
-  end
-
-  defp start_span(connection_span, stream_id) do
-    Bandit.Telemetry.start_span(:request, %{}, %{
-      connection_telemetry_span_context: connection_span.telemetry_span_context,
-      stream_id: stream_id
-    })
   end
 
   # RFC9113§8.1 - no pseudo headers
@@ -247,47 +238,7 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   @spec stream_terminated(t(), term()) :: {:ok, t()}
-  def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
-    # In the normal case, stop telemetry is emitted by the stream process to keep the main
-    # connection process unblocked. In error cases we send from here, however, since there are
-    # many error cases which never involve the stream process at all
-    {:ok, %{stream | state: :closed, pid: nil}}
-  end
-
-  def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
-    Bandit.Telemetry.stop_span(stream.span, %{}, %{error: reason})
-    Logger.warning("Stream #{stream.stream_id} was killed by bandit (#{reason})")
-    {:ok, %{stream | state: :closed, pid: nil}}
-  end
-
-  def stream_terminated(%__MODULE__{} = stream, {%StreamError{} = error, _}) do
-    Bandit.Telemetry.stop_span(stream.span, %{}, %{
-      error: error.message,
-      method: error.method,
-      request_target: error.request_target,
-      status: error.status
-    })
-
-    Logger.warning("Stream #{stream.stream_id} encountered a stream error (#{inspect(error)})")
-    {:ok, %{stream | state: :closed, pid: nil}}
-  end
-
-  def stream_terminated(%__MODULE__{} = stream, :normal) do
-    Logger.warning("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
-    {:ok, %{stream | state: :closed, pid: nil}}
-  end
-
-  def stream_terminated(%__MODULE__{} = stream, reason) do
-    case reason do
-      {exception, stacktrace} ->
-        Bandit.Telemetry.span_exception(stream.span, :exit, exception, stacktrace)
-
-      _ ->
-        :ok
-    end
-
-    Logger.error("Process for stream #{stream.stream_id} crashed with #{inspect(reason)}")
-
+  def stream_terminated(%__MODULE__{} = stream, _reason) do
     {:ok, %{stream | state: :closed, pid: nil}}
   end
 end

@@ -26,13 +26,13 @@ defmodule Bandit.HTTP2.StreamProcess do
           Bandit.Pipeline.plug_def(),
           Bandit.Telemetry.t()
         ) :: GenServer.on_start()
-  def start_link(req, transport_info, headers, plug, span) do
+  def start_link(req, transport_info, headers, plug, connection_span) do
     GenServer.start_link(__MODULE__, %{
       req: req,
       transport_info: transport_info,
       headers: headers,
       plug: plug,
-      span: span
+      connection_span: connection_span
     })
   end
 
@@ -53,6 +53,11 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   @impl GenServer
   def init(state) do
+    state =
+      state
+      |> Map.drop([:connection_span])
+      |> Map.put(:span, start_span(state.connection_span, state.req.stream_id))
+
     {:ok, state, {:continue, :run}}
   end
 
@@ -105,6 +110,13 @@ defmodule Bandit.HTTP2.StreamProcess do
     else
       {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason
     end
+  end
+
+  defp start_span(connection_span, stream_id) do
+    Bandit.Telemetry.start_span(:request, %{}, %{
+      connection_telemetry_span_context: connection_span.telemetry_span_context,
+      stream_id: stream_id
+    })
   end
 
   defp build_request_target(headers) do
@@ -215,11 +227,22 @@ defmodule Bandit.HTTP2.StreamProcess do
   @impl GenServer
   def terminate(:normal, _state), do: :ok
 
-  def terminate({%Stream.StreamError{}, _stacktrace}, state) do
+  def terminate({%Stream.StreamError{} = error, _stacktrace}, state) do
+    Bandit.Telemetry.stop_span(state.span, %{}, %{
+      error: error.message,
+      method: error.method,
+      request_target: error.request_target,
+      status: error.status
+    })
+
     Adapter.send_rst_stream(state.req, Errors.protocol_error())
   end
 
-  def terminate(_reason, state) do
+  def terminate({exception, stacktrace}, state) when is_exception(exception) do
+    Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
     Adapter.send_rst_stream(state.req, Errors.internal_error())
   end
+
+  # Bandit reason
+  # Bandit.Telemetry.stop_span(stream.span, %{}, %{error: reason})
 end
