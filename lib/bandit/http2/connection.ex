@@ -469,12 +469,14 @@ defmodule Bandit.HTTP2.Connection do
     :ok
   end
 
-  @spec stream_terminated(pid(), term(), t()) :: {:ok, t()} | {:error, term()}
+  @spec stream_terminated(pid(), term(), t()) :: {:ok, t()}
   def stream_terminated(pid, reason, connection) do
     with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
          {:ok, stream} <- Stream.stream_terminated(stream, reason),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}
+    else
+      _ -> {:ok, connection}
     end
   end
 
