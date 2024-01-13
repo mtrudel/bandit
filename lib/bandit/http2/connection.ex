@@ -460,17 +460,20 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  @spec stream_terminated(pid(), term(), Socket.t(), t()) :: {:ok, t()} | {:error, term()}
-  def stream_terminated(pid, reason, socket, connection) do
-    with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
-         {:ok, stream, error_code} <- Stream.stream_terminated(stream, reason),
-         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      _ =
-        if !is_nil(error_code) do
-          %Frame.RstStream{stream_id: stream.stream_id, error_code: error_code}
-          |> send_frame(socket, connection)
-        end
+  @spec send_rst_stream(Stream.stream_id(), Errors.error_code(), Socket.t(), t()) :: :ok
+  def send_rst_stream(stream_id, error_code, socket, connection) do
+    _ =
+      %Frame.RstStream{stream_id: stream_id, error_code: error_code}
+      |> send_frame(socket, connection)
 
+    :ok
+  end
+
+  @spec stream_terminated(pid(), term(), t()) :: {:ok, t()} | {:error, term()}
+  def stream_terminated(pid, reason, connection) do
+    with {:ok, stream} <- StreamCollection.get_active_stream_by_pid(connection.streams, pid),
+         {:ok, stream} <- Stream.stream_terminated(stream, reason),
+         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}
     end
   end

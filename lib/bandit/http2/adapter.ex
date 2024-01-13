@@ -357,4 +357,8 @@ defmodule Bandit.HTTP2.Adapter do
       raise "Adapter functions may only be called by the stream owner"
     end
   end
+
+  def send_rst_stream(adapter, error_code) do
+    GenServer.call(adapter.connection, {:send_rst_stream, adapter.stream_id, error_code})
+  end
 end

@@ -94,8 +94,13 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
+  def handle_call({:send_rst_stream, stream_id, error_code}, _from, {socket, state}) do
+    Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
+    {:reply, :ok, {socket, state}, socket.read_timeout}
+  end
+
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
-    case Connection.stream_terminated(pid, reason, socket, state.connection) do
+    case Connection.stream_terminated(pid, reason, state.connection) do
       {:ok, connection} ->
         {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
 

@@ -246,18 +246,18 @@ defmodule Bandit.HTTP2.Stream do
     :ok
   end
 
-  @spec stream_terminated(t(), term()) :: {:ok, t(), Errors.error_code() | nil}
+  @spec stream_terminated(t(), term()) :: {:ok, t()}
   def stream_terminated(%__MODULE__{state: :closed} = stream, :normal) do
     # In the normal case, stop telemetry is emitted by the stream process to keep the main
     # connection process unblocked. In error cases we send from here, however, since there are
     # many error cases which never involve the stream process at all
-    {:ok, %{stream | state: :closed, pid: nil}, nil}
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 
   def stream_terminated(%__MODULE__{} = stream, {:bandit, reason}) do
     Bandit.Telemetry.stop_span(stream.span, %{}, %{error: reason})
     Logger.warning("Stream #{stream.stream_id} was killed by bandit (#{reason})")
-    {:ok, %{stream | state: :closed, pid: nil}, nil}
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 
   def stream_terminated(%__MODULE__{} = stream, {%StreamError{} = error, _}) do
@@ -269,12 +269,12 @@ defmodule Bandit.HTTP2.Stream do
     })
 
     Logger.warning("Stream #{stream.stream_id} encountered a stream error (#{inspect(error)})")
-    {:ok, %{stream | state: :closed, pid: nil}, Errors.protocol_error()}
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 
   def stream_terminated(%__MODULE__{} = stream, :normal) do
     Logger.warning("Stream #{stream.stream_id} completed in unexpected state #{stream.state}")
-    {:ok, %{stream | state: :closed, pid: nil}, Errors.no_error()}
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 
   def stream_terminated(%__MODULE__{} = stream, reason) do
@@ -288,6 +288,6 @@ defmodule Bandit.HTTP2.Stream do
 
     Logger.error("Process for stream #{stream.stream_id} crashed with #{inspect(reason)}")
 
-    {:ok, %{stream | state: :closed, pid: nil}, Errors.internal_error()}
+    {:ok, %{stream | state: :closed, pid: nil}}
   end
 end

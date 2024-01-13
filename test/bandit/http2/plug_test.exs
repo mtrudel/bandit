@@ -321,6 +321,8 @@ defmodule HTTP2PlugTest do
 
           assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                    response
+
+          Process.sleep(100)
         end)
 
       assert errors =~
@@ -341,6 +343,8 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
     assert errors =~
@@ -356,6 +360,8 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
     assert errors =~
@@ -405,6 +411,8 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
     assert errors =~
@@ -922,6 +930,8 @@ defmodule HTTP2PlugTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
       Req.get(context.req, url: "/raise_error")
+
+      Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [

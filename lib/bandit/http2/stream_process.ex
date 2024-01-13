@@ -15,6 +15,8 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
+  alias Bandit.HTTP2.{Adapter, Errors, Stream}
+
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
@@ -25,7 +27,13 @@ defmodule Bandit.HTTP2.StreamProcess do
           Bandit.Telemetry.t()
         ) :: GenServer.on_start()
   def start_link(req, transport_info, headers, plug, span) do
-    GenServer.start_link(__MODULE__, {req, transport_info, headers, plug, span})
+    GenServer.start_link(__MODULE__, %{
+      req: req,
+      transport_info: transport_info,
+      headers: headers,
+      plug: plug,
+      span: span
+    })
   end
 
   # Let the stream process know that body data has arrived from the client. The other half of this
@@ -43,11 +51,19 @@ defmodule Bandit.HTTP2.StreamProcess do
   @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
+  @impl GenServer
   def init(state) do
     {:ok, state, {:continue, :run}}
   end
 
-  def handle_continue(:run, {req, transport_info, all_headers, plug, span}) do
+  @impl GenServer
+  def handle_continue(:run, %{
+        req: req,
+        transport_info: transport_info,
+        headers: all_headers,
+        plug: plug,
+        span: span
+      }) do
     req = %{req | owner_pid: self()}
 
     with {:ok, request_target} <- build_request_target(all_headers),
@@ -77,7 +93,8 @@ defmodule Bandit.HTTP2.StreamProcess do
           status: conn.status
         })
 
-        {:stop, :normal, {req, transport_info, all_headers, plug, span}}
+        {:stop, :normal,
+         %{req: req, transport_info: transport_info, headers: all_headers, plug: plug, span: span}}
       else
         {:error, reason} ->
           raise Bandit.HTTP2.Stream.StreamError,
@@ -193,5 +210,16 @@ defmodule Bandit.HTTP2.StreamProcess do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
     combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
     [{"cookie", combined_cookie} | other_headers]
+  end
+
+  @impl GenServer
+  def terminate(:normal, _state), do: :ok
+
+  def terminate({%Stream.StreamError{}, _stacktrace}, state) do
+    Adapter.send_rst_stream(state.req, Errors.protocol_error())
+  end
+
+  def terminate(_reason, state) do
+    Adapter.send_rst_stream(state.req, Errors.internal_error())
   end
 end
