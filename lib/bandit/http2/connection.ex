@@ -231,26 +231,20 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Frame.Data{} = frame, socket, connection) do
-    {connection_recv_window_size, connection_window_increment} =
+    {recv_window_size, window_increment} =
       FlowControl.compute_recv_window(connection.recv_window_size, byte_size(frame.data))
 
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         {:ok, stream, stream_window_increment} <- Stream.recv_data(stream, frame.data),
+         {:ok, stream} <- Stream.recv_data(stream, frame.data),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, frame.end_stream),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       _ =
-        if connection_window_increment > 0 do
-          %Frame.WindowUpdate{stream_id: 0, size_increment: connection_window_increment}
+        if window_increment > 0 do
+          %Frame.WindowUpdate{stream_id: 0, size_increment: window_increment}
           |> send_frame(socket, connection)
         end
 
-      _ =
-        if stream_window_increment > 0 do
-          %Frame.WindowUpdate{stream_id: frame.stream_id, size_increment: stream_window_increment}
-          |> send_frame(socket, connection)
-        end
-
-      {:continue, %{connection | recv_window_size: connection_recv_window_size, streams: streams}}
+      {:continue, %{connection | recv_window_size: recv_window_size, streams: streams}}
     else
       {:error, {:connection, error_code, error_message}} ->
         shutdown_connection(error_code, error_message, socket, connection)
@@ -460,6 +454,15 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
+  @spec send_recv_window_update(Stream.stream_id(), non_neg_integer(), Socket.t(), t()) :: :ok
+  def send_recv_window_update(stream_id, size_increment, socket, connection) do
+    _ =
+      %Frame.WindowUpdate{stream_id: stream_id, size_increment: size_increment}
+      |> send_frame(socket, connection)
+
+    :ok
+  end
+
   @spec send_rst_stream(Stream.stream_id(), Errors.error_code(), Socket.t(), t()) :: :ok
   def send_rst_stream(stream_id, error_code, socket, connection) do
     _ =
@@ -494,7 +497,7 @@ defmodule Bandit.HTTP2.Connection do
 
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, 1),
          {:ok, stream} <- handle_headers(headers, stream, true, connection),
-         {:ok, stream, _stream_window_increment} <- Stream.recv_data(stream, data),
+         {:ok, stream} <- Stream.recv_data(stream, data),
          {:ok, stream} <- Stream.recv_end_of_stream(stream, true),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       {:ok, %{connection | streams: streams}}

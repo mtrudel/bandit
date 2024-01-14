@@ -11,6 +11,7 @@ defmodule Bandit.HTTP2.Adapter do
             transport_info: nil,
             stream_id: nil,
             end_stream: false,
+            recv_window_size: 65_535,
             method: nil,
             content_encoding: nil,
             pending_content_length: nil,
@@ -24,6 +25,7 @@ defmodule Bandit.HTTP2.Adapter do
           transport_info: Bandit.TransportInfo.t(),
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
+          recv_window_size: non_neg_integer(),
           method: Plug.Conn.method() | nil,
           content_encoding: String.t() | nil,
           pending_content_length: non_neg_integer() | nil,
@@ -73,6 +75,18 @@ defmodule Bandit.HTTP2.Adapter do
 
     receive do
       {:data, data} ->
+        {new_window, increment} =
+          Bandit.HTTP2.FlowControl.compute_recv_window(adapter.recv_window_size, byte_size(data))
+
+        if increment > 0 do
+          GenServer.call(
+            adapter.connection,
+            {:send_recv_window_update, adapter.stream_id, increment}
+          )
+        end
+
+        adapter = %{adapter | recv_window_size: new_window}
+
         acc = [data | acc]
         remaining_length = remaining_length - byte_size(data)
 

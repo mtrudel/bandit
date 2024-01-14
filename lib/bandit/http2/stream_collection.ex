@@ -8,8 +8,7 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   alias Bandit.HTTP2.Stream
 
-  defstruct initial_recv_window_size: 65_535,
-            initial_send_window_size: 65_535,
+  defstruct initial_send_window_size: 65_535,
             last_local_stream_id: 0,
             last_remote_stream_id: 0,
             stream_count: 0,
@@ -17,7 +16,6 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   @typedoc "A collection of Stream structs, accessible by id or pid"
   @type t :: %__MODULE__{
-          initial_recv_window_size: non_neg_integer(),
           initial_send_window_size: non_neg_integer(),
           last_remote_stream_id: Stream.stream_id(),
           last_local_stream_id: Stream.stream_id(),
@@ -61,7 +59,6 @@ defmodule Bandit.HTTP2.StreamCollection do
          %Stream{
            stream_id: stream_id,
            state: state,
-           recv_window_size: collection.initial_recv_window_size,
            send_window_size: collection.initial_send_window_size
          }}
     end

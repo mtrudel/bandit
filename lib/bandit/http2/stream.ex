@@ -16,7 +16,6 @@ defmodule Bandit.HTTP2.Stream do
   defstruct stream_id: nil,
             state: nil,
             pid: nil,
-            recv_window_size: nil,
             send_window_size: nil
 
   defmodule StreamError, do: defexception([:message, :method, :request_target, :status])
@@ -35,7 +34,6 @@ defmodule Bandit.HTTP2.Stream do
           stream_id: stream_id(),
           state: state(),
           pid: pid() | nil,
-          recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer()
         }
 
@@ -117,14 +115,10 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  @spec recv_data(t(), binary()) :: {:ok, t(), non_neg_integer()} | {:error, Connection.error()}
+  @spec recv_data(t(), binary()) :: {:ok, t()} | {:error, Connection.error()}
   def recv_data(%__MODULE__{state: state} = stream, data) when state in [:open, :local_closed] do
     StreamProcess.recv_data(stream.pid, data)
-
-    {new_window, increment} =
-      FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
-
-    {:ok, %{stream | recv_window_size: new_window}, increment}
+    {:ok, stream}
   end
 
   def recv_data(%__MODULE__{} = stream, _data) do

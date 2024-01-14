@@ -83,6 +83,8 @@ defmodule H2CTest do
       assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(client)
       SimpleH2Client.send_frame(client, 4, 1, 0, <<>>)
 
+      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(client)
+
       assert {:ok, 1, false, _headers, _recv_ctx} = SimpleH2Client.recv_headers(client)
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "req_body"}
     end

@@ -1131,10 +1131,12 @@ defmodule HTTP2ProtocolTest do
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, false, "OK")
-      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      Process.sleep(100)
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)

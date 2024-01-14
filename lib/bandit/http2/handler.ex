@@ -94,6 +94,11 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
+  def handle_call({:send_recv_window_update, stream_id, size_increment}, _from, {socket, state}) do
+    Connection.send_recv_window_update(stream_id, size_increment, socket, state.connection)
+    {:reply, :ok, {socket, state}, socket.read_timeout}
+  end
+
   def handle_call({:send_rst_stream, stream_id, error_code}, _from, {socket, state}) do
     Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
     {:reply, :ok, {socket, state}, socket.read_timeout}
