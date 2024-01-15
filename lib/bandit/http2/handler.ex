@@ -78,11 +78,16 @@ defmodule Bandit.HTTP2.Handler do
   def handle_call({:send_data, stream_id, data, end_stream}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
-    # In cases where there is not enough space in either / both windows, Connection will call
-    # `unblock` at some point in the future once space opens up in the relevant window(s). This
+    # In cases where there is not enough space in the connection window, Connection will call
+    # `unblock` at some point in the future once space opens up in the window. This
     # keeps this code simple in that we can blindly send noreply here and let Connection handle
     # the separate cases. This ensures that we have backpressure all the way back to the
-    # stream's handler process in the event of window overruns
+    # stream's handler process in the event of window overruns.
+    #
+    # Note that the above only applies to the connection-level send window; stream-level windows
+    # are managed internally by the stream and are not considered here at all. If the stream has
+    # managed to send this message, it is because there was enough room in the stream's send
+    # window to do so.
     unblock = fn -> GenServer.reply(from, :ok) end
 
     case Connection.send_data(stream_id, data, end_stream, unblock, socket, state.connection) do

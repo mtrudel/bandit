@@ -41,6 +41,11 @@ defmodule Bandit.HTTP2.StreamProcess do
   @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
   def recv_data(pid, data), do: send(pid, {:data, data})
 
+  # Let the stream process know that the stream's send window has changed. The other half of this
+  # flow can be found in `Bandit.HTTP2.Adapter.send_resp/4` and friends
+  @spec recv_send_window_update(pid(), non_neg_integer()) :: :ok | :noconnect | :nosuspend
+  def recv_send_window_update(pid, delta), do: send(pid, {:send_window_update, delta})
+
   # Let the stream process know that the client has set the end of stream flag. The other half of
   # this flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
   @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
@@ -102,13 +107,15 @@ defmodule Bandit.HTTP2.StreamProcess do
          %{req: req, transport_info: transport_info, headers: all_headers, plug: plug, span: span}}
       else
         {:error, reason} ->
-          raise Bandit.HTTP2.Stream.StreamError,
+          raise Stream.StreamError,
             message: reason,
             method: method,
-            request_target: request_target
+            request_target: request_target,
+            error_code: Errors.protocol_error()
       end
     else
-      {:error, reason} -> raise Bandit.HTTP2.Stream.StreamError, reason
+      {:error, reason} ->
+        raise Stream.StreamError, message: reason, error_code: Errors.protocol_error()
     end
   end
 
@@ -235,7 +242,7 @@ defmodule Bandit.HTTP2.StreamProcess do
       status: error.status
     })
 
-    Adapter.send_rst_stream(state.req, Errors.protocol_error())
+    Adapter.send_rst_stream(state.req, error.error_code)
   end
 
   def terminate({exception, stacktrace}, state) when is_exception(exception) do

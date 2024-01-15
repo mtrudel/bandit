@@ -1918,12 +1918,12 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("D", 16_383)}
 
       # Grow the stream windows such that we expect to see 100 bytes from 1 and 50 bytes from
-      # 3 (note that 1 is queued at a higher priority than 3 due to FIFO ordering) Also note that
-      # we receive end_of_stream on stream 1 here
-      SimpleH2Client.send_window_update(socket, 3, 100)
+      # 3. Also note that we receive end_of_stream on stream 1 here
       SimpleH2Client.send_window_update(socket, 1, 100)
       SimpleH2Client.send_window_update(socket, 0, 150)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "d" <> String.duplicate("e", 99)}
+
+      SimpleH2Client.send_window_update(socket, 3, 100)
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, "D" <> String.duplicate("E", 49)}
 
       # Finally grow our connection window and verify we get the last of stream 3

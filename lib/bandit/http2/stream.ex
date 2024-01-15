@@ -11,14 +11,14 @@ defmodule Bandit.HTTP2.Stream do
   require Integer
   require Logger
 
-  alias Bandit.HTTP2.{Connection, Errors, FlowControl, StreamProcess}
+  alias Bandit.HTTP2.{Connection, Errors, StreamProcess}
 
   defstruct stream_id: nil,
             state: nil,
-            pid: nil,
-            send_window_size: nil
+            pid: nil
 
-  defmodule StreamError, do: defexception([:message, :method, :request_target, :status])
+  defmodule StreamError,
+    do: defexception([:message, :method, :request_target, :status, :error_code])
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
@@ -33,14 +33,14 @@ defmodule Bandit.HTTP2.Stream do
   @type t :: %__MODULE__{
           stream_id: stream_id(),
           state: state(),
-          pid: pid() | nil,
-          send_window_size: non_neg_integer()
+          pid: pid() | nil
         }
 
   @spec recv_headers(
           t(),
           Bandit.TransportInfo.t(),
           ThousandIsland.Telemetry.t(),
+          non_neg_integer(),
           Plug.Conn.headers(),
           boolean,
           Bandit.Pipeline.plug_def(),
@@ -50,6 +50,7 @@ defmodule Bandit.HTTP2.Stream do
         %__MODULE__{state: state} = stream,
         _transport_info,
         _connection_span,
+        _initial_send_window_size,
         trailers,
         true,
         _plug,
@@ -68,13 +69,21 @@ defmodule Bandit.HTTP2.Stream do
         %__MODULE__{state: :idle} = stream,
         transport_info,
         connection_span,
+        initial_send_window_size,
         headers,
         _end_stream,
         plug,
         opts
       ) do
     with :ok <- stream_id_is_valid_client(stream.stream_id),
-         req <- Bandit.HTTP2.Adapter.init(self(), transport_info, stream.stream_id, opts),
+         req <-
+           Bandit.HTTP2.Adapter.init(
+             self(),
+             transport_info,
+             stream.stream_id,
+             initial_send_window_size,
+             opts
+           ),
          {:ok, pid} <-
            StreamProcess.start_link(req, transport_info, headers, plug, connection_span) do
       {:ok, %{stream | state: :open, pid: pid}}
@@ -88,6 +97,7 @@ defmodule Bandit.HTTP2.Stream do
         %__MODULE__{},
         _transport_info,
         _connection_span,
+        _initial_send_window_size,
         _headers,
         _end_stream,
         _plug,
@@ -125,20 +135,15 @@ defmodule Bandit.HTTP2.Stream do
     {:error, {:connection, Errors.protocol_error(), "Received DATA when in #{stream.state}"}}
   end
 
-  @spec recv_window_update(t(), non_neg_integer()) ::
+  @spec recv_send_window_update(t(), non_neg_integer()) ::
           {:ok, t()} | {:error, Connection.error()} | {:error, error()}
-  def recv_window_update(%__MODULE__{state: :idle}, _increment) do
+  def recv_send_window_update(%__MODULE__{state: :idle}, _increment) do
     {:error, {:connection, Errors.protocol_error(), "Received WINDOW_UPDATE when in idle"}}
   end
 
-  def recv_window_update(%__MODULE__{} = stream, increment) do
-    case FlowControl.update_send_window(stream.send_window_size, increment) do
-      {:ok, new_window} ->
-        {:ok, %{stream | send_window_size: new_window}}
-
-      {:error, error} ->
-        {:error, {:stream, stream.stream_id, Errors.flow_control_error(), error}}
-    end
+  def recv_send_window_update(%__MODULE__{} = stream, increment) do
+    if is_pid(stream.pid), do: StreamProcess.recv_send_window_update(stream.pid, increment)
+    {:ok, stream}
   end
 
   @spec recv_rst_stream(t(), Errors.error_code()) ::
@@ -172,9 +177,6 @@ defmodule Bandit.HTTP2.Stream do
     {:ok, stream}
   end
 
-  @spec get_send_window_size(t()) :: non_neg_integer()
-  def get_send_window_size(%__MODULE__{} = stream), do: stream.send_window_size
-
   @spec send_headers(t()) :: {:ok, t()} | {:error, :invalid_state}
   def send_headers(%__MODULE__{state: state} = stream) when state in [:open, :remote_closed] do
     {:ok, stream}
@@ -184,21 +186,12 @@ defmodule Bandit.HTTP2.Stream do
     {:error, :invalid_state}
   end
 
-  @spec send_data(t(), non_neg_integer()) ::
-          {:ok, t()} | {:error, :insufficient_window_size} | {:error, :invalid_state}
-  def send_data(%__MODULE__{state: state} = stream, 0) when state in [:open, :remote_closed] do
+  @spec send_data(t()) :: {:ok, t()} | {:error, :invalid_state}
+  def send_data(%__MODULE__{state: state} = stream) when state in [:open, :remote_closed] do
     {:ok, stream}
   end
 
-  def send_data(%__MODULE__{state: state} = stream, len) when state in [:open, :remote_closed] do
-    if len <= stream.send_window_size do
-      {:ok, %{stream | send_window_size: stream.send_window_size - len}}
-    else
-      {:error, :insufficient_window_size}
-    end
-  end
-
-  def send_data(%__MODULE__{}, _len) do
+  def send_data(%__MODULE__{}) do
     {:error, :invalid_state}
   end
 

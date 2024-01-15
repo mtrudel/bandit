@@ -8,37 +8,20 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   alias Bandit.HTTP2.Stream
 
-  defstruct initial_send_window_size: 65_535,
-            last_local_stream_id: 0,
+  defstruct last_local_stream_id: 0,
             last_remote_stream_id: 0,
             stream_count: 0,
             streams: %{}
 
   @typedoc "A collection of Stream structs, accessible by id or pid"
   @type t :: %__MODULE__{
-          initial_send_window_size: non_neg_integer(),
           last_remote_stream_id: Stream.stream_id(),
           last_local_stream_id: Stream.stream_id(),
           streams: %{Stream.stream_id() => Stream.t()}
         }
 
-  @spec update_initial_send_window_size(t(), non_neg_integer()) :: t()
-  def update_initial_send_window_size(collection, initial_send_window_size) do
-    delta = initial_send_window_size - collection.initial_send_window_size
-
-    streams =
-      collection.streams
-      |> Enum.map(fn
-        {id, %Stream{state: state} = stream} when state in [:open, :remote_closed] ->
-          {id, %{stream | send_window_size: stream.send_window_size + delta}}
-
-        {id, stream} ->
-          {id, stream}
-      end)
-      |> Map.new()
-
-    %{collection | streams: streams, initial_send_window_size: initial_send_window_size}
-  end
+  @spec get_streams(t()) :: [Stream.t()]
+  def get_streams(collection), do: collection.streams
 
   @spec get_stream(t(), Stream.stream_id()) :: {:ok, Stream.t()}
   def get_stream(collection, stream_id) do
@@ -55,12 +38,7 @@ defmodule Bandit.HTTP2.StreamCollection do
             :idle
           end
 
-        {:ok,
-         %Stream{
-           stream_id: stream_id,
-           state: state,
-           send_window_size: collection.initial_send_window_size
-         }}
+        {:ok, %Stream{stream_id: stream_id, state: state}}
     end
   end
 

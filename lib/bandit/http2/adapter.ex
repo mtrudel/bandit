@@ -12,6 +12,7 @@ defmodule Bandit.HTTP2.Adapter do
             stream_id: nil,
             end_stream: false,
             recv_window_size: 65_535,
+            send_window_size: nil,
             method: nil,
             content_encoding: nil,
             pending_content_length: nil,
@@ -26,6 +27,7 @@ defmodule Bandit.HTTP2.Adapter do
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
           recv_window_size: non_neg_integer(),
+          send_window_size: non_neg_integer(),
           method: Plug.Conn.method() | nil,
           content_encoding: String.t() | nil,
           pending_content_length: non_neg_integer() | nil,
@@ -33,11 +35,12 @@ defmodule Bandit.HTTP2.Adapter do
           opts: keyword()
         }
 
-  def init(connection, transport_info, stream_id, opts) do
+  def init(connection, transport_info, stream_id, send_window_size, opts) do
     %__MODULE__{
       connection: connection,
       transport_info: transport_info,
       stream_id: stream_id,
+      send_window_size: send_window_size,
       opts: opts
     }
   end
@@ -121,7 +124,8 @@ defmodule Bandit.HTTP2.Adapter do
         else
           raise Bandit.HTTP2.Stream.StreamError,
             message: "Received end of stream with #{pending_content_length} byte(s) pending",
-            method: adapter.method
+            method: adapter.method,
+            error_code: Bandit.HTTP2.Errors.protocol_error()
         end
     after
       timeout -> return_more(acc, adapter)
@@ -342,17 +346,60 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   defp send_data(adapter, data, end_stream) do
-    GenServer.call(
-      adapter.connection,
-      {:send_data, adapter.stream_id, data, end_stream},
-      :infinity
-    )
+    adapter = wait_for_send_window(adapter, 0)
+    max_bytes_to_send = max(adapter.send_window_size, 0)
+    {data_to_send, bytes_to_send, rest} = split_data(data, max_bytes_to_send)
 
-    metrics =
-      adapter.metrics
-      |> Map.update(:resp_body_bytes, IO.iodata_length(data), &(&1 + IO.iodata_length(data)))
+    adapter =
+      if end_stream || bytes_to_send > 0 do
+        GenServer.call(
+          adapter.connection,
+          {:send_data, adapter.stream_id, data_to_send, end_stream && byte_size(rest) == 0},
+          :infinity
+        )
 
-    %{adapter | metrics: metrics}
+        metrics =
+          adapter.metrics |> Map.update(:resp_body_bytes, bytes_to_send, &(&1 + bytes_to_send))
+
+        %{adapter | metrics: metrics, send_window_size: adapter.send_window_size - bytes_to_send}
+      else
+        adapter
+      end
+
+    if byte_size(rest) == 0 do
+      adapter
+    else
+      adapter = wait_for_send_window(adapter, :infinity)
+      send_data(adapter, rest, end_stream)
+    end
+  end
+
+  defp wait_for_send_window(adapter, timeout) do
+    receive do
+      {:send_window_update, increment} ->
+        case Bandit.HTTP2.FlowControl.update_send_window(adapter.send_window_size, increment) do
+          {:ok, new_window} ->
+            %{adapter | send_window_size: new_window}
+
+          {:error, reason} ->
+            raise Bandit.HTTP2.Stream.StreamError,
+              message: reason,
+              error_code: Bandit.HTTP2.Errors.flow_control_error()
+        end
+    after
+      timeout -> adapter
+    end
+  end
+
+  defp split_data(data, desired_length) do
+    data_length = IO.iodata_length(data)
+
+    if data_length <= desired_length do
+      {data, data_length, <<>>}
+    else
+      <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
+      {to_send, desired_length, rest}
+    end
   end
 
   defp split_cookies(headers) do

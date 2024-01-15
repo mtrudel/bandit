@@ -134,16 +134,16 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Settings{ack: false} = frame, socket, connection) do
     _ = %Frame.Settings{ack: true} |> send_frame(socket, connection)
 
-    streams =
-      connection.streams
-      |> StreamCollection.update_initial_send_window_size(frame.settings.initial_window_size)
-
     send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
+
+    delta = frame.settings.initial_window_size - connection.remote_settings.initial_window_size
+
+    StreamCollection.get_streams(connection.streams)
+    |> Enum.each(&Stream.recv_send_window_update(elem(&1, 1), delta))
 
     do_pending_sends(socket, %{
       connection
       | remote_settings: frame.settings,
-        streams: streams,
         send_hpack_state: send_hpack_state
     })
   end
@@ -175,20 +175,10 @@ defmodule Bandit.HTTP2.Connection do
   # Stream-level receiving
   #
 
-  def handle_frame(%Frame.WindowUpdate{} = frame, socket, connection) do
+  def handle_frame(%Frame.WindowUpdate{} = frame, _socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, frame.stream_id),
-         {:ok, stream} <- Stream.recv_window_update(stream, frame.size_increment),
-         {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
-      do_pending_sends(socket, %{connection | streams: streams})
-    else
-      {:error, {:connection, error_code, error_message}} ->
-        shutdown_connection(error_code, error_message, socket, connection)
-
-      {:error, {:stream, stream_id, error_code, error_message}} ->
-        handle_stream_error(stream_id, error_code, error_message, socket, connection)
-
-      {:error, error} ->
-        shutdown_connection(Errors.internal_error(), error, socket, connection)
+         {:ok, _stream} <- Stream.recv_send_window_update(stream, frame.size_increment) do
+      {:continue, connection}
     end
   end
 
@@ -287,6 +277,7 @@ defmodule Bandit.HTTP2.Connection do
         stream,
         connection.transport_info,
         connection.telemetry_span,
+        connection.remote_settings.initial_window_size,
         headers,
         end_stream,
         connection.plug,
@@ -418,17 +409,16 @@ defmodule Bandit.HTTP2.Connection do
           {:ok, t()} | {:error, term()}
   def send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
     with {:ok, stream} <- StreamCollection.get_stream(connection.streams, stream_id),
-         stream_window_size <- Stream.get_send_window_size(stream),
          connection_window_size <- connection.send_window_size,
-         max_bytes_to_send <- max(min(stream_window_size, connection_window_size), 0),
+         max_bytes_to_send <- max(connection_window_size, 0),
          {data_to_send, bytes_to_send, rest} <- split_data(data, max_bytes_to_send),
-         {:ok, stream} <- Stream.send_data(stream, bytes_to_send),
+         {:ok, stream} <- Stream.send_data(stream),
          connection <- %{connection | send_window_size: connection_window_size - bytes_to_send},
          end_stream_to_send <- end_stream && byte_size(rest) == 0,
          {:ok, stream} <- Stream.send_end_of_stream(stream, end_stream_to_send),
          {:ok, streams} <- StreamCollection.put_stream(connection.streams, stream) do
       _ =
-        if end_stream_to_send || IO.iodata_length(data_to_send) > 0 do
+        if end_stream_to_send || bytes_to_send > 0 do
           %Frame.Data{stream_id: stream_id, end_stream: end_stream_to_send, data: data_to_send}
           |> send_frame(socket, connection)
         end
