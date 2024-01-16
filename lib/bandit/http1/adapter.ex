@@ -517,7 +517,7 @@ defmodule Bandit.HTTP1.Adapter do
       |> Map.put(:resp_start_time, start_time)
       |> Map.put(:resp_body_bytes, 0)
 
-    {:ok, nil, %{req | metrics: metrics}}
+    {:ok, %{req | metrics: metrics}}
   end
 
   defp response_header(nil, status, headers), do: response_header("HTTP/1.0", status, headers)
