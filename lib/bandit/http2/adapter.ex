@@ -231,8 +231,16 @@ defmodule Bandit.HTTP2.Adapter do
     # Moreover, if the caller is chunking out on a HEAD, 204 or 304 response, the underlying
     # stream will have been closed in send_chunked/3 above, and so this call will return an
     # `{:error, :not_owner}` error here (which we ignore, but it's still kinda odd)
-    _ = send_data(adapter, chunk, IO.iodata_length(chunk) == 0)
-    :ok
+
+    byte_size = chunk |> IO.iodata_length()
+    adapter = send_data(adapter, chunk, byte_size == 0)
+
+    if byte_size == 0 do
+      metrics = Map.put(adapter.metrics, :resp_end_time, Bandit.Telemetry.monotonic_time())
+      {:ok, nil, %{adapter | metrics: metrics}}
+    else
+      {:ok, nil, adapter}
+    end
   end
 
   @impl Plug.Conn.Adapter

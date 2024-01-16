@@ -495,9 +495,26 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   @impl Plug.Conn.Adapter
-  def chunk(%__MODULE__{write_state: :chunking_out, socket: socket}, chunk) do
-    byte_size = chunk |> IO.iodata_length() |> Integer.to_string(16)
-    ThousandIsland.Socket.send(socket, [byte_size, "\r\n", chunk, "\r\n"])
+  def chunk(%__MODULE__{write_state: :chunking_out} = req, chunk) do
+    byte_size = chunk |> IO.iodata_length()
+    payload = [Integer.to_string(byte_size, 16), "\r\n", chunk, "\r\n"]
+
+    case ThousandIsland.Socket.send(req.socket, payload) do
+      :ok ->
+        metrics = Map.update(req.metrics, :resp_body_bytes, byte_size, &(&1 + byte_size))
+
+        metrics =
+          if byte_size == 0 do
+            Map.put(metrics, :resp_end_time, Bandit.Telemetry.monotonic_time())
+          else
+            metrics
+          end
+
+        {:ok, nil, %{req | metrics: metrics}}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 
   def chunk(_, _), do: :ok

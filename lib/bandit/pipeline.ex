@@ -148,8 +148,13 @@ defmodule Bandit.Pipeline do
         Plug.Conn.send_resp(conn)
 
       %Plug.Conn{state: :chunked, adapter: {mod, req}} ->
-        mod.chunk(req, "")
-        conn
+        req =
+          case mod.chunk(req, "") do
+            {:ok, _, req} -> req
+            _ -> req
+          end
+
+        %{conn | adapter: {mod, req}}
 
       %Plug.Conn{} ->
         conn

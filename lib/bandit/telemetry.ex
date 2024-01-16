@@ -41,15 +41,13 @@ defmodule Bandit.Telemetry do
         breaks. Not included for HTTP/2 requests
       * `req_body_bytes`: The length of the request body, in octets
       * `resp_start_time`: The time that the response started, in `:native` units
-      * `resp_end_time`: The time that the response completed, in `:native` units. Not included
-        for chunked responses
+      * `resp_end_time`: The time that the response completed, in `:native` units
       * `resp_line_bytes`: The length of the response line, in octets. Includes all line breaks.
         Not included for HTTP/2 requests
       * `resp_header_bytes`: The length of the response headers, in octets. Includes all line
         breaks. Not included for HTTP/2 requests
       * `resp_body_bytes`: The length of the response body, in octets. If the response is
-        compressed, this is the size of the compressed payload as sent on the wire. Set to 0 for
-        chunked responses
+        compressed, this is the size of the compressed payload as sent on the wire
       * `resp_uncompressed_body_bytes`: The length of the original, uncompressed body. Only
         included for responses which are compressed
       * `resp_compression_method`: The method of compression, as sent in the `Content-Encoding`
