@@ -1252,7 +1252,7 @@ defmodule HTTP1RequestTest do
         |> send_chunked(200)
         |> chunk("OK")
 
-      # This is a pretty bogus wayr to get an error out of socket sending, but it's easy to set up
+      # This is a pretty bogus way to get an error out of socket sending, but it's easy to set up
       {_, adapter} = conn.adapter
       ThousandIsland.Socket.close(adapter.socket)
 
@@ -1709,8 +1709,9 @@ defmodule HTTP1RequestTest do
                   req_header_bytes: 49,
                   resp_line_bytes: 17,
                   resp_header_bytes: 119,
-                  resp_body_bytes: 0,
-                  resp_start_time: integer()
+                  resp_body_bytes: 2,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
                 },
                 %{
                   connection_telemetry_span_context: reference(),

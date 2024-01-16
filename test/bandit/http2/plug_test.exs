@@ -704,6 +704,35 @@ defmodule HTTP2PlugTest do
              ]
     end
 
+    test "it should add resp metrics to `stop` events for chunked responses", context do
+      {:ok, collector_pid} =
+        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+
+      Req.get!(context.req, url: "/chunk_test")
+
+      assert Bandit.TelemetryCollector.get_events(collector_pid)
+             ~> [
+               {[:bandit, :request, :stop],
+                %{
+                  monotonic_time: integer(),
+                  duration: integer(),
+                  req_header_end_time: integer(),
+                  resp_body_bytes: 4,
+                  resp_start_time: integer(),
+                  resp_end_time: integer()
+                },
+                %{
+                  connection_telemetry_span_context: reference(),
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
+                  status: 200,
+                  method: "GET",
+                  request_target: {"https", "localhost", integer(), "/chunk_test"},
+                  stream_id: integer()
+                }}
+             ]
+    end
+
     test "it should add resp metrics to `stop` events for sendfile responses", context do
       {:ok, collector_pid} =
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
