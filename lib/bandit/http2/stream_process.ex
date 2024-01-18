@@ -26,32 +26,30 @@ defmodule Bandit.HTTP2.StreamProcess do
           Stream.stream_id(),
           non_neg_integer(),
           Bandit.TransportInfo.t(),
-          Plug.Conn.headers(),
-          Bandit.Pipeline.plug_def(),
-          Bandit.Telemetry.t(),
-          keyword()
-        ) :: GenServer.on_start()
+          Bandit.Telemetry.t()
+        ) ::
+          GenServer.on_start()
   def start_link(
         connection_pid,
         stream_id,
         initial_send_window_size,
         transport_info,
-        headers,
-        plug,
-        connection_span,
-        opts
+        connection_span
       ) do
     GenServer.start_link(__MODULE__, %{
       connection_pid: connection_pid,
       stream_id: stream_id,
       initial_send_window_size: initial_send_window_size,
       transport_info: transport_info,
-      headers: headers,
-      plug: plug,
-      connection_span: connection_span,
-      opts: opts
+      connection_span: connection_span
     })
   end
+
+  # Let the stream process know that header data has arrived from the client. This is implemented
+  # further down in this file as a handle_info callback
+  @spec recv_headers(pid(), Plug.Conn.headers(), Bandit.Pipeline.plug_def(), keyword()) ::
+          :ok | :noconnect | :nosuspend
+  def recv_headers(pid, headers, plug, opts), do: send(pid, {:headers, headers, plug, opts})
 
   # Let the stream process know that body data has arrived from the client. The other half of this
   # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
@@ -80,22 +78,19 @@ defmodule Bandit.HTTP2.StreamProcess do
       |> Map.drop([:connection_span])
       |> Map.put(:span, start_span(state.connection_span, state.stream_id))
 
-    {:ok, state, {:continue, :run}}
+    {:ok, state}
   end
 
-  @dialyzer {:nowarn_function, handle_continue: 2}
+  @dialyzer {:nowarn_function, handle_info: 2}
   @impl GenServer
-  def handle_continue(
-        :run,
+  def handle_info(
+        {:headers, all_headers, plug, opts},
         %{
           connection_pid: connection_pid,
           stream_id: stream_id,
           initial_send_window_size: initial_send_window_size,
           transport_info: transport_info,
-          headers: all_headers,
-          plug: plug,
-          span: span,
-          opts: opts
+          span: span
         } = state
       ) do
     req =

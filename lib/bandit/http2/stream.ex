@@ -79,14 +79,17 @@ defmodule Bandit.HTTP2.Stream do
            stream.stream_id,
            initial_send_window_size,
            transport_info,
-           headers,
-           plug,
-           connection_span,
-           opts
+           connection_span
          ) do
-      {:ok, pid} -> {:ok, %{stream | state: :open, pid: pid}}
-      :ignore -> {:error, "Unable to start stream process"}
-      other -> other
+      {:ok, pid} ->
+        StreamProcess.recv_headers(pid, headers, plug, opts)
+        {:ok, %{stream | state: :open, pid: pid}}
+
+      :ignore ->
+        {:error, "Unable to start stream process"}
+
+      other ->
+        other
     end
   end
 
