@@ -109,6 +109,13 @@ defmodule Bandit.HTTP2.Handler do
     {:reply, :ok, {socket, state}, socket.read_timeout}
   end
 
+  def handle_call({:shutdown_connection, error_code, msg}, _from, {socket, state}) do
+    case Connection.shutdown_connection(error_code, msg, socket, state.connection) do
+      {:close, _connection} -> {:stop, :normal, {socket, state}}
+      {:error, reason, _connection} -> {:stop, reason, {socket, state}}
+    end
+  end
+
   def handle_info({:EXIT, pid, reason}, {socket, state}) do
     {:ok, connection} = Connection.stream_terminated(pid, reason, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}

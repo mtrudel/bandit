@@ -35,9 +35,10 @@ defmodule Bandit.HTTP2.Adapter do
           opts: keyword()
         }
 
-  def init(connection, transport_info, stream_id, send_window_size, opts) do
+  def init(connection, owner, transport_info, stream_id, send_window_size, opts) do
     %__MODULE__{
       connection: connection,
+      owner_pid: owner,
       transport_info: transport_info,
       stream_id: stream_id,
       send_window_size: send_window_size,
@@ -417,9 +418,5 @@ defmodule Bandit.HTTP2.Adapter do
     if adapter.owner_pid != self() do
       raise "Adapter functions may only be called by the stream owner"
     end
-  end
-
-  def send_rst_stream(adapter, error_code) do
-    GenServer.call(adapter.connection, {:send_rst_stream, adapter.stream_id, error_code})
   end
 end

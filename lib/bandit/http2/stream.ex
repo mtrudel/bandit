@@ -8,7 +8,6 @@ defmodule Bandit.HTTP2.Stream do
   # wire is a connection concern as it must be serialized properly & is subject to
   # flow control at a connection level
 
-  require Integer
   require Logger
 
   alias Bandit.HTTP2.{Connection, Errors, StreamProcess}
@@ -75,19 +74,17 @@ defmodule Bandit.HTTP2.Stream do
         plug,
         opts
       ) do
-    with :ok <- stream_id_is_valid_client(stream.stream_id),
-         req <-
-           Bandit.HTTP2.Adapter.init(
-             self(),
-             transport_info,
-             stream.stream_id,
-             initial_send_window_size,
-             opts
-           ),
-         {:ok, pid} <-
-           StreamProcess.start_link(req, transport_info, headers, plug, connection_span) do
-      {:ok, %{stream | state: :open, pid: pid}}
-    else
+    case StreamProcess.start_link(
+           self(),
+           stream.stream_id,
+           initial_send_window_size,
+           transport_info,
+           headers,
+           plug,
+           connection_span,
+           opts
+         ) do
+      {:ok, pid} -> {:ok, %{stream | state: :open, pid: pid}}
       :ignore -> {:error, "Unable to start stream process"}
       other -> other
     end
@@ -104,15 +101,6 @@ defmodule Bandit.HTTP2.Stream do
         _opts
       ) do
     {:error, {:connection, Errors.protocol_error(), "Received HEADERS in unexpected state"}}
-  end
-
-  # RFC9113§5.1.1 - client initiated streams must be odd
-  defp stream_id_is_valid_client(stream_id) do
-    if Integer.is_odd(stream_id) do
-      :ok
-    else
-      {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
-    end
   end
 
   # RFC9113§8.1 - no pseudo headers

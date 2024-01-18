@@ -15,24 +15,41 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
-  alias Bandit.HTTP2.{Adapter, Errors, Stream}
+  alias Bandit.HTTP2.{Errors, Stream}
+
+  require Integer
 
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
-          Bandit.HTTP2.Adapter.t(),
+          pid(),
+          Stream.stream_id(),
+          non_neg_integer(),
           Bandit.TransportInfo.t(),
           Plug.Conn.headers(),
           Bandit.Pipeline.plug_def(),
-          Bandit.Telemetry.t()
+          Bandit.Telemetry.t(),
+          keyword()
         ) :: GenServer.on_start()
-  def start_link(req, transport_info, headers, plug, connection_span) do
+  def start_link(
+        connection_pid,
+        stream_id,
+        initial_send_window_size,
+        transport_info,
+        headers,
+        plug,
+        connection_span,
+        opts
+      ) do
     GenServer.start_link(__MODULE__, %{
-      req: req,
+      connection_pid: connection_pid,
+      stream_id: stream_id,
+      initial_send_window_size: initial_send_window_size,
       transport_info: transport_info,
       headers: headers,
       plug: plug,
-      connection_span: connection_span
+      connection_span: connection_span,
+      opts: opts
     })
   end
 
@@ -61,22 +78,38 @@ defmodule Bandit.HTTP2.StreamProcess do
     state =
       state
       |> Map.drop([:connection_span])
-      |> Map.put(:span, start_span(state.connection_span, state.req.stream_id))
+      |> Map.put(:span, start_span(state.connection_span, state.stream_id))
 
     {:ok, state, {:continue, :run}}
   end
 
+  @dialyzer {:nowarn_function, handle_continue: 2}
   @impl GenServer
-  def handle_continue(:run, %{
-        req: req,
-        transport_info: transport_info,
-        headers: all_headers,
-        plug: plug,
-        span: span
-      }) do
-    req = %{req | owner_pid: self()}
+  def handle_continue(
+        :run,
+        %{
+          connection_pid: connection_pid,
+          stream_id: stream_id,
+          initial_send_window_size: initial_send_window_size,
+          transport_info: transport_info,
+          headers: all_headers,
+          plug: plug,
+          span: span,
+          opts: opts
+        } = state
+      ) do
+    req =
+      Bandit.HTTP2.Adapter.init(
+        connection_pid,
+        self(),
+        transport_info,
+        stream_id,
+        initial_send_window_size,
+        opts
+      )
 
-    with {:ok, request_target} <- build_request_target(all_headers),
+    with :ok <- stream_id_is_valid_client(stream_id),
+         {:ok, request_target} <- build_request_target(all_headers),
          method <- Bandit.Headers.get_header(all_headers, ":method"),
          req <- %{req | method: method} do
       with {:ok, pseudo_headers, headers} <- split_headers(all_headers),
@@ -103,8 +136,7 @@ defmodule Bandit.HTTP2.StreamProcess do
           status: conn.status
         })
 
-        {:stop, :normal,
-         %{req: req, transport_info: transport_info, headers: all_headers, plug: plug, span: span}}
+        {:stop, :normal, state}
       else
         {:error, reason} ->
           raise Stream.StreamError,
@@ -114,6 +146,10 @@ defmodule Bandit.HTTP2.StreamProcess do
             error_code: Errors.protocol_error()
       end
     else
+      {:error, {:connection, error_code, msg}} ->
+        send_shutdown_connection(state, error_code, msg)
+        {:stop, msg, state}
+
       {:error, reason} ->
         raise Stream.StreamError, message: reason, error_code: Errors.protocol_error()
     end
@@ -158,6 +194,15 @@ defmodule Bandit.HTTP2.StreamProcess do
     if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
       do: {:ok, path},
       else: {:error, "Path contains dot segment"}
+  end
+
+  # RFC9113§5.1.1 - client initiated streams must be odd
+  defp stream_id_is_valid_client(stream_id) do
+    if Integer.is_odd(stream_id) do
+      :ok
+    else
+      {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
+    end
   end
 
   # RFC9113§8.3 - pseudo headers must appear first
@@ -242,14 +287,19 @@ defmodule Bandit.HTTP2.StreamProcess do
       status: error.status
     })
 
-    Adapter.send_rst_stream(state.req, error.error_code)
+    send_rst_stream(state, error.error_code)
   end
 
   def terminate({exception, stacktrace}, state) when is_exception(exception) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    Adapter.send_rst_stream(state.req, Errors.internal_error())
+    send_rst_stream(state, Errors.internal_error())
   end
 
-  # Bandit reason
-  # Bandit.Telemetry.stop_span(stream.span, %{}, %{error: reason})
+  defp send_rst_stream(state, error_code) do
+    GenServer.call(state.connection_pid, {:send_rst_stream, state.stream_id, error_code})
+  end
+
+  defp send_shutdown_connection(state, error_code, msg) do
+    GenServer.call(state.connection_pid, {:shutdown_connection, error_code, msg})
+  end
 end
