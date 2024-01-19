@@ -40,4 +40,18 @@ defmodule Bandit.HTTP2.Errors do
     @spec unquote(name)() :: unquote(Macro.var(name, Elixir)) :: unquote(value)
     def unquote(name)(), do: unquote(value)
   end
+
+  defmodule StreamError do
+    defexception message: nil,
+                 method: nil,
+                 request_target: nil,
+                 error_code: error_codes[:protocol_error]
+  end
+
+  defmodule ConnectionError do
+    defexception message: nil,
+                 method: nil,
+                 request_target: nil,
+                 error_code: error_codes[:protocol_error]
+  end
 end

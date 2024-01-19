@@ -916,7 +916,6 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  status: nil,
                   method: "GET",
                   request_target: {"https", "127.0.0.1", integer(), "/hello_world"},
                   stream_id: integer(),

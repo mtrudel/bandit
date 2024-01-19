@@ -2096,7 +2096,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
     end
 
     test "derives port from host header", context do
@@ -2163,7 +2163,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
     end
 
     test "derives port from schema default if no port specified in host header", context do

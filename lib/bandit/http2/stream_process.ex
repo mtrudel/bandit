@@ -15,34 +15,13 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
-  alias Bandit.HTTP2.{Errors, Stream}
-
-  require Integer
+  alias Bandit.HTTP2.{Errors, StreamTransport}
 
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
-  @spec start_link(
-          pid(),
-          Stream.stream_id(),
-          non_neg_integer(),
-          Bandit.TransportInfo.t(),
-          Bandit.Telemetry.t()
-        ) ::
-          GenServer.on_start()
-  def start_link(
-        connection_pid,
-        stream_id,
-        initial_send_window_size,
-        transport_info,
-        connection_span
-      ) do
-    GenServer.start_link(__MODULE__, %{
-      connection_pid: connection_pid,
-      stream_id: stream_id,
-      initial_send_window_size: initial_send_window_size,
-      transport_info: transport_info,
-      connection_span: connection_span
-    })
+  @spec start_link(StreamTransport.t(), Bandit.Telemetry.t()) :: GenServer.on_start()
+  def start_link(stream_transport, connection_span) do
+    GenServer.start_link(__MODULE__, {stream_transport, connection_span})
   end
 
   # Let the stream process know that header data has arrived from the client. This is implemented
@@ -68,233 +47,83 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   # Let the stream process know that the client has reset the stream. This will terminate the
   # stream's handling process
-  @spec recv_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
+  @spec recv_rst_stream(pid(), Errors.error_code()) :: true
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   @impl GenServer
-  def init(state) do
-    state =
-      state
-      |> Map.drop([:connection_span])
-      |> Map.put(:span, start_span(state.connection_span, state.stream_id))
+  def init({stream_transport, connection_span}) do
+    span =
+      Bandit.Telemetry.start_span(:request, %{}, %{
+        connection_telemetry_span_context: connection_span.telemetry_span_context,
+        stream_id: stream_transport.stream_id
+      })
 
-    {:ok, state}
+    {:ok, %{stream_transport: stream_transport, span: span}, {:continue, :start_stream}}
+  end
+
+  @impl GenServer
+  def handle_continue(:start_stream, state) do
+    stream_transport = StreamTransport.start_stream(state.stream_transport)
+    {:noreply, %{state | stream_transport: stream_transport}}
   end
 
   @dialyzer {:nowarn_function, handle_info: 2}
   @impl GenServer
-  def handle_info(
-        {:headers, all_headers, plug, opts},
-        %{
-          connection_pid: connection_pid,
-          stream_id: stream_id,
-          initial_send_window_size: initial_send_window_size,
-          transport_info: transport_info,
-          span: span
-        } = state
-      ) do
-    req =
-      Bandit.HTTP2.Adapter.init(
-        connection_pid,
-        self(),
-        transport_info,
-        stream_id,
-        initial_send_window_size,
-        opts
-      )
+  def handle_info({:headers, headers, plug, opts}, state) do
+    {:ok, method, request_target, headers, stream_transport} =
+      StreamTransport.recv_headers(state.stream_transport, headers)
 
-    with :ok <- stream_id_is_valid_client(stream_id),
-         {:ok, request_target} <- build_request_target(all_headers),
-         method <- Bandit.Headers.get_header(all_headers, ":method"),
-         req <- %{req | method: method} do
-      with {:ok, pseudo_headers, headers} <- split_headers(all_headers),
-           :ok <- pseudo_headers_all_request(pseudo_headers),
-           :ok <- exactly_one_instance_of(pseudo_headers, ":scheme"),
-           :ok <- exactly_one_instance_of(pseudo_headers, ":method"),
-           :ok <- exactly_one_instance_of(pseudo_headers, ":path"),
-           :ok <- headers_all_lowercase(headers),
-           :ok <- no_connection_headers(headers),
-           :ok <- valid_te_header(headers),
-           {:ok, content_length} <- Bandit.Headers.get_content_length(headers),
-           req <- %{req | pending_content_length: content_length},
-           content_encoding <- negotiate_content_encoding(headers, req.opts),
-           req <- %{req | content_encoding: content_encoding},
-           headers <- combine_cookie_crumbs(headers),
-           req <- Bandit.HTTP2.Adapter.add_end_header_metric(req),
-           adapter <- {Bandit.HTTP2.Adapter, req},
-           {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} <-
-             Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
-        Bandit.Telemetry.stop_span(span, req.metrics, %{
+    adapter =
+      {Bandit.HTTP2.Adapter,
+       Bandit.HTTP2.Adapter.init(stream_transport, method, headers, self(), opts)}
+
+    transport_info = state.stream_transport.transport_info
+
+    case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
+      {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} ->
+        Bandit.Telemetry.stop_span(state.span, req.metrics, %{
           conn: conn,
           method: method,
           request_target: request_target,
           status: conn.status
         })
 
-        {:stop, :normal, state}
-      else
-        {:error, reason} ->
-          raise Stream.StreamError,
-            message: reason,
-            method: method,
-            request_target: request_target,
-            error_code: Errors.protocol_error()
-      end
-    else
-      {:error, {:connection, error_code, msg}} ->
-        send_shutdown_connection(state, error_code, msg)
-        {:stop, msg, state}
+        {:stop, :normal, %{state | stream_transport: req.stream_transport}}
 
       {:error, reason} ->
-        raise Stream.StreamError, message: reason, error_code: Errors.protocol_error()
+        raise Errors.StreamError, message: reason, error_code: Errors.internal_error()
     end
-  end
-
-  defp start_span(connection_span, stream_id) do
-    Bandit.Telemetry.start_span(:request, %{}, %{
-      connection_telemetry_span_context: connection_span.telemetry_span_context,
-      stream_id: stream_id
-    })
-  end
-
-  defp build_request_target(headers) do
-    with scheme <- Bandit.Headers.get_header(headers, ":scheme"),
-         {:ok, host, port} <- get_host_and_port(headers),
-         {:ok, path} <- get_path(headers) do
-      {:ok, {scheme, host, port, path}}
-    end
-  end
-
-  defp get_host_and_port(headers) do
-    case Bandit.Headers.get_header(headers, ":authority") do
-      authority when not is_nil(authority) -> Bandit.Headers.parse_hostlike_header(authority)
-      nil -> {:ok, nil, nil}
-    end
-  end
-
-  # RFC9113§8.3.1 - path should be non-empty and absolute
-  defp get_path(headers) do
-    headers
-    |> Bandit.Headers.get_header(":path")
-    |> case do
-      nil -> {:error, "Received empty :path"}
-      "*" -> {:ok, :*}
-      "/" <> _ = path -> split_path(path)
-      _ -> {:error, "Path does not start with /"}
-    end
-  end
-
-  # RFC9113§8.3.1 - path should match the path-absolute production from RFC3986
-  defp split_path(path) do
-    if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
-      do: {:ok, path},
-      else: {:error, "Path contains dot segment"}
-  end
-
-  # RFC9113§5.1.1 - client initiated streams must be odd
-  defp stream_id_is_valid_client(stream_id) do
-    if Integer.is_odd(stream_id) do
-      :ok
-    else
-      {:error, {:connection, Errors.protocol_error(), "Received HEADERS with even stream_id"}}
-    end
-  end
-
-  # RFC9113§8.3 - pseudo headers must appear first
-  defp split_headers(headers) do
-    {pseudo_headers, headers} =
-      Enum.split_while(headers, fn {key, _value} -> String.starts_with?(key, ":") end)
-
-    if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
-      do: {:error, "Received pseudo headers after regular one"},
-      else: {:ok, pseudo_headers, headers}
-  end
-
-  # RFC9113§8.3.1 - only request pseudo headers may appear
-  defp pseudo_headers_all_request(headers) do
-    if Enum.any?(headers, fn {key, _value} -> key not in ~w[:method :scheme :authority :path] end),
-      do: {:error, "Received invalid pseudo header"},
-      else: :ok
-  end
-
-  # RFC9113§8.3.1 - method, scheme, path pseudo headers must appear exactly once
-  defp exactly_one_instance_of(headers, header) do
-    headers
-    |> Enum.count(fn {key, _value} -> key == header end)
-    |> case do
-      1 -> :ok
-      _ -> {:error, "Expected 1 #{header} headers"}
-    end
-  end
-
-  # RFC9113§8.2 - all headers name fields must be lowercsae
-  defp headers_all_lowercase(headers) do
-    if Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
-      do: :ok,
-      else: {:error, "Received uppercase header"}
-  end
-
-  defp lowercase?(<<char, _rest::bits>>) when char >= ?A and char <= ?Z, do: false
-  defp lowercase?(<<_char, rest::bits>>), do: lowercase?(rest)
-  defp lowercase?(<<>>), do: true
-
-  # RFC9113§8.2.2 - no hop-by-hop headers
-  # Note that we do not filter out the TE header here, since it is allowed in
-  # specific cases by RFC9113§8.2.2. We check those cases in a separate filter
-  defp no_connection_headers(headers) do
-    connection_headers =
-      ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
-
-    if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
-      do: {:error, "Received connection-specific header"},
-      else: :ok
-  end
-
-  # RFC9113§8.2.2 - TE header may be present if it contains exactly 'trailers'
-  defp valid_te_header(headers) do
-    if Bandit.Headers.get_header(headers, "te") in [nil, "trailers"],
-      do: :ok,
-      else: {:error, "Received invalid TE header"}
-  end
-
-  defp negotiate_content_encoding(headers, opts) do
-    Bandit.Compression.negotiate_content_encoding(
-      Bandit.Headers.get_header(headers, "accept-encoding"),
-      Keyword.get(opts, :compress, true)
-    )
-  end
-
-  # Per RFC9113§8.2.3
-  defp combine_cookie_crumbs(headers) do
-    {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
-    combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
-    [{"cookie", combined_cookie} | other_headers]
   end
 
   @impl GenServer
   def terminate(:normal, _state), do: :ok
 
-  def terminate({%Stream.StreamError{} = error, _stacktrace}, state) do
+  def terminate({%Errors.StreamError{} = error, _stacktrace}, state) do
     Bandit.Telemetry.stop_span(state.span, %{}, %{
       error: error.message,
       method: error.method,
-      request_target: error.request_target,
-      status: error.status
+      request_target: error.request_target
     })
 
-    send_rst_stream(state, error.error_code)
+    StreamTransport.send_rst_stream(state.stream_transport, error.error_code)
+  end
+
+  def terminate({%Errors.ConnectionError{} = error, _stacktrace}, state) do
+    Bandit.Telemetry.stop_span(state.span, %{}, %{
+      error: error.message,
+      method: error.method,
+      request_target: error.request_target
+    })
+
+    StreamTransport.send_shutdown_connection(
+      state.stream_transport,
+      error.error_code,
+      error.message
+    )
   end
 
   def terminate({exception, stacktrace}, state) when is_exception(exception) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    send_rst_stream(state, Errors.internal_error())
-  end
-
-  defp send_rst_stream(state, error_code) do
-    GenServer.call(state.connection_pid, {:send_rst_stream, state.stream_id, error_code})
-  end
-
-  defp send_shutdown_connection(state, error_code, msg) do
-    GenServer.call(state.connection_pid, {:shutdown_connection, error_code, msg})
+    StreamTransport.send_rst_stream(state.stream_transport, Errors.internal_error())
   end
 end

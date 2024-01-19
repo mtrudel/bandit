@@ -10,14 +10,11 @@ defmodule Bandit.HTTP2.Stream do
 
   require Logger
 
-  alias Bandit.HTTP2.{Connection, Errors, StreamProcess}
+  alias Bandit.HTTP2.{Connection, Errors, StreamProcess, StreamTransport}
 
   defstruct stream_id: nil,
             state: nil,
             pid: nil
-
-  defmodule StreamError,
-    do: defexception([:message, :method, :request_target, :status, :error_code])
 
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
@@ -74,13 +71,10 @@ defmodule Bandit.HTTP2.Stream do
         plug,
         opts
       ) do
-    case StreamProcess.start_link(
-           self(),
-           stream.stream_id,
-           initial_send_window_size,
-           transport_info,
-           connection_span
-         ) do
+    stream_process =
+      StreamTransport.new(self(), stream.stream_id, initial_send_window_size, transport_info)
+
+    case StreamProcess.start_link(stream_process, connection_span) do
       {:ok, pid} ->
         StreamProcess.recv_headers(pid, headers, plug, opts)
         {:ok, %{stream | state: :open, pid: pid}}

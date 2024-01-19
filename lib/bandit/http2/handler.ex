@@ -65,7 +65,7 @@ defmodule Bandit.HTTP2.Handler do
     Connection.shutdown_connection(Errors.no_error(), "Client timeout", socket, state.connection)
   end
 
-  def handle_call({:send_headers, stream_id, headers, end_stream}, _from, {socket, state}) do
+  def handle_call({{:send_headers, headers, end_stream}, stream_id}, _from, {socket, state}) do
     case Connection.send_headers(stream_id, headers, end_stream, socket, state.connection) do
       {:ok, connection} ->
         {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
@@ -75,7 +75,7 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_call({:send_data, stream_id, data, end_stream}, from, {socket, state}) do
+  def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
     # In cases where there is not enough space in the connection window, Connection will call
@@ -99,17 +99,17 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_call({:send_recv_window_update, stream_id, size_increment}, _from, {socket, state}) do
+  def handle_call({{:send_recv_window_update, size_increment}, stream_id}, _from, {socket, state}) do
     Connection.send_recv_window_update(stream_id, size_increment, socket, state.connection)
     {:reply, :ok, {socket, state}, socket.read_timeout}
   end
 
-  def handle_call({:send_rst_stream, stream_id, error_code}, _from, {socket, state}) do
+  def handle_call({{:send_rst_stream, error_code}, stream_id}, _from, {socket, state}) do
     Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
     {:reply, :ok, {socket, state}, socket.read_timeout}
   end
 
-  def handle_call({:shutdown_connection, error_code, msg}, _from, {socket, state}) do
+  def handle_call({{:shutdown_connection, error_code, msg}, _stream_id}, _from, {socket, state}) do
     case Connection.shutdown_connection(error_code, msg, socket, state.connection) do
       {:close, _connection} -> {:stop, :normal, {socket, state}}
       {:error, reason, _connection} -> {:stop, reason, {socket, state}}
