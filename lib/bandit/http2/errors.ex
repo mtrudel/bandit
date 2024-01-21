@@ -42,16 +42,10 @@ defmodule Bandit.HTTP2.Errors do
   end
 
   defmodule StreamError do
-    defexception message: nil,
-                 method: nil,
-                 request_target: nil,
-                 error_code: error_codes[:protocol_error]
+    defexception [:message, :method, :request_target, :error_code]
   end
 
   defmodule ConnectionError do
-    defexception message: nil,
-                 method: nil,
-                 request_target: nil,
-                 error_code: error_codes[:protocol_error]
+    defexception [:message, :method, :request_target, :error_code]
   end
 end

@@ -50,10 +50,9 @@ defmodule Bandit.HTTP2.StreamProcess do
   @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
   def recv_end_of_stream(pid), do: send(pid, :end_stream)
 
-  # Let the stream process know that the client has reset the stream. This will terminate the
-  # stream's handling process
+  # Let the stream process know that the client has reset the stream
   @spec recv_rst_stream(pid(), Errors.error_code()) :: true
-  def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
+  def recv_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
 
   @impl GenServer
   def init({stream_transport, plug, opts, connection_span}) do
@@ -123,7 +122,7 @@ defmodule Bandit.HTTP2.StreamProcess do
     )
   end
 
-  def terminate({exception, stacktrace}, state) when is_exception(exception) do
+  def terminate({exception, stacktrace}, state) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
     StreamTransport.send_rst_stream(state.stream_transport, Errors.internal_error())
   end

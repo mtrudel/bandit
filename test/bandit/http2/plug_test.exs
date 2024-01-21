@@ -91,7 +91,7 @@ defmodule HTTP2PlugTest do
   def multiple_body_read(conn) do
     {:ok, body, conn} = read_body(conn)
     assert body == "OK"
-    assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
+    {:ok, "", conn} = read_body(conn)
     conn |> send_resp(200, body)
   end
 

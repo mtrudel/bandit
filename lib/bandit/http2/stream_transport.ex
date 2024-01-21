@@ -16,22 +16,30 @@ defmodule Bandit.HTTP2.StreamTransport do
   # the luxury of a nicely unwound stack
 
   require Integer
+  require Logger
 
   defstruct connection_pid: nil,
             stream_id: nil,
+            state: :idle,
             recv_window_size: 65_535,
             send_window_size: nil,
             bytes_remaining: nil,
-            transport_info: nil
+            transport_info: nil,
+            read_timeout: 15_000
+
+  @typedoc "An HTTP/2 stream state"
+  @type state :: :idle | :open | :local_closed | :remote_closed | :closed
 
   @typedoc "The information necessary to communicate to/from a stream"
   @type t :: %__MODULE__{
           connection_pid: pid(),
           stream_id: non_neg_integer(),
+          state: state(),
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
           bytes_remaining: non_neg_integer() | nil,
-          transport_info: Bandit.TransportInfo.t()
+          transport_info: Bandit.TransportInfo.t(),
+          read_timeout: timeout()
         }
 
   def new(connection_pid, stream_id, initial_send_window_size, transport_info) do
@@ -55,34 +63,37 @@ defmodule Bandit.HTTP2.StreamTransport do
     end
   end
 
-  def recv_headers(stream_transport) do
-    receive do
-      {:headers, headers} ->
-        do_recv_headers(stream_transport, headers)
-        # TODO timeout
-    end
-  end
+  # Receiving
 
-  defp do_recv_headers(%__MODULE__{state: :idle} = stream_transport, headers) do
-    method = Bandit.Headers.get_header(headers, ":method")
-    request_target = build_request_target!(headers)
+  def recv_headers(%__MODULE__{state: :idle} = stream_transport) do
+    case do_recv(stream_transport, stream_transport.read_timeout) do
+      {:headers, headers, stream_transport} ->
+        method = Bandit.Headers.get_header(headers, ":method")
+        request_target = build_request_target!(headers)
 
-    try do
-      {pseudo_headers, headers} = split_headers!(headers)
-      pseudo_headers_all_request!(pseudo_headers)
-      exactly_one_instance_of!(pseudo_headers, ":scheme")
-      exactly_one_instance_of!(pseudo_headers, ":method")
-      exactly_one_instance_of!(pseudo_headers, ":path")
-      headers_all_lowercase!(headers)
-      no_connection_headers!(headers)
-      valid_te_header!(headers)
-      content_length = get_content_length!(headers)
-      headers = combine_cookie_crumbs(headers)
-      stream_transport = %{stream_transport | bytes_remaining: content_length}
-      {:ok, method, request_target, headers, stream_transport}
-    rescue
-      exception ->
-        reraise %{exception | method: method, request_target: request_target}, __STACKTRACE__
+        try do
+          {pseudo_headers, headers} = split_headers!(headers)
+          pseudo_headers_all_request!(pseudo_headers)
+          exactly_one_instance_of!(pseudo_headers, ":scheme")
+          exactly_one_instance_of!(pseudo_headers, ":method")
+          exactly_one_instance_of!(pseudo_headers, ":path")
+          headers_all_lowercase!(headers)
+          no_connection_headers!(headers)
+          valid_te_header!(headers)
+          content_length = get_content_length!(headers)
+          headers = combine_cookie_crumbs(headers)
+          stream_transport = %{stream_transport | bytes_remaining: content_length, state: :open}
+          {:ok, method, request_target, headers, stream_transport}
+        rescue
+          exception ->
+            reraise %{exception | method: method, request_target: request_target}, __STACKTRACE__
+        end
+
+      :timeout ->
+        stream_error!("Timed out waiting for HEADER")
+
+      %__MODULE__{} = stream_transport ->
+        recv_headers(stream_transport)
     end
   end
 
@@ -187,64 +198,166 @@ defmodule Bandit.HTTP2.StreamTransport do
     [{"cookie", combined_cookie} | other_headers]
   end
 
-  def read_body(%__MODULE__{} = stream_transport, remaining_length, timeout, acc \\ []) do
-    receive do
-      {:data, data} ->
-        {new_window, increment} =
-          Bandit.HTTP2.FlowControl.compute_recv_window(
-            stream_transport.recv_window_size,
-            byte_size(data)
-          )
+  def recv_body(stream_transport, max_bytes_to_return, timeout, acc \\ [])
 
-        if increment > 0,
-          do: call(stream_transport, {:send_recv_window_update, increment})
+  def recv_body(%__MODULE__{state: state} = stream_transport, max_bytes_to_return, timeout, acc)
+      when state in [:open, :local_closed] do
+    case do_recv(stream_transport, timeout) do
+      {:headers, trailers, stream_transport} ->
+        no_pseudo_headers!(trailers)
 
-        stream_transport = %{stream_transport | recv_window_size: new_window}
+        Logger.warning("Ignoring trailers #{inspect(trailers)}")
+        recv_body(stream_transport, max_bytes_to_return, timeout, acc)
 
+      {:data, data, stream_transport} ->
         acc = [data | acc]
-        remaining_length = remaining_length - byte_size(data)
+        max_bytes_to_return = max_bytes_to_return - byte_size(data)
 
-        if remaining_length >= 0 do
-          read_body(stream_transport, remaining_length, timeout, acc)
+        if max_bytes_to_return >= 0 do
+          recv_body(stream_transport, max_bytes_to_return, timeout, acc)
         else
-          {:more, finalize_body(acc), calc_bytes_remaining(acc, stream_transport)}
+          {:more, finalize_body(acc), stream_transport}
         end
 
-      :end_stream ->
-        stream_transport = calc_bytes_remaining(acc, stream_transport)
+      {:end_stream, stream_transport} ->
+        {:ok, finalize_body(acc), stream_transport}
 
-        if stream_transport.bytes_remaining in [nil, 0] do
-          {:ok, finalize_body(acc), stream_transport}
-        else
-          stream_error!("Got end_stream with #{stream_transport.bytes_remaining} byte(s) pending")
-        end
-    after
-      timeout -> {:more, finalize_body(acc), calc_bytes_remaining(acc, stream_transport)}
+      :timeout ->
+        {:more, finalize_body(acc), stream_transport}
+
+      %__MODULE__{} = stream_transport ->
+        recv_body(stream_transport, max_bytes_to_return, timeout, acc)
     end
   end
 
-  defp calc_bytes_remaining(data, stream_transport) do
-    bytes_read = IO.iodata_length(data)
-
-    bytes_remaining =
-      case stream_transport.bytes_remaining do
-        nil -> nil
-        bytes_remaining -> bytes_remaining - bytes_read
-      end
-
-    %{stream_transport | bytes_remaining: bytes_remaining}
+  def recv_body(%__MODULE__{state: :remote_closed} = stream, _max_bytes_to_return, _timeout, acc) do
+    {:ok, finalize_body(acc), stream}
   end
 
   defp finalize_body(data) do
     data |> Enum.reverse() |> IO.iodata_to_binary()
   end
 
-  def send_headers(%__MODULE__{} = stream_transport, headers, end_stream) do
-    call(stream_transport, {:send_headers, headers, end_stream})
+  defp no_pseudo_headers!(headers) do
+    if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
+      do: stream_error!("Received trailers with pseudo headers")
   end
 
-  def send_data(%__MODULE__{} = stream_transport, data, end_stream, bytes_sent \\ 0) do
-    stream_transport = wait_for_send_window(stream_transport, 0)
+  defp do_recv(%__MODULE__{state: :idle} = stream_transport, timeout) do
+    receive do
+      {:headers, headers} -> {:headers, headers, %{stream_transport | state: :open}}
+      {:data, _data} -> connection_error!("Received DATA in idle state")
+      :end_stream -> connection_error!("Received END_STREAM in idle state")
+      {:send_window_update, _delta} -> connection_error!("Received WINDOW_UPDATE in idle state")
+      {:rst_stream, _error_code} -> connection_error!("Received RST_STREAM in idle state")
+    after
+      timeout -> :timeout
+    end
+  end
+
+  defp do_recv(%__MODULE__{state: state} = stream_transport, timeout)
+       when state in [:open, :local_closed] do
+    receive do
+      {:headers, headers} -> {:headers, headers, stream_transport}
+      {:data, data} -> {:data, data, do_recv_data(stream_transport, data)}
+      :end_stream -> {:end_stream, do_recv_end_stream(stream_transport)}
+      {:send_window_update, delta} -> do_recv_send_window_update(stream_transport, delta)
+      {:rst_stream, error_code} -> do_recv_rst_stream!(stream_transport, error_code)
+    after
+      timeout -> :timeout
+    end
+  end
+
+  defp do_recv(%__MODULE__{state: :remote_closed} = stream_transport, timeout) do
+    receive do
+      {:headers, _headers} -> do_stream_closed_error!("Received HEADERS in remote_closed state")
+      {:data, _data} -> do_stream_closed_error!("Received DATA in remote_closed state")
+      :end_stream -> raise do_stream_closed_error!("Received END_STREAM in remote_closed state")
+      {:send_window_update, delta} -> do_recv_send_window_update(stream_transport, delta)
+      {:rst_stream, error_code} -> do_recv_rst_stream!(stream_transport, error_code)
+    after
+      timeout -> :timeout
+    end
+  end
+
+  defp do_recv(%__MODULE__{state: :closed} = stream_transport, timeout) do
+    receive do
+      {:headers, _headers} -> stream_transport
+      {:data, _data} -> stream_transport
+      :end_stream -> stream_transport
+      {:send_window_update, _delta} -> stream_transport
+      {:rst_stream, _error_code} -> stream_transport
+    after
+      timeout -> :timeout
+    end
+  end
+
+  defp do_recv_data(stream_transport, data) do
+    {new_window, increment} =
+      Bandit.HTTP2.FlowControl.compute_recv_window(
+        stream_transport.recv_window_size,
+        byte_size(data)
+      )
+
+    if increment > 0, do: call(stream_transport, {:send_recv_window_update, increment})
+
+    bytes_remaining =
+      case stream_transport.bytes_remaining do
+        nil -> nil
+        bytes_remaining -> bytes_remaining - byte_size(data)
+      end
+
+    %{stream_transport | recv_window_size: new_window, bytes_remaining: bytes_remaining}
+  end
+
+  defp do_recv_end_stream(stream_transport) do
+    next_state =
+      case stream_transport.state do
+        :open -> :remote_closed
+        :local_closed -> :closed
+      end
+
+    if stream_transport.bytes_remaining not in [nil, 0],
+      do: stream_error!("Received END_STREAM with byte still pending!")
+
+    %{stream_transport | state: next_state}
+  end
+
+  defp do_recv_send_window_update(stream_transport, delta) do
+    case Bandit.HTTP2.FlowControl.update_send_window(stream_transport.send_window_size, delta) do
+      {:ok, new_window} -> %{stream_transport | send_window_size: new_window}
+      {:error, reason} -> stream_error!(reason, Bandit.HTTP2.Errors.flow_control_error())
+    end
+  end
+
+  @spec do_recv_rst_stream!(term(), term()) :: no_return()
+  defp do_recv_rst_stream!(_stream_transport, error_code) do
+    raise "Client sent RST_STREAM with error code #{error_code}"
+  end
+
+  @spec do_stream_closed_error!(term()) :: no_return()
+  defp do_stream_closed_error!(msg) do
+    stream_error!(msg, Bandit.HTTP2.Errors.stream_closed())
+  end
+
+  # Sending
+
+  def send_headers(%__MODULE__{state: state} = stream_transport, headers, end_stream)
+      when state in [:open, :remote_closed] do
+    call(stream_transport, {:send_headers, headers, end_stream})
+
+    set_state_on_send_end_stream(stream_transport, end_stream)
+  end
+
+  def send_data(%__MODULE__{state: state} = stream_transport, data, end_stream, bytes_sent \\ 0)
+      when state in [:open, :remote_closed] do
+    stream_transport =
+      receive do
+        {:send_window_update, delta} -> do_recv_send_window_update(stream_transport, delta)
+      after
+        0 -> stream_transport
+      end
+
     max_bytes_to_send = max(stream_transport.send_window_size, 0)
     {data_to_send, bytes_to_send, rest} = split_data(data, max_bytes_to_send)
 
@@ -257,31 +370,29 @@ defmodule Bandit.HTTP2.StreamTransport do
         stream_transport
       end
 
+    bytes_sent = bytes_sent + bytes_to_send
+
     if byte_size(rest) == 0 do
-      {stream_transport, bytes_sent + bytes_to_send}
+      {bytes_sent, set_state_on_send_end_stream(stream_transport, end_stream)}
     else
-      stream_transport = wait_for_send_window(stream_transport, :infinity)
-      send_data(stream_transport, rest, end_stream, bytes_sent + bytes_to_send)
+      receive do
+        {:send_window_update, delta} ->
+          stream_transport
+          |> do_recv_send_window_update(delta)
+          |> send_data(rest, end_stream, bytes_sent)
+      after
+        stream_transport.read_timeout -> raise "Timeout waiting for space in the send_window"
+      end
     end
   end
 
-  defp wait_for_send_window(stream_transport, timeout) do
-    receive do
-      {:send_window_update, increment} ->
-        case Bandit.HTTP2.FlowControl.update_send_window(
-               stream_transport.send_window_size,
-               increment
-             ) do
-          {:ok, new_window} ->
-            %{stream_transport | send_window_size: new_window}
+  defp set_state_on_send_end_stream(stream_transport, false), do: stream_transport
 
-          {:error, reason} ->
-            stream_error!(reason, error_code: Bandit.HTTP2.Errors.flow_control_error())
-        end
-    after
-      timeout -> stream_transport
-    end
-  end
+  defp set_state_on_send_end_stream(%__MODULE__{state: :open} = stream_transport, true),
+    do: %{stream_transport | state: :local_closed}
+
+  defp set_state_on_send_end_stream(%__MODULE__{state: :remote_closed} = stream_transport, true),
+    do: %{stream_transport | state: :closed}
 
   defp split_data(data, desired_length) do
     data_length = IO.iodata_length(data)
@@ -296,6 +407,7 @@ defmodule Bandit.HTTP2.StreamTransport do
 
   def send_rst_stream(%__MODULE__{} = stream_transport, error_code) do
     call(stream_transport, {:send_rst_stream, error_code})
+    %{stream_transport | state: :closed}
   end
 
   def send_shutdown_connection(%__MODULE__{} = stream_transport, error_code, msg) do
@@ -306,15 +418,17 @@ defmodule Bandit.HTTP2.StreamTransport do
     GenServer.call(stream_transport.connection_pid, {msg, stream_transport.stream_id}, timeout)
   end
 
-  @dialyzer {:nowarn_function, stream_error!: 1}
-  @spec stream_error!(term(), keyword()) :: no_return()
-  defp stream_error!(message, context \\ []) do
-    raise Bandit.HTTP2.Errors.StreamError, Keyword.merge(context, message: message)
+  # Helpers
+
+  @spec stream_error!(term()) :: no_return()
+  @spec stream_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()
+  defp stream_error!(message, error_code \\ Bandit.HTTP2.Errors.protocol_error()) do
+    raise Bandit.HTTP2.Errors.StreamError, message: message, error_code: error_code
   end
 
-  @dialyzer {:nowarn_function, connection_error!: 1}
-  @spec connection_error!(term(), keyword()) :: no_return()
-  defp connection_error!(message, context \\ []) do
-    raise Bandit.HTTP2.Errors.ConnectionError, Keyword.merge(context, message: message)
+  @spec connection_error!(term()) :: no_return()
+  @spec connection_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()
+  defp connection_error!(message, error_code \\ Bandit.HTTP2.Errors.protocol_error()) do
+    raise Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code
   end
 end

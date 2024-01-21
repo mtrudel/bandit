@@ -3,6 +3,7 @@ defmodule HTTP2ProtocolTest do
   use ServerHelpers
 
   import Bitwise
+  import ExUnit.CaptureLog
 
   setup :https_server
 
@@ -1611,31 +1612,21 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
 
-    test "shuts down the stream task on receipt of an RST_STREAM frame", context do
+    test "raises an error on upon receipt of an RST_STREAM frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleeper", context.port)
-      SimpleH2Client.recv_headers(socket)
-      {:ok, 1, false, "OK"} = SimpleH2Client.recv_body(socket)
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
+          SimpleH2Client.send_rst_stream(socket, 1, 99)
+          Process.sleep(100)
+        end)
 
-      assert Process.whereis(:sleeper) |> Process.alive?()
-
-      SimpleH2Client.send_rst_stream(socket, 1, 0)
-
-      Process.sleep(100)
-
-      assert Process.whereis(:sleeper) == nil
-      assert SimpleH2Client.connection_alive?(socket)
+      assert errors =~ "Client sent RST_STREAM with error code 99"
     end
 
-    def sleeper(conn) do
-      Process.register(self(), :sleeper)
-
-      conn
-      |> send_chunked(200)
-      |> chunk("OK")
-
-      Process.sleep(:infinity)
+    def expect_reset(conn) do
+      read_body(conn)
     end
   end
 
