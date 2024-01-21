@@ -103,7 +103,7 @@ defmodule HTTP2PlugTest do
 
   def other_process_body_read(conn) do
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         read_body(conn)
       end)
 
@@ -243,7 +243,7 @@ defmodule HTTP2PlugTest do
 
   def other_process_send_body(conn) do
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         conn |> send_resp(200, "NOT OK")
       end)
 
@@ -279,7 +279,7 @@ defmodule HTTP2PlugTest do
 
   def other_process_set_chunk(conn) do
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         conn |> send_chunked(200)
       end)
 
@@ -301,7 +301,7 @@ defmodule HTTP2PlugTest do
     conn = conn |> send_chunked(200)
 
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         conn |> chunk("NOT OK")
       end)
 
@@ -438,7 +438,7 @@ defmodule HTTP2PlugTest do
 
   def other_process_send_file(conn) do
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         conn
         |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
       end)
@@ -591,7 +591,7 @@ defmodule HTTP2PlugTest do
 
   def other_process_send_inform(conn) do
     Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions may only be called by the stream owner", fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
         conn |> inform(100, [])
       end)
 

@@ -287,9 +287,6 @@ defmodule Bandit.HTTP2.Adapter do
     end)
   end
 
-  defp validate_calling_process!(adapter) do
-    if adapter.owner_pid != self() do
-      raise "Adapter functions may only be called by the stream owner"
-    end
-  end
+  defp validate_calling_process!(%{owner_pid: owner}) when owner == self(), do: :ok
+  defp validate_calling_process!(_), do: raise("Adapter functions must be called by stream owner")
 end
