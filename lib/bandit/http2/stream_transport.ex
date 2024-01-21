@@ -21,7 +21,7 @@ defmodule Bandit.HTTP2.StreamTransport do
             stream_id: nil,
             recv_window_size: 65_535,
             send_window_size: nil,
-            pending_content_length: nil,
+            bytes_remaining: nil,
             transport_info: nil
 
   @typedoc "The information necessary to communicate to/from a stream"
@@ -30,7 +30,7 @@ defmodule Bandit.HTTP2.StreamTransport do
           stream_id: non_neg_integer(),
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
-          pending_content_length: non_neg_integer() | nil,
+          bytes_remaining: non_neg_integer() | nil,
           transport_info: Bandit.TransportInfo.t()
         }
 
@@ -70,7 +70,7 @@ defmodule Bandit.HTTP2.StreamTransport do
       valid_te_header!(headers)
       content_length = get_content_length!(headers)
       headers = combine_cookie_crumbs(headers)
-      stream_transport = %{stream_transport | pending_content_length: content_length}
+      stream_transport = %{stream_transport | bytes_remaining: content_length}
       {:ok, method, request_target, headers, stream_transport}
     rescue
       exception ->
@@ -199,43 +199,35 @@ defmodule Bandit.HTTP2.StreamTransport do
         if remaining_length >= 0 do
           read_body(stream_transport, remaining_length, timeout, acc)
         else
-          return_more(acc, stream_transport)
+          {:more, finalize_body(acc), calc_bytes_remaining(acc, stream_transport)}
         end
 
       :end_stream ->
-        bytes_read = IO.iodata_length(acc)
+        stream_transport = calc_bytes_remaining(acc, stream_transport)
 
-        pending_content_length =
-          case stream_transport.pending_content_length do
-            nil -> nil
-            pending_content_length -> pending_content_length - bytes_read
-          end
-
-        if pending_content_length in [nil, 0] do
-          {:ok, wrap_req_body(acc),
-           %{stream_transport | pending_content_length: pending_content_length}}
+        if stream_transport.bytes_remaining in [nil, 0] do
+          {:ok, finalize_body(acc), stream_transport}
         else
-          stream_error!("Received end of stream with #{pending_content_length} byte(s) pending")
+          stream_error!("Got end_stream with #{stream_transport.bytes_remaining} byte(s) pending")
         end
     after
-      timeout -> return_more(acc, stream_transport)
+      timeout -> {:more, finalize_body(acc), calc_bytes_remaining(acc, stream_transport)}
     end
   end
 
-  defp return_more(data, stream_transport) do
+  defp calc_bytes_remaining(data, stream_transport) do
     bytes_read = IO.iodata_length(data)
 
-    pending_content_length =
-      case stream_transport.pending_content_length do
+    bytes_remaining =
+      case stream_transport.bytes_remaining do
         nil -> nil
-        pending_content_length -> pending_content_length - bytes_read
+        bytes_remaining -> bytes_remaining - bytes_read
       end
 
-    {:more, wrap_req_body(data),
-     %{stream_transport | pending_content_length: pending_content_length}}
+    %{stream_transport | bytes_remaining: bytes_remaining}
   end
 
-  defp wrap_req_body(data) do
+  defp finalize_body(data) do
     data |> Enum.reverse() |> IO.iodata_to_binary()
   end
 
