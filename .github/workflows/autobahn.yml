@@ -56,7 +56,7 @@ jobs:
     - name: Disable compile warnings
       run: echo "::remove-matcher owner=elixir-mixCompileWarning::"
     - name: Retrieve mix dependencies cache
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       id: mix-cache
       with:
         path: |
