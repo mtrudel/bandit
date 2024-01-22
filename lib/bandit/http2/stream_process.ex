@@ -67,7 +67,6 @@ defmodule Bandit.HTTP2.StreamProcess do
     {:noreply, %{state | stream_transport: stream_transport}}
   end
 
-  @dialyzer {:nowarn_function, handle_info: 2}
   @impl GenServer
   def handle_info({:headers, headers, plug, opts}, state) do
     {:ok, method, request_target, headers, stream_transport} =

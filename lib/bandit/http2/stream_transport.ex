@@ -298,10 +298,14 @@ defmodule Bandit.HTTP2.StreamTransport do
     GenServer.call(stream_transport.connection_pid, {msg, stream_transport.stream_id}, timeout)
   end
 
+  @dialyzer {:nowarn_function, stream_error!: 1}
+  @spec stream_error!(term(), keyword()) :: no_return()
   defp stream_error!(message, context \\ []) do
     raise Bandit.HTTP2.Errors.StreamError, Keyword.merge(context, message: message)
   end
 
+  @dialyzer {:nowarn_function, connection_error!: 1}
+  @spec connection_error!(term(), keyword()) :: no_return()
   defp connection_error!(message, context \\ []) do
     raise Bandit.HTTP2.Errors.ConnectionError, Keyword.merge(context, message: message)
   end
