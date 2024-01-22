@@ -19,16 +19,21 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
-  @spec start_link(StreamTransport.t(), Bandit.Telemetry.t()) :: GenServer.on_start()
-  def start_link(stream_transport, connection_span) do
-    GenServer.start_link(__MODULE__, {stream_transport, connection_span})
+  @spec start_link(
+          StreamTransport.t(),
+          Bandit.Pipeline.plug_def(),
+          keyword(),
+          Bandit.Telemetry.t()
+        ) :: GenServer.on_start()
+  def start_link(stream_transport, plug, opts, connection_span) do
+    GenServer.start_link(__MODULE__, {stream_transport, plug, opts, connection_span})
   end
 
   # Let the stream process know that header data has arrived from the client. This is implemented
   # further down in this file as a handle_info callback
-  @spec recv_headers(pid(), Plug.Conn.headers(), Bandit.Pipeline.plug_def(), keyword()) ::
+  @spec recv_headers(pid(), Plug.Conn.headers()) ::
           :ok | :noconnect | :nosuspend
-  def recv_headers(pid, headers, plug, opts), do: send(pid, {:headers, headers, plug, opts})
+  def recv_headers(pid, headers), do: send(pid, {:headers, headers})
 
   # Let the stream process know that body data has arrived from the client. The other half of this
   # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
@@ -51,34 +56,31 @@ defmodule Bandit.HTTP2.StreamProcess do
   def recv_rst_stream(pid, error_code), do: Process.exit(pid, {:recv_rst_stream, error_code})
 
   @impl GenServer
-  def init({stream_transport, connection_span}) do
+  def init({stream_transport, plug, opts, connection_span}) do
     span =
       Bandit.Telemetry.start_span(:request, %{}, %{
         connection_telemetry_span_context: connection_span.telemetry_span_context,
         stream_id: stream_transport.stream_id
       })
 
-    {:ok, %{stream_transport: stream_transport, span: span}, {:continue, :start_stream}}
+    {:ok, %{stream_transport: stream_transport, plug: plug, opts: opts, span: span},
+     {:continue, :start_stream}}
   end
 
   @impl GenServer
   def handle_continue(:start_stream, state) do
     stream_transport = StreamTransport.start_stream(state.stream_transport)
-    {:noreply, %{state | stream_transport: stream_transport}}
-  end
 
-  @impl GenServer
-  def handle_info({:headers, headers, plug, opts}, state) do
     {:ok, method, request_target, headers, stream_transport} =
-      StreamTransport.recv_headers(state.stream_transport, headers)
+      StreamTransport.recv_headers(stream_transport)
 
     adapter =
       {Bandit.HTTP2.Adapter,
-       Bandit.HTTP2.Adapter.init(stream_transport, method, headers, self(), opts)}
+       Bandit.HTTP2.Adapter.init(stream_transport, method, headers, self(), state.opts)}
 
     transport_info = state.stream_transport.transport_info
 
-    case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, plug) do
+    case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, state.plug) do
       {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} ->
         Bandit.Telemetry.stop_span(state.span, req.metrics, %{
           conn: conn,

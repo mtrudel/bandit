@@ -55,12 +55,20 @@ defmodule Bandit.HTTP2.StreamTransport do
     end
   end
 
-  def recv_headers(%__MODULE__{} = stream_transport, all_headers) do
-    method = Bandit.Headers.get_header(all_headers, ":method")
-    request_target = build_request_target!(all_headers)
+  def recv_headers(stream_transport) do
+    receive do
+      {:headers, headers} ->
+        do_recv_headers(stream_transport, headers)
+        # TODO timeout
+    end
+  end
+
+  defp do_recv_headers(%__MODULE__{state: :idle} = stream_transport, headers) do
+    method = Bandit.Headers.get_header(headers, ":method")
+    request_target = build_request_target!(headers)
 
     try do
-      {pseudo_headers, headers} = split_headers!(all_headers)
+      {pseudo_headers, headers} = split_headers!(headers)
       pseudo_headers_all_request!(pseudo_headers)
       exactly_one_instance_of!(pseudo_headers, ":scheme")
       exactly_one_instance_of!(pseudo_headers, ":method")

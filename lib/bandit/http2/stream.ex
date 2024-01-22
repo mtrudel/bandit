@@ -74,9 +74,9 @@ defmodule Bandit.HTTP2.Stream do
     stream_process =
       StreamTransport.new(self(), stream.stream_id, initial_send_window_size, transport_info)
 
-    case StreamProcess.start_link(stream_process, connection_span) do
+    case StreamProcess.start_link(stream_process, plug, opts, connection_span) do
       {:ok, pid} ->
-        StreamProcess.recv_headers(pid, headers, plug, opts)
+        StreamProcess.recv_headers(pid, headers)
         {:ok, %{stream | state: :open, pid: pid}}
 
       :ignore ->
