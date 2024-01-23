@@ -51,19 +51,27 @@ defmodule Bandit.HTTP2.StreamTransport do
     }
   end
 
-  def start_stream(%__MODULE__{} = stream_transport) do
-    stream_id_is_valid_client!(stream_transport.stream_id)
-    stream_transport
-  end
+  # Collection API - Delivery
+  #
+  # These functions are intended to be called by the connection process which contains this
+  # stream. All of these start with `deliver_`
 
-  # RFC9113§5.1.1 - client initiated streams must be odd
-  defp stream_id_is_valid_client!(stream_id) do
-    if Integer.is_even(stream_id) do
-      connection_error!("Received HEADERS with even stream_id")
-    end
-  end
+  @spec deliver_headers(pid(), Plug.Conn.headers()) :: :ok | :noconnect | :nosuspend
+  def deliver_headers(pid, headers), do: send(pid, {:headers, headers})
 
-  # Receiving
+  @spec deliver_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
+  def deliver_data(pid, data), do: send(pid, {:data, data})
+
+  @spec deliver_send_window_update(pid(), non_neg_integer()) :: :ok | :noconnect | :nosuspend
+  def deliver_send_window_update(pid, delta), do: send(pid, {:send_window_update, delta})
+
+  @spec deliver_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
+  def deliver_end_of_stream(pid), do: send(pid, :end_stream)
+
+  @spec deliver_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
+  def deliver_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
+
+  # Stream API - Receiving
 
   def recv_headers(%__MODULE__{state: :idle} = stream_transport) do
     case do_recv(stream_transport, stream_transport.read_timeout) do
@@ -98,17 +106,22 @@ defmodule Bandit.HTTP2.StreamTransport do
   end
 
   defp build_request_target!(headers) do
-    with scheme <- Bandit.Headers.get_header(headers, ":scheme"),
-         {:ok, host, port} <- get_host_and_port(headers),
-         path <- get_path!(headers) do
-      {scheme, host, port, path}
-    end
+    scheme = Bandit.Headers.get_header(headers, ":scheme")
+    {host, port} = get_host_and_port!(headers)
+    path = get_path!(headers)
+    {scheme, host, port, path}
   end
 
-  defp get_host_and_port(headers) do
+  defp get_host_and_port!(headers) do
     case Bandit.Headers.get_header(headers, ":authority") do
-      authority when not is_nil(authority) -> Bandit.Headers.parse_hostlike_header(authority)
-      nil -> {:ok, nil, nil}
+      authority when not is_nil(authority) ->
+        case Bandit.Headers.parse_hostlike_header(authority) do
+          {:ok, host, port} -> {host, port}
+          {:error, reason} -> stream_error!(reason)
+        end
+
+      nil ->
+        {nil, nil}
     end
   end
 
@@ -340,7 +353,7 @@ defmodule Bandit.HTTP2.StreamTransport do
     stream_error!(msg, Bandit.HTTP2.Errors.stream_closed())
   end
 
-  # Sending
+  # Stream API - Sending
 
   def send_headers(%__MODULE__{state: state} = stream_transport, headers, end_stream)
       when state in [:open, :remote_closed] do
@@ -386,14 +399,6 @@ defmodule Bandit.HTTP2.StreamTransport do
     end
   end
 
-  defp set_state_on_send_end_stream(stream_transport, false), do: stream_transport
-
-  defp set_state_on_send_end_stream(%__MODULE__{state: :open} = stream_transport, true),
-    do: %{stream_transport | state: :local_closed}
-
-  defp set_state_on_send_end_stream(%__MODULE__{state: :remote_closed} = stream_transport, true),
-    do: %{stream_transport | state: :closed}
-
   defp split_data(data, desired_length) do
     data_length = IO.iodata_length(data)
 
@@ -405,20 +410,31 @@ defmodule Bandit.HTTP2.StreamTransport do
     end
   end
 
-  def send_rst_stream(%__MODULE__{} = stream_transport, error_code) do
+  defp set_state_on_send_end_stream(stream_transport, false), do: stream_transport
+
+  defp set_state_on_send_end_stream(%__MODULE__{state: :open} = stream_transport, true),
+    do: %{stream_transport | state: :local_closed}
+
+  defp set_state_on_send_end_stream(%__MODULE__{state: :remote_closed} = stream_transport, true),
+    do: %{stream_transport | state: :closed}
+
+  # Helpers
+
+  def close_stream(%__MODULE__{state: :closed} = stream_transport, _error_code),
+    do: stream_transport
+
+  def close_stream(%__MODULE__{} = stream_transport, error_code) do
     call(stream_transport, {:send_rst_stream, error_code})
     %{stream_transport | state: :closed}
   end
 
-  def send_shutdown_connection(%__MODULE__{} = stream_transport, error_code, msg) do
+  def close_connection(%__MODULE__{} = stream_transport, error_code, msg) do
     call(stream_transport, {:shutdown_connection, error_code, msg})
   end
 
   defp call(stream_transport, msg, timeout \\ 5000) do
     GenServer.call(stream_transport.connection_pid, {msg, stream_transport.stream_id}, timeout)
   end
-
-  # Helpers
 
   @spec stream_error!(term()) :: no_return()
   @spec stream_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()

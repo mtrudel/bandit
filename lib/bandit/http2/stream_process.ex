@@ -29,31 +29,6 @@ defmodule Bandit.HTTP2.StreamProcess do
     GenServer.start_link(__MODULE__, {stream_transport, plug, opts, connection_span})
   end
 
-  # Let the stream process know that header data has arrived from the client. This is implemented
-  # further down in this file as a handle_info callback
-  @spec recv_headers(pid(), Plug.Conn.headers()) ::
-          :ok | :noconnect | :nosuspend
-  def recv_headers(pid, headers), do: send(pid, {:headers, headers})
-
-  # Let the stream process know that body data has arrived from the client. The other half of this
-  # flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
-  @spec recv_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
-  def recv_data(pid, data), do: send(pid, {:data, data})
-
-  # Let the stream process know that the stream's send window has changed. The other half of this
-  # flow can be found in `Bandit.HTTP2.Adapter.send_resp/4` and friends
-  @spec recv_send_window_update(pid(), non_neg_integer()) :: :ok | :noconnect | :nosuspend
-  def recv_send_window_update(pid, delta), do: send(pid, {:send_window_update, delta})
-
-  # Let the stream process know that the client has set the end of stream flag. The other half of
-  # this flow can be found in `Bandit.HTTP2.Adapter.read_req_body/2`
-  @spec recv_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
-  def recv_end_of_stream(pid), do: send(pid, :end_stream)
-
-  # Let the stream process know that the client has reset the stream
-  @spec recv_rst_stream(pid(), Errors.error_code()) :: true
-  def recv_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
-
   @impl GenServer
   def init({stream_transport, plug, opts, connection_span}) do
     span =
@@ -68,10 +43,8 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   @impl GenServer
   def handle_continue(:start_stream, state) do
-    stream_transport = StreamTransport.start_stream(state.stream_transport)
-
     {:ok, method, request_target, headers, stream_transport} =
-      StreamTransport.recv_headers(stream_transport)
+      StreamTransport.recv_headers(state.stream_transport)
 
     adapter =
       {Bandit.HTTP2.Adapter,
@@ -105,7 +78,7 @@ defmodule Bandit.HTTP2.StreamProcess do
       request_target: error.request_target
     })
 
-    StreamTransport.send_rst_stream(state.stream_transport, error.error_code)
+    StreamTransport.close_stream(state.stream_transport, error.error_code)
   end
 
   def terminate({%Errors.ConnectionError{} = error, _stacktrace}, state) do
@@ -115,15 +88,11 @@ defmodule Bandit.HTTP2.StreamProcess do
       request_target: error.request_target
     })
 
-    StreamTransport.send_shutdown_connection(
-      state.stream_transport,
-      error.error_code,
-      error.message
-    )
+    StreamTransport.close_connection(state.stream_transport, error.error_code, error.message)
   end
 
   def terminate({exception, stacktrace}, state) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    StreamTransport.send_rst_stream(state.stream_transport, Errors.internal_error())
+    StreamTransport.close_stream(state.stream_transport, Errors.internal_error())
   end
 end

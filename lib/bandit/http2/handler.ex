@@ -65,14 +65,16 @@ defmodule Bandit.HTTP2.Handler do
     Connection.shutdown_connection(Errors.no_error(), "Client timeout", socket, state.connection)
   end
 
-  def handle_call({{:send_headers, headers, end_stream}, stream_id}, _from, {socket, state}) do
-    case Connection.send_headers(stream_id, headers, end_stream, socket, state.connection) do
-      {:ok, connection} ->
-        {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
+  @impl ThousandIsland.Handler
+  def handle_error({%Errors.ConnectionError{} = error, _stacktrace}, socket, state) do
+    Connection.shutdown_connection(error.error_code, error.message, socket, state.connection)
+  end
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, {socket, state}, socket.read_timeout}
-    end
+  def handle_call({{:send_headers, headers, end_stream}, stream_id}, _from, {socket, state}) do
+    {:ok, connection} =
+      Connection.send_headers(stream_id, headers, end_stream, socket, state.connection)
+
+    {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
@@ -90,13 +92,10 @@ defmodule Bandit.HTTP2.Handler do
     # window to do so.
     unblock = fn -> GenServer.reply(from, :ok) end
 
-    case Connection.send_data(stream_id, data, end_stream, unblock, socket, state.connection) do
-      {:ok, connection} ->
-        {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+    {:ok, connection} =
+      Connection.send_data(stream_id, data, end_stream, unblock, socket, state.connection)
 
-      {:error, reason} ->
-        {:reply, {:error, reason}, {socket, state}, socket.read_timeout}
-    end
+    {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 
   def handle_call({{:send_recv_window_update, size_increment}, stream_id}, _from, {socket, state}) do
@@ -116,8 +115,8 @@ defmodule Bandit.HTTP2.Handler do
     end
   end
 
-  def handle_info({:EXIT, pid, reason}, {socket, state}) do
-    {:ok, connection} = Connection.stream_terminated(pid, reason, state.connection)
+  def handle_info({:EXIT, pid, _reason}, {socket, state}) do
+    {:ok, connection} = Connection.stream_terminated(pid, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 end
