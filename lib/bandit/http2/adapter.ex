@@ -6,7 +6,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct stream_transport: nil,
+  defstruct stream: nil,
             owner_pid: nil,
             method: nil,
             content_encoding: nil,
@@ -16,7 +16,7 @@ defmodule Bandit.HTTP2.Adapter do
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
-          stream_transport: Bandit.HTTP2.StreamTransport.t(),
+          stream: Bandit.HTTP2.Stream.t(),
           owner_pid: pid() | nil,
           method: Plug.Conn.method() | nil,
           content_encoding: String.t() | nil,
@@ -25,7 +25,7 @@ defmodule Bandit.HTTP2.Adapter do
           opts: keyword()
         }
 
-  def init(stream_transport, method, headers, owner, opts) do
+  def init(stream, method, headers, owner, opts) do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
@@ -33,7 +33,7 @@ defmodule Bandit.HTTP2.Adapter do
       )
 
     %__MODULE__{
-      stream_transport: stream_transport,
+      stream: stream,
       method: method,
       owner_pid: owner,
       opts: opts,
@@ -52,21 +52,21 @@ defmodule Bandit.HTTP2.Adapter do
       adapter.metrics
       |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    case Bandit.HTTP2.StreamTransport.recv_body(adapter.stream_transport, length, timeout) do
-      {:ok, body, stream_transport} ->
+    case Bandit.HTTP2.Stream.recv_body(adapter.stream, length, timeout) do
+      {:ok, body, stream} ->
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
           |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
-        {:ok, body, %{adapter | stream_transport: stream_transport, metrics: metrics}}
+        {:ok, body, %{adapter | stream: stream, metrics: metrics}}
 
-      {:more, body, stream_transport} ->
+      {:more, body, stream} ->
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
 
-        {:more, body, %{adapter | stream_transport: stream_transport, metrics: metrics}}
+        {:more, body, %{adapter | stream: stream, metrics: metrics}}
     end
   end
 
@@ -139,7 +139,6 @@ defmodule Bandit.HTTP2.Adapter do
     %File.Stat{type: :regular, size: size} = File.stat!(path)
     length = if length == :all, do: size - offset, else: length
     headers = Bandit.Headers.add_content_length(headers, length, status)
-
     adapter = %{adapter | status: status}
 
     adapter =
@@ -177,7 +176,6 @@ defmodule Bandit.HTTP2.Adapter do
       end
 
     metrics = Map.put(adapter.metrics, :resp_end_time, Bandit.Telemetry.monotonic_time())
-
     {:ok, nil, %{adapter | metrics: metrics}}
   end
 
@@ -224,11 +222,8 @@ defmodule Bandit.HTTP2.Adapter do
     validate_calling_process!(adapter)
     headers = split_cookies(headers)
     headers = [{":status", to_string(status)} | headers]
-
-    stream_transport =
-      Bandit.HTTP2.StreamTransport.send_headers(adapter.stream_transport, headers, false)
-
-    {:ok, %{adapter | stream_transport: stream_transport}}
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, headers, false)
+    {:ok, %{adapter | stream: stream}}
   end
 
   @impl Plug.Conn.Adapter
@@ -238,7 +233,7 @@ defmodule Bandit.HTTP2.Adapter do
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(req), do: Bandit.TransportInfo.peer_data(req.stream_transport.transport_info)
+  def get_peer_data(req), do: Bandit.TransportInfo.peer_data(req.stream.transport_info)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
@@ -254,8 +249,6 @@ defmodule Bandit.HTTP2.Adapter do
       |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.monotonic_time/0)
       |> Map.put(:resp_body_bytes, 0)
 
-    headers = split_cookies(headers)
-
     headers =
       if is_nil(Bandit.Headers.get_header(headers, "date")) do
         [Bandit.Clock.date_header() | headers]
@@ -263,22 +256,15 @@ defmodule Bandit.HTTP2.Adapter do
         headers
       end
 
-    headers = [{":status", to_string(status)} | headers]
-
-    stream_transport =
-      Bandit.HTTP2.StreamTransport.send_headers(adapter.stream_transport, headers, end_stream)
-
-    %{adapter | stream_transport: stream_transport, metrics: metrics}
+    headers = [{":status", to_string(status)} | split_cookies(headers)]
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, headers, end_stream)
+    %{adapter | stream: stream, metrics: metrics}
   end
 
   defp send_data(adapter, data, end_stream) do
-    {bytes_sent, stream_transport} =
-      Bandit.HTTP2.StreamTransport.send_data(adapter.stream_transport, data, end_stream)
-
-    metrics =
-      adapter.metrics |> Map.update(:resp_body_bytes, bytes_sent, &(&1 + bytes_sent))
-
-    %{adapter | stream_transport: stream_transport, metrics: metrics}
+    {bytes_sent, stream} = Bandit.HTTP2.Stream.send_data(adapter.stream, data, end_stream)
+    metrics = adapter.metrics |> Map.update(:resp_body_bytes, bytes_sent, &(&1 + bytes_sent))
+    %{adapter | stream: stream, metrics: metrics}
   end
 
   defp split_cookies(headers) do

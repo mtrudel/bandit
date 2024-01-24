@@ -15,42 +15,41 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
-  alias Bandit.HTTP2.{Errors, StreamTransport}
+  alias Bandit.HTTP2.{Errors, Stream}
 
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
-          StreamTransport.t(),
+          Stream.t(),
           Bandit.Pipeline.plug_def(),
           keyword(),
           Bandit.Telemetry.t()
         ) :: GenServer.on_start()
-  def start_link(stream_transport, plug, opts, connection_span) do
-    GenServer.start_link(__MODULE__, {stream_transport, plug, opts, connection_span})
+  def start_link(stream, plug, opts, connection_span) do
+    GenServer.start_link(__MODULE__, {stream, plug, opts, connection_span})
   end
 
   @impl GenServer
-  def init({stream_transport, plug, opts, connection_span}) do
+  def init({stream, plug, opts, connection_span}) do
     span =
       Bandit.Telemetry.start_span(:request, %{}, %{
         connection_telemetry_span_context: connection_span.telemetry_span_context,
-        stream_id: stream_transport.stream_id
+        stream_id: stream.stream_id
       })
 
-    {:ok, %{stream_transport: stream_transport, plug: plug, opts: opts, span: span},
-     {:continue, :start_stream}}
+    {:ok, %{stream: stream, plug: plug, opts: opts, span: span}, {:continue, :start_stream}}
   end
 
   @impl GenServer
   def handle_continue(:start_stream, state) do
-    {:ok, method, request_target, headers, stream_transport} =
-      StreamTransport.recv_headers(state.stream_transport)
+    {:ok, method, request_target, headers, stream} =
+      Stream.recv_headers(state.stream)
 
     adapter =
       {Bandit.HTTP2.Adapter,
-       Bandit.HTTP2.Adapter.init(stream_transport, method, headers, self(), state.opts)}
+       Bandit.HTTP2.Adapter.init(stream, method, headers, self(), state.opts)}
 
-    transport_info = state.stream_transport.transport_info
+    transport_info = state.stream.transport_info
 
     case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, state.plug) do
       {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} ->
@@ -61,7 +60,7 @@ defmodule Bandit.HTTP2.StreamProcess do
           status: conn.status
         })
 
-        {:stop, :normal, %{state | stream_transport: req.stream_transport}}
+        {:stop, :normal, %{state | stream: req.stream}}
 
       {:error, reason} ->
         raise Errors.StreamError, message: reason, error_code: Errors.internal_error()
@@ -78,7 +77,7 @@ defmodule Bandit.HTTP2.StreamProcess do
       request_target: error.request_target
     })
 
-    StreamTransport.close_stream(state.stream_transport, error.error_code)
+    Stream.close_stream(state.stream, error.error_code)
   end
 
   def terminate({%Errors.ConnectionError{} = error, _stacktrace}, state) do
@@ -88,11 +87,11 @@ defmodule Bandit.HTTP2.StreamProcess do
       request_target: error.request_target
     })
 
-    StreamTransport.close_connection(state.stream_transport, error.error_code, error.message)
+    Stream.close_connection(state.stream, error.error_code, error.message)
   end
 
   def terminate({exception, stacktrace}, state) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    StreamTransport.close_stream(state.stream_transport, Errors.internal_error())
+    Stream.close_stream(state.stream, Errors.internal_error())
   end
 end

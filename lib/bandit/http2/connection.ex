@@ -12,9 +12,9 @@ defmodule Bandit.HTTP2.Connection do
     FlowControl,
     Frame,
     Settings,
+    Stream,
     StreamCollection,
-    StreamProcess,
-    StreamTransport
+    StreamProcess
   }
 
   defstruct local_settings: %Settings{},
@@ -96,9 +96,9 @@ defmodule Bandit.HTTP2.Connection do
 
     streams =
       with_stream(connection, 1, fn stream ->
-        StreamTransport.deliver_headers(stream, headers)
-        StreamTransport.deliver_data(stream, data)
-        StreamTransport.deliver_end_of_stream(stream)
+        Stream.deliver_headers(stream, headers)
+        Stream.deliver_data(stream, data)
+        Stream.deliver_end_of_stream(stream)
       end)
 
     {:ok, %{connection | streams: streams}}
@@ -149,7 +149,7 @@ defmodule Bandit.HTTP2.Connection do
     delta = frame.settings.initial_window_size - connection.remote_settings.initial_window_size
 
     StreamCollection.get_pids(connection.streams)
-    |> Enum.each(&StreamTransport.deliver_send_window_update(&1, delta))
+    |> Enum.each(&Stream.deliver_send_window_update(&1, delta))
 
     do_pending_sends(socket, %{
       connection
@@ -185,7 +185,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.WindowUpdate{} = frame, _socket, connection) do
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
-        StreamTransport.deliver_send_window_update(stream, frame.size_increment)
+        Stream.deliver_send_window_update(stream, frame.size_increment)
       end)
 
     {:continue, %{connection | streams: streams}}
@@ -196,8 +196,8 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, headers, recv_hpack_state} ->
         streams =
           with_stream(connection, frame.stream_id, fn stream ->
-            StreamTransport.deliver_headers(stream, headers)
-            if frame.end_stream, do: StreamTransport.deliver_end_of_stream(stream)
+            Stream.deliver_headers(stream, headers)
+            if frame.end_stream, do: Stream.deliver_end_of_stream(stream)
           end)
 
         {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
@@ -218,8 +218,8 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.Data{} = frame, socket, connection) do
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
-        StreamTransport.deliver_data(stream, frame.data)
-        if frame.end_stream, do: StreamTransport.deliver_end_of_stream(stream)
+        Stream.deliver_data(stream, frame.data)
+        if frame.end_stream, do: Stream.deliver_end_of_stream(stream)
       end)
 
     {recv_window_size, window_increment} =
@@ -241,7 +241,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Frame.RstStream{} = frame, _socket, connection) do
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
-        StreamTransport.deliver_rst_stream(stream, frame.error_code)
+        Stream.deliver_rst_stream(stream, frame.error_code)
       end)
 
     {:continue, %{connection | streams: streams}}
@@ -262,8 +262,8 @@ defmodule Bandit.HTTP2.Connection do
 
       :new ->
         if accept_stream?(connection) do
-          stream_process =
-            StreamTransport.new(
+          stream =
+            Stream.init(
               self(),
               stream_id,
               connection.remote_settings.initial_window_size,
@@ -271,7 +271,7 @@ defmodule Bandit.HTTP2.Connection do
             )
 
           case StreamProcess.start_link(
-                 stream_process,
+                 stream,
                  connection.plug,
                  connection.opts,
                  connection.telemetry_span
