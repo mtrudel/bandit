@@ -1547,6 +1547,28 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "RST_STREAM frames" do
+    test "sends RST_FRAME with no error if stream task ends with an unclosed client", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Send headers with end_stream bit cleared
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/body_response", context.port)
+      SimpleH2Client.recv_headers(socket)
+      SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "does not send an RST_FRAME if stream task ends with a closed client", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
+      SimpleH2Client.recv_headers(socket)
+      SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+    end
+
     @tag capture_log: true
     test "sends RST_FRAME with error if stream task crashes", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -1565,6 +1587,50 @@ defmodule HTTP2ProtocolTest do
       |> chunk("OK")
 
       raise "boom"
+    end
+
+    @tag capture_log: true
+    test "sends RST_FRAME with internal error if we don't set a response with a closed client",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_response_get", context.port)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "Terminating stream in remote_closed state"
+    end
+
+    def no_response_get(conn) do
+      # Ensure we pick up any end_streams that were sent
+      {:ok, _, conn} = read_body(conn)
+      # We need to manually muck with the Conn to act as if we've already sent a response since we
+      # otherwise send an empty response if the user's plug does not
+      %{conn | state: :sent}
+    end
+
+    @tag capture_log: true
+    test "sends RST_FRAME with internal error if we don't set a response with an open client",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_response_post", context.port)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "Terminating stream in open state"
+    end
+
+    def no_response_post(conn) do
+      # We need to manually muck with the Conn to act as if we've already sent a response since we
+      # otherwise send an empty response if the user's plug does not
+      %{conn | state: :sent}
     end
 
     @tag capture_log: true

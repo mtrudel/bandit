@@ -413,9 +413,24 @@ defmodule Bandit.HTTP2.Stream do
 
   # Helpers
 
-  def close_stream(%__MODULE__{state: :closed} = stream, _error_code), do: stream
+  def ensure_completed(%__MODULE__{state: :closed} = stream), do: stream
 
-  def close_stream(%__MODULE__{} = stream, error_code) do
+  def ensure_completed(%__MODULE__{state: :local_closed} = stream) do
+    receive do
+      :end_stream -> do_recv_end_stream(stream)
+    after
+      # RFC9113§8.1 - hint the client to stop sending data
+      0 -> reset_stream(stream, Bandit.HTTP2.Errors.no_error())
+    end
+  end
+
+  def ensure_completed(%__MODULE__{state: state}) do
+    stream_error!("Terminating stream in #{state} state", Bandit.HTTP2.Errors.internal_error())
+  end
+
+  def reset_stream(%__MODULE__{state: :closed} = stream, _error_code), do: stream
+
+  def reset_stream(%__MODULE__{} = stream, error_code) do
     call(stream, {:send_rst_stream, error_code})
     %{stream | state: :closed}
   end

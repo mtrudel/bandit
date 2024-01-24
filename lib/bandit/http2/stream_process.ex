@@ -51,6 +51,8 @@ defmodule Bandit.HTTP2.StreamProcess do
 
     case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, state.plug) do
       {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, req}} = conn} ->
+        stream = Bandit.HTTP2.Stream.ensure_completed(req.stream)
+
         Bandit.Telemetry.stop_span(state.span, req.metrics, %{
           conn: conn,
           method: method,
@@ -58,7 +60,7 @@ defmodule Bandit.HTTP2.StreamProcess do
           status: conn.status
         })
 
-        {:stop, :normal, %{state | stream: req.stream}}
+        {:stop, :normal, %{state | stream: stream}}
 
       {:error, reason} ->
         raise Bandit.HTTP2.Errors.StreamError,
@@ -77,7 +79,7 @@ defmodule Bandit.HTTP2.StreamProcess do
       request_target: error.request_target
     })
 
-    Bandit.HTTP2.Stream.close_stream(state.stream, error.error_code)
+    Bandit.HTTP2.Stream.reset_stream(state.stream, error.error_code)
   end
 
   def terminate({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, state) do
@@ -92,6 +94,6 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   def terminate({exception, stacktrace}, state) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    Bandit.HTTP2.Stream.close_stream(state.stream, Bandit.HTTP2.Errors.internal_error())
+    Bandit.HTTP2.Stream.reset_stream(state.stream, Bandit.HTTP2.Errors.internal_error())
   end
 end
