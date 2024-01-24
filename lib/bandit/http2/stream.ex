@@ -27,6 +27,9 @@ defmodule Bandit.HTTP2.Stream do
             transport_info: nil,
             read_timeout: 15_000
 
+  @typedoc "An HTTP/2 stream identifier"
+  @type stream_id :: non_neg_integer()
+
   @typedoc "An HTTP/2 stream state"
   @type state :: :idle | :open | :local_closed | :remote_closed | :closed
 

@@ -9,12 +9,10 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame}
-
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
     with {:ok, connection} <-
-           Connection.init(
+           Bandit.HTTP2.Connection.init(
              socket,
              state.plug,
              state.opts.http_2,
@@ -28,10 +26,12 @@ defmodule Bandit.HTTP2.Handler do
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     (state.buffer <> data)
-    |> Stream.unfold(&Frame.deserialize(&1, state.connection.local_settings.max_frame_size))
+    |> Stream.unfold(
+      &Bandit.HTTP2.Frame.deserialize(&1, state.connection.local_settings.max_frame_size)
+    )
     |> Enum.reduce_while({:continue, state}, fn
       {:ok, frame}, {:continue, state} ->
-        case Connection.handle_frame(frame, socket, state.connection) do
+        case Bandit.HTTP2.Connection.handle_frame(frame, socket, state.connection) do
           {:continue, connection} ->
             {:cont, {:continue, %{state | connection: connection, buffer: <<>>}}}
 
@@ -48,7 +48,7 @@ defmodule Bandit.HTTP2.Handler do
       {:error, {:connection, code, reason}}, {:continue, state} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
-        case Connection.shutdown_connection(code, reason, socket, state.connection) do
+        case Bandit.HTTP2.Connection.shutdown_connection(code, reason, socket, state.connection) do
           {:error, reason, connection} ->
             {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
         end
@@ -57,22 +57,43 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_shutdown(socket, state) do
-    Connection.shutdown_connection(Errors.no_error(), "Server shutdown", socket, state.connection)
+    Bandit.HTTP2.Connection.shutdown_connection(
+      Bandit.HTTP2.Errors.no_error(),
+      "Server shutdown",
+      socket,
+      state.connection
+    )
   end
 
   @impl ThousandIsland.Handler
   def handle_timeout(socket, state) do
-    Connection.shutdown_connection(Errors.no_error(), "Client timeout", socket, state.connection)
+    Bandit.HTTP2.Connection.shutdown_connection(
+      Bandit.HTTP2.Errors.no_error(),
+      "Client timeout",
+      socket,
+      state.connection
+    )
   end
 
   @impl ThousandIsland.Handler
-  def handle_error({%Errors.ConnectionError{} = error, _stacktrace}, socket, state) do
-    Connection.shutdown_connection(error.error_code, error.message, socket, state.connection)
+  def handle_error({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, socket, state) do
+    Bandit.HTTP2.Connection.shutdown_connection(
+      error.error_code,
+      error.message,
+      socket,
+      state.connection
+    )
   end
 
   def handle_call({{:send_headers, headers, end_stream}, stream_id}, _from, {socket, state}) do
     {:ok, connection} =
-      Connection.send_headers(stream_id, headers, end_stream, socket, state.connection)
+      Bandit.HTTP2.Connection.send_headers(
+        stream_id,
+        headers,
+        end_stream,
+        socket,
+        state.connection
+      )
 
     {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
@@ -93,30 +114,43 @@ defmodule Bandit.HTTP2.Handler do
     unblock = fn -> GenServer.reply(from, :ok) end
 
     {:ok, connection} =
-      Connection.send_data(stream_id, data, end_stream, unblock, socket, state.connection)
+      Bandit.HTTP2.Connection.send_data(
+        stream_id,
+        data,
+        end_stream,
+        unblock,
+        socket,
+        state.connection
+      )
 
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 
   def handle_call({{:send_recv_window_update, size_increment}, stream_id}, _from, {socket, state}) do
-    Connection.send_recv_window_update(stream_id, size_increment, socket, state.connection)
+    Bandit.HTTP2.Connection.send_recv_window_update(
+      stream_id,
+      size_increment,
+      socket,
+      state.connection
+    )
+
     {:reply, :ok, {socket, state}, socket.read_timeout}
   end
 
   def handle_call({{:send_rst_stream, error_code}, stream_id}, _from, {socket, state}) do
-    Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
+    Bandit.HTTP2.Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
     {:reply, :ok, {socket, state}, socket.read_timeout}
   end
 
   def handle_call({{:shutdown_connection, error_code, msg}, _stream_id}, _from, {socket, state}) do
-    case Connection.shutdown_connection(error_code, msg, socket, state.connection) do
+    case Bandit.HTTP2.Connection.shutdown_connection(error_code, msg, socket, state.connection) do
       {:close, _connection} -> {:stop, :normal, {socket, state}}
       {:error, reason, _connection} -> {:stop, reason, {socket, state}}
     end
   end
 
   def handle_info({:EXIT, pid, _reason}, {socket, state}) do
-    {:ok, connection} = Connection.stream_terminated(pid, state.connection)
+    {:ok, connection} = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 end

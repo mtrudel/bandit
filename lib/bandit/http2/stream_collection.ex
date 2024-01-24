@@ -13,21 +13,18 @@ defmodule Bandit.HTTP2.StreamCollection do
             id_to_pid: %{},
             pid_to_id: %{}
 
-  @typedoc "An HTTP/2 stream identifier"
-  @type stream_id :: non_neg_integer()
-
   @typedoc "A map from stream id to pid"
   @type t :: %__MODULE__{
-          last_stream_id: stream_id(),
+          last_stream_id: Bandit.HTTP2.Stream.stream_id(),
           stream_count: non_neg_integer(),
-          id_to_pid: %{stream_id() => pid()},
-          pid_to_id: %{stream_id() => pid()}
+          id_to_pid: %{Bandit.HTTP2.Stream.stream_id() => pid()},
+          pid_to_id: %{Bandit.HTTP2.Stream.stream_id() => pid()}
         }
 
   @spec get_pids(t()) :: [pid()]
   def get_pids(collection), do: Map.values(collection.id_to_pid)
 
-  @spec get_pid(t(), stream_id()) :: pid() | :new | :closed | :invalid
+  @spec get_pid(t(), Bandit.HTTP2.Stream.stream_id()) :: pid() | :new | :closed | :invalid
   def get_pid(_collection, stream_id) when Integer.is_even(stream_id), do: :invalid
   def get_pid(collection, stream_id) when stream_id > collection.last_stream_id, do: :new
 
@@ -38,7 +35,7 @@ defmodule Bandit.HTTP2.StreamCollection do
     end
   end
 
-  @spec insert(t(), stream_id(), pid()) :: t()
+  @spec insert(t(), Bandit.HTTP2.Stream.stream_id(), pid()) :: t()
   def insert(collection, stream_id, pid) do
     %__MODULE__{
       last_stream_id: stream_id,
@@ -67,6 +64,6 @@ defmodule Bandit.HTTP2.StreamCollection do
   @spec stream_count(t()) :: non_neg_integer()
   def stream_count(collection), do: collection.stream_count
 
-  @spec last_stream_id(t()) :: non_neg_integer()
+  @spec last_stream_id(t()) :: Bandit.HTTP2.Stream.stream_id()
   def last_stream_id(collection), do: collection.last_stream_id
 end

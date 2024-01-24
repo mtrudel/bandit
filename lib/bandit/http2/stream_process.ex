@@ -15,12 +15,10 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
-  alias Bandit.HTTP2.{Errors, Stream}
-
   # A stream process can be created only once we have an adapter & set of headers. Pass them in
   # at creation time to ensure this invariant
   @spec start_link(
-          Stream.t(),
+          Bandit.HTTP2.Stream.t(),
           Bandit.Pipeline.plug_def(),
           keyword(),
           Bandit.Telemetry.t()
@@ -43,7 +41,7 @@ defmodule Bandit.HTTP2.StreamProcess do
   @impl GenServer
   def handle_continue(:start_stream, state) do
     {:ok, method, request_target, headers, stream} =
-      Stream.recv_headers(state.stream)
+      Bandit.HTTP2.Stream.recv_headers(state.stream)
 
     adapter =
       {Bandit.HTTP2.Adapter,
@@ -63,35 +61,37 @@ defmodule Bandit.HTTP2.StreamProcess do
         {:stop, :normal, %{state | stream: req.stream}}
 
       {:error, reason} ->
-        raise Errors.StreamError, message: reason, error_code: Errors.internal_error()
+        raise Bandit.HTTP2.Errors.StreamError,
+          message: reason,
+          error_code: Bandit.HTTP2.Errors.internal_error()
     end
   end
 
   @impl GenServer
   def terminate(:normal, _state), do: :ok
 
-  def terminate({%Errors.StreamError{} = error, _stacktrace}, state) do
+  def terminate({%Bandit.HTTP2.Errors.StreamError{} = error, _stacktrace}, state) do
     Bandit.Telemetry.stop_span(state.span, %{}, %{
       error: error.message,
       method: error.method,
       request_target: error.request_target
     })
 
-    Stream.close_stream(state.stream, error.error_code)
+    Bandit.HTTP2.Stream.close_stream(state.stream, error.error_code)
   end
 
-  def terminate({%Errors.ConnectionError{} = error, _stacktrace}, state) do
+  def terminate({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, state) do
     Bandit.Telemetry.stop_span(state.span, %{}, %{
       error: error.message,
       method: error.method,
       request_target: error.request_target
     })
 
-    Stream.close_connection(state.stream, error.error_code, error.message)
+    Bandit.HTTP2.Stream.close_connection(state.stream, error.error_code, error.message)
   end
 
   def terminate({exception, stacktrace}, state) do
     Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    Stream.close_stream(state.stream, Errors.internal_error())
+    Bandit.HTTP2.Stream.close_stream(state.stream, Bandit.HTTP2.Errors.internal_error())
   end
 end
