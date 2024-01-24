@@ -309,7 +309,7 @@ defmodule Bandit.HTTP2.Stream do
     {new_window, increment} =
       Bandit.HTTP2.FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
 
-    if increment > 0, do: call(stream, {:send_recv_window_update, increment})
+    if increment > 0, do: do_send(stream, {:send_recv_window_update, increment})
 
     bytes_remaining =
       case stream.bytes_remaining do
@@ -351,7 +351,7 @@ defmodule Bandit.HTTP2.Stream do
 
   def send_headers(%__MODULE__{state: state} = stream, headers, end_stream)
       when state in [:open, :remote_closed] do
-    call(stream, {:send_headers, headers, end_stream})
+    do_send(stream, {:send_headers, headers, end_stream})
     set_state_on_send_end_stream(stream, end_stream)
   end
 
@@ -431,14 +431,16 @@ defmodule Bandit.HTTP2.Stream do
   def reset_stream(%__MODULE__{state: :closed} = stream, _error_code), do: stream
 
   def reset_stream(%__MODULE__{} = stream, error_code) do
-    call(stream, {:send_rst_stream, error_code})
+    do_send(stream, {:send_rst_stream, error_code})
     %{stream | state: :closed}
   end
 
   def close_connection(%__MODULE__{} = stream, error_code, msg),
-    do: call(stream, {:shutdown_connection, error_code, msg})
+    do: do_send(stream, {:shutdown_connection, error_code, msg})
 
-  defp call(stream, msg, timeout \\ 5000),
+  defp do_send(stream, msg), do: send(stream.connection_pid, {msg, stream.stream_id})
+
+  defp call(stream, msg, timeout),
     do: GenServer.call(stream.connection_pid, {msg, stream.stream_id}, timeout)
 
   @spec stream_error!(term()) :: no_return()

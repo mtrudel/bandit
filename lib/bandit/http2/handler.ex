@@ -85,19 +85,6 @@ defmodule Bandit.HTTP2.Handler do
     )
   end
 
-  def handle_call({{:send_headers, headers, end_stream}, stream_id}, _from, {socket, state}) do
-    {:ok, connection} =
-      Bandit.HTTP2.Connection.send_headers(
-        stream_id,
-        headers,
-        end_stream,
-        socket,
-        state.connection
-      )
-
-    {:reply, :ok, {socket, %{state | connection: connection}}, socket.read_timeout}
-  end
-
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
@@ -126,7 +113,20 @@ defmodule Bandit.HTTP2.Handler do
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 
-  def handle_call({{:send_recv_window_update, size_increment}, stream_id}, _from, {socket, state}) do
+  def handle_info({{:send_headers, headers, end_stream}, stream_id}, {socket, state}) do
+    {:ok, connection} =
+      Bandit.HTTP2.Connection.send_headers(
+        stream_id,
+        headers,
+        end_stream,
+        socket,
+        state.connection
+      )
+
+    {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+  end
+
+  def handle_info({{:send_recv_window_update, size_increment}, stream_id}, {socket, state}) do
     Bandit.HTTP2.Connection.send_recv_window_update(
       stream_id,
       size_increment,
@@ -134,15 +134,15 @@ defmodule Bandit.HTTP2.Handler do
       state.connection
     )
 
-    {:reply, :ok, {socket, state}, socket.read_timeout}
+    {:noreply, {socket, state}, socket.read_timeout}
   end
 
-  def handle_call({{:send_rst_stream, error_code}, stream_id}, _from, {socket, state}) do
+  def handle_info({{:send_rst_stream, error_code}, stream_id}, {socket, state}) do
     Bandit.HTTP2.Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
-    {:reply, :ok, {socket, state}, socket.read_timeout}
+    {:noreply, {socket, state}, socket.read_timeout}
   end
 
-  def handle_call({{:shutdown_connection, error_code, msg}, _stream_id}, _from, {socket, state}) do
+  def handle_info({{:shutdown_connection, error_code, msg}, _stream_id}, {socket, state}) do
     case Bandit.HTTP2.Connection.shutdown_connection(error_code, msg, socket, state.connection) do
       {:close, _connection} -> {:stop, :normal, {socket, state}}
       {:error, reason, _connection} -> {:stop, reason, {socket, state}}
