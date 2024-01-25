@@ -406,11 +406,9 @@ defmodule Bandit.HTTP2.Connection do
     %Bandit.HTTP2.Frame.Goaway{last_stream_id: last_stream_id, error_code: error_code}
     |> send_frame(socket, connection)
 
-    if error_code == Bandit.HTTP2.Errors.no_error() do
-      {:close, connection}
-    else
-      {:error, reason, connection}
-    end
+    if error_code == Bandit.HTTP2.Errors.no_error(),
+      do: {:close, connection},
+      else: {:error, reason, connection}
   end
 
   @spec connection_error!(term()) :: no_return()
