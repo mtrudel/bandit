@@ -49,8 +49,7 @@ defmodule Bandit.HTTP2.Connection do
           keyword(),
           initial_request() | nil,
           Bandit.HTTP2.Settings.t() | nil
-        ) ::
-          {:ok, t()}
+        ) :: t()
   def init(socket, plug, opts, initial_request \\ nil, remote_settings \\ nil) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
@@ -73,14 +72,14 @@ defmodule Bandit.HTTP2.Connection do
       %Bandit.HTTP2.Frame.Settings{ack: false, settings: connection.local_settings}
       |> send_frame(socket, connection)
 
-    if is_nil(initial_request) do
-      {:ok, connection}
+    if initial_request do
+      handle_initial_request(initial_request, connection)
     else
-      handle_initial_request(initial_request, socket, connection)
+      connection
     end
   end
 
-  defp handle_initial_request({method, request_target, headers, data}, _socket, connection) do
+  defp handle_initial_request({method, request_target, headers, data}, connection) do
     {_, _, _, path} = request_target
     headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
 
@@ -90,15 +89,14 @@ defmodule Bandit.HTTP2.Connection do
         Bandit.HTTP2.Stream.deliver_data(stream, data, true)
       end)
 
-    {:ok, %{connection | streams: streams}}
+    %{connection | streams: streams}
   end
 
   #
   # Receiving while expecting CONTINUATION frames is a special case (RFC9113§6.10); handle it first
   #
 
-  @spec handle_frame(Bandit.HTTP2.Frame.frame(), ThousandIsland.Socket.t(), t()) ::
-          ThousandIsland.Handler.handler_result()
+  @spec handle_frame(Bandit.HTTP2.Frame.frame(), ThousandIsland.Socket.t(), t()) :: t()
   def handle_frame(
         %Bandit.HTTP2.Frame.Continuation{end_headers: true, stream_id: stream_id} = frame,
         socket,
@@ -118,7 +116,7 @@ defmodule Bandit.HTTP2.Connection do
       ) do
     header_block = connection.fragment_frame.fragment <> frame.fragment
     header_frame = %{connection.fragment_frame | fragment: header_block}
-    {:continue, %{connection | fragment_frame: header_frame}}
+    %{connection | fragment_frame: header_frame}
   end
 
   def handle_frame(_frame, _socket, %__MODULE__{fragment_frame: %Bandit.HTTP2.Frame.Headers{}}) do
@@ -129,9 +127,7 @@ defmodule Bandit.HTTP2.Connection do
   # Connection-level receiving
   #
 
-  def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: true}, _socket, connection) do
-    {:continue, connection}
-  end
+  def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: true}, _socket, connection), do: connection
 
   def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, socket, connection) do
     _ = %Bandit.HTTP2.Frame.Settings{ack: true} |> send_frame(socket, connection)
@@ -150,21 +146,17 @@ defmodule Bandit.HTTP2.Connection do
     })
   end
 
-  def handle_frame(%Bandit.HTTP2.Frame.Ping{ack: true}, _socket, connection) do
-    {:continue, connection}
-  end
+  def handle_frame(%Bandit.HTTP2.Frame.Ping{ack: true}, _socket, connection), do: connection
 
   def handle_frame(%Bandit.HTTP2.Frame.Ping{ack: false} = frame, socket, connection) do
     _ =
       %Bandit.HTTP2.Frame.Ping{ack: true, payload: frame.payload}
       |> send_frame(socket, connection)
 
-    {:continue, connection}
+    connection
   end
 
-  def handle_frame(%Bandit.HTTP2.Frame.Goaway{}, socket, connection) do
-    shutdown_connection(Bandit.HTTP2.Errors.no_error(), "Received GOAWAY", socket, connection)
-  end
+  def handle_frame(%Bandit.HTTP2.Frame.Goaway{}, _socket, connection), do: connection
 
   def handle_frame(%Bandit.HTTP2.Frame.WindowUpdate{stream_id: 0} = frame, socket, connection) do
     case Bandit.HTTP2.FlowControl.update_send_window(
@@ -186,7 +178,7 @@ defmodule Bandit.HTTP2.Connection do
         Bandit.HTTP2.Stream.deliver_send_window_update(stream, frame.size_increment)
       end)
 
-    {:continue, %{connection | streams: streams}}
+    %{connection | streams: streams}
   end
 
   def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: true} = frame, _socket, connection) do
@@ -197,7 +189,7 @@ defmodule Bandit.HTTP2.Connection do
             Bandit.HTTP2.Stream.deliver_headers(stream, headers, frame.end_stream)
           end)
 
-        {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
+        %{connection | recv_hpack_state: recv_hpack_state, streams: streams}
 
       _ ->
         connection_error!("Header decode error", Bandit.HTTP2.Errors.compression_error())
@@ -205,7 +197,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: false} = frame, _socket, connection) do
-    {:continue, %{connection | fragment_frame: frame}}
+    %{connection | fragment_frame: frame}
   end
 
   def handle_frame(%Bandit.HTTP2.Frame.Continuation{}, _socket, _connection) do
@@ -230,12 +222,10 @@ defmodule Bandit.HTTP2.Connection do
         |> send_frame(socket, connection)
       end
 
-    {:continue, %{connection | recv_window_size: recv_window_size, streams: streams}}
+    %{connection | recv_window_size: recv_window_size, streams: streams}
   end
 
-  def handle_frame(%Bandit.HTTP2.Frame.Priority{}, _socket, connection) do
-    {:continue, connection}
-  end
+  def handle_frame(%Bandit.HTTP2.Frame.Priority{}, _socket, connection), do: connection
 
   def handle_frame(%Bandit.HTTP2.Frame.RstStream{} = frame, _socket, connection) do
     streams =
@@ -243,14 +233,14 @@ defmodule Bandit.HTTP2.Connection do
         Bandit.HTTP2.Stream.deliver_rst_stream(stream, frame.error_code)
       end)
 
-    {:continue, %{connection | streams: streams}}
+    %{connection | streams: streams}
   end
 
   # Catch-all handler for unknown frame types
 
   def handle_frame(%Bandit.HTTP2.Frame.Unknown{} = frame, _socket, connection) do
     Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})")
-    {:continue, connection}
+    connection
   end
 
   defp with_stream(connection, stream_id, fun) do
@@ -302,13 +292,10 @@ defmodule Bandit.HTTP2.Connection do
   defp do_pending_sends(socket, connection) do
     connection.pending_sends
     |> Enum.reverse()
-    |> Enum.reduce({:continue, connection}, fn pending_send, {:continue, connection} ->
+    |> Enum.reduce(connection, fn pending_send, connection ->
       connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
-
       {stream_id, rest, end_stream, on_unblock} = pending_send
-
-      {:ok, connection} = send_data(stream_id, rest, end_stream, on_unblock, socket, connection)
-      {:continue, connection}
+      send_data(stream_id, rest, end_stream, on_unblock, socket, connection)
     end)
   end
 
@@ -328,8 +315,7 @@ defmodule Bandit.HTTP2.Connection do
           boolean(),
           ThousandIsland.Socket.t(),
           t()
-        ) ::
-          {:ok, t()}
+        ) :: t()
   def send_headers(stream_id, headers, end_stream, socket, connection) do
     with enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
          {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state) do
@@ -341,7 +327,7 @@ defmodule Bandit.HTTP2.Connection do
         }
         |> send_frame(socket, connection)
 
-      {:ok, %{connection | send_hpack_state: send_hpack_state}}
+      %{connection | send_hpack_state: send_hpack_state}
     end
   end
 
@@ -352,8 +338,7 @@ defmodule Bandit.HTTP2.Connection do
           fun(),
           ThousandIsland.Socket.t(),
           t()
-        ) ::
-          {:ok, t()}
+        ) :: t()
   def send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
     with connection_window_size <- connection.send_window_size,
          max_bytes_to_send <- max(connection_window_size, 0),
@@ -372,10 +357,10 @@ defmodule Bandit.HTTP2.Connection do
 
       if byte_size(rest) == 0 do
         on_unblock.()
-        {:ok, connection}
+        connection
       else
         pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
-        {:ok, %{connection | pending_sends: pending_sends}}
+        %{connection | pending_sends: pending_sends}
       end
     end
   end
@@ -396,14 +381,10 @@ defmodule Bandit.HTTP2.Connection do
           non_neg_integer(),
           ThousandIsland.Socket.t(),
           t()
-        ) ::
-          :ok
+        ) :: term()
   def send_recv_window_update(stream_id, size_increment, socket, connection) do
-    _ =
-      %Bandit.HTTP2.Frame.WindowUpdate{stream_id: stream_id, size_increment: size_increment}
-      |> send_frame(socket, connection)
-
-    :ok
+    %Bandit.HTTP2.Frame.WindowUpdate{stream_id: stream_id, size_increment: size_increment}
+    |> send_frame(socket, connection)
   end
 
   @spec send_rst_stream(
@@ -411,18 +392,15 @@ defmodule Bandit.HTTP2.Connection do
           Bandit.HTTP2.Errors.error_code(),
           ThousandIsland.Socket.t(),
           t()
-        ) :: :ok
+        ) :: term()
   def send_rst_stream(stream_id, error_code, socket, connection) do
-    _ =
-      %Bandit.HTTP2.Frame.RstStream{stream_id: stream_id, error_code: error_code}
-      |> send_frame(socket, connection)
-
-    :ok
+    %Bandit.HTTP2.Frame.RstStream{stream_id: stream_id, error_code: error_code}
+    |> send_frame(socket, connection)
   end
 
-  @spec stream_terminated(pid(), t()) :: {:ok, t()}
+  @spec stream_terminated(pid(), t()) :: t()
   def stream_terminated(pid, connection) do
-    {:ok, %{connection | streams: Bandit.HTTP2.StreamCollection.delete(connection.streams, pid)}}
+    %{connection | streams: Bandit.HTTP2.StreamCollection.delete(connection.streams, pid)}
   end
 
   #

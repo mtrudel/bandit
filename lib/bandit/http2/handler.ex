@@ -11,16 +11,16 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    with {:ok, connection} <-
-           Bandit.HTTP2.Connection.init(
-             socket,
-             state.plug,
-             state.opts.http_2,
-             Map.get(state, :initial_request),
-             Map.get(state, :remote_settings)
-           ) do
-      {:continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
-    end
+    connection =
+      Bandit.HTTP2.Connection.init(
+        socket,
+        state.plug,
+        state.opts.http_2,
+        Map.get(state, :initial_request),
+        Map.get(state, :remote_settings)
+      )
+
+    {:continue, state |> Map.merge(%{buffer: <<>>, connection: connection})}
   end
 
   @impl ThousandIsland.Handler
@@ -29,30 +29,20 @@ defmodule Bandit.HTTP2.Handler do
     |> Stream.unfold(
       &Bandit.HTTP2.Frame.deserialize(&1, state.connection.local_settings.max_frame_size)
     )
-    |> Enum.reduce_while({:continue, state}, fn
-      {:ok, frame}, {:continue, state} ->
-        case Bandit.HTTP2.Connection.handle_frame(frame, socket, state.connection) do
-          {:continue, connection} ->
-            {:cont, {:continue, %{state | connection: connection, buffer: <<>>}}}
+    |> Enum.reduce_while(state, fn
+      {:ok, frame}, state ->
+        connection = Bandit.HTTP2.Connection.handle_frame(frame, socket, state.connection)
+        {:cont, %{state | connection: connection, buffer: <<>>}}
 
-          {:close, connection} ->
-            {:halt, {:close, %{state | connection: connection, buffer: <<>>}}}
+      {:more, rest}, state ->
+        {:halt, %{state | buffer: rest}}
 
-          {:error, reason, connection} ->
-            {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
-        end
-
-      {:more, rest}, {:continue, state} ->
-        {:halt, {:continue, %{state | buffer: rest}}}
-
-      {:error, {:connection, code, reason}}, {:continue, state} ->
+      {:error, {:connection, error_code, message}}, _state ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
-        case Bandit.HTTP2.Connection.shutdown_connection(code, reason, socket, state.connection) do
-          {:error, reason, connection} ->
-            {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
-        end
+        raise Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code
     end)
+    |> then(&{:continue, &1})
   end
 
   @impl ThousandIsland.Handler
@@ -100,7 +90,7 @@ defmodule Bandit.HTTP2.Handler do
     # window to do so.
     unblock = fn -> GenServer.reply(from, :ok) end
 
-    {:ok, connection} =
+    connection =
       Bandit.HTTP2.Connection.send_data(
         stream_id,
         data,
@@ -114,7 +104,7 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_info({{:send_headers, headers, end_stream}, stream_id}, {socket, state}) do
-    {:ok, connection} =
+    connection =
       Bandit.HTTP2.Connection.send_headers(
         stream_id,
         headers,
@@ -143,14 +133,14 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_info({{:shutdown_connection, error_code, msg}, _stream_id}, {socket, state}) do
-    case Bandit.HTTP2.Connection.shutdown_connection(error_code, msg, socket, state.connection) do
-      {:close, _connection} -> {:stop, :normal, {socket, state}}
-      {:error, reason, _connection} -> {:stop, reason, {socket, state}}
-    end
+    {:error, reason, connection} =
+      Bandit.HTTP2.Connection.shutdown_connection(error_code, msg, socket, state.connection)
+
+    {:stop, reason, {socket, %{state | connection: connection}}}
   end
 
   def handle_info({:EXIT, pid, _reason}, {socket, state}) do
-    {:ok, connection} = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
+    connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 end
