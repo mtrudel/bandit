@@ -184,12 +184,8 @@ defmodule Bandit.HTTP2.Stream do
 
   # RFC9113§8.3.1 - method, scheme, path pseudo headers must appear exactly once
   defp exactly_one_instance_of!(headers, header) do
-    headers
-    |> Enum.count(fn {key, _value} -> key == header end)
-    |> case do
-      1 -> :ok
-      _ -> stream_error!("Expected 1 #{header} headers")
-    end
+    if Enum.count(headers, fn {key, _value} -> key == header end) != 1,
+      do: stream_error!("Expected 1 #{header} headers")
   end
 
   # RFC9113§8.2 - all headers name fields must be lowercsae
@@ -226,7 +222,7 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
-  # Per RFC9113§8.2.3
+  # RFC9113§8.2.3 - cookie headers may be split during transmission
   defp combine_cookie_crumbs(headers) do
     {crumbs, other_headers} = headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
     combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
@@ -430,7 +426,7 @@ defmodule Bandit.HTTP2.Stream do
   defp set_state_on_send_end_stream(%__MODULE__{state: :remote_closed} = stream, true),
     do: %{stream | state: :closed}
 
-  # Helpers
+  # Closing off the stream upon completion or error
 
   def ensure_completed(%__MODULE__{state: :closed} = stream), do: stream
 
@@ -456,6 +452,8 @@ defmodule Bandit.HTTP2.Stream do
 
   def close_connection(%__MODULE__{} = stream, error_code, msg),
     do: do_send(stream, {:shutdown_connection, error_code, msg})
+
+  # Helpers
 
   defp do_send(stream, msg), do: send(stream.connection_pid, {msg, stream.stream_id})
 
