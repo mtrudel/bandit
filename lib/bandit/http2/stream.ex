@@ -1,19 +1,30 @@
 defmodule Bandit.HTTP2.Stream do
-  @moduledoc """
-  TODO
-  """
+  @moduledoc false
+  # Represents the state of an HTTP/2 stream, in a process-free manner. An instance of this
+  # struct is maintained as the state of a `Bandit.HTTP2.StreamProcess` process, and it moves an HTTP/2
+  # stream through its lifecycle by calling functions defined on this module. This state is also
+  # tracked within the `Bandit.HTTP2.Adapter` instance that backs Bandit's Plug API.
 
-  # We purposefully use raw `receive` message patterns in this module in order to facilitate an
-  # imperatively structured blocking interface as required by `Plug.Conn.Adapter`. This is very
-  # unconventional but also safe, so long as the receive patterns expressed below are extremely
-  # tight
+  # Functions on this module are also called internally by the `Bandit.HTTP2.Connection` within
+  # which this stream is contained; these functions allow the connection to pass messages into the
+  # stream as they are received from the client. These functions all begin with `deliver_*` by
+  # convention
+
+  # The `recv_*` and `send_*` functions defined on this module are meant to be called by the
+  # stream process itself. Within these functions, we purposefully use raw `receive` message
+  # patterns in order to facilitate a blocking interface as required by `Plug.Conn.Adapter`.
+  # This is unconventional (mostly since `Bandit.HTTP2.StreamProcess` is a `GenServer`), but also
+  # safe since we're careful about the types of messages we accept, and the state that the stream
+  # is in when we do so
 
   # We also use exceptions by convention here rather than error tuples since many
   # of these functions are called within Plug.Conn.Adapter calls, which makes it
   # difficult to properly unwind many error conditions back to a killed stream process
   # and a RstStream frame to the client. The pattern here is to raise exceptions,
-  # and have the StreamProcess' `terminate/2` callback take care of shutting down the stream with
-  # the luxury of a nicely unwound stack
+  # and have the `Bandit.HTTP2.StreamProcess`'s `terminate/2` callback take care of calling back
+  # into us via the `reset_stream/2` and `close_connection/2` functions here, with the luxury of
+  # a nicely unwound stack and a process that is guaranteed to be terminated as soon as these
+  # functions are called
 
   require Integer
   require Logger

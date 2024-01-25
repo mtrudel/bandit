@@ -2,7 +2,9 @@ defmodule Bandit.HTTP2.Adapter do
   @moduledoc false
   # Implements the Plug-facing `Plug.Conn.Adapter` behaviour. These functions provide the primary
   # mechanism for Plug applications to interact with a client, including functions to read the
-  # client body (if sent) and send response information back to the client.
+  # client body (if sent) and send response information back to the client. The concerns in this
+  # module are broadly about the semantics of HTTP in general, and less about transport-specific
+  # concerns; those are covered in `Bandit.HTTP2.Stream`
 
   @behaviour Plug.Conn.Adapter
 

@@ -1,17 +1,11 @@
 defmodule Bandit.HTTP2.StreamProcess do
   @moduledoc false
-  # This process is where an actual Plug is executed, within the context of an HTTP/2 stream. There
-  # is a bit of split responsibility between this module and the `Bandit.HTTP2.Adapter` module
-  # which merits explanation:
+  # This process runs the lifecycle of an HTTP/2 stream, which is modeled by a
+  # `Bandit.HTTP2.Stream` struct that this process maintains in its state
   #
-  # Broadly, this module is responsible for the execution of a Plug and does so within a GenServer
-  # handle_continue call. The entirety of a Plug lifecycle takes place in this single call.
-  #
-  # The 'connection-facing' API for sending data to a stream process is expressed on this module
-  # (via the `recv_*` functions) even though the 'other half' of those calls exists in the
-  # `Bandit.HTTP2.Adapter` module. As a result, this module and the Handler module are fairly
-  # tightly coupled, but together they express clear APIs towards both Plug applications and the
-  # rest of Bandit.
+  # As part of this lifecycle, the execution of a Plug to handle this stream's request
+  # takes place here; the entirety of the Plug lifecycle takes place in a single
+  # `c:handle_continue/2` call.
 
   use GenServer, restart: :temporary
 

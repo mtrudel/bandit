@@ -1,10 +1,16 @@
 defmodule Bandit.HTTP2.StreamCollection do
   @moduledoc false
-  # Represents a map from stream id to pid with some useful properties:
-  # * Accessible by stream id
-  # * Deletable by pid
-  # * Tracks streams not yet created & already closed
-  # * Tracks the number of streams created
+  # Represents a collection of stream IDs and what process IDs are running them. An instance of
+  # this struct is contained within each `Bandit.HTTP2.Connection` struct and is responsible for
+  # encapsulating the data about the streams which are currently active within the connection.
+  #
+  # This collection has a number of useful properties:
+  #
+  # * Process IDs are accessible by stream id
+  # * Process IDs are deletable by themselves (ie: deletion is via PID)
+  # * The collection is able to determine if a stream not currently contained in this collection
+  #   represents a previously seen stream (in which case it is considered to be in a 'closed'
+  #   state), or if it is a stream ID of a stream that has yet to be created
 
   require Integer
 
@@ -18,7 +24,7 @@ defmodule Bandit.HTTP2.StreamCollection do
           last_stream_id: Bandit.HTTP2.Stream.stream_id(),
           stream_count: non_neg_integer(),
           id_to_pid: %{Bandit.HTTP2.Stream.stream_id() => pid()},
-          pid_to_id: %{Bandit.HTTP2.Stream.stream_id() => pid()}
+          pid_to_id: %{pid() => Bandit.HTTP2.Stream.stream_id()}
         }
 
   @spec get_pids(t()) :: [pid()]

@@ -5,7 +5,7 @@ defmodule Bandit.HTTP2.Handler do
   #
   # * All socket-level sending and receiving from the client
   # * Coordinating the parsing of frames & attendant error handling
-  # * Tracking connection state as represented by `Bandit.HTTP2.Connection` structs
+  # * Tracking connection state as represented by a `Bandit.HTTP2.Connection` struct
 
   use ThousandIsland.Handler
 

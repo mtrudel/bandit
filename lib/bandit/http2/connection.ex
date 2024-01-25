@@ -1,6 +1,8 @@
 defmodule Bandit.HTTP2.Connection do
   @moduledoc false
-  # Represents the state of an HTTP/2 connection
+  # Represents the state of an HTTP/2 connection, in a process-free manner. An instance of this
+  # struct is maintained as the state of a `Bandit.HTTP2.Handler` process, and it moves an HTTP/2
+  # connection through its lifecycle by calling functions defined on this module
 
   require Logger
 
