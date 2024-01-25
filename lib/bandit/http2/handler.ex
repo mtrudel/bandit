@@ -37,7 +37,7 @@ defmodule Bandit.HTTP2.Handler do
       {:more, rest}, state ->
         {:halt, %{state | buffer: rest}}
 
-      {:error, {:connection, error_code, message}}, _state ->
+      {:error, error_code, message}, _state ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
         raise Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code

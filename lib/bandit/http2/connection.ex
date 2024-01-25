@@ -20,9 +20,6 @@ defmodule Bandit.HTTP2.Connection do
             plug: nil,
             opts: []
 
-  @typedoc "A description of a connection error"
-  @type error :: {:connection, Bandit.HTTP2.Errors.error_code(), String.t()}
-
   @type initial_request ::
           {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), binary()}
 

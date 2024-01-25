@@ -3,15 +3,13 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   import Bandit.HTTP2.Frame.Flags
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
-
   defstruct stream_id: nil,
             end_stream: false,
             data: nil
 
   @typedoc "An HTTP/2 DATA frame"
   @type t :: %__MODULE__{
-          stream_id: Stream.stream_id(),
+          stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
           data: iodata()
         }
@@ -19,11 +17,10 @@ defmodule Bandit.HTTP2.Frame.Data do
   @end_stream_bit 0
   @padding_bit 3
 
-  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
-          {:ok, t()} | {:error, Connection.error()}
+  @spec deserialize(Bandit.HTTP2.Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Bandit.HTTP2.Errors.error_code(), binary()}
   def deserialize(_flags, 0, _payload) do
-    {:error,
-     {:connection, Errors.protocol_error(), "DATA frame with zero stream_id (RFC9113§6.1)"}}
+    {:error, Bandit.HTTP2.Errors.protocol_error(), "DATA frame with zero stream_id (RFC9113§6.1)"}
   end
 
   def deserialize(flags, stream_id, <<padding_length::8, rest::binary>>)
@@ -47,17 +44,14 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   def deserialize(flags, _stream_id, <<_padding_length::8, _rest::binary>>)
       when set?(flags, @padding_bit) do
-    {:error,
-     {:connection, Errors.protocol_error(),
-      "DATA frame with invalid padding length (RFC9113§6.1)"}}
+    {:error, Bandit.HTTP2.Errors.protocol_error(),
+     "DATA frame with invalid padding length (RFC9113§6.1)"}
   end
 
-  defimpl Frame.Serializable do
-    alias Bandit.HTTP2.Frame.Data
-
+  defimpl Bandit.HTTP2.Frame.Serializable do
     @end_stream_bit 0
 
-    def serialize(%Data{} = frame, max_frame_size) do
+    def serialize(%Bandit.HTTP2.Frame.Data{} = frame, max_frame_size) do
       data_length = IO.iodata_length(frame.data)
 
       if data_length <= max_frame_size do
@@ -69,8 +63,8 @@ defmodule Bandit.HTTP2.Frame.Data do
 
         [
           {0x0, 0x00, frame.stream_id, this_frame}
-          | Frame.Serializable.serialize(
-              %Data{
+          | Bandit.HTTP2.Frame.Serializable.serialize(
+              %Bandit.HTTP2.Frame.Data{
                 stream_id: frame.stream_id,
                 end_stream: frame.end_stream,
                 data: rest
