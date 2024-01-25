@@ -41,6 +41,9 @@ defmodule Bandit.HTTP2.Stream do
   @typedoc "An HTTP/2 stream identifier"
   @type stream_id :: non_neg_integer()
 
+  @typedoc "A handle to a stream, suitable for passing to the `deliver_*` functions on this module"
+  @type stream_handle :: pid() | :closed
+
   @typedoc "An HTTP/2 stream state"
   @type state :: :idle | :open | :local_closed | :remote_closed | :closed
 
@@ -70,19 +73,24 @@ defmodule Bandit.HTTP2.Stream do
   # These functions are intended to be called by the connection process which contains this
   # stream. All of these start with `deliver_`
 
-  @spec deliver_headers(pid(), Plug.Conn.headers()) :: :ok | :noconnect | :nosuspend
+  @spec deliver_headers(stream_handle(), Plug.Conn.headers()) :: term()
+  def deliver_headers(:closed, _headers), do: :ok
   def deliver_headers(pid, headers), do: send(pid, {:headers, headers})
 
-  @spec deliver_data(pid(), iodata()) :: :ok | :noconnect | :nosuspend
+  @spec deliver_data(stream_handle(), iodata()) :: term()
+  def deliver_data(:closed, _data), do: :ok
   def deliver_data(pid, data), do: send(pid, {:data, data})
 
-  @spec deliver_send_window_update(pid(), non_neg_integer()) :: :ok | :noconnect | :nosuspend
+  @spec deliver_send_window_update(stream_handle(), non_neg_integer()) :: term()
+  def deliver_send_window_update(:closed, _delta), do: :ok
   def deliver_send_window_update(pid, delta), do: send(pid, {:send_window_update, delta})
 
-  @spec deliver_end_of_stream(pid()) :: :ok | :noconnect | :nosuspend
+  @spec deliver_end_of_stream(stream_handle()) :: term()
+  def deliver_end_of_stream(:closed), do: :ok
   def deliver_end_of_stream(pid), do: send(pid, :end_stream)
 
-  @spec deliver_rst_stream(pid(), Bandit.HTTP2.Errors.error_code()) :: true
+  @spec deliver_rst_stream(stream_handle(), Bandit.HTTP2.Errors.error_code()) :: term()
+  def deliver_rst_stream(:closed, _error_code), do: :ok
   def deliver_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
 
   # Stream API - Receiving

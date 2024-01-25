@@ -258,7 +258,7 @@ defmodule Bandit.HTTP2.Connection do
 
   defp with_stream(connection, stream_id, fun) do
     case Bandit.HTTP2.StreamCollection.get_pid(connection.streams, stream_id) do
-      pid when is_pid(pid) ->
+      pid when is_pid(pid) or pid == :closed ->
         fun.(pid)
         connection.streams
 
@@ -288,9 +288,6 @@ defmodule Bandit.HTTP2.Connection do
         else
           connection_error!("Connection count exceeded", Bandit.HTTP2.Errors.refused_stream())
         end
-
-      :closed ->
-        connection.streams
 
       :invalid ->
         connection_error!("Received invalid stream identifier")
