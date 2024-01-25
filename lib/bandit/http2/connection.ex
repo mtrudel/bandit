@@ -398,14 +398,9 @@ defmodule Bandit.HTTP2.Connection do
   # Helper functions
   #
 
-  @spec shutdown_connection(
-          Bandit.HTTP2.Errors.error_code(),
-          term(),
-          ThousandIsland.Socket.t(),
-          t()
-        ) ::
+  @spec close_connection(Bandit.HTTP2.Errors.error_code(), term(), ThousandIsland.Socket.t(), t()) ::
           {:close, t()} | {:error, term(), t()}
-  def shutdown_connection(error_code, reason, socket, connection) do
+  def close_connection(error_code, reason, socket, connection) do
     last_stream_id = Bandit.HTTP2.StreamCollection.last_stream_id(connection.streams)
 
     %Bandit.HTTP2.Frame.Goaway{last_stream_id: last_stream_id, error_code: error_code}

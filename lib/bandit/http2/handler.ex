@@ -47,7 +47,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_shutdown(socket, state) do
-    Bandit.HTTP2.Connection.shutdown_connection(
+    Bandit.HTTP2.Connection.close_connection(
       Bandit.HTTP2.Errors.no_error(),
       "Server shutdown",
       socket,
@@ -57,7 +57,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_timeout(socket, state) do
-    Bandit.HTTP2.Connection.shutdown_connection(
+    Bandit.HTTP2.Connection.close_connection(
       Bandit.HTTP2.Errors.no_error(),
       "Client timeout",
       socket,
@@ -67,7 +67,7 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_error({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, socket, state) do
-    Bandit.HTTP2.Connection.shutdown_connection(
+    Bandit.HTTP2.Connection.close_connection(
       error.error_code,
       error.message,
       socket,
@@ -132,9 +132,9 @@ defmodule Bandit.HTTP2.Handler do
     {:noreply, {socket, state}, socket.read_timeout}
   end
 
-  def handle_info({{:shutdown_connection, error_code, msg}, _stream_id}, {socket, state}) do
+  def handle_info({{:close_connection, error_code, msg}, _stream_id}, {socket, state}) do
     {:error, reason, connection} =
-      Bandit.HTTP2.Connection.shutdown_connection(error_code, msg, socket, state.connection)
+      Bandit.HTTP2.Connection.close_connection(error_code, msg, socket, state.connection)
 
     {:stop, reason, {socket, %{state | connection: connection}}}
   end

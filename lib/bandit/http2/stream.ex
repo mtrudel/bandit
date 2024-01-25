@@ -467,7 +467,7 @@ defmodule Bandit.HTTP2.Stream do
   end
 
   def close_connection(%__MODULE__{} = stream, error_code, msg),
-    do: do_send(stream, {:shutdown_connection, error_code, msg})
+    do: do_send(stream, {:close_connection, error_code, msg})
 
   # Helpers
 
