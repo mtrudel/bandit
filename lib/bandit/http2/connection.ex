@@ -86,9 +86,8 @@ defmodule Bandit.HTTP2.Connection do
 
     streams =
       with_stream(connection, 1, fn stream ->
-        Bandit.HTTP2.Stream.deliver_headers(stream, headers)
-        Bandit.HTTP2.Stream.deliver_data(stream, data)
-        Bandit.HTTP2.Stream.deliver_end_of_stream(stream)
+        Bandit.HTTP2.Stream.deliver_headers(stream, headers, false)
+        Bandit.HTTP2.Stream.deliver_data(stream, data, true)
       end)
 
     {:ok, %{connection | streams: streams}}
@@ -195,8 +194,7 @@ defmodule Bandit.HTTP2.Connection do
       {:ok, headers, recv_hpack_state} ->
         streams =
           with_stream(connection, frame.stream_id, fn stream ->
-            Bandit.HTTP2.Stream.deliver_headers(stream, headers)
-            if frame.end_stream, do: Bandit.HTTP2.Stream.deliver_end_of_stream(stream)
+            Bandit.HTTP2.Stream.deliver_headers(stream, headers, frame.end_stream)
           end)
 
         {:continue, %{connection | recv_hpack_state: recv_hpack_state, streams: streams}}
@@ -217,8 +215,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Bandit.HTTP2.Frame.Data{} = frame, socket, connection) do
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
-        Bandit.HTTP2.Stream.deliver_data(stream, frame.data)
-        if frame.end_stream, do: Bandit.HTTP2.Stream.deliver_end_of_stream(stream)
+        Bandit.HTTP2.Stream.deliver_data(stream, frame.data, frame.end_stream)
       end)
 
     {recv_window_size, window_increment} =

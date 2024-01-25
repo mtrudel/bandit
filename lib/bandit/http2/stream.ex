@@ -73,21 +73,17 @@ defmodule Bandit.HTTP2.Stream do
   # These functions are intended to be called by the connection process which contains this
   # stream. All of these start with `deliver_`
 
-  @spec deliver_headers(stream_handle(), Plug.Conn.headers()) :: term()
-  def deliver_headers(:closed, _headers), do: :ok
-  def deliver_headers(pid, headers), do: send(pid, {:headers, headers})
+  @spec deliver_headers(stream_handle(), Plug.Conn.headers(), boolean()) :: term()
+  def deliver_headers(:closed, _headers, _end_stream), do: :ok
+  def deliver_headers(pid, headers, end_stream), do: send(pid, {:headers, headers, end_stream})
 
-  @spec deliver_data(stream_handle(), iodata()) :: term()
-  def deliver_data(:closed, _data), do: :ok
-  def deliver_data(pid, data), do: send(pid, {:data, data})
+  @spec deliver_data(stream_handle(), iodata(), boolean()) :: term()
+  def deliver_data(:closed, _data, _end_stream), do: :ok
+  def deliver_data(pid, data, end_stream), do: send(pid, {:data, data, end_stream})
 
   @spec deliver_send_window_update(stream_handle(), non_neg_integer()) :: term()
   def deliver_send_window_update(:closed, _delta), do: :ok
   def deliver_send_window_update(pid, delta), do: send(pid, {:send_window_update, delta})
-
-  @spec deliver_end_of_stream(stream_handle()) :: term()
-  def deliver_end_of_stream(:closed), do: :ok
-  def deliver_end_of_stream(pid), do: send(pid, :end_stream)
 
   @spec deliver_rst_stream(stream_handle(), Bandit.HTTP2.Errors.error_code()) :: term()
   def deliver_rst_stream(:closed, _error_code), do: :ok
@@ -112,7 +108,7 @@ defmodule Bandit.HTTP2.Stream do
           valid_te_header!(headers)
           content_length = get_content_length!(headers)
           headers = combine_cookie_crumbs(headers)
-          stream = %{stream | bytes_remaining: content_length, state: :open}
+          stream = %{stream | bytes_remaining: content_length}
           {:ok, method, request_target, headers, stream}
         rescue
           exception ->
@@ -249,9 +245,6 @@ defmodule Bandit.HTTP2.Stream do
           {:more, finalize_body(acc), stream}
         end
 
-      {:end_stream, stream} ->
-        {:ok, finalize_body(acc), stream}
-
       :timeout ->
         {:more, finalize_body(acc), stream}
 
@@ -273,11 +266,17 @@ defmodule Bandit.HTTP2.Stream do
 
   defp do_recv(%__MODULE__{state: :idle} = stream, timeout) do
     receive do
-      {:headers, headers} -> {:headers, headers, %{stream | state: :open}}
-      {:data, _data} -> connection_error!("Received DATA in idle state")
-      :end_stream -> connection_error!("Received END_STREAM in idle state")
-      {:send_window_update, _delta} -> connection_error!("Received WINDOW_UPDATE in idle state")
-      {:rst_stream, _error_code} -> connection_error!("Received RST_STREAM in idle state")
+      {:headers, headers, end_stream} ->
+        {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
+
+      {:data, _data, _end_stream} ->
+        connection_error!("Received DATA in idle state")
+
+      {:send_window_update, _delta} ->
+        connection_error!("Received WINDOW_UPDATE in idle state")
+
+      {:rst_stream, _error_code} ->
+        connection_error!("Received RST_STREAM in idle state")
     after
       timeout -> :timeout
     end
@@ -286,11 +285,17 @@ defmodule Bandit.HTTP2.Stream do
   defp do_recv(%__MODULE__{state: state} = stream, timeout)
        when state in [:open, :local_closed] do
     receive do
-      {:headers, headers} -> {:headers, headers, stream}
-      {:data, data} -> {:data, data, do_recv_data(stream, data)}
-      :end_stream -> {:end_stream, do_recv_end_stream(stream)}
-      {:send_window_update, delta} -> do_recv_send_window_update(stream, delta)
-      {:rst_stream, error_code} -> do_recv_rst_stream!(stream, error_code)
+      {:headers, headers, end_stream} ->
+        {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
+
+      {:data, data, end_stream} ->
+        {:data, data, stream |> do_recv_data(data) |> do_recv_end_stream(end_stream)}
+
+      {:send_window_update, delta} ->
+        do_recv_send_window_update(stream, delta)
+
+      {:rst_stream, error_code} ->
+        do_recv_rst_stream!(stream, error_code)
     after
       timeout -> :timeout
     end
@@ -298,11 +303,17 @@ defmodule Bandit.HTTP2.Stream do
 
   defp do_recv(%__MODULE__{state: :remote_closed} = stream, timeout) do
     receive do
-      {:headers, _headers} -> do_stream_closed_error!("Received HEADERS in remote_closed state")
-      {:data, _data} -> do_stream_closed_error!("Received DATA in remote_closed state")
-      :end_stream -> raise do_stream_closed_error!("Received END_STREAM in remote_closed state")
-      {:send_window_update, delta} -> do_recv_send_window_update(stream, delta)
-      {:rst_stream, error_code} -> do_recv_rst_stream!(stream, error_code)
+      {:headers, _headers, _end_stream} ->
+        do_stream_closed_error!("Received HEADERS in remote_closed state")
+
+      {:data, _data, _end_stream} ->
+        do_stream_closed_error!("Received DATA in remote_closed state")
+
+      {:send_window_update, delta} ->
+        do_recv_send_window_update(stream, delta)
+
+      {:rst_stream, error_code} ->
+        do_recv_rst_stream!(stream, error_code)
     after
       timeout -> :timeout
     end
@@ -310,15 +321,17 @@ defmodule Bandit.HTTP2.Stream do
 
   defp do_recv(%__MODULE__{state: :closed} = stream, timeout) do
     receive do
-      {:headers, _headers} -> stream
-      {:data, _data} -> stream
-      :end_stream -> stream
+      {:headers, _headers, _end_stream} -> stream
+      {:data, _data, _end_stream} -> stream
       {:send_window_update, _delta} -> stream
       {:rst_stream, _error_code} -> stream
     after
       timeout -> :timeout
     end
   end
+
+  defp do_recv_headers(%__MODULE__{state: :idle} = stream), do: %{stream | state: :open}
+  defp do_recv_headers(stream), do: stream
 
   defp do_recv_data(stream, data) do
     {new_window, increment} =
@@ -335,7 +348,9 @@ defmodule Bandit.HTTP2.Stream do
     %{stream | recv_window_size: new_window, bytes_remaining: bytes_remaining}
   end
 
-  defp do_recv_end_stream(stream) do
+  defp do_recv_end_stream(stream, false), do: stream
+
+  defp do_recv_end_stream(stream, true) do
     next_state =
       case stream.state do
         :open -> :remote_closed
@@ -432,7 +447,8 @@ defmodule Bandit.HTTP2.Stream do
 
   def ensure_completed(%__MODULE__{state: :local_closed} = stream) do
     receive do
-      :end_stream -> do_recv_end_stream(stream)
+      {:headers, _headers, true} -> do_recv_end_stream(stream, true)
+      {:data, _data, true} -> do_recv_end_stream(stream, true)
     after
       # RFC9113§8.1 - hint the client to stop sending data
       0 -> reset_stream(stream, Bandit.HTTP2.Errors.no_error())
