@@ -170,24 +170,19 @@ defmodule HTTP2ProtocolTest do
     test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      SimpleH2Client.exchange_client_settings(socket, <<5::16, 34_567::32>>)
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_100k", context.port)
-
-      # Give ourselves lots of room; do this before reading headers to not race
-      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
-      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
-
+      SimpleH2Client.exchange_client_settings(socket, <<5::16, 20_000::32>>)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_50k", context.port)
       SimpleH2Client.recv_headers(socket)
 
-      expected = String.duplicate("a", 34_567)
+      expected = String.duplicate("a", 20_000)
       assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
       assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
-      expected = String.duplicate("a", 30_866)
+      expected = String.duplicate("a", 10_000)
       assert {:ok, 0, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
     end
 
-    def send_100k(conn) do
-      conn |> send_resp(200, String.duplicate("a", 100_000))
+    def send_50k(conn) do
+      conn |> send_resp(200, String.duplicate("a", 50_000))
     end
   end
 
