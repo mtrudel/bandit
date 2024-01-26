@@ -113,6 +113,29 @@ defmodule HTTP2ProtocolTest do
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
       assert SimpleH2Client.recv_frame(socket) == {:ok, 4, 0, 0, <<>>}
     end
+
+    test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      SimpleH2Client.exchange_client_settings(socket, <<5::16, 34_567::32>>)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_100k", context.port)
+
+      # Give ourselves lots of room; do this before reading headers to not race
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
+
+      SimpleH2Client.recv_headers(socket)
+
+      expected = String.duplicate("a", 34_567)
+      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      expected = String.duplicate("a", 30_866)
+      assert {:ok, 0, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+    end
+
+    def send_100k(conn) do
+      conn |> send_resp(200, String.duplicate("a", 100_000))
+    end
   end
 
   describe "DATA frames" do
