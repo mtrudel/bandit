@@ -35,7 +35,7 @@ defmodule Bandit.HTTP2.StreamProcess do
   @impl GenServer
   def handle_continue(:start_stream, state) do
     {:ok, method, request_target, headers, stream} =
-      Bandit.HTTP2.Stream.recv_headers(state.stream)
+      Bandit.HTTP2.Stream.read_headers(state.stream)
 
     adapter =
       {Bandit.HTTP2.Adapter,

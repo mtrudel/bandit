@@ -1,30 +1,44 @@
 defmodule Bandit.HTTP2.Stream do
   @moduledoc false
-  # Represents the state of an HTTP/2 stream, in a process-free manner. An instance of this
-  # struct is maintained as the state of a `Bandit.HTTP2.StreamProcess` process, and it moves an HTTP/2
-  # stream through its lifecycle by calling functions defined on this module. This state is also
-  # tracked within the `Bandit.HTTP2.Adapter` instance that backs Bandit's Plug API.
-
-  # Functions on this module are also called internally by the `Bandit.HTTP2.Connection` within
-  # which this stream is contained; these functions allow the connection to pass messages into the
-  # stream as they are received from the client. These functions all begin with `deliver_*` by
-  # convention
-
-  # The `recv_*` and `send_*` functions defined on this module are meant to be called by the
-  # stream process itself. Within these functions, we purposefully use raw `receive` message
-  # patterns in order to facilitate a blocking interface as required by `Plug.Conn.Adapter`.
-  # This is unconventional (mostly since `Bandit.HTTP2.StreamProcess` is a `GenServer`), but also
-  # safe since we're careful about the types of messages we accept, and the state that the stream
-  # is in when we do so
-
-  # We also use exceptions by convention here rather than error tuples since many
-  # of these functions are called within Plug.Conn.Adapter calls, which makes it
-  # difficult to properly unwind many error conditions back to a killed stream process
-  # and a RstStream frame to the client. The pattern here is to raise exceptions,
-  # and have the `Bandit.HTTP2.StreamProcess`'s `terminate/2` callback take care of calling back
-  # into us via the `reset_stream/2` and `close_connection/2` functions here, with the luxury of
-  # a nicely unwound stack and a process that is guaranteed to be terminated as soon as these
-  # functions are called
+  # This module implements an HTTP/2 stream as described in RFC 9113, without concern for the higher-level
+  # HTTP semantics described in RFC 9110. It is similar in spirit to `Bandit.HTTP1.Socket` for
+  # HTTP/1, and indeed both implement the `Bandit.HTTPTransport` behaviour. An instance of this
+  # struct is maintained as the state of a `Bandit.HTTP2.StreamProcess` process, and it moves an
+  # HTTP/2 stream through its lifecycle by calling functions defined on this module. This state is
+  # also tracked within the `Bandit.HTTP2.Adapter` instance that backs Bandit's Plug API.
+  #
+  # A note about naming:
+  #
+  # This module has several intended callers, and due to its nature as a coordinator, needs to be
+  # careful about how it uses terms like 'read', 'send', 'receive', etc. To that end, there are
+  # some conventions in place:
+  #
+  # * Functions on this module which are intended to be called internally by the containing
+  #   `Bandit.HTTP2.Connection` to pass information received from the client (such as headers or
+  #   request data) to this stream. These functions are named `deliver_*`, and are intended to be
+  #   called by the connection process. As such, they take a `stream_handle()` argument, which
+  #   corresponds either to a pid (in the case of an active stream), or the value `:closed` (in the
+  #   case of a stream which has already completed processing)
+  #
+  # * Functions on this module which are intended to be called by the higher-level implementation
+  #   that is processing this stream are called named `read_*` (for functions which read information
+  #   from the client in a blocking manner), or `send_*` (for functions which send information to
+  #   the client). These functions take a `Bandit.HTTP2.Stream` struct as an argument.
+  #
+  # * In order for this stream to receive information from the containing connection process, we
+  #   use carefully crafted `receive` calls (we do this in a manner that is safe to do within a
+  #   GenServer). This work is handled internally by a number of functions named `do_recv_*`, which
+  #   generally present a blocking interface in order to align with the expectations of the
+  #   `Plug.Conn.Adapter` behaviour.
+  #
+  # This module also uses exceptions by convention rather than error tuples since many
+  # of these functions are called within `Plug.Conn.Adapter` calls, which makes it
+  # difficult to properly unwind many error conditions back to a place where we can properly shut
+  # down the stream by sending a RstStream frame to the client and terminating our process. The
+  # pattern here is to raise exceptions, and have the `Bandit.HTTP2.StreamProcess`'s `terminate/2`
+  # callback take care of calling back into us via the `reset_stream/2` and `close_connection/2`
+  # functions here, with the luxury of a nicely unwound stack and a process that is guaranteed to
+  # be terminated as soon as these functions are called
 
   require Integer
   require Logger
@@ -91,7 +105,7 @@ defmodule Bandit.HTTP2.Stream do
 
   # Stream API - Receiving
 
-  def recv_headers(%__MODULE__{state: :idle} = stream) do
+  def read_headers(%__MODULE__{state: :idle} = stream) do
     case do_recv(stream, stream.read_timeout) do
       {:headers, headers, stream} ->
         method = Bandit.Headers.get_header(headers, ":method")
@@ -119,7 +133,7 @@ defmodule Bandit.HTTP2.Stream do
         stream_error!("Timed out waiting for HEADER")
 
       %__MODULE__{} = stream ->
-        recv_headers(stream)
+        read_headers(stream)
     end
   end
 
@@ -225,39 +239,37 @@ defmodule Bandit.HTTP2.Stream do
     [{"cookie", combined_cookie} | other_headers]
   end
 
-  def recv_body(stream, max_bytes_to_return, timeout, acc \\ [])
+  def read_data(stream, max_bytes, timeout), do: do_read_data(stream, max_bytes, timeout, [])
 
-  def recv_body(%__MODULE__{state: state} = stream, max_bytes_to_return, timeout, acc)
-      when state in [:open, :local_closed] do
+  defp do_read_data(%__MODULE__{state: state} = stream, max_bytes, timeout, acc)
+       when state in [:open, :local_closed] do
     case do_recv(stream, timeout) do
       {:headers, trailers, stream} ->
         no_pseudo_headers!(trailers)
         Logger.warning("Ignoring trailers #{inspect(trailers)}")
-        recv_body(stream, max_bytes_to_return, timeout, acc)
+        do_read_data(stream, max_bytes, timeout, acc)
 
       {:data, data, stream} ->
         acc = [data | acc]
-        max_bytes_to_return = max_bytes_to_return - byte_size(data)
+        max_bytes = max_bytes - byte_size(data)
 
-        if max_bytes_to_return >= 0 do
-          recv_body(stream, max_bytes_to_return, timeout, acc)
+        if max_bytes >= 0 do
+          do_read_data(stream, max_bytes, timeout, acc)
         else
-          {:more, finalize_body(acc), stream}
+          {:more, Enum.reverse(acc), stream}
         end
 
       :timeout ->
-        {:more, finalize_body(acc), stream}
+        {:more, Enum.reverse(acc), stream}
 
       %__MODULE__{} = stream ->
-        recv_body(stream, max_bytes_to_return, timeout, acc)
+        do_read_data(stream, max_bytes, timeout, acc)
     end
   end
 
-  def recv_body(%__MODULE__{state: :remote_closed} = stream, _max_bytes_to_return, _timeout, acc) do
-    {:ok, finalize_body(acc), stream}
+  defp do_read_data(%__MODULE__{state: :remote_closed} = stream, _max_bytes, _timeout, acc) do
+    {:ok, Enum.reverse(acc), stream}
   end
-
-  defp finalize_body(data), do: data |> Enum.reverse() |> IO.iodata_to_binary()
 
   defp no_pseudo_headers!(headers) do
     if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
@@ -385,7 +397,7 @@ defmodule Bandit.HTTP2.Stream do
     set_state_on_send_end_stream(stream, end_stream)
   end
 
-  def send_data(%__MODULE__{state: state} = stream, data, end_stream, bytes_sent \\ 0)
+  def send_data(%__MODULE__{state: state} = stream, data, end_stream)
       when state in [:open, :remote_closed] do
     stream =
       receive do
@@ -406,16 +418,14 @@ defmodule Bandit.HTTP2.Stream do
         stream
       end
 
-    bytes_sent = bytes_sent + bytes_to_send
-
     if byte_size(rest) == 0 do
-      {bytes_sent, set_state_on_send_end_stream(stream, end_stream)}
+      set_state_on_send_end_stream(stream, end_stream)
     else
       receive do
         {:send_window_update, delta} ->
           stream
           |> do_recv_send_window_update(delta)
-          |> send_data(rest, end_stream, bytes_sent)
+          |> send_data(rest, end_stream)
       after
         stream.read_timeout -> raise "Timeout waiting for space in the send_window"
       end

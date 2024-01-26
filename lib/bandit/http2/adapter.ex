@@ -54,8 +54,10 @@ defmodule Bandit.HTTP2.Adapter do
       adapter.metrics
       |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    case Bandit.HTTP2.Stream.recv_body(adapter.stream, length, timeout) do
+    case Bandit.HTTP2.Stream.read_data(adapter.stream, length, timeout) do
       {:ok, body, stream} ->
+        body = IO.iodata_to_binary(body)
+
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
@@ -64,6 +66,8 @@ defmodule Bandit.HTTP2.Adapter do
         {:ok, body, %{adapter | stream: stream, metrics: metrics}}
 
       {:more, body, stream} ->
+        body = IO.iodata_to_binary(body)
+
         metrics =
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
@@ -264,7 +268,8 @@ defmodule Bandit.HTTP2.Adapter do
   end
 
   defp send_data(adapter, data, end_stream) do
-    {bytes_sent, stream} = Bandit.HTTP2.Stream.send_data(adapter.stream, data, end_stream)
+    stream = Bandit.HTTP2.Stream.send_data(adapter.stream, data, end_stream)
+    bytes_sent = IO.iodata_length(data)
     metrics = adapter.metrics |> Map.update(:resp_body_bytes, bytes_sent, &(&1 + bytes_sent))
     %{adapter | stream: stream, metrics: metrics}
   end
