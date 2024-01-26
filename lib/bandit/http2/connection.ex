@@ -110,9 +110,10 @@ defmodule Bandit.HTTP2.Connection do
         %__MODULE__{fragment_frame: %Bandit.HTTP2.Frame.Headers{stream_id: stream_id}} =
           connection
       ) do
-    header_block = connection.fragment_frame.fragment <> frame.fragment
-    header_frame = %{connection.fragment_frame | fragment: header_block}
-    %{connection | fragment_frame: header_frame}
+    fragment = connection.fragment_frame.fragment <> frame.fragment
+    check_oversize_fragment!(fragment, connection)
+    fragment_frame = %{connection.fragment_frame | fragment: fragment}
+    %{connection | fragment_frame: fragment_frame}
   end
 
   def handle_frame(_frame, _socket, %__MODULE__{fragment_frame: %Bandit.HTTP2.Frame.Headers{}}) do
@@ -173,6 +174,8 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: true} = frame, _socket, connection) do
+    check_oversize_fragment!(frame.fragment, connection)
+
     case HPAX.decode(frame.fragment, connection.recv_hpack_state) do
       {:ok, headers, recv_hpack_state} ->
         streams =
@@ -188,6 +191,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: false} = frame, _socket, connection) do
+    check_oversize_fragment!(frame.fragment, connection)
     %{connection | fragment_frame: frame}
   end
 
@@ -276,6 +280,11 @@ defmodule Bandit.HTTP2.Connection do
 
     max_requests == 0 ||
       Bandit.HTTP2.StreamCollection.stream_count(connection.streams) < max_requests
+  end
+
+  defp check_oversize_fragment!(fragment, connection) do
+    if byte_size(fragment) > Keyword.get(connection.opts, :max_header_block_size, 50_000),
+      do: connection_error!("Received overlong headers")
   end
 
   # Shared logic to send any pending frames upon adjustment of our send window

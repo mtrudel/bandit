@@ -1552,10 +1552,8 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
-    # Need to rework header size to be in terms of compressed header blocks
-    @tag :skip
-    test "returns a stream error if sent headers contain too many headers", context do
-      context = https_server(context, http_2_options: [max_header_count: 40])
+    test "returns a stream error if sent header block is too large", context do
+      context = https_server(context, http_2_options: [max_header_block_size: 40])
       socket = SimpleH2Client.setup_connection(context)
 
       headers =
@@ -1568,47 +1566,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
 
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
-    end
-
-    @tag capture_log: true
-    # Need to rework header size to be in terms of compressed header blocks
-    @tag :skip
-    test "returns a stream error if sent headers contain an overlong key", context do
-      context = https_server(context, http_2_options: [max_header_key_length: 5000])
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "HEAD"},
-        {":path", "/"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context[:port]}"},
-        {String.duplicate("a", 5_001), "foo"}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
-    end
-
-    @tag capture_log: true
-    # Need to rework header size to be in terms of compressed header blocks
-    @tag :skip
-    test "returns a stream error if sent headers contain an overlong value", context do
-      context = https_server(context, http_2_options: [max_header_value_length: 5000])
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "HEAD"},
-        {":path", "/"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context[:port]}"},
-        {"foo", String.duplicate("a", 5_001)}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
   end
 

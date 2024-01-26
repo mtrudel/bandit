@@ -114,12 +114,9 @@ defmodule Bandit do
   Options to configure the HTTP/2 stack in Bandit
 
   * `enabled`: Whether or not to serve HTTP/2 requests. Defaults to true
-  * `max_header_key_length`: The maximum permitted length of any single header key
-    (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
-  * `max_header_value_length`: The maximum permitted length of any single header value
-    (expressed as the number of decompressed bytes) in an HTTP/2 request. Defaults to 10_000 bytes
-  * `max_header_count`: The maximum permitted number of headers in an HTTP/2 request.
-    Defaults to 50 headers
+  * `max_header_block_size`: The maximum permitted length of a field block of an HTTP/2 request
+    (expressed as the number of compressed bytes). Includes any concatenated block fragments from
+    continuation frames. Defaults to 50_000 bytes
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
   * `default_local_settings`: Options to override the default values for local HTTP/2
@@ -132,9 +129,7 @@ defmodule Bandit do
   """
   @type http_2_options :: [
           enabled: boolean(),
-          max_header_key_length: pos_integer(),
-          max_header_value_length: pos_integer(),
-          max_header_count: pos_integer(),
+          max_header_block_size: pos_integer(),
           max_requests: pos_integer(),
           default_local_settings: Bandit.HTTP2.Settings.t(),
           compress: boolean(),
@@ -189,7 +184,7 @@ defmodule Bandit do
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a
-  @http_2_keys ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a
+  @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings compress deflate_options)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
