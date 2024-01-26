@@ -75,6 +75,8 @@ defmodule Bandit.HTTP2.Handler do
     )
   end
 
+  def handle_error(_error, _socket, _state), do: :ok
+
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.

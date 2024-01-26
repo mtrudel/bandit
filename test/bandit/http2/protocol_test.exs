@@ -43,20 +43,73 @@ defmodule HTTP2ProtocolTest do
 
   describe "errors and unexpected frames" do
     @tag capture_log: true
+    test "it should silently ignore client closes",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      SimpleH2Client.send_goaway(socket, 0, 0)
+      Transport.close(socket)
+      Process.sleep(100)
+    end
+
+    @tag capture_log: true
     test "it should ignore unknown frame types", context do
       socket = SimpleH2Client.setup_connection(context)
       SimpleH2Client.send_frame(socket, 254, 0, 0, <<>>)
       assert SimpleH2Client.connection_alive?(socket)
     end
 
-    @tag capture_log: true
-    test "it should shut down the connection gracefully when encountering a connection error",
+    test "it should shut down the connection gracefully and log when encountering a connection error",
          context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      # Send a bogus SETTINGS frame
-      SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+
+      errors =
+        capture_log(fn ->
+          # Send a bogus SETTINGS frame
+          SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
+          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.ConnectionError) Invalid SETTINGS frame (RFC9113§6.5)"
+    end
+
+    test "it should shut down the connection gracefully and log when encountering a connection error related to a stream",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      errors =
+        capture_log(fn ->
+          # Send a WINDOW_UPDATE on an idle stream
+          SimpleH2Client.send_window_update(socket, 1, 1234)
+
+          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
+    end
+
+    test "it should shut down the stream gracefully and log when encountering a stream error",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      errors =
+        capture_log(fn ->
+          # Send trailers with pseudo headers
+          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
     @tag capture_log: true
