@@ -391,10 +391,23 @@ defmodule Bandit.HTTP2.Stream do
 
   # Stream API - Sending
 
-  def send_headers(%__MODULE__{state: state} = stream, headers, end_stream)
+  def send_headers(%__MODULE__{state: state} = stream, status, headers, end_stream)
       when state in [:open, :remote_closed] do
+    headers = [{":status", to_string(status)} | split_cookies(headers)]
     do_send(stream, {:send_headers, headers, end_stream})
     set_state_on_send_end_stream(stream, end_stream)
+  end
+
+  # RFC9113§8.2.3 - cookie headers may be split during transmission
+  defp split_cookies(headers) do
+    headers
+    |> Enum.flat_map(fn
+      {"cookie", cookie} ->
+        cookie |> String.split("; ") |> Enum.map(fn crumb -> {"cookie", crumb} end)
+
+      {header, value} ->
+        [{header, value}]
+    end)
   end
 
   def send_data(%__MODULE__{state: state} = stream, data, end_stream)

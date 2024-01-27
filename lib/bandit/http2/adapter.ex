@@ -226,9 +226,7 @@ defmodule Bandit.HTTP2.Adapter do
   @impl Plug.Conn.Adapter
   def inform(adapter, status, headers) do
     validate_calling_process!(adapter)
-    headers = split_cookies(headers)
-    headers = [{":status", to_string(status)} | headers]
-    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, headers, false)
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, false)
     {:ok, %{adapter | stream: stream}}
   end
 
@@ -262,8 +260,7 @@ defmodule Bandit.HTTP2.Adapter do
         headers
       end
 
-    headers = [{":status", to_string(status)} | split_cookies(headers)]
-    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, headers, end_stream)
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, end_stream)
     %{adapter | stream: stream, metrics: metrics}
   end
 
@@ -272,17 +269,6 @@ defmodule Bandit.HTTP2.Adapter do
     bytes_sent = IO.iodata_length(data)
     metrics = adapter.metrics |> Map.update(:resp_body_bytes, bytes_sent, &(&1 + bytes_sent))
     %{adapter | stream: stream, metrics: metrics}
-  end
-
-  defp split_cookies(headers) do
-    headers
-    |> Enum.flat_map(fn
-      {"cookie", cookie} ->
-        cookie |> String.split("; ") |> Enum.map(fn crumb -> {"cookie", crumb} end)
-
-      {header, value} ->
-        [{header, value}]
-    end)
   end
 
   defp validate_calling_process!(%{owner_pid: owner}) when owner == self(), do: :ok
