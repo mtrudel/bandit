@@ -159,7 +159,7 @@ defmodule MyApp.Application do
   def start(_type, _args) do
     children = [
       {Bandit,
-       plug: MyPlug,
+       plug: MyApp.MyPlug,
        scheme: :https,
        certfile: "/absolute/path/to/cert.pem",
        keyfile: "/absolute/path/to/key.pem"}
