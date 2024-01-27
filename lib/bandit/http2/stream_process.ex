@@ -9,8 +9,6 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
-  # A stream process can be created only once we have an adapter & set of headers. Pass them in
-  # at creation time to ensure this invariant
   @spec start_link(
           Bandit.HTTP2.Stream.t(),
           Bandit.Pipeline.plug_def(),

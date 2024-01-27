@@ -239,7 +239,11 @@ defmodule Bandit.HTTP2.Stream do
     [{"cookie", combined_cookie} | other_headers]
   end
 
-  def read_data(stream, max_bytes, timeout), do: do_read_data(stream, max_bytes, timeout, [])
+  def read_data(stream, opts) do
+    max_bytes = Keyword.get(opts, :length, 8_000_000)
+    timeout = Keyword.get(opts, :read_timeout, 15_000)
+    do_read_data(stream, max_bytes, timeout, [])
+  end
 
   defp do_read_data(%__MODULE__{state: state} = stream, max_bytes, timeout, acc)
        when state in [:open, :local_closed] do

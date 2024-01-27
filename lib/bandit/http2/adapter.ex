@@ -47,14 +47,12 @@ defmodule Bandit.HTTP2.Adapter do
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{} = adapter, opts) do
     validate_calling_process!(adapter)
-    length = Keyword.get(opts, :length, 8_000_000)
-    timeout = Keyword.get(opts, :read_timeout, 15_000)
 
     metrics =
       adapter.metrics
       |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    case Bandit.HTTP2.Stream.read_data(adapter.stream, length, timeout) do
+    case Bandit.HTTP2.Stream.read_data(adapter.stream, opts) do
       {:ok, body, stream} ->
         body = IO.iodata_to_binary(body)
 
