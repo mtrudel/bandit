@@ -114,13 +114,19 @@ something similar to the following to your application's `Application.start/2`
 function:
 
 ```elixir
-def start(_type, _args) do
-  children = [
-    {Bandit, plug: MyApp.MyPlug}
-  ]
+# lib/my_app/application.ex
 
-  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-  Supervisor.start_link(children, opts)
+defmodule MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+    children = [
+      {Bandit, plug: MyApp.MyPlug}
+    ]
+
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
 end
 ```
 
@@ -145,17 +151,23 @@ easy to set up in this regard, with a working example looking similar to the
 following:
 
 ```elixir
-def start(_type, _args) do
-  children = [
-    {Bandit,
-     plug: MyPlug,
-     scheme: :https,
-     certfile: "/absolute/path/to/cert.pem",
-     keyfile: "/absolute/path/to/key.pem"}
-  ]
+# lib/my_app/application.ex
 
-  opts = [strategy: :one_for_one, name: MyApp.Supervisor]
-  Supervisor.start_link(children, opts)
+defmodule MyApp.Application do
+  use Application
+
+  def start(_type, _args) do
+    children = [
+      {Bandit,
+       plug: MyPlug,
+       scheme: :https,
+       certfile: "/absolute/path/to/cert.pem",
+       keyfile: "/absolute/path/to/key.pem"}
+    ]
+
+    opts = [strategy: :one_for_one, name: MyApp.Supervisor]
+    Supervisor.start_link(children, opts)
+  end
 end
 ```
 
