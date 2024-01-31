@@ -1,3 +1,16 @@
+## 1.2.0 (31 Jan 2024)
+
+### Enhancements
+
+* Automatically pull in `:otp_app` value in Bandit.PhoenixAdapter (thanks
+  @krns!)
+* Include response body metrics for HTTP/1 chunk responses
+
+### Fixes
+
+* Fix broken HTTP/1 inform/3 return value (thanks @wojtekmach!)
+* Maintain HTTP/1 read timeout after receiving unknown messages
+
 ## 1.1.3 (12 Jan 2024)
 
 ### Fixes
