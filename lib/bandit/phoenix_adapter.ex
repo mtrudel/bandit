@@ -69,11 +69,13 @@ defmodule Bandit.PhoenixAdapter do
 
   @doc false
   def child_specs(endpoint, config) do
+    otp_app = Keyword.fetch!(config, :otp_app)
+
     plug = resolve_plug(config[:code_reloader], endpoint)
 
     for scheme <- [:http, :https], opts = config[scheme] do
       opts
-      |> Keyword.merge(plug: plug, display_plug: endpoint, scheme: scheme)
+      |> Keyword.merge(plug: plug, display_plug: endpoint, scheme: scheme, otp_app: otp_app)
       |> Bandit.child_spec()
       |> Supervisor.child_spec(id: {endpoint, scheme})
     end

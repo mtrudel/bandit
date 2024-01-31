@@ -72,7 +72,7 @@ defmodule Bandit do
           ip: :inet.socket_address(),
           keyfile: binary(),
           certfile: binary(),
-          otp_app: binary() | atom(),
+          otp_app: Application.app(),
           cipher_suite: :strong | :compatible,
           display_plug: module(),
           startup_log: Logger.level() | false,
