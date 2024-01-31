@@ -208,7 +208,17 @@ defmodule Bandit.HTTP1.Handler do
   def handle_info({:EXIT, _pid, :normal}, {socket, state}),
     do: {:noreply, {socket, state}, socket.read_timeout}
 
+  def handle_info(msg, {socket, state}) do
+    log_no_handle_info(msg)
+    {:noreply, {socket, state}, socket.read_timeout}
+  end
+
   def handle_info(msg, state) do
+    log_no_handle_info(msg)
+    {:noreply, state}
+  end
+
+  defp log_no_handle_info(msg) do
     # Copied verbatim from lib/elixir/lib/gen_server.ex
     proc =
       case Process.info(self(), :registered_name) do
@@ -231,7 +241,5 @@ defmodule Bandit.HTTP1.Handler do
         report_cb: &GenServer.format_report/1
       }
     )
-
-    {:noreply, state}
   end
 end
