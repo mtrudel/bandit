@@ -33,6 +33,42 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  describe "keepalive miss" do
+    test "read content with mis-handled conn token does not break keepalive", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      body = "Lorem ipsum dolor sit amet, consectetur adipiscing"
+
+      SimpleHTTP1Client.send(
+        client,
+        "POST",
+        "/bad_plug",
+        ["Host: example.com", "Content-Length: #{byte_size(body)}"],
+        "1.1"
+      )
+
+      Process.sleep(100)
+      Transport.send(client, body)
+
+      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(
+        client,
+        "POST",
+        "/bad_plug",
+        ["Host: example.com"],
+        "1.1"
+      )
+
+      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def bad_plug(conn) do
+      {:ok, body, _conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, body)
+    end
+  end
+
   describe "invalid requests" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do

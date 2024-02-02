@@ -219,6 +219,8 @@ defmodule Bandit.HTTP1.Adapter do
           |> Map.update(:req_body_bytes, byte_size(to_return), &(&1 + byte_size(to_return)))
           |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
+        set_process_read_state(:body_read)
+
         {:ok, to_return,
          %{req | read_state: :body_read, buffer: <<>>, body_remaining: 0, metrics: metrics}}
       else
@@ -248,6 +250,8 @@ defmodule Bandit.HTTP1.Adapter do
         |> Map.put(:req_body_bytes, byte_size(body))
         |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
+      set_process_read_state(:body_read)
+
       {:ok, body, %{req | read_state: :body_read, buffer: buffer, metrics: metrics}}
     end
   end
@@ -258,6 +262,14 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   def read_req_body(%__MODULE__{}, _opts), do: raise(Bandit.BodyAlreadyReadError)
+
+  def set_process_read_state(body_read) do
+    Process.put(:__bandit_body_read, body_read)
+  end
+
+  def process_read_state do
+    Process.get(:__bandit_body_read)
+  end
 
   @dialyzer {:no_improper_lists, do_read_content_length_body: 4}
   defp do_read_content_length_body(socket, buffer, body_remaining, opts) do
