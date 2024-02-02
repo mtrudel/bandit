@@ -50,17 +50,22 @@ defmodule HTTP1RequestTest do
       Process.sleep(100)
       Transport.send(client, body)
 
-      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+      logs =
+        capture_log(fn ->
+          assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
 
-      SimpleHTTP1Client.send(
-        client,
-        "POST",
-        "/bad_plug",
-        ["Host: example.com"],
-        "1.1"
-      )
+          SimpleHTTP1Client.send(
+            client,
+            "POST",
+            "/bad_plug",
+            ["Host: example.com"],
+            "1.1"
+          )
 
-      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+          assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+        end)
+
+      assert logs =~ "Bandit: Invalid req state detected!"
     end
 
     def bad_plug(conn) do

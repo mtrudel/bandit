@@ -3,6 +3,7 @@ defmodule Bandit.HTTP1.Handler do
   # An HTTP 1.0 & 1.1 Thousand Island Handler
 
   use ThousandIsland.Handler
+  require Logger
 
   @already_sent {:plug_conn, :sent}
 
@@ -144,7 +145,14 @@ defmodule Bandit.HTTP1.Handler do
 
   defp ensure_body_read(%{read_state: :no_body}, _), do: :ok
   defp ensure_body_read(%{read_state: :body_read}, _), do: :ok
-  defp ensure_body_read(_req, :body_read), do: :ok
+
+  defp ensure_body_read(_req, :body_read) do
+    Logger.error("""
+    Bandit: Invalid req state detected! This means that a Plug.Conn token was mishandled
+    """)
+
+    :ok
+  end
 
   defp ensure_body_read(req, _) do
     case Bandit.HTTP1.Adapter.read_req_body(req, []) do
