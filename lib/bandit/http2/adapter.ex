@@ -117,15 +117,15 @@ defmodule Bandit.HTTP2.Adapter do
     headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
     body_bytes = IO.iodata_length(body)
     headers = Bandit.Headers.add_content_length(headers, body_bytes, status)
-    adapter = %{adapter | status: status}
 
+    # Optimization to send end_stream on the header response and avoid a data frame
     adapter =
-      if body_bytes == 0 || !send_resp_body?(adapter) do
+      if body_bytes == 0 do
         adapter
-        |> send_headers(status, headers, true)
+        |> send_headers(status, headers, :no_body)
       else
         adapter
-        |> send_headers(status, headers, false)
+        |> send_headers(status, headers, :raw)
         |> send_data(body, true)
       end
 
@@ -140,60 +140,36 @@ defmodule Bandit.HTTP2.Adapter do
   @impl Plug.Conn.Adapter
   def send_file(%__MODULE__{} = adapter, status, headers, path, offset, length) do
     validate_calling_process!(adapter)
+
+    start_time = Bandit.Telemetry.monotonic_time()
     %File.Stat{type: :regular, size: size} = File.stat!(path)
     length = if length == :all, do: size - offset, else: length
-    headers = Bandit.Headers.add_content_length(headers, length, status)
-    adapter = %{adapter | status: status}
 
-    adapter =
-      cond do
-        !send_resp_body?(adapter) ->
-          send_headers(adapter, status, headers, true)
+    if offset + length <= size do
+      headers = Bandit.Headers.add_content_length(headers, length, status)
+      adapter = send_headers(adapter, status, headers, :raw)
 
-        offset + length == size && offset == 0 ->
-          adapter = send_headers(adapter, status, headers, false)
+      {stream, bytes_actually_written} =
+        if send_resp_body?(adapter),
+          do: {Bandit.HTTP2.Stream.sendfile(adapter.stream, path, offset, length), length},
+          else: {adapter.stream, 0}
 
-          path
-          |> File.stream!([], 2048)
-          |> Enum.reduce(adapter, fn chunk, adapter -> send_data(adapter, chunk, false) end)
-          |> send_data(<<>>, true)
+      metrics =
+        adapter.metrics
+        |> Map.put(:resp_body_bytes, bytes_actually_written)
+        |> Map.put(:resp_start_time, start_time)
+        |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
-        offset + length <= size ->
-          case :file.open(path, [:raw, :binary]) do
-            {:ok, fd} ->
-              try do
-                with {:ok, data} <- :file.pread(fd, offset, length) do
-                  adapter
-                  |> send_headers(status, headers, false)
-                  |> send_data(data, true)
-                end
-              after
-                :file.close(fd)
-              end
-
-            {:error, reason} ->
-              {:error, reason}
-          end
-
-        true ->
-          raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
-      end
-
-    metrics = Map.put(adapter.metrics, :resp_end_time, Bandit.Telemetry.monotonic_time())
-    {:ok, nil, %{adapter | metrics: metrics}}
+      {:ok, nil, %{adapter | stream: stream, metrics: metrics}}
+    else
+      raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
+    end
   end
 
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{} = adapter, status, headers) do
     validate_calling_process!(adapter)
-
-    adapter = %{adapter | status: status}
-
-    if send_resp_body?(adapter) do
-      {:ok, nil, send_headers(adapter, status, headers, false)}
-    else
-      {:ok, nil, send_headers(adapter, status, headers, true)}
-    end
+    {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
   end
 
   @impl Plug.Conn.Adapter
@@ -224,28 +200,28 @@ defmodule Bandit.HTTP2.Adapter do
   @impl Plug.Conn.Adapter
   def inform(adapter, status, headers) do
     validate_calling_process!(adapter)
-    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, false)
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, :inform)
     {:ok, %{adapter | stream: stream}}
   end
 
   @impl Plug.Conn.Adapter
-  def upgrade(_req, _upgrade, _opts), do: {:error, :not_supported}
+  def upgrade(_adapter, _upgrade, _opts), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(req), do: Bandit.TransportInfo.peer_data(req.stream.transport_info)
+  def get_peer_data(adapter), do: Bandit.TransportInfo.peer_data(adapter.stream.transport_info)
 
   @impl Plug.Conn.Adapter
-  def get_http_protocol(%__MODULE__{}), do: :"HTTP/2"
+  def get_http_protocol(%__MODULE__{} = adapter), do: Bandit.HTTP2.Stream.version(adapter.stream)
 
   defp send_resp_body?(%{method: "HEAD"}), do: false
   defp send_resp_body?(%{status: 204}), do: false
   defp send_resp_body?(%{status: 304}), do: false
-  defp send_resp_body?(_req), do: true
+  defp send_resp_body?(_adapter), do: true
 
-  defp send_headers(adapter, status, headers, end_stream) do
+  defp send_headers(adapter, status, headers, body_disposition) do
     metrics =
       adapter.metrics
       |> Map.put_new_lazy(:resp_start_time, &Bandit.Telemetry.monotonic_time/0)
@@ -258,12 +234,18 @@ defmodule Bandit.HTTP2.Adapter do
         headers
       end
 
-    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, end_stream)
+    adapter = %{adapter | status: status}
+    body_disposition = if send_resp_body?(adapter), do: body_disposition, else: :no_body
+    stream = Bandit.HTTP2.Stream.send_headers(adapter.stream, status, headers, body_disposition)
     %{adapter | stream: stream, metrics: metrics}
   end
 
   defp send_data(adapter, data, end_stream) do
-    stream = Bandit.HTTP2.Stream.send_data(adapter.stream, data, end_stream)
+    stream =
+      if send_resp_body?(adapter),
+        do: Bandit.HTTP2.Stream.send_data(adapter.stream, data, end_stream),
+        else: adapter.stream
+
     bytes_sent = IO.iodata_length(data)
     metrics = adapter.metrics |> Map.update(:resp_body_bytes, bytes_sent, &(&1 + bytes_sent))
     %{adapter | stream: stream, metrics: metrics}

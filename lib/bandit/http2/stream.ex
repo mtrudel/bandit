@@ -40,6 +40,8 @@ defmodule Bandit.HTTP2.Stream do
   # functions here, with the luxury of a nicely unwound stack and a process that is guaranteed to
   # be terminated as soon as these functions are called
 
+  @behaviour Bandit.HTTPTransport
+
   require Integer
   require Logger
 
@@ -105,6 +107,10 @@ defmodule Bandit.HTTP2.Stream do
 
   # Stream API - Receiving
 
+  @impl Bandit.HTTPTransport
+  def version(%__MODULE__{}), do: :"HTTP/2"
+
+  @impl Bandit.HTTPTransport
   def read_headers(%__MODULE__{state: :idle} = stream) do
     case do_recv(stream, stream.read_timeout) do
       {:headers, headers, stream} ->
@@ -239,6 +245,7 @@ defmodule Bandit.HTTP2.Stream do
     [{"cookie", combined_cookie} | other_headers]
   end
 
+  @impl Bandit.HTTPTransport
   def read_data(stream, opts) do
     max_bytes = Keyword.get(opts, :length, 8_000_000)
     timeout = Keyword.get(opts, :read_timeout, 15_000)
@@ -395,8 +402,15 @@ defmodule Bandit.HTTP2.Stream do
 
   # Stream API - Sending
 
-  def send_headers(%__MODULE__{state: state} = stream, status, headers, end_stream)
+  @impl Bandit.HTTPTransport
+  def send_headers(%__MODULE__{state: state} = stream, status, headers, body_disposition)
       when state in [:open, :remote_closed] do
+    # We need to map body_disposition into the state model of HTTP/2. This turns out to be really
+    # easy, since HTTP/2 only has one way to send data. The only bit we need from the disposition
+    # is whether there will be any data forthcoming (ie: whether or not to end the stream). That
+    # will possibly walk us to a different state per RFC9113§5.1, as determined by the tail call
+    # to set_state_on_send_end_stream/2
+    end_stream = body_disposition == :no_body
     headers = [{":status", to_string(status)} | split_cookies(headers)]
     do_send(stream, {:send_headers, headers, end_stream})
     set_state_on_send_end_stream(stream, end_stream)
@@ -414,6 +428,7 @@ defmodule Bandit.HTTP2.Stream do
     end)
   end
 
+  @impl Bandit.HTTPTransport
   def send_data(%__MODULE__{state: state} = stream, data, end_stream)
       when state in [:open, :remote_closed] do
     stream =
@@ -449,6 +464,23 @@ defmodule Bandit.HTTP2.Stream do
     end
   end
 
+  @impl Bandit.HTTPTransport
+  def sendfile(%__MODULE__{} = stream, path, offset, length) do
+    case :file.open(path, [:raw, :binary]) do
+      {:ok, fd} ->
+        try do
+          with {:ok, data} <- :file.pread(fd, offset, length) do
+            send_data(stream, data, true)
+          end
+        after
+          :file.close(fd)
+        end
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
   defp split_data(data, desired_length) do
     data_length = IO.iodata_length(data)
 
@@ -470,6 +502,7 @@ defmodule Bandit.HTTP2.Stream do
 
   # Closing off the stream upon completion or error
 
+  @impl Bandit.HTTPTransport
   def ensure_completed(%__MODULE__{state: :closed} = stream), do: stream
 
   def ensure_completed(%__MODULE__{state: :local_closed} = stream) do
