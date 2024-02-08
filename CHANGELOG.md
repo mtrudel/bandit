@@ -3,10 +3,21 @@
 ### Enhancements
 
 * Complete refactor of HTTP/2. Improved process model is MUCH easier to
-  understand and yields about a 10% performance boost to HTTP/2 requests (#286)
+  understand and yields about a 10% performance boost to HTTP/2 requests (#286 /
+  #307)
 
 ### Changes
 
+* Remove `req_line_bytes`, `req_header_bytes`, `resp_line_bytes` and
+  `resp_header_bytes` from HTTP/1 request telemetry
+* Treat trailing bytes beyond the indicated content-length on HTTP/1 requests as
+  an error
+* Surface request body read timeouts on HTTP/1 requests as `{:more...}` tuples
+  and not errors
+* Re-reading a body on HTTP/1 requests that has already been read returns `{:ok,
+  "", conn}` instead of raising a `Bandit.BodyAlreadyReadError`
+* Remove `Bandit.BodyAlreadyReadError`
+* Socket sending errors are no longer surfaced on chunk sends in HTTP/1
 * **BREAKING CHANGE** The HTTP/2 header size limit options have been deprecated,
   and have been replaced with a single `max_header_block_size` option. The setting
   defaults to 50k bytes, and refers to the size of the compressed header block

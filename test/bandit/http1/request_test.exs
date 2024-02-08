@@ -686,15 +686,16 @@ defmodule HTTP1RequestTest do
 
       Transport.send(
         client,
-        "POST /error_catcher HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
+        "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
       )
 
-      assert {:ok, "200 OK", _, "timeout"} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", _, "OK"} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    def error_catcher(conn) do
-      {:error, reason} = Plug.Conn.read_body(conn)
-      send_resp(conn, 200, to_string(reason))
+    def short_body(conn) do
+      {:more, "ABC", conn} = Plug.Conn.read_body(conn)
+      {:more, "", conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "OK")
     end
 
     @tag capture_log: true
@@ -704,10 +705,15 @@ defmodule HTTP1RequestTest do
 
       Transport.send(
         client,
-        "POST /error_catcher HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\nABCDE"
+        "POST /long_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\nABCDE"
       )
 
-      assert {:ok, "200 OK", _, "excess_body_read"} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "400 Bad Request", _, ""} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def long_body(conn) do
+      Plug.Conn.read_body(conn)
+      raise "should not get here"
     end
 
     test "reading request body multiple times works as expected", context do
@@ -719,7 +725,7 @@ defmodule HTTP1RequestTest do
     def multiple_body_read(conn) do
       {:ok, body, conn} = read_body(conn)
       assert body == "OK"
-      assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
+      {:ok, "", conn} = read_body(conn)
       conn |> send_resp(200, body)
     end
   end
@@ -1314,12 +1320,15 @@ defmodule HTTP1RequestTest do
       conn
     end
 
-    test "does not write out a body for a chunked response to a HEAD request", context do
+    test "does not write out transfer-encoding headers or body for a chunked response to a HEAD request",
+         context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "HEAD", "/send_chunked_200", ["host: localhost"])
 
       assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"transfer-encoding") == "chunked"
+
+      refute Bandit.Headers.get_header(headers, :"content-length")
+      refute Bandit.Headers.get_header(headers, :"transfer-encoding")
     end
 
     test "writes out a chunked iolist response", context do
@@ -1335,34 +1344,6 @@ defmodule HTTP1RequestTest do
         conn
         |> send_chunked(200)
         |> chunk(["OK"])
-
-      conn
-    end
-
-    test "returns socket errors on chunk calls", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      errors =
-        capture_log(fn ->
-          SimpleHTTP1Client.send(client, "GET", "/erroring_chunk", ["host: localhost"])
-          Process.sleep(500)
-          assert {:ok, "200 OK", _headers, "2\r\nOK\r\n"} = SimpleHTTP1Client.recv_reply(client)
-        end)
-
-      assert errors == ""
-    end
-
-    def erroring_chunk(conn) do
-      {:ok, conn} =
-        conn
-        |> send_chunked(200)
-        |> chunk("OK")
-
-      # This is a pretty bogus way to get an error out of socket sending, but it's easy to set up
-      {_, adapter} = conn.adapter
-      ThousandIsland.Socket.close(adapter.socket)
-
-      assert {:error, :closed} == chunk(conn, "NOT OK")
 
       conn
     end
@@ -1616,11 +1597,7 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: 24,
                   req_header_end_time: integer(),
-                  req_header_bytes: 19,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 133,
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1651,14 +1628,10 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: integer(),
                   req_header_end_time: integer(),
-                  req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 0,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1693,14 +1666,10 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: integer(),
                   req_header_end_time: integer(),
-                  req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1731,14 +1700,10 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: integer(),
                   req_header_end_time: integer(),
-                  req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 133,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1773,14 +1738,10 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: integer(),
                   req_header_end_time: integer(),
-                  req_header_bytes: integer(),
                   req_body_start_time: integer(),
                   req_body_end_time: integer(),
                   req_body_bytes: 80,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 158,
                   resp_uncompressed_body_bytes: 2,
                   resp_body_bytes: 22,
                   resp_compression_method: "gzip",
@@ -1812,11 +1773,7 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: 32,
                   req_header_end_time: integer(),
-                  req_header_bytes: 49,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 119,
                   resp_body_bytes: 2,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1846,11 +1803,7 @@ defmodule HTTP1RequestTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: 30,
                   req_header_end_time: integer(),
-                  req_header_bytes: 49,
-                  resp_line_bytes: 17,
-                  resp_header_bytes: 110,
                   resp_body_bytes: 6,
                   resp_start_time: integer(),
                   resp_end_time: integer()
@@ -1882,9 +1835,7 @@ defmodule HTTP1RequestTest do
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
                   error: string(),
-                  status: 400,
-                  method: "GET",
-                  request_target: {nil, nil, nil, "/"}
+                  status: 400
                 }}
              ]
     end
@@ -1904,10 +1855,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: :timeout,
-                  status: 408,
-                  method: "GET",
-                  request_target: {nil, nil, nil, "/"}
+                  error: "Header read timeout",
+                  status: 408
                 }}
              ]
     end

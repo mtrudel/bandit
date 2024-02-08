@@ -70,11 +70,7 @@ defmodule WebSocketUpgradeTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_line_bytes: 66,
                   req_header_end_time: integer(),
-                  req_header_bytes: 141,
-                  resp_line_bytes: 34,
-                  resp_header_bytes: 207,
                   resp_body_bytes: 0,
                   resp_start_time: integer(),
                   resp_end_time: integer()

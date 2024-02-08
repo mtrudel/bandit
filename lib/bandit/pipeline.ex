@@ -17,10 +17,10 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers(),
           plug_def()
         ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
-  def run(req, transport_info, method, request_target, headers, plug) do
+  def run(adapter, transport_info, method, request_target, headers, plug) do
     Logger.reset_metadata()
 
-    with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
+    with {:ok, conn} <- build_conn(adapter, transport_info, method, request_target, headers),
          conn <- call_plug(conn, plug),
          {:ok, :no_upgrade} <- maybe_upgrade(conn) do
       {:ok, commit_response(conn)}
@@ -34,14 +34,14 @@ defmodule Bandit.Pipeline do
           request_target(),
           Plug.Conn.headers()
         ) :: {:ok, Plug.Conn.t()} | {:error, String.t()}
-  defp build_conn({mod, req}, transport_info, method, request_target, headers) do
+  defp build_conn({mod, adapter}, transport_info, method, request_target, headers) do
     with {:ok, scheme} <- determine_scheme(transport_info, request_target),
-         version <- mod.get_http_protocol(req),
+         version <- mod.get_http_protocol(adapter),
          {:ok, host, port} <- determine_host_and_port(scheme, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do
       uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
       %Bandit.TransportInfo{peername: {remote_ip, _port}} = transport_info
-      {:ok, Plug.Conn.Adapter.conn({mod, req}, method, uri, remote_ip, headers)}
+      {:ok, Plug.Conn.Adapter.conn({mod, adapter}, method, uri, remote_ip, headers)}
     end
   end
 
@@ -149,14 +149,14 @@ defmodule Bandit.Pipeline do
       %Plug.Conn{state: :set} ->
         Plug.Conn.send_resp(conn)
 
-      %Plug.Conn{state: :chunked, adapter: {mod, req}} ->
-        req =
-          case mod.chunk(req, "") do
-            {:ok, _, req} -> req
-            _ -> req
+      %Plug.Conn{state: :chunked, adapter: {mod, adapter}} ->
+        adapter =
+          case mod.chunk(adapter, "") do
+            {:ok, _, adapter} -> adapter
+            _ -> adapter
           end
 
-        %{conn | adapter: {mod, req}}
+        %{conn | adapter: {mod, adapter}}
 
       %Plug.Conn{} ->
         conn

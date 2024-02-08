@@ -5,7 +5,7 @@ defmodule Bandit.HTTPTransport do
   # behaviour should be broadly concerned with the protocol-specific aspects of a connection, and
   # can rely on higher-level code taking care of shared HTTP semantics
 
-  @type transport :: Bandit.HTTP2.Stream.t()
+  @type transport :: Bandit.HTTP1.Socket.t() | Bandit.HTTP2.Stream.t()
 
   @typedoc "How the response body is to be delivered"
   @type body_disposition :: :raw | :chunk_encoded | :no_body | :inform
