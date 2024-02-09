@@ -4,8 +4,6 @@ defmodule Bandit.HTTP2.Frame.Settings do
   import Bandit.HTTP2.Frame.Flags
   import Bitwise
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame}
-
   @max_window_size (1 <<< 31) - 1
   @min_frame_size 1 <<< 14
   @max_frame_size (1 <<< 24) - 1
@@ -19,8 +17,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
 
   @ack_bit 0
 
-  @spec deserialize(Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
-          {:ok, t()} | {:error, Connection.error()}
+  @spec deserialize(Bandit.HTTP2.Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Bandit.HTTP2.Errors.error_code(), binary()}
   def deserialize(flags, 0, payload) when clear?(flags, @ack_bit) do
     payload
     |> Stream.unfold(fn
@@ -36,22 +34,26 @@ defmodule Bandit.HTTP2.Frame.Settings do
         {:cont, {:ok, acc}}
 
       {:ok, {0x02, _value}}, {:ok, _acc} ->
-        {:halt, {:error, Errors.protocol_error(), "Invalid enable_push value (RFC9113§6.5)"}}
+        {:halt,
+         {:error, Bandit.HTTP2.Errors.protocol_error(), "Invalid enable_push value (RFC9113§6.5)"}}
 
       {:ok, {0x03, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
 
       {:ok, {0x04, value}}, {:ok, _acc} when value > @max_window_size ->
-        {:halt, {:error, Errors.flow_control_error(), "Invalid window_size (RFC9113§6.5)"}}
+        {:halt,
+         {:error, Bandit.HTTP2.Errors.flow_control_error(), "Invalid window_size (RFC9113§6.5)"}}
 
       {:ok, {0x04, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | initial_window_size: value}}}
 
       {:ok, {0x05, value}}, {:ok, _acc} when value < @min_frame_size ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
+        {:halt,
+         {:error, Bandit.HTTP2.Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
 
       {:ok, {0x05, value}}, {:ok, _acc} when value > @max_frame_size ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
+        {:halt,
+         {:error, Bandit.HTTP2.Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
 
       {:ok, {0x05, value}}, {:ok, acc} ->
         {:cont, {:ok, %{acc | max_frame_size: value}}}
@@ -63,11 +65,12 @@ defmodule Bandit.HTTP2.Frame.Settings do
         {:cont, {:ok, acc}}
 
       {:error, _rest}, _acc ->
-        {:halt, {:error, Errors.frame_size_error(), "Invalid SETTINGS size (RFC9113§6.5)"}}
+        {:halt,
+         {:error, Bandit.HTTP2.Errors.frame_size_error(), "Invalid SETTINGS size (RFC9113§6.5)"}}
     end)
     |> case do
       {:ok, settings} -> {:ok, %__MODULE__{ack: false, settings: settings}}
-      {:error, error_code, reason} -> {:error, {:connection, error_code, reason}}
+      {:error, error_code, reason} -> {:error, error_code, reason}
     end
   end
 
@@ -76,23 +79,21 @@ defmodule Bandit.HTTP2.Frame.Settings do
   end
 
   def deserialize(flags, 0, _payload) when set?(flags, @ack_bit) do
-    {:error,
-     {:connection, Errors.frame_size_error(),
-      "SETTINGS ack frame with non-empty payload (RFC9113§6.5)"}}
+    {:error, Bandit.HTTP2.Errors.frame_size_error(),
+     "SETTINGS ack frame with non-empty payload (RFC9113§6.5)"}
   end
 
   def deserialize(_flags, _stream_id, _payload) do
-    {:error, {:connection, Errors.protocol_error(), "Invalid SETTINGS frame (RFC9113§6.5)"}}
+    {:error, Bandit.HTTP2.Errors.protocol_error(), "Invalid SETTINGS frame (RFC9113§6.5)"}
   end
 
-  defimpl Frame.Serializable do
-    alias Bandit.HTTP2.Frame.Settings
-
+  defimpl Bandit.HTTP2.Frame.Serializable do
     @ack_bit 0
 
-    def serialize(%Settings{ack: true}, _max_frame_size), do: [{0x4, set([@ack_bit]), 0, <<>>}]
+    def serialize(%Bandit.HTTP2.Frame.Settings{ack: true}, _max_frame_size),
+      do: [{0x4, set([@ack_bit]), 0, <<>>}]
 
-    def serialize(%Settings{ack: false} = frame, _max_frame_size) do
+    def serialize(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, _max_frame_size) do
       # Note that the ordering here corresponds to the keys' alphabetical
       # ordering on the Setting struct. However, we know there are no duplicates
       # in this list so this is not a problem per RFC9113§6.5
