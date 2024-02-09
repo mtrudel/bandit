@@ -469,15 +469,16 @@ defmodule Bandit.HTTP2.Stream do
     case :file.open(path, [:raw, :binary]) do
       {:ok, fd} ->
         try do
-          with {:ok, data} <- :file.pread(fd, offset, length) do
-            send_data(stream, data, true)
+          case :file.pread(fd, offset, length) do
+            {:ok, data} -> send_data(stream, data, true)
+            {:error, reason} -> raise "Error reading file for sendfile: #{inspect(reason)}"
           end
         after
           :file.close(fd)
         end
 
       {:error, reason} ->
-        {:error, reason}
+        raise "Error opening file for sendfile: #{inspect(reason)}"
     end
   end
 
