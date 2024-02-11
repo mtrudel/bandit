@@ -44,10 +44,17 @@ jobs:
       uses: actions/download-artifact@v4
       with:
         name: http-benchmark.csv
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
     - name: Build site
       run: |
         mv http-benchmark.csv www/sources/results/data.csv
-        ls -al
+        sed -i 's/```elixir/```code/g' README.md
+        cp README.md www/pages/index.md
+        cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
+        cp CHANGELOG.md www/pages/changelog.md
         cd www
         npm install --force
         npm run sources
