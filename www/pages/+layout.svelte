@@ -84,6 +84,10 @@
 	}
 </script>
 
+<svelte:head>
+	<title>Bandit</title>
+</svelte:head>
+
 <!-- QueryStatus doesn't actually create any UI, just supplies toasts to ToastWrapper -->
 
 <ToastWrapper />
@@ -105,6 +109,7 @@
 			</div>
 			{#if !$navigating}
 				<article class="select-text markdown">
+					<!-- Only Load in Browser Mode (to solve build issues) -->
 					{#if browser}
 						<slot />
 					{/if}

@@ -1,1 +1,1 @@
-[To be replaced by readme.md during build]
+[Will be replaced by readme.md during build]
