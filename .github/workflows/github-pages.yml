@@ -52,7 +52,7 @@ jobs:
         cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
         cp CHANGELOG.md www/pages/changelog.md
         cd www
-        npm install
+        npm install --force
         npm run sources
         npm run build
     - name: Upload site
