@@ -62,7 +62,7 @@ jobs:
         npm run sources
         npm run build
     - name: Upload Site
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v2
       with:
         path: "www/build"
   deploy:
