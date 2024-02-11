@@ -47,10 +47,7 @@ jobs:
     - name: Build site
       run: |
         mv http-benchmark.csv www/sources/results/data.csv
-        sed -i 's/```elixir/```code/g' README.md
-        cp README.md www/pages/index.md
-        cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
-        cp CHANGELOG.md www/pages/changelog.md
+        ls -al
         cd www
         npm install --force
         npm run sources
