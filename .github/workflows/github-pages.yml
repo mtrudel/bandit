@@ -10,7 +10,7 @@ env:
 
 jobs:
   benchmark:
-    name: Run Benchmark
+    name: Benchmark
     runs-on: ubuntu-latest
     steps:
     - name: Install nghttp2
@@ -36,7 +36,7 @@ jobs:
         name: http-benchmark.csv
         path: http-benchmark.csv
   build:
-    name: Build and Deploy
+    name: Build Site
     runs-on: ubuntu-latest
     needs: benchmark
     steps:
@@ -50,7 +50,7 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20.x'
-    - name: Build site
+    - name: Build
       run: |
         mv http-benchmark.csv www/sources/results/data.csv
         sed -i 's/```elixir/```code/g' README.md
@@ -61,8 +61,22 @@ jobs:
         npm install --force
         npm run sources
         npm run build
-    - name: Deploy
-      uses: peaceiris/actions-gh-pages@v3
+    - name: Upload Site
+      uses: actions/upload-artifact@v4
       with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./www/build
+        name: "github-pages"
+        path: "www/build"
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
