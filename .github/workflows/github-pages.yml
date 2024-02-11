@@ -1,0 +1,77 @@
+name: Github Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  MIX_ENV: test
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install nghttp2
+      run: sudo apt-get install nghttp2
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with: 
+        repository: mtrudel/benchmark
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: 1.14.x
+        otp-version: 25.1
+    - name: Install mix dependencies
+      run: mix deps.get
+    - name: Compile code
+      run: mix compile
+    - name: Run benchmark
+      run: mix benchmark --profile tiny --protocol http/1.1,h2c,ws cowboy@master bandit@main
+    - name: Upload results file
+      uses: actions/upload-artifact@v4
+      with:
+        name: http-benchmark.csv
+        path: http-benchmark.csv
+  build:
+    runs-on: ubuntu-latest
+    needs: benchmark
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Download results
+      uses: actions/download-artifact@v4
+      with:
+        name: http-benchmark.csv
+    - name: Build site
+      run: |
+        mv http-benchmark.csv www/sources/results/data.csv
+        sed -i 's/```elixir/```code/g' README.md
+        cp README.md www/pages/index.md
+        cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
+        cp CHANGELOG.md www/pages/changelog.md
+        cd www
+        npm install
+        npm run sources
+        npm run build
+    - name: Upload site
+      uses: actions/upload-artifact@v4
+      with:
+        path: './www/build'
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+    - name: Setup Pages
+      uses: actions/configure-pages@v3
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v2
