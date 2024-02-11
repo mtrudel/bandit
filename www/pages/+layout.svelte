@@ -65,7 +65,7 @@
 	import '@evidence-dev/tailwind/fonts.css';
 	import '../app.css';
 	import { navigating, page } from '$app/stores';
-	import { dev } from '$app/environment';
+	import { dev, browser } from '$app/environment';
 	import {
 		LoadingSkeleton,
 		Sidebar,
@@ -105,7 +105,9 @@
 			</div>
 			{#if !$navigating}
 				<article class="select-text markdown">
-					<slot />
+					{#if browser}
+						<slot />
+					{/if}
 				</article>
 			{:else}
 				<LoadingSkeleton />
