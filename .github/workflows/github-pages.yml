@@ -10,6 +10,7 @@ env:
 
 jobs:
   benchmark:
+    name: Run Benchmark
     runs-on: ubuntu-latest
     steps:
     - name: Install nghttp2
@@ -35,6 +36,7 @@ jobs:
         name: http-benchmark.csv
         path: http-benchmark.csv
   build:
+    name: Build and Deploy
     runs-on: ubuntu-latest
     needs: benchmark
     steps:
@@ -59,23 +61,8 @@ jobs:
         npm install --force
         npm run sources
         npm run build
-    - name: Upload site
-      uses: actions/upload-artifact@v4
+    - name: Deploy
+      uses: peaceiris/actions-gh-pages@v3
       with:
-        path: './www/build'
-  deploy:
-    runs-on: ubuntu-latest
-    needs: build
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    permissions:
-      contents: read
-      pages: write
-      id-token: write
-    steps:
-    - name: Setup Pages
-      uses: actions/configure-pages@v4
-    - name: Deploy to GitHub Pages
-      id: deployment
-      uses: actions/deploy-pages@v4
+        github_token: ${{ secrets.GITHUB_TOKEN }}
+        publish_dir: ./www/build
