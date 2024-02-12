@@ -52,6 +52,8 @@ jobs:
         node-version: '20.x'
     - name: Setup PNPM
       uses: pnpm/action-setup@v3
+      with:
+          run_install: false
     - name: Build
       run: |
         mv http-benchmark.csv www/sources/results/data.csv
