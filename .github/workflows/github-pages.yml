@@ -29,7 +29,7 @@ jobs:
     - name: Compile code
       run: mix compile
     - name: Run benchmark
-      run: mix benchmark --profile normal --protocol http/1.1,h2c,ws cowboy@master bandit@main
+      run: mix benchmark --profile tiny --protocol http/1.1,h2c,ws cowboy@master bandit@main
     - name: Upload results file
       uses: actions/upload-artifact@v4
       with:
@@ -50,18 +50,19 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: '20.x'
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
     - name: Build
       run: |
         mv http-benchmark.csv www/sources/results/data.csv
-        ls -l www/sources/results
         sed -i 's/```elixir/```code/g' README.md
         cp README.md www/pages/index.md
         cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
         cp CHANGELOG.md www/pages/changelog.md
         cd www
-        npm install --force
-        npm run sources
-        npm run build
+        pnpm install
+        pnpm run sources
+        pnpm run build
         chmod -R 777 build
     - name: Upload Site
       uses: actions/upload-pages-artifact@v3
