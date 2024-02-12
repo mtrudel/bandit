@@ -29,7 +29,7 @@ jobs:
     - name: Compile code
       run: mix compile
     - name: Run benchmark
-      run: mix benchmark --profile tiny --protocol http/1.1,h2c,ws cowboy@master bandit@main
+      run: mix benchmark --profile normal --protocol http/1.1,h2c,ws cowboy@master bandit@main
     - name: Upload results file
       uses: actions/upload-artifact@v4
       with:
