@@ -209,7 +209,7 @@ defmodule Bandit.HTTP1.Handler do
     do: {:noreply, {socket, state}, socket.read_timeout}
 
   def handle_info(msg, {socket, state}) do
-    log_no_handle_info(msg)
+    if Keyword.get(state.opts.http_1, :log_unknown_messages, false), do: log_no_handle_info(msg)
     {:noreply, {socket, state}, socket.read_timeout}
   end
 
