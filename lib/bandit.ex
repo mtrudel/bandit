@@ -94,6 +94,8 @@ defmodule Bandit do
     Defaults to 50 headers
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `log_unknown_messages`: Whether or not to log unknown messages sent to the handler process.
+    Defaults to `false`
   * `compress`: Whether or not to attempt compression of responses via content-encoding
     negotiation as described in
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
@@ -106,6 +108,7 @@ defmodule Bandit do
           max_header_length: pos_integer(),
           max_header_count: pos_integer(),
           max_requests: pos_integer(),
+          log_unknown_messages: boolean(),
           compress: boolean(),
           deflate_opions: deflate_options()
         ]
@@ -188,7 +191,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests compress deflate_options)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests log_unknown_messages compress deflate_options)a
   @http_2_keys ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
