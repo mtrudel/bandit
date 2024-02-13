@@ -1,3 +1,10 @@
+## 1.2.1 (12 Fed 2024)
+
+### Changes
+
+* Disable logging of unknown messages received by an idle HTTP/1 handler to
+  avoid noise on long polling clients (#299)
+
 ## 1.2.0 (31 Jan 2024)
 
 ### Enhancements
