@@ -1453,9 +1453,11 @@ defmodule HTTP1RequestTest do
 
   test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
        context do
+    context = http_server(context, http_1_options: [log_unknown_messages: true])
+
     errors =
       capture_log(fn ->
-        Req.get!(context.req, url: "/spawn_abnormal_child")
+        Req.get!(url: "/spawn_abnormal_child", base_url: context[:base])
 
         # Let the backing process see & handle the handle_info EXIT message
         Process.sleep(100)
