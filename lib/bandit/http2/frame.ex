@@ -1,8 +1,6 @@
 defmodule Bandit.HTTP2.Frame do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
-
   @typedoc "Indicates a frame type"
   @type frame_type :: non_neg_integer()
 
@@ -11,19 +9,22 @@ defmodule Bandit.HTTP2.Frame do
 
   @typedoc "A valid HTTP/2 frame"
   @type frame ::
-          Frame.Data.t()
-          | Frame.Headers.t()
-          | Frame.Priority.t()
-          | Frame.RstStream.t()
-          | Frame.Settings.t()
-          | Frame.Ping.t()
-          | Frame.Goaway.t()
-          | Frame.WindowUpdate.t()
-          | Frame.Continuation.t()
-          | Frame.Unknown.t()
+          Bandit.HTTP2.Frame.Data.t()
+          | Bandit.HTTP2.Frame.Headers.t()
+          | Bandit.HTTP2.Frame.Priority.t()
+          | Bandit.HTTP2.Frame.RstStream.t()
+          | Bandit.HTTP2.Frame.Settings.t()
+          | Bandit.HTTP2.Frame.Ping.t()
+          | Bandit.HTTP2.Frame.Goaway.t()
+          | Bandit.HTTP2.Frame.WindowUpdate.t()
+          | Bandit.HTTP2.Frame.Continuation.t()
+          | Bandit.HTTP2.Frame.Unknown.t()
 
   @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()} | {{:error, Connection.error()}, iodata()} | nil
+          {{:ok, frame()}, iodata()}
+          | {{:more, iodata()}, <<>>}
+          | {{:error, Bandit.HTTP2.Errors.error_code(), binary()}, iodata()}
+          | nil
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
           payload::binary-size(length), rest::binary>>,
@@ -32,22 +33,19 @@ defmodule Bandit.HTTP2.Frame do
       when length <= max_frame_size do
     type
     |> case do
-      0x0 -> Frame.Data.deserialize(flags, stream_id, payload)
-      0x1 -> Frame.Headers.deserialize(flags, stream_id, payload)
-      0x2 -> Frame.Priority.deserialize(flags, stream_id, payload)
-      0x3 -> Frame.RstStream.deserialize(flags, stream_id, payload)
-      0x4 -> Frame.Settings.deserialize(flags, stream_id, payload)
-      0x5 -> Frame.PushPromise.deserialize(flags, stream_id, payload)
-      0x6 -> Frame.Ping.deserialize(flags, stream_id, payload)
-      0x7 -> Frame.Goaway.deserialize(flags, stream_id, payload)
-      0x8 -> Frame.WindowUpdate.deserialize(flags, stream_id, payload)
-      0x9 -> Frame.Continuation.deserialize(flags, stream_id, payload)
-      unknown -> Frame.Unknown.deserialize(unknown, flags, stream_id, payload)
+      0x0 -> Bandit.HTTP2.Frame.Data.deserialize(flags, stream_id, payload)
+      0x1 -> Bandit.HTTP2.Frame.Headers.deserialize(flags, stream_id, payload)
+      0x2 -> Bandit.HTTP2.Frame.Priority.deserialize(flags, stream_id, payload)
+      0x3 -> Bandit.HTTP2.Frame.RstStream.deserialize(flags, stream_id, payload)
+      0x4 -> Bandit.HTTP2.Frame.Settings.deserialize(flags, stream_id, payload)
+      0x5 -> Bandit.HTTP2.Frame.PushPromise.deserialize(flags, stream_id, payload)
+      0x6 -> Bandit.HTTP2.Frame.Ping.deserialize(flags, stream_id, payload)
+      0x7 -> Bandit.HTTP2.Frame.Goaway.deserialize(flags, stream_id, payload)
+      0x8 -> Bandit.HTTP2.Frame.WindowUpdate.deserialize(flags, stream_id, payload)
+      0x9 -> Bandit.HTTP2.Frame.Continuation.deserialize(flags, stream_id, payload)
+      unknown -> Bandit.HTTP2.Frame.Unknown.deserialize(unknown, flags, stream_id, payload)
     end
-    |> case do
-      {:ok, frame} -> {{:ok, frame}, rest}
-      {:error, reason} -> {{:error, reason}, rest}
-    end
+    |> then(&{&1, rest})
   end
 
   # This is a little more aggressive than necessary. RFC9113§4.2 says we only need
@@ -61,7 +59,7 @@ defmodule Bandit.HTTP2.Frame do
         max_frame_size
       )
       when length > max_frame_size do
-    {{:error, {:connection, Errors.frame_size_error(), "Payload size too large (RFC9113§4.2)"}},
+    {{:error, Bandit.HTTP2.Errors.frame_size_error(), "Payload size too large (RFC9113§4.2)"},
      rest}
   end
 
@@ -91,7 +89,8 @@ defmodule Bandit.HTTP2.Frame do
     @moduledoc false
 
     @spec serialize(any(), non_neg_integer()) :: [
-            {Frame.frame_type(), Frame.flags(), Stream.stream_id(), iodata()}
+            {Bandit.HTTP2.Frame.frame_type(), Bandit.HTTP2.Frame.flags(),
+             Bandit.HTTP2.Stream.stream_id(), iodata()}
           ]
     def serialize(frame, max_frame_size)
   end

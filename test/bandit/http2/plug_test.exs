@@ -91,8 +91,28 @@ defmodule HTTP2PlugTest do
   def multiple_body_read(conn) do
     {:ok, body, conn} = read_body(conn)
     assert body == "OK"
-    assert_raise(Bandit.BodyAlreadyReadError, fn -> read_body(conn) end)
+    {:ok, "", conn} = read_body(conn)
     conn |> send_resp(200, body)
+  end
+
+  test "reading request body from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_body_read", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_body_read(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        read_body(conn)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
   end
 
   test "reading request body respects length option", context do
@@ -215,6 +235,26 @@ defmodule HTTP2PlugTest do
     conn |> resp(200, "OK")
   end
 
+  test "sending a body from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_body", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_body(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        conn |> send_resp(200, "NOT OK")
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
   test "sending a chunk", context do
     response = Req.get!(context.req, url: "/chunk_test")
 
@@ -231,6 +271,48 @@ defmodule HTTP2PlugTest do
     |> elem(1)
   end
 
+  test "setting a chunked response from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_set_chunk", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_set_chunk(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        conn |> send_chunked(200)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
+  test "sending a chunk from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_chunk", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_chunk(conn) do
+    conn = conn |> send_chunked(200)
+
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        conn |> chunk("NOT OK")
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> tap(conn, &chunk(&1, "OK"))
+    end
+  end
+
   describe "upgrade handling" do
     test "raises an ArgumentError on unsupported upgrades", context do
       errors =
@@ -239,6 +321,8 @@ defmodule HTTP2PlugTest do
 
           assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                    response
+
+          Process.sleep(100)
         end)
 
       assert errors =~
@@ -259,10 +343,12 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
     assert errors =~
-             "%Plug.Conn.NotSentError{message: \"a response was neither set nor sent from the connection\"}"
+             "(Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
   end
 
   def noop(conn), do: conn
@@ -274,10 +360,12 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
     assert errors =~
-             "%RuntimeError{message: \"Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom\"}"
+             "(RuntimeError) Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom"
   end
 
   def garbage(_conn), do: :boom
@@ -323,10 +411,11 @@ defmodule HTTP2PlugTest do
 
         assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
                  response
+
+        Process.sleep(100)
       end)
 
-    assert errors =~
-             "%RuntimeError{message: \"Cannot read 3000 bytes starting at 1"
+    assert errors =~ "(RuntimeError) Cannot read 3000 bytes starting at 1"
   end
 
   def send_file(conn) do
@@ -339,6 +428,27 @@ defmodule HTTP2PlugTest do
       String.to_integer(conn.params["offset"]),
       String.to_integer(conn.params["length"])
     )
+  end
+
+  test "sending a file from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_file", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_file(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        conn
+        |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
   end
 
   test "sending a body blocks on connection flow control", context do
@@ -473,6 +583,26 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, "Informer")
   end
 
+  test "sending an inform response from another process works as expected", context do
+    response = Req.post!(context.req, url: "/other_process_send_inform", body: "OK")
+
+    assert response.status == 200
+  end
+
+  def other_process_send_inform(conn) do
+    Task.async(fn ->
+      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
+        conn |> inform(100, [])
+      end)
+
+      :ok
+    end)
+    |> Task.await()
+    |> case do
+      :ok -> send_resp(conn, 200, "OK")
+    end
+  end
+
   test "reading HTTP version", context do
     response = Req.get!(context.req, url: "/report_version")
 
@@ -516,29 +646,6 @@ defmodule HTTP2PlugTest do
 
   def spawn_child(conn) do
     spawn_link(fn -> exit(:normal) end)
-    # Ensure that the spawned process has a chance to exit
-    Process.sleep(100)
-    send_resp(conn, 204, "")
-  end
-
-  test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
-       context do
-    errors =
-      capture_log(fn ->
-        Req.get(context.req, url: "/spawn_abnormal_child")
-
-        # Let the backing process see & handle the handle_info EXIT message
-        Process.sleep(100)
-      end)
-
-    # The return value here isn't relevant, since the HTTP call is done within
-    # a single Task call & may complete before the spawned process exits. Look
-    # at the logged errors instead
-    assert errors =~ ~r[\[error\] Task for stream .* crashed with :abnormal]
-  end
-
-  def spawn_abnormal_child(conn) do
-    spawn_link(fn -> exit(:abnormal) end)
     # Ensure that the spawned process has a chance to exit
     Process.sleep(100)
     send_resp(conn, 204, "")
@@ -774,7 +881,7 @@ defmodule HTTP2PlugTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      Transport.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
       Process.sleep(100)
 
@@ -784,7 +891,6 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  status: nil,
                   method: "GET",
                   request_target: {"https", "127.0.0.1", integer(), "/hello_world"},
                   stream_id: integer(),
@@ -799,6 +905,8 @@ defmodule HTTP2PlugTest do
         start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
       Req.get(context.req, url: "/raise_error")
+
+      Process.sleep(100)
 
       assert Bandit.TelemetryCollector.get_events(collector_pid)
              ~> [

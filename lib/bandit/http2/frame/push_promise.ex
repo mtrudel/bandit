@@ -1,11 +1,9 @@
 defmodule Bandit.HTTP2.Frame.PushPromise do
   @moduledoc false
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
-
-  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
-          {:error, Connection.error()}
+  @spec deserialize(Bandit.HTTP2.Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
+          {:error, Bandit.HTTP2.Errors.error_code(), binary()}
   def deserialize(_flags, _stream, _payload) do
-    {:error, {:connection, Errors.protocol_error(), "PUSH_PROMISE frame received (RFC9113§8.4)"}}
+    {:error, Bandit.HTTP2.Errors.protocol_error(), "PUSH_PROMISE frame received (RFC9113§8.4)"}
   end
 end
