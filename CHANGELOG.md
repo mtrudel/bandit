@@ -1,30 +1,3 @@
-## 1.3.0 (TBD)
-
-### Enhancements
-
-* Complete refactor of HTTP/2. Improved process model is MUCH easier to
-  understand and yields about a 10% performance boost to HTTP/2 requests (#286)
-
-### Changes
-
-* **BREAKING CHANGE** The HTTP/2 header size limit options have been deprecated,
-  and have been replaced with a single `max_header_block_size` option. The setting
-  defaults to 50k bytes, and refers to the size of the compressed header block
-  as sent on the wire (including any continuation frames)
-* We no longer log if processes that are linked to an HTTP/2 stream process
-  terminate unexpectedly. This has always been unspecified behaviour so is not
-  considered a breaking change
-* Calls of `Plug.Conn` functions for an HTTP/2 connection must now come from the
-  stream process; any other process will raise an error. Again, this has always
-  been unspecified behaviour
-* Reading the body of an HTTP/2 request after it has already been read will
-  return `{:ok, ""}` instead of raising a `Bandit.BodyAlreadyReadError` as it
-  previously did
-* We now send RST_STREAM frames if we complete a stream and the remote end is
-  still open. This optimizes cases where the client may still be sending a body
-  that we never consumed and don't care about
-* We no longer explicitly close the connection when we receive a GOAWAY frame
-
 ## 1.2.1 (12 Fed 2024)
 
 ### Changes

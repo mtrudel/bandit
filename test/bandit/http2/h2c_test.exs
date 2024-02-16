@@ -43,8 +43,9 @@ defmodule H2CTest do
       assert Enum.any?(headers, fn {key, value} -> key == :connection && value == "Upgrade" end)
       assert Enum.any?(headers, fn {key, value} -> key == :upgrade && value == "h2c" end)
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(client)
-      SimpleH2Client.send_frame(client, 4, 1, 0, <<>>)
+      assert {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = Transport.recv(client, 9)
+
+      Transport.send(client, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
 
       assert {:ok, 1, false, _headers, recv_ctx} = SimpleH2Client.recv_headers(client)
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "HTTP/2"}
@@ -80,10 +81,9 @@ defmodule H2CTest do
       assert Enum.any?(headers, fn {key, value} -> key == :connection && value == "Upgrade" end)
       assert Enum.any?(headers, fn {key, value} -> key == :upgrade && value == "h2c" end)
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(client)
-      SimpleH2Client.send_frame(client, 4, 1, 0, <<>>)
+      assert {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = Transport.recv(client, 9)
 
-      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(client)
+      Transport.send(client, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
 
       assert {:ok, 1, false, _headers, _recv_ctx} = SimpleH2Client.recv_headers(client)
       assert SimpleH2Client.recv_body(client) == {:ok, 1, true, "req_body"}
