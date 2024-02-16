@@ -18,6 +18,8 @@ defmodule Bandit.Pipeline do
           plug_def()
         ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
   def run(req, transport_info, method, request_target, headers, plug) do
+    Logger.reset_metadata()
+
     with {:ok, conn} <- build_conn(req, transport_info, method, request_target, headers),
          conn <- call_plug(conn, plug),
          {:ok, :no_upgrade} <- maybe_upgrade(conn) do
