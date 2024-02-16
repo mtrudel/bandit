@@ -108,6 +108,22 @@ defmodule HTTP1RequestTest do
     def echo_method(conn) do
       send_resp(conn, 200, conn.method)
     end
+
+    test "logger metadata is reset on every request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/metadata", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/metadata", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def metadata(conn) do
+      existing_metadata = Logger.metadata()
+      Logger.metadata(add: :garbage)
+      send_resp(conn, 200, inspect(existing_metadata))
+    end
   end
 
   describe "origin-form request target (RFC9112§3.2.1)" do

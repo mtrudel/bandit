@@ -1,4 +1,10 @@
-## 1.2.1 (12 Fed 2024)
+## 1.2.2 (16 Feb 2024)
+
+### Changes
+
+* Reset Logger metadata on every request
+
+## 1.2.1 (12 Feb 2024)
 
 ### Changes
 
