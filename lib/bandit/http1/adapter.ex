@@ -157,6 +157,7 @@ defmodule Bandit.HTTP1.Adapter do
   end
 
   # `close` & `keep-alive` always means what they say, otherwise keepalive if we're on HTTP/1.1
+  # Case insensitivity per RFC9110§7.6.1
   defp should_keepalive?(_, "close"), do: false
   defp should_keepalive?(_, "keep-alive"), do: true
   defp should_keepalive?(_, "Keep-Alive"), do: true
