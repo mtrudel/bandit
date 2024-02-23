@@ -284,7 +284,7 @@ defmodule Bandit do
         {:ok, pid}
 
       {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
-        Logger.error([info(scheme, display_plug, nil), " failed, port already in use"])
+        Logger.error([info(scheme, display_plug, nil), " failed, port #{port} already in use"])
         error
 
       {:error, _} = error ->

@@ -34,7 +34,7 @@ defmodule ServerTest do
       end)
 
     assert logs =~
-             "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port already in use"
+             "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port #{port} already in use"
   end
 
   test "can run multiple instances of Bandit" do
