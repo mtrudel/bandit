@@ -1,3 +1,10 @@
+## 1.2.3 (23 Feb 2024)
+
+### Changes
+
+* Log port number when listen fails (#312, thanks @jonatanklosko!)
+* Accept mixed-case keepalive directives (#308, thanks @gregors!)
+
 ## 1.2.2 (16 Feb 2024)
 
 ### Changes
