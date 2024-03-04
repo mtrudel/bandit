@@ -1248,6 +1248,23 @@ defmodule HTTP1RequestTest do
       conn
     end
 
+    test "does not add the transfer-encoding header for 204 responses", context do
+      response = Req.get!(context.req, url: "/send_chunked_204")
+
+      assert response.status == 204
+      assert response.body == ""
+      refute Map.has_key?(response.headers, "transfer-encoding")
+    end
+
+    def send_chunked_204(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(204)
+        |> chunk("")
+
+      conn
+    end
+
     test "does not write out a body for a chunked response to a HEAD request", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "HEAD", "/send_chunked_200", ["host: localhost"])

@@ -479,7 +479,13 @@ defmodule Bandit.HTTP1.Adapter do
   def send_chunked(%__MODULE__{socket: socket, version: version} = req, status, headers) do
     start_time = Bandit.Telemetry.monotonic_time()
 
-    headers = [{"transfer-encoding", "chunked"} | headers]
+    headers =
+      if status >= 200 and status != 204 do
+        [{"transfer-encoding", "chunked"} | headers]
+      else
+        headers
+      end
+
     {header_iodata, header_metrics} = response_header(version, status, headers)
     _ = ThousandIsland.Socket.send(socket, header_iodata)
 
