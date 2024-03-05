@@ -8,6 +8,7 @@ defmodule Bandit.Clock do
   use Task, restart: :permanent
 
   require Logger
+  alias Bandit.Util
 
   @doc """
   Returns the current timestamp according to RFC9110§5.6.7.
@@ -36,6 +37,8 @@ defmodule Bandit.Clock do
 
   @spec init :: no_return()
   def init do
+    Util.set_label(__MODULE__)
+
     __MODULE__ = :ets.new(__MODULE__, [:set, :protected, :named_table, {:read_concurrency, true}])
 
     run()

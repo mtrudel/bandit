@@ -1,8 +1,10 @@
 defmodule HTTP2ProtocolTest do
   use ExUnit.Case, async: true
   use ServerHelpers
+  use ReqHelpers
 
   import Bitwise
+  alias Bandit.Util
 
   setup :https_server
 
@@ -3048,6 +3050,56 @@ defmodule HTTP2ProtocolTest do
 
     def unquote(:*)(conn) do
       echo_components(conn)
+    end
+  end
+
+  describe "process labels" do
+    setup do
+      context = https_server(%{}, thousand_island_options: [read_timeout: 1000])
+      context
+    end
+
+    setup :req_h2_client
+
+    test "HTTP/2 handler processes get labeled with client info", context do
+      if Util.labels_supported?() do
+        # Start a slow request in the background
+        task =
+          Task.async(fn ->
+            Req.get!(context.req, url: "/slow_h2_endpoint")
+          end)
+
+        # Give the process time to start and be labeled
+        Process.sleep(100)
+
+        processes = Process.list()
+
+        labeled_processes =
+          for pid <- processes do
+            case Util.get_label(pid) do
+              {Bandit.HTTP2.Handler, _client_info} = label ->
+                {pid, label}
+
+              _ ->
+                nil
+            end
+          end
+          |> Enum.reject(&is_nil/1)
+
+        assert length(labeled_processes) >= 1
+
+        {_pid, {_module, ip_and_port}} = hd(labeled_processes)
+        assert Regex.match?(~r/\d+\.\d+\.\d+\.\d+:\d+/, ip_and_port)
+
+        # Wait for the slow request to complete
+        response = Task.await(task)
+        assert response.status == 200
+      end
+    end
+
+    def slow_h2_endpoint(conn) do
+      Process.sleep(100)
+      send_resp(conn, 200, "slow H2 response")
     end
   end
 end

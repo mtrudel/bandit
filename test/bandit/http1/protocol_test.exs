@@ -5,6 +5,7 @@ defmodule HTTP1ProtocolTest do
   use Machete
 
   require Logger
+  alias Bandit.Util
 
   setup :http_server
   setup :req_http1_client
@@ -1868,6 +1869,49 @@ defmodule HTTP1ProtocolTest do
 
     def hello_world(conn) do
       send_resp(conn, 200, "OK module")
+    end
+  end
+
+  describe "process labels" do
+    test "HTTP/1 handler processes get labeled with client info", context do
+      if Util.labels_supported?() do
+        # Start a slow request in the background
+        task =
+          Task.async(fn ->
+            Req.get!(context.req, url: "/slow_endpoint")
+          end)
+
+        # Give the process time to start and be labeled
+        Process.sleep(100)
+
+        processes = Process.list()
+
+        labeled_processes =
+          for pid <- processes do
+            case Util.get_label(pid) do
+              {Bandit.HTTP1.Handler, _client_info} = label ->
+                {pid, label}
+
+              _ ->
+                nil
+            end
+          end
+          |> Enum.reject(&is_nil/1)
+
+        assert length(labeled_processes) >= 1
+
+        {_pid, {_module, ip_and_port}} = hd(labeled_processes)
+        assert Regex.match?(~r/\d+\.\d+\.\d+\.\d+:\d+/, ip_and_port)
+
+        # Wait for the slow request to complete
+        response = Task.await(task)
+        assert response.status == 200
+      end
+    end
+
+    def slow_endpoint(conn) do
+      Process.sleep(500)
+      send_resp(conn, 200, "slow response")
     end
   end
 end

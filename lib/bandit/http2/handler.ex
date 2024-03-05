@@ -9,8 +9,22 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
+  alias Bandit.Util
+
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
+    label =
+      case Bandit.SocketHelpers.safe_peer_data(socket) do
+        {:ok, peer_data} ->
+          client_info = "#{:inet.ntoa(peer_data.address)}:#{peer_data.port}"
+          {__MODULE__, client_info}
+
+        {:error, _reason} ->
+          __MODULE__
+      end
+
+    Util.set_label(label)
+
     connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
     {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
   rescue

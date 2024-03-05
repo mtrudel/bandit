@@ -5,11 +5,22 @@ defmodule Bandit.WebSocket.Handler do
   use ThousandIsland.Handler
 
   alias Bandit.Extractor
+  alias Bandit.Util
   alias Bandit.WebSocket.{Connection, Frame}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
     {websock, websock_opts, connection_opts} = state.upgrade_opts
+
+    module_name = websock |> to_string() |> String.split(".") |> List.last()
+
+    label =
+      case Bandit.SocketHelpers.safe_peer_data(socket) do
+        {:ok, peer_data} -> "WS[#{module_name}:#{peer_data.port}]"
+        {:error, _reason} -> "WS[#{module_name}]"
+      end
+
+    Util.set_label(label)
 
     connection_opts
     |> Keyword.take([:fullsweep_after, :max_heap_size])

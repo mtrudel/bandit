@@ -9,6 +9,8 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   use GenServer, restart: :temporary
 
+  alias Bandit.Util
+
   @spec start_link(
           Bandit.HTTP2.Stream.t(),
           Bandit.Pipeline.plug_def(),
@@ -25,6 +27,7 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   @impl GenServer
   def handle_continue(:start_stream, {stream, plug, connection_span, conn_data, opts} = state) do
+    Util.set_label({__MODULE__, stream.stream_id})
     _ = Bandit.Pipeline.run(stream, plug, connection_span, conn_data, opts)
     {:stop, :normal, state}
   end
