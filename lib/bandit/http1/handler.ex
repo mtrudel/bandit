@@ -140,9 +140,15 @@ defmodule Bandit.HTTP1.Handler do
 
     if under_limit && req.keepalive do
       case ensure_body_read(req) do
-        :ok -> {:continue, Map.put(state, :requests_processed, requests_processed)}
-        {:error, :closed} -> {:close, state}
-        {:error, reason} -> {:error, reason, state}
+        :ok ->
+          :erlang.garbage_collect()
+          {:continue, Map.put(state, :requests_processed, requests_processed)}
+
+        {:error, :closed} ->
+          {:close, state}
+
+        {:error, reason} ->
+          {:error, reason, state}
       end
     else
       {:close, state}
