@@ -36,6 +36,10 @@ defmodule Bandit.Clock do
 
   @spec init :: no_return()
   def init do
+    if function_exported?(:proc_lib, :set_label, 1) do
+      apply(:proc_lib, :set_label, ["Bandit.Clock"])
+    end
+
     __MODULE__ = :ets.new(__MODULE__, [:set, :protected, :named_table, {:read_concurrency, true}])
 
     run()

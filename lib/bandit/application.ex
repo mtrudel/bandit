@@ -8,6 +8,10 @@ defmodule Bandit.Application do
           {:ok, pid}
           | {:error, {:already_started, pid} | {:shutdown, term} | term}
   def start(_type, _args) do
+    if function_exported?(:proc_lib, :set_label, 1) do
+      apply(:proc_lib, :set_label, ["Bandit.Application"])
+    end
+
     children = [Bandit.Clock]
     Supervisor.start_link(children, strategy: :one_for_one)
   end
