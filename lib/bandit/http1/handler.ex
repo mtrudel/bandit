@@ -141,7 +141,8 @@ defmodule Bandit.HTTP1.Handler do
     if under_limit && req.keepalive do
       case ensure_body_read(req) do
         :ok ->
-          :erlang.garbage_collect()
+          gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
+          if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
           {:continue, Map.put(state, :requests_processed, requests_processed)}
 
         {:error, :closed} ->
