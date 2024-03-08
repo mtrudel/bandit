@@ -9,7 +9,7 @@ defmodule ReqHelpers do
       end
 
       def req_h2_client(context) do
-        start_finch(context, protocol: :http2)
+        start_finch(context, protocols: [:http2])
         [req: build_req(context)]
       end
 

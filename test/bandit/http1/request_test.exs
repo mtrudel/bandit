@@ -33,6 +33,22 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  describe "suppressing protocol error logging" do
+    test "errors are not logged if so configured", context do
+      context = http_server(context, http_1_options: [log_protocol_errors: false])
+
+      output =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+          Process.sleep(100)
+        end)
+
+      assert output == ""
+    end
+  end
+
   describe "invalid requests" do
     @tag capture_log: true
     test "returns a 400 if the request cannot be parsed", context do
