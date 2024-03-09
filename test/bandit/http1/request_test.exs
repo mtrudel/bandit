@@ -164,6 +164,39 @@ defmodule HTTP1RequestTest do
       Logger.metadata(add: :garbage)
       send_resp(conn, 200, inspect(existing_metadata))
     end
+
+    test "gc_every_n_keepalive_requests is respected", context do
+      context = http_server(context, http_1_options: [gc_every_n_keepalive_requests: 3])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/do_gc", ["host: localhost"])
+      {:ok, "200 OK", _headers, "OK"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/heap_size", ["host: localhost"])
+      {:ok, "200 OK", _headers, initial_heap_size} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/heap_size", ["host: localhost"])
+      {:ok, "200 OK", _headers, penultimate_heap_size} = SimpleHTTP1Client.recv_reply(client)
+
+      # This one should have been gc'd
+      SimpleHTTP1Client.send(client, "GET", "/heap_size", ["host: localhost"])
+      {:ok, "200 OK", _headers, final_heap_size} = SimpleHTTP1Client.recv_reply(client)
+
+      assert String.to_integer(initial_heap_size) <= String.to_integer(penultimate_heap_size)
+      assert String.to_integer(final_heap_size) <= String.to_integer(initial_heap_size)
+    end
+
+    def do_gc(conn) do
+      :erlang.garbage_collect(self())
+      send_resp(conn, 200, "OK")
+    end
+
+    def heap_size(conn) do
+      # Exercise the heap a bit
+      _trash = String.duplicate("a", 10_000)
+      {:heap_size, heap_size} = :erlang.process_info(self(), :heap_size)
+      send_resp(conn, 200, inspect(heap_size))
+    end
   end
 
   describe "origin-form request target (RFC9112§3.2.1)" do

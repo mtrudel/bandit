@@ -94,6 +94,9 @@ defmodule Bandit do
     Defaults to 50 headers
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `gc_every_n_keepalive_requests`: How often to run a full garbage collection pass between subsequent
+    keepalive requests on the same HTTP/1.1 connection. Defaults to 5 (garbage collect between
+    every 5 requests). This option is currently experimental, and may change at any time
   * `log_unknown_messages`: Whether or not to log unknown messages sent to the handler process.
     Defaults to `false`
   * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
@@ -110,6 +113,7 @@ defmodule Bandit do
           max_header_length: pos_integer(),
           max_header_count: pos_integer(),
           max_requests: pos_integer(),
+          gc_every_n_keepalive_requests: pos_integer(),
           log_unknown_messages: boolean(),
           log_protocol_errors: boolean(),
           compress: boolean(),
@@ -194,7 +198,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests log_unknown_messages log_protocol_errors compress deflate_options)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages log_protocol_errors compress deflate_options)a
   @http_2_keys ~w(enabled max_header_key_length max_header_value_length max_header_count max_requests default_local_settings compress deflate_options)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
