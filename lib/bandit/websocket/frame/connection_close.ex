@@ -19,7 +19,7 @@ defmodule Bandit.WebSocket.Frame.ConnectionClose do
   end
 
   def deserialize(true, false, <<code::16, reason::binary>>) when byte_size(reason) <= 123 do
-    if String.valid?(reason) do
+    if Bandit.Utils.valid?(reason) do
       {:ok, %__MODULE__{code: code, reason: reason}}
     else
       {:error, "Received non UTF-8 connection close frame (RFC6455§5.5.1)"}
