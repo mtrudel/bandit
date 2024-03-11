@@ -1,4 +1,6 @@
 defmodule Bandit.Utils do
+  @moduledoc false
+
   @doc ~S"""
   Checks whether `string` contains only valid characters.
 
@@ -29,6 +31,7 @@ defmodule Bandit.Utils do
       a > 191 and a < 224 -> valid_two?(rest)
       a > 223 and a < 240 -> valid_three?(rest)
       a > 239 -> valid_four?(rest)
+      :otherwise -> false
     end
   end
 
