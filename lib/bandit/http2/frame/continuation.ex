@@ -3,27 +3,24 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
   import Bandit.HTTP2.Frame.Flags
 
-  alias Bandit.HTTP2.{Connection, Errors, Frame, Stream}
-
   defstruct stream_id: nil,
             end_headers: false,
             fragment: nil
 
   @typedoc "An HTTP/2 CONTINUATION frame"
   @type t :: %__MODULE__{
-          stream_id: Stream.stream_id(),
+          stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_headers: boolean(),
           fragment: iodata()
         }
 
   @end_headers_bit 2
 
-  @spec deserialize(Frame.flags(), Stream.stream_id(), iodata()) ::
-          {:ok, t()} | {:error, Connection.error()}
+  @spec deserialize(Bandit.HTTP2.Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
+          {:ok, t()} | {:error, Bandit.HTTP2.Errors.error_code(), binary()}
   def deserialize(_flags, 0, _payload) do
-    {:error,
-     {:connection, Errors.protocol_error(),
-      "CONTINUATION frame with zero stream_id (RFC9113§6.10)"}}
+    {:error, Bandit.HTTP2.Errors.protocol_error(),
+     "CONTINUATION frame with zero stream_id (RFC9113§6.10)"}
   end
 
   def deserialize(flags, stream_id, <<fragment::binary>>) do
@@ -35,12 +32,10 @@ defmodule Bandit.HTTP2.Frame.Continuation do
      }}
   end
 
-  defimpl Frame.Serializable do
-    alias Bandit.HTTP2.Frame.Continuation
-
+  defimpl Bandit.HTTP2.Frame.Serializable do
     @end_headers_bit 2
 
-    def serialize(%Continuation{} = frame, max_frame_size) do
+    def serialize(%Bandit.HTTP2.Frame.Continuation{} = frame, max_frame_size) do
       fragment_length = IO.iodata_length(frame.fragment)
 
       if fragment_length <= max_frame_size do
@@ -51,8 +46,8 @@ defmodule Bandit.HTTP2.Frame.Continuation do
 
         [
           {0x9, 0x00, frame.stream_id, this_frame}
-          | Frame.Serializable.serialize(
-              %Continuation{stream_id: frame.stream_id, fragment: rest},
+          | Bandit.HTTP2.Frame.Serializable.serialize(
+              %Bandit.HTTP2.Frame.Continuation{stream_id: frame.stream_id, fragment: rest},
               max_frame_size
             )
         ]

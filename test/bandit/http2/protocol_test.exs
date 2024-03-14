@@ -3,6 +3,7 @@ defmodule HTTP2ProtocolTest do
   use ServerHelpers
 
   import Bitwise
+  import ExUnit.CaptureLog
 
   setup :https_server
 
@@ -19,11 +20,9 @@ defmodule HTTP2ProtocolTest do
       end)
       |> Enum.each(fn byte -> Transport.send(socket, byte) end)
 
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
-
-      assert Transport.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
 
     test "it should handle cases where multiple frames arrive in the same packet", context do
@@ -36,30 +35,81 @@ defmodule HTTP2ProtocolTest do
           <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
       )
 
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
-
-      assert Transport.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
   describe "errors and unexpected frames" do
     @tag capture_log: true
-    test "it should ignore unknown frame types", context do
-      socket = SimpleH2Client.setup_connection(context)
-      Transport.send(socket, <<0, 0, 0, 254, 0, 0, 0, 0, 0>>)
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
-    @tag capture_log: true
-    test "it should shut down the connection gracefully when encountering a connection error",
+    test "it should silently ignore client closes",
          context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      # Send a bogus SETTINGS frame
-      Transport.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 1>>)
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+      SimpleH2Client.send_goaway(socket, 0, 0)
+      Transport.close(socket)
+      Process.sleep(100)
+    end
+
+    @tag capture_log: true
+    test "it should ignore unknown frame types", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_frame(socket, 254, 0, 0, <<>>)
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "it should shut down the connection gracefully and log when encountering a connection error",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      errors =
+        capture_log(fn ->
+          # Send a bogus SETTINGS frame
+          SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
+          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.ConnectionError) Invalid SETTINGS frame (RFC9113§6.5)"
+    end
+
+    test "it should shut down the connection gracefully and log when encountering a connection error related to a stream",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      errors =
+        capture_log(fn ->
+          # Send a WINDOW_UPDATE on an idle stream
+          SimpleH2Client.send_window_update(socket, 1, 1234)
+
+          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
+    end
+
+    test "it should shut down the stream gracefully and log when encountering a stream error",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      errors =
+        capture_log(fn ->
+          # Send trailers with pseudo headers
+          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert errors =~
+               "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
     @tag capture_log: true
@@ -114,7 +164,25 @@ defmodule HTTP2ProtocolTest do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>}
+      assert SimpleH2Client.recv_frame(socket) == {:ok, 4, 0, 0, <<>>}
+    end
+
+    test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      SimpleH2Client.exchange_client_settings(socket, <<5::16, 20_000::32>>)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_50k", context.port)
+      SimpleH2Client.recv_headers(socket)
+
+      expected = String.duplicate("a", 20_000)
+      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      expected = String.duplicate("a", 10_000)
+      assert {:ok, 0, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+    end
+
+    def send_50k(conn) do
+      conn |> send_resp(200, String.duplicate("a", 50_000))
     end
   end
 
@@ -778,8 +846,9 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_body(socket, 1, true, "OK")
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
     end
 
     test "reads a one frame body if one frame is sent", context do
@@ -852,9 +921,8 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, false, headers)
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
-
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag capture_log: true
@@ -870,9 +938,8 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, false, headers)
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
-
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag capture_log: true
@@ -913,22 +980,6 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
-    end
-
-    @tag capture_log: true
-    test "rejects DATA frames received on a remote closed stream", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleep_and_echo", context.port)
-      SimpleH2Client.send_body(socket, 1, true, "OK")
-
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
-    end
-
-    def sleep_and_echo(conn) do
-      {:ok, body, conn} = read_body(conn)
-      Process.sleep(100)
-      conn |> send_resp(200, body)
     end
 
     @tag capture_log: true
@@ -990,20 +1041,14 @@ defmodule HTTP2ProtocolTest do
 
       # We assume that 60k of random data will get hpacked down into somewhere
       # between 49152 and 65536 bytes, so we'll need 3 packets total
-      {:ok, <<16_384::24, 1::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
-      {:ok, header_fragment} = Transport.recv(socket, 16_384)
 
-      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
-      {:ok, fragment_1} = Transport.recv(socket, 16_384)
-
-      {:ok, <<16_384::24, 9::8, 0::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
-      {:ok, fragment_2} = Transport.recv(socket, 16_384)
-
-      {:ok, <<length::24, 9::8, 4::8, 0::1, 1::31>>} = Transport.recv(socket, 9)
-      {:ok, fragment_3} = Transport.recv(socket, length)
+      {:ok, 1, 0, 1, fragment_1} = SimpleH2Client.recv_frame(socket)
+      {:ok, 9, 0, 1, fragment_2} = SimpleH2Client.recv_frame(socket)
+      {:ok, 9, 0, 1, fragment_3} = SimpleH2Client.recv_frame(socket)
+      {:ok, 9, 4, 1, fragment_4} = SimpleH2Client.recv_frame(socket)
 
       {:ok, headers, _ctx} =
-        [header_fragment, fragment_1, fragment_2, fragment_3]
+        [fragment_1, fragment_2, fragment_3, fragment_4]
         |> IO.iodata_to_binary()
         |> HPAX.decode(HPAX.new(4096))
 
@@ -1034,7 +1079,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send unadorned headers
-      Transport.send(socket, [<<0, 0, IO.iodata_length(headers), 1, 0x05, 0, 0, 0, 1>>, headers])
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
       assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -1045,11 +1090,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with priority
-      Transport.send(socket, [
-        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
-        <<0, 0, 0, 3, 5>>,
-        headers
-      ])
+      SimpleH2Client.send_frame(socket, 1, 0x25, 1, [<<0, 0, 0, 3, 5>>, headers])
 
       assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -1060,12 +1101,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with padding
-      Transport.send(socket, [
-        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x0D, 0, 0, 0, 1>>,
-        <<4>>,
-        headers,
-        <<1, 2, 3, 4>>
-      ])
+      SimpleH2Client.send_frame(socket, 1, 0x0D, 1, [<<4>>, headers, <<1, 2, 3, 4>>])
 
       assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -1076,8 +1112,7 @@ defmodule HTTP2ProtocolTest do
       headers = headers_for_header_read_test(context)
 
       # Send headers with padding and priority
-      Transport.send(socket, [
-        <<0, 0, IO.iodata_length(headers) + 10, 1, 0x2D, 0, 0, 0, 1>>,
+      SimpleH2Client.send_frame(socket, 1, 0x2D, 1, [
         <<4, 0, 0, 0, 0, 1>>,
         headers,
         <<1, 2, 3, 4>>
@@ -1113,9 +1148,9 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), header3::binary>> =
         headers_for_header_read_test(context)
 
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 1>>, header2])
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header3), 9, 0x04, 0, 0, 0, 1>>, header3])
+      SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
+      SimpleH2Client.send_frame(socket, 9, 0, 1, header2)
+      SimpleH2Client.send_frame(socket, 9, 4, 1, header3)
 
       assert {:ok, 1, false,
               [
@@ -1153,25 +1188,12 @@ defmodule HTTP2ProtocolTest do
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, false, "OK")
-      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      Process.sleep(100)
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-      assert SimpleH2Client.connection_alive?(socket)
-    end
-
-    test "rejects HEADER frames which depend on itself", context do
-      socket = SimpleH2Client.setup_connection(context)
-      headers = headers_for_header_read_test(context)
-
-      # Send headers with padding and priority
-      Transport.send(socket, [
-        <<0, 0, IO.iodata_length(headers) + 5, 1, 0x25, 0, 0, 0, 1>>,
-        <<0, 0, 0, 1, 5>>,
-        headers
-      ])
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
@@ -1198,25 +1220,10 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
-    test "closes with an error when receiving a stream ID we've already seen",
-         context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
-      assert {:ok, 99, true, _, _} = SimpleH2Client.recv_headers(socket)
-      SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
-
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 1}
-    end
-
-    @tag capture_log: true
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      Transport.send(
-        socket,
-        <<0, 0, 11, 1, 0x2C, 0, 0, 0, 1, 2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>
-      )
+      SimpleH2Client.send_frame(socket, 1, 0x2C, 1, <<2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
     end
@@ -1230,7 +1237,7 @@ defmodule HTTP2ProtocolTest do
         <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
           129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      Transport.send(socket, [<<IO.iodata_length(headers)::24, 1::8, 5::8, 0::1, 1::31>>, headers])
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
@@ -1540,8 +1547,8 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
-    test "returns a stream error if sent headers contain too many headers", context do
-      context = https_server(context, http_2_options: [max_header_count: 40])
+    test "returns a stream error if sent header block is too large", context do
+      context = https_server(context, http_2_options: [max_header_block_size: 40])
       socket = SimpleH2Client.setup_connection(context)
 
       headers =
@@ -1554,43 +1561,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
 
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
-    end
-
-    @tag capture_log: true
-    test "returns a stream error if sent headers contain an overlong key", context do
-      context = https_server(context, http_2_options: [max_header_key_length: 5000])
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "HEAD"},
-        {":path", "/"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context[:port]}"},
-        {String.duplicate("a", 5_001), "foo"}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
-    end
-
-    @tag capture_log: true
-    test "returns a stream error if sent headers contain an overlong value", context do
-      context = https_server(context, http_2_options: [max_header_value_length: 5000])
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "HEAD"},
-        {":path", "/"},
-        {":scheme", "https"},
-        {":authority", "localhost:#{context[:port]}"},
-        {"foo", String.duplicate("a", 5_001)}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 6}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
   end
 
@@ -1602,20 +1573,10 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.connection_alive?(socket)
     end
-
-    test "rejects PRIORITY frames which depend on itself", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      SimpleH2Client.send_priority(socket, 1, 1, 4)
-
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-      assert SimpleH2Client.connection_alive?(socket)
-    end
   end
 
   describe "RST_STREAM frames" do
-    @tag capture_log: true
-    test "sends RST_FRAME with no error if stream task ends without closed stream", context do
+    test "sends RST_FRAME with no error if stream task ends with an unclosed client", context do
       socket = SimpleH2Client.setup_connection(context)
 
       # Send headers with end_stream bit cleared
@@ -1625,6 +1586,16 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
       assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "does not send an RST_FRAME if stream task ends with a closed client", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
+      SimpleH2Client.recv_headers(socket)
+      SimpleH2Client.recv_body(socket)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
     end
 
     @tag capture_log: true
@@ -1648,39 +1619,73 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag capture_log: true
+    test "sends RST_FRAME with internal error if we don't set a response with a closed client",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_response_get", context.port)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "Terminating stream in remote_closed state"
+    end
+
+    def no_response_get(conn) do
+      # Ensure we pick up any end_streams that were sent
+      {:ok, _, conn} = read_body(conn)
+      # We need to manually muck with the Conn to act as if we've already sent a response since we
+      # otherwise send an empty response if the user's plug does not
+      %{conn | state: :sent}
+    end
+
+    @tag capture_log: true
+    test "sends RST_FRAME with internal error if we don't set a response with an open client",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_response_post", context.port)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+          Process.sleep(100)
+        end)
+
+      assert errors =~ "Terminating stream in open state"
+    end
+
+    def no_response_post(conn) do
+      # We need to manually muck with the Conn to act as if we've already sent a response since we
+      # otherwise send an empty response if the user's plug does not
+      %{conn | state: :sent}
+    end
+
+    @tag capture_log: true
     test "rejects RST_STREAM frames received on an idle stream", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_rst_stream(socket, 1, 0)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
     end
 
-    test "shuts down the stream task on receipt of an RST_STREAM frame", context do
+    test "raises an error on upon receipt of an RST_STREAM frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sleeper", context.port)
-      SimpleH2Client.recv_headers(socket)
-      {:ok, 1, false, "OK"} = SimpleH2Client.recv_body(socket)
+      errors =
+        capture_log(fn ->
+          SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
+          SimpleH2Client.send_rst_stream(socket, 1, 99)
+          Process.sleep(100)
+        end)
 
-      assert Process.whereis(:sleeper) |> Process.alive?()
-
-      SimpleH2Client.send_rst_stream(socket, 1, 0)
-
-      Process.sleep(100)
-
-      assert Process.whereis(:sleeper) == nil
-      assert SimpleH2Client.connection_alive?(socket)
+      assert errors =~ "Client sent RST_STREAM with error code 99"
     end
 
-    def sleeper(conn) do
-      Process.register(self(), :sleeper)
-
-      conn
-      |> send_chunked(200)
-      |> chunk("OK")
-
-      Process.sleep(:infinity)
+    def expect_reset(conn) do
+      read_body(conn)
     end
   end
 
@@ -1688,8 +1693,8 @@ defmodule HTTP2ProtocolTest do
     test "the server should acknowledge a client's SETTINGS frames", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      Transport.send(socket, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>)
-      assert Transport.recv(socket, 9) == {:ok, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>}
+      SimpleH2Client.send_frame(socket, 4, 0, 0, <<>>)
+      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
@@ -1698,7 +1703,7 @@ defmodule HTTP2ProtocolTest do
     test "the server should reject any received PUSH_PROMISE frames", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      Transport.send(socket, <<0, 0, 7, 5, 0, 0, 0, 0, 1, 0, 0, 0, 3, 1, 2, 3>>)
+      SimpleH2Client.send_frame(socket, 5, 0, 1, <<0, 0, 0, 3, 1, 2, 3>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -1707,10 +1712,9 @@ defmodule HTTP2ProtocolTest do
   describe "PING frames" do
     test "the server should acknowledge a client's PING frames", context do
       socket = SimpleH2Client.setup_connection(context)
-      Transport.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
 
-      assert Transport.recv(socket, 17) ==
-               {:ok, <<0, 0, 8, 6, 1, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>}
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
@@ -1964,12 +1968,12 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, String.duplicate("D", 16_383)}
 
       # Grow the stream windows such that we expect to see 100 bytes from 1 and 50 bytes from
-      # 3 (note that 1 is queued at a higher priority than 3 due to FIFO ordering) Also note that
-      # we receive end_of_stream on stream 1 here
-      SimpleH2Client.send_window_update(socket, 3, 100)
+      # 3. Also note that we receive end_of_stream on stream 1 here
       SimpleH2Client.send_window_update(socket, 1, 100)
       SimpleH2Client.send_window_update(socket, 0, 150)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "d" <> String.duplicate("e", 99)}
+
+      SimpleH2Client.send_window_update(socket, 3, 100)
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, false, "D" <> String.duplicate("E", 49)}
 
       # Finally grow our connection window and verify we get the last of stream 3
@@ -2047,8 +2051,8 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      Transport.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+      SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
+      SimpleH2Client.send_frame(socket, 6, 0, 1, <<1, 2, 3, 4, 5, 6, 7, 8>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -2060,8 +2064,8 @@ defmodule HTTP2ProtocolTest do
       <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
         headers_for_header_read_test(context)
 
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header1), 1, 0x01, 0, 0, 0, 1>>, header1])
-      Transport.send(socket, [<<0, 0, IO.iodata_length(header2), 9, 0x00, 0, 0, 0, 2>>, header2])
+      SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
+      SimpleH2Client.send_frame(socket, 9, 0, 2, header2)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -2072,7 +2076,7 @@ defmodule HTTP2ProtocolTest do
 
       headers = headers_for_header_read_test(context)
 
-      Transport.send(socket, [<<0, 0, IO.iodata_length(headers), 9, 0x04, 0, 0, 0, 1>>, headers])
+      SimpleH2Client.send_frame(socket, 9, 4, 1, headers)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
@@ -2142,7 +2146,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
     end
 
     test "derives port from host header", context do
@@ -2209,7 +2213,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
     end
 
     test "derives port from schema default if no port specified in host header", context do

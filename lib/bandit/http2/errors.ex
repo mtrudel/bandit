@@ -40,4 +40,14 @@ defmodule Bandit.HTTP2.Errors do
     @spec unquote(name)() :: unquote(Macro.var(name, Elixir)) :: unquote(value)
     def unquote(name)(), do: unquote(value)
   end
+
+  # Represents a stream error as defined in RFC9113§5.4.2
+  defmodule StreamError do
+    defexception [:message, :method, :request_target, :error_code]
+  end
+
+  # Represents a stream error as defined in RFC9113§5.4.3
+  defmodule ConnectionError do
+    defexception [:message, :method, :request_target, :error_code]
+  end
 end
