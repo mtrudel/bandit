@@ -29,7 +29,7 @@ defmodule Bandit.HTTP1.Handler do
         Bandit.HTTP1.Socket.read_headers(transport)
 
       adapter =
-        Bandit.HTTP1.Adapter.init(
+        Bandit.Adapter.init(
           self(),
           transport,
           transport_info,
@@ -48,9 +48,9 @@ defmodule Bandit.HTTP1.Handler do
                request_target,
                headers
              ),
-           {:ok, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, adapter}} = conn} <-
+           {:ok, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn} <-
              Bandit.Pipeline.run(
-               {Bandit.HTTP1.Adapter, adapter},
+               {Bandit.Adapter, adapter},
                transport_info,
                adapter.method,
                request_target,
@@ -82,8 +82,7 @@ defmodule Bandit.HTTP1.Handler do
             {:close, state}
           end
 
-        {:ok, :websocket, %Plug.Conn{adapter: {Bandit.HTTP1.Adapter, adapter}} = conn,
-         upgrade_opts} ->
+        {:ok, :websocket, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn, upgrade_opts} ->
           Bandit.Telemetry.stop_span(span, adapter.metrics, %{
             conn: conn,
             status: conn.status,
@@ -173,7 +172,7 @@ defmodule Bandit.HTTP1.Handler do
          {:ok, data, adapter} <- do_read_req_body(adapter),
          resp_headers = [{"connection", "Upgrade"}, {"upgrade", "h2c"}],
          {:ok, _sent_body, adapter} <-
-           Bandit.HTTP1.Adapter.send_resp(adapter, 101, resp_headers, <<>>) do
+           Bandit.Adapter.send_resp(adapter, 101, resp_headers, <<>>) do
       headers =
         Enum.reject(headers, fn {key, _value} ->
           key == "connection" || key in connection_headers
@@ -197,7 +196,7 @@ defmodule Bandit.HTTP1.Handler do
     do: {:error, :body_too_large}
 
   defp do_read_req_body(adapter, acc) do
-    case Bandit.HTTP1.Adapter.read_req_body(adapter, []) do
+    case Bandit.Adapter.read_req_body(adapter, []) do
       {:ok, chunk, adapter} -> {:ok, acc <> chunk, adapter}
       {:more, chunk, adapter} -> do_read_req_body(adapter, acc <> chunk)
     end

@@ -1,4 +1,4 @@
-defmodule Bandit.HTTP1.Adapter do
+defmodule Bandit.Adapter do
   @moduledoc false
 
   @behaviour Plug.Conn.Adapter

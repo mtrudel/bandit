@@ -761,8 +761,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP1.Adapter"
+      assert errors =~ "(ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -934,11 +933,11 @@ defmodule HTTP1RequestTest do
              ~> {:ok, "200 OK",
               [
                 date: string(),
-                "content-length": "85",
+                "content-length": "79",
                 vary: "accept-encoding",
                 "cache-control": "max-age=0, private, must-revalidate"
               ],
-              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.HTTP1.Adapter\"}"}
+              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.Adapter\"}"}
     end
 
     defmodule MyNoopWebSock do
