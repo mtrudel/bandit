@@ -26,7 +26,7 @@ defmodule Bandit.HTTP1.Handler do
 
     try do
       {:ok, method, request_target, headers, transport} =
-        Bandit.HTTP1.Socket.read_headers(transport)
+        Bandit.HTTPTransport.read_headers(transport)
 
       adapter =
         Bandit.Adapter.init(
@@ -149,7 +149,7 @@ defmodule Bandit.HTTP1.Handler do
 
     if under_limit && adapter.transport.keepalive do
       try do
-        _ = Bandit.HTTP1.Socket.ensure_completed(adapter.transport)
+        _ = Bandit.HTTPTransport.ensure_completed(adapter.transport)
 
         gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
         if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
