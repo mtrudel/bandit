@@ -13,7 +13,7 @@ by this same process.
 
 The execution model to handle a given request is quite straightforward: the
 underlying [Thousand Island](https://github.com/mtrudel/thousand_island) library
-will call `Bandit.HTTP1.Handler.handle_data/3`, which will then attmept to parse
+will call `Bandit.HTTP1.Handler.handle_data/3`, which will then attempt to parse
 the headers of the request by calling `Bandit.HTTP1.Adapter.read_headers/1`.
 Assuming the common case, this list of headers will then be passed to 
 `Bandit.Pipeline.run/6`, which will construct a `Plug.Conn` structure to
