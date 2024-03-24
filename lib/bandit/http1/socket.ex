@@ -17,6 +17,7 @@ defmodule Bandit.HTTP1.Socket do
             bytes_remaining: nil,
             body_encoding: nil,
             version: :"HTTP/1.0",
+            send_buffer: nil,
             keepalive: false,
             transport_info: nil,
             opts: []
@@ -36,6 +37,7 @@ defmodule Bandit.HTTP1.Socket do
           bytes_remaining: non_neg_integer() | :chunked | nil,
           body_encoding: nil | binary(),
           version: nil | :"HTTP/1.1" | :"HTTP/1.0",
+          send_buffer: iolist(),
           keepalive: boolean(),
           transport_info: Bandit.TransportInfo.t(),
           opts: %{
@@ -326,29 +328,39 @@ defmodule Bandit.HTTP1.Socket do
   def send_headers(%__MODULE__{write_state: :unsent} = socket, status, headers, body_disposition) do
     resp_line = "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n"
 
-    {headers, write_state} =
-      case body_disposition do
-        :raw -> {headers, :writing}
-        :chunk_encoded -> {[{"transfer-encoding", "chunked"} | headers], :chunking}
-        :no_body -> {headers, :sent}
-        :inform -> {headers, :unsent}
-      end
+    case body_disposition do
+      :raw ->
+        # This is an optimization for the common case of sending a non-encoded body (or file),
+        # and coalesces the header and body send calls into a single ThousandIsland.Socket.send/2
+        # call. This makes a _substantial_ difference in practice
+        %{socket | write_state: :writing, send_buffer: [resp_line | encode_headers(headers)]}
 
-    headers =
-      headers
-      |> Enum.map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
-      |> then(&[&1 | ["\r\n"]])
+      :chunk_encoded ->
+        headers = [{"transfer-encoding", "chunked"} | headers]
+        _ = ThousandIsland.Socket.send(socket.socket, [resp_line | encode_headers(headers)])
+        %{socket | write_state: :chunking}
 
-    _ = ThousandIsland.Socket.send(socket.socket, [resp_line | headers])
+      :no_body ->
+        _ = ThousandIsland.Socket.send(socket.socket, [resp_line | encode_headers(headers)])
+        %{socket | write_state: :sent}
 
-    %{socket | write_state: write_state}
+      :inform ->
+        _ = ThousandIsland.Socket.send(socket.socket, [resp_line | encode_headers(headers)])
+        %{socket | write_state: :unsent}
+    end
+  end
+
+  defp encode_headers(headers) do
+    headers
+    |> Enum.map(fn {k, v} -> [k, ": ", v, "\r\n"] end)
+    |> then(&[&1 | ["\r\n"]])
   end
 
   @impl Bandit.HTTPTransport
   def send_data(%__MODULE__{write_state: :writing} = socket, data, end_request) do
-    _ = ThousandIsland.Socket.send(socket.socket, data)
+    _ = ThousandIsland.Socket.send(socket.socket, [socket.send_buffer | data])
     write_state = if end_request, do: :sent, else: :writing
-    %{socket | write_state: write_state}
+    %{socket | write_state: write_state, send_buffer: []}
   end
 
   def send_data(%__MODULE__{write_state: :chunking} = socket, data, end_request) do
@@ -361,8 +373,9 @@ defmodule Bandit.HTTP1.Socket do
 
   @impl Bandit.HTTPTransport
   def sendfile(%__MODULE__{write_state: :writing} = socket, path, offset, length) do
+    _ = ThousandIsland.Socket.send(socket.socket, socket.send_buffer)
     _ = ThousandIsland.Socket.sendfile(socket.socket, path, offset, length)
-    socket
+    %{socket | write_state: :sent}
   end
 
   @impl Bandit.HTTPTransport
