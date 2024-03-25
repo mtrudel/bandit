@@ -18,7 +18,7 @@ defmodule Bandit.HTTP2.Connection do
             transport_info: nil,
             telemetry_span: nil,
             plug: nil,
-            opts: []
+            opts: %{}
 
   @type initial_request ::
           {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), binary()}
@@ -37,13 +37,16 @@ defmodule Bandit.HTTP2.Connection do
           transport_info: Bandit.TransportInfo.t(),
           telemetry_span: ThousandIsland.Telemetry.t(),
           plug: Bandit.Pipeline.plug_def(),
-          opts: keyword()
+          opts: %{
+            required(:http) => Bandit.http_options(),
+            required(:http_2) => Bandit.http_2_options()
+          }
         }
 
   @spec init(
           ThousandIsland.Socket.t(),
           Bandit.Pipeline.plug_def(),
-          keyword(),
+          map(),
           initial_request() | nil,
           Bandit.HTTP2.Settings.t() | nil
         ) :: t()
@@ -56,7 +59,7 @@ defmodule Bandit.HTTP2.Connection do
 
     connection = %__MODULE__{
       local_settings:
-        struct!(Bandit.HTTP2.Settings, Keyword.get(opts, :default_local_settings, [])),
+        struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
       remote_settings: remote_settings || %Bandit.HTTP2.Settings{},
       transport_info: transport_info,
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
@@ -276,14 +279,14 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp accept_stream?(connection) do
-    max_requests = Keyword.get(connection.opts, :max_requests, 0)
+    max_requests = Keyword.get(connection.opts.http_2, :max_requests, 0)
 
     max_requests == 0 ||
       Bandit.HTTP2.StreamCollection.stream_count(connection.streams) < max_requests
   end
 
   defp check_oversize_fragment!(fragment, connection) do
-    if byte_size(fragment) > Keyword.get(connection.opts, :max_header_block_size, 50_000),
+    if byte_size(fragment) > Keyword.get(connection.opts.http_2, :max_header_block_size, 50_000),
       do: connection_error!("Received overlong headers")
   end
 

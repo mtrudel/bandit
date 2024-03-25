@@ -128,7 +128,8 @@ defmodule HTTP2PlugTest do
     {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
     {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
-    assert SimpleH2Client.successful_response?(socket, 1, true)
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
   end
 
   def length_body_read(conn) do
@@ -149,7 +150,8 @@ defmodule HTTP2PlugTest do
     Process.sleep(500)
     SimpleH2Client.send_body(socket, 1, true, "BC")
 
-    assert SimpleH2Client.successful_response?(socket, 1, true)
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
   end
 
   def timeout_body_read(conn) do
@@ -326,7 +328,7 @@ defmodule HTTP2PlugTest do
         end)
 
       assert errors =~
-               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP2.Adapter"
+               "(ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -570,10 +572,13 @@ defmodule HTTP2PlugTest do
 
     SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_inform", context.port)
 
-    expected_headers = [{":status", "100"}, {"x-from", "inform"}]
-    assert {:ok, 1, false, ^expected_headers, ctx} = SimpleH2Client.recv_headers(socket)
+    assert {:ok, 1, false, [{":status", "100"}, {"date", date}, {"x-from", "inform"}], ctx} =
+             SimpleH2Client.recv_headers(socket)
+
     assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
     assert {:ok, 1, true, "Informer"} = SimpleH2Client.recv_body(socket)
+
+    assert TestHelpers.valid_date_header?(date)
 
     assert SimpleH2Client.connection_alive?(socket)
   end

@@ -71,9 +71,9 @@ looks like the following:
 The state of a particular stream are contained within a `Bandit.HTTP2.Stream`
 struct, maintained within a `Bandit.HTTP2.StreamProcess` process. As part of the
 stream's lifecycle, the server's configured Plug is called, with an instance of
-the `Bandit.HTTP2.Adapter` struct being used to interface with the Plug. There
+the `Bandit.Adapter` struct being used to interface with the Plug. There
 is a separation of concerns between the aspect of HTTP semantics managed by
-`Bandit.HTTP2.Adapter` (roughly, those concerns laid out in
+`Bandit.Adapter` (roughly, those concerns laid out in
 [RFC9110](https://datatracker.ietf.org/doc/html/rfc9110)) and the more
 transport-specific HTTP/2 concerns managed by `Bandit.HTTP2.Stream` (roughly the
 concerns specified in [RFC9113](https://datatracker.ietf.org/doc/html/rfc9113)).

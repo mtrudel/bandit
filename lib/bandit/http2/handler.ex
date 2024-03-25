@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.Handler do
       Bandit.HTTP2.Connection.init(
         socket,
         state.plug,
-        state.opts.http_2,
+        state.opts,
         Map.get(state, :initial_request),
         Map.get(state, :remote_settings)
       )
