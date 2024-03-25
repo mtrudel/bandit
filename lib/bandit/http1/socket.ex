@@ -5,7 +5,7 @@ defmodule Bandit.HTTP1.Socket do
   # `Bandit.HTTP2.Stream` for HTTP/2, and indeed both implement the `Bandit.HTTPTransport`
   # behaviour. An instance of this struct is maintained as the state of a `Bandit.HTTP1.Handler`
   # process, and it moves an HTTP/1 request through its lifecycle by calling functions defined on
-  # this module. This state is also tracked within the `Bandit.HTTP1.Adapter` instance that backs
+  # this module. This state is also tracked within the `Bandit.Adapter` instance that backs
   # Bandit's Plug API.
 
   defstruct socket: nil,
@@ -17,7 +17,7 @@ defmodule Bandit.HTTP1.Socket do
             version: :"HTTP/1.0",
             send_buffer: nil,
             keepalive: false,
-            opts: []
+            opts: %{}
 
   @typedoc "An HTTP/1 read state"
   @type read_state :: :unread | :headers_read | :read
