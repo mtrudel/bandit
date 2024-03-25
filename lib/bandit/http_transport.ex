@@ -8,6 +8,9 @@ defprotocol Bandit.HTTPTransport do
   @typedoc "How the response body is to be delivered"
   @type body_disposition :: :raw | :chunk_encoded | :no_body | :inform
 
+  @spec transport_info(t()) :: {:ok, Bandit.TransportInfo.t()} | {:error, term()}
+  def transport_info(transport)
+
   @spec version(t()) :: Plug.Conn.Adapter.http_protocol()
   def version(transport)
 

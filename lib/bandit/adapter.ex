@@ -9,7 +9,6 @@ defmodule Bandit.Adapter do
   @behaviour Plug.Conn.Adapter
 
   defstruct transport: nil,
-            transport_info: nil,
             owner_pid: nil,
             method: nil,
             status: nil,
@@ -22,7 +21,6 @@ defmodule Bandit.Adapter do
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
           transport: Bandit.HTTPTransport.t(),
-          transport_info: Bandit.TransportInfo.t(),
           owner_pid: pid() | nil,
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
@@ -36,7 +34,7 @@ defmodule Bandit.Adapter do
           }
         }
 
-  def init(owner_pid, transport, transport_info, method, headers, websocket_enabled, opts) do
+  def init(owner_pid, transport, method, headers, websocket_enabled, opts) do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
@@ -45,7 +43,6 @@ defmodule Bandit.Adapter do
 
     %__MODULE__{
       transport: transport,
-      transport_info: transport_info,
       owner_pid: owner_pid,
       method: method,
       content_encoding: content_encoding,
@@ -267,8 +264,12 @@ defmodule Bandit.Adapter do
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{transport_info: transport_info}),
-    do: Bandit.TransportInfo.peer_data(transport_info)
+  def get_peer_data(%__MODULE__{} = adapter) do
+    case Bandit.HTTPTransport.transport_info(adapter.transport) do
+      {:ok, transport_info} -> Bandit.TransportInfo.peer_data(transport_info)
+      {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
+    end
+  end
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{} = adapter),

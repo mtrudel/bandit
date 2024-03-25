@@ -17,7 +17,6 @@ defmodule Bandit.HTTP1.Socket do
             version: :"HTTP/1.0",
             send_buffer: nil,
             keepalive: false,
-            transport_info: nil,
             opts: []
 
   @typedoc "An HTTP/1 read state"
@@ -37,13 +36,14 @@ defmodule Bandit.HTTP1.Socket do
           version: nil | :"HTTP/1.1" | :"HTTP/1.0",
           send_buffer: iolist(),
           keepalive: boolean(),
-          transport_info: Bandit.TransportInfo.t(),
           opts: %{
             required(:http_1) => Bandit.http_1_options()
           }
         }
 
   defimpl Bandit.HTTPTransport do
+    def transport_info(%@for{} = socket), do: Bandit.TransportInfo.init(socket.socket)
+
     def version(socket), do: socket.version
 
     def read_headers(%{read_state: :unread} = socket) do

@@ -16,13 +16,7 @@ defmodule Bandit.HTTP1.Handler do
       })
 
     {:ok, transport_info} = Bandit.TransportInfo.init(socket)
-
-    transport = %Bandit.HTTP1.Socket{
-      socket: socket,
-      buffer: data,
-      transport_info: transport_info,
-      opts: state.opts
-    }
+    transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
 
     try do
       {:ok, method, request_target, headers, transport} =
@@ -32,7 +26,6 @@ defmodule Bandit.HTTP1.Handler do
         Bandit.Adapter.init(
           self(),
           transport,
-          transport_info,
           method,
           headers,
           state.websocket_enabled,
