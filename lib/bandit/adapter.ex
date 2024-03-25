@@ -256,10 +256,12 @@ defmodule Bandit.Adapter do
   defp send_resp_body?(_adapter), do: true
 
   @impl Plug.Conn.Adapter
-  def upgrade(%__MODULE__{websocket_enabled: true} = adapter, :websocket, opts),
-    do: {:ok, %{adapter | upgrade: {:websocket, opts, adapter.opts.websocket}}}
-
-  def upgrade(_adapter, _upgrade, _opts), do: {:error, :not_supported}
+  def upgrade(%__MODULE__{} = adapter, protocol, opts) do
+    if adapter.websocket_enabled &&
+         Bandit.HTTPTransport.supported_upgrade?(adapter.transport, protocol),
+       do: {:ok, %{adapter | upgrade: {protocol, opts, adapter.opts.websocket}}},
+       else: {:error, :not_supported}
+  end
 
   @impl Plug.Conn.Adapter
   def push(_adapter, _path, _headers), do: {:error, :not_supported}

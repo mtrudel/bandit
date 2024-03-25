@@ -377,6 +377,8 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
+    def supported_upgrade?(_socket, protocol), do: protocol == :websocket
+
     @spec request_error!(term()) :: no_return()
     @spec request_error!(term(), atom()) :: no_return()
     defp request_error!(reason, status \\ :bad_request) do

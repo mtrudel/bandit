@@ -29,4 +29,7 @@ defprotocol Bandit.HTTPTransport do
 
   @spec ensure_completed(t()) :: t()
   def ensure_completed(transport)
+
+  @spec supported_upgrade?(t(), atom()) :: boolean()
+  def supported_upgrade?(transport, protocol)
 end
