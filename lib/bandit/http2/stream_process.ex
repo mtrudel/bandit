@@ -35,7 +35,7 @@ defmodule Bandit.HTTP2.StreamProcess do
     {:ok, method, request_target, headers, stream} =
       Bandit.HTTPTransport.read_headers(state.stream)
 
-    adapter = Bandit.Adapter.init(self(), stream, method, headers, false, state.opts)
+    adapter = Bandit.Adapter.init(self(), stream, method, headers, state.opts)
     adapter = {Bandit.Adapter, adapter}
 
     transport_info = state.stream.transport_info

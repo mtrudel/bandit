@@ -28,7 +28,6 @@ defmodule Bandit.HTTP1.Handler do
           transport,
           method,
           headers,
-          state.websocket_enabled,
           state.opts
         )
 

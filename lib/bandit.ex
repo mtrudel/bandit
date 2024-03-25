@@ -238,7 +238,6 @@ defmodule Bandit do
 
     {http_1_enabled, http_1_options} = Keyword.pop(http_1_options, :enabled, true)
     {http_2_enabled, http_2_options} = Keyword.pop(http_2_options, :enabled, true)
-    {websocket_enabled, websocket_options} = Keyword.pop(websocket_options, :enabled, true)
 
     handler_options = %{
       plug: plug,
@@ -250,8 +249,7 @@ defmodule Bandit do
         websocket: websocket_options
       },
       http_1_enabled: http_1_enabled,
-      http_2_enabled: http_2_enabled,
-      websocket_enabled: websocket_enabled
+      http_2_enabled: http_2_enabled
     }
 
     scheme = Keyword.get(arg, :scheme, :http)

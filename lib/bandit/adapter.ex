@@ -15,7 +15,6 @@ defmodule Bandit.Adapter do
             content_encoding: nil,
             upgrade: nil,
             metrics: %{},
-            websocket_enabled: false,
             opts: []
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
@@ -27,14 +26,13 @@ defmodule Bandit.Adapter do
           content_encoding: String.t(),
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           metrics: %{},
-          websocket_enabled: boolean(),
           opts: %{
             required(:http) => Bandit.http_options(),
             required(:websocket) => Bandit.websocket_options()
           }
         }
 
-  def init(owner_pid, transport, method, headers, websocket_enabled, opts) do
+  def init(owner_pid, transport, method, headers, opts) do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
@@ -47,7 +45,6 @@ defmodule Bandit.Adapter do
       method: method,
       content_encoding: content_encoding,
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
-      websocket_enabled: websocket_enabled,
       opts: opts
     }
   end
@@ -254,7 +251,7 @@ defmodule Bandit.Adapter do
 
   @impl Plug.Conn.Adapter
   def upgrade(%__MODULE__{} = adapter, protocol, opts) do
-    if adapter.websocket_enabled &&
+    if Keyword.get(adapter.opts.websocket, :enabled, true) &&
          Bandit.HTTPTransport.supported_upgrade?(adapter.transport, protocol),
        do: {:ok, %{adapter | upgrade: {protocol, opts, adapter.opts.websocket}}},
        else: {:error, :not_supported}
