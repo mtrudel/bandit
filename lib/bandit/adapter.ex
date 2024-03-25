@@ -31,7 +31,7 @@ defmodule Bandit.Adapter do
           metrics: %{},
           websocket_enabled: boolean(),
           opts: %{
-            required(:http_1) => Bandit.http_1_options(),
+            required(:http) => Bandit.http_options(),
             required(:websocket) => Bandit.websocket_options()
           }
         }
@@ -40,7 +40,7 @@ defmodule Bandit.Adapter do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
-        Keyword.get(opts.http_1, :compress, true)
+        Keyword.get(opts.http, :compress, true)
       )
 
     %__MODULE__{
@@ -120,7 +120,7 @@ defmodule Bandit.Adapter do
             resp_compression_method: content_encoding
           }
 
-          deflate_options = Keyword.get(adapter.opts.http_1, :deflate_options, [])
+          deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
           deflated_body = Bandit.Compression.compress(body, content_encoding, deflate_options)
           headers = [{"content-encoding", adapter.content_encoding} | headers]
           {deflated_body, headers, metrics}
@@ -129,7 +129,7 @@ defmodule Bandit.Adapter do
           {body, headers, %{}}
       end
 
-    compress = Keyword.get(adapter.opts.http_1, :compress, true)
+    compress = Keyword.get(adapter.opts.http, :compress, true)
     headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
     headers = Bandit.Headers.add_content_length(headers, IO.iodata_length(body), status)
 

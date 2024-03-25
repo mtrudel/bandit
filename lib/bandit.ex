@@ -58,6 +58,8 @@ defmodule Bandit do
     default values in this list based on your top-level configuration; these values will be
     overridden by values appearing here. A complete list can be found at
     `t:ThousandIsland.options/0`
+  * `http_options`: A list of options to configure the shared aspects of Bandit's HTTP stack. A
+    complete list can be found at `t:http_options/0`
   * `http_1_options`: A list of options to configure Bandit's HTTP/1 stack. A complete list can
     be found at `t:http_1_options/0`
   * `http_2_options`: A list of options to configure Bandit's HTTP/2 stack. A complete list can
@@ -77,9 +79,24 @@ defmodule Bandit do
           display_plug: module(),
           startup_log: Logger.level() | false,
           thousand_island_options: ThousandIsland.options(),
+          http_options: http_options(),
           http_1_options: http_1_options(),
           http_2_options: http_2_options(),
           websocket_options: websocket_options()
+        ]
+
+  @typedoc """
+  Options to configure shared aspects of the HTTP stack in Bandit
+
+  * `compress`: Whether or not to attempt compression of responses via content-encoding
+    negotiation as described in
+    [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
+  * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
+    be found at `t:deflate_options/0`
+  """
+  @type http_options :: [
+          compress: boolean(),
+          deflate_opions: deflate_options()
         ]
 
   @typedoc """
@@ -101,11 +118,6 @@ defmodule Bandit do
     Defaults to `false`
   * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
     Defaults to `true`
-  * `compress`: Whether or not to attempt compression of responses via content-encoding
-    negotiation as described in
-    [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
-  * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
-    be found at `t:deflate_options/0`
   """
   @type http_1_options :: [
           enabled: boolean(),
@@ -115,9 +127,7 @@ defmodule Bandit do
           max_requests: pos_integer(),
           gc_every_n_keepalive_requests: pos_integer(),
           log_unknown_messages: boolean(),
-          log_protocol_errors: boolean(),
-          compress: boolean(),
-          deflate_opions: deflate_options()
+          log_protocol_errors: boolean()
         ]
 
   @typedoc """
@@ -131,19 +141,12 @@ defmodule Bandit do
     HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
   * `default_local_settings`: Options to override the default values for local HTTP/2
     settings. Values provided here will override the defaults specified in RFC9113§6.5.2
-  * `compress`: Whether or not to attempt compression of responses via content-encoding
-    negotiation as described in
-    [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
-  * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
-    be found at `t:deflate_options/0`
   """
   @type http_2_options :: [
           enabled: boolean(),
           max_header_block_size: pos_integer(),
           max_requests: pos_integer(),
-          default_local_settings: Bandit.HTTP2.Settings.t(),
-          compress: boolean(),
-          deflate_options: deflate_options()
+          default_local_settings: Bandit.HTTP2.Settings.t()
         ]
 
   @typedoc """
@@ -192,9 +195,10 @@ defmodule Bandit do
     }
   end
 
-  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_1_options http_2_options websocket_options)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages log_protocol_errors compress deflate_options)a
-  @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings compress deflate_options)a
+  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
+  @http_keys ~w(compress deflate_options)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages log_protocol_errors)a
+  @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
@@ -211,6 +215,10 @@ defmodule Bandit do
     thousand_island_options =
       Keyword.get(arg, :thousand_island_options, [])
       |> validate_options(@thousand_island_keys, :thousand_island_options)
+
+    http_options =
+      Keyword.get(arg, :http_options, [])
+      |> validate_options(@http_keys, :http_options)
 
     http_1_options =
       Keyword.get(arg, :http_1_options, [])
@@ -235,7 +243,12 @@ defmodule Bandit do
     handler_options = %{
       plug: plug,
       handler_module: Bandit.InitialHandler,
-      opts: %{http_1: http_1_options, http_2: http_2_options, websocket: websocket_options},
+      opts: %{
+        http: http_options,
+        http_1: http_1_options,
+        http_2: http_2_options,
+        websocket: websocket_options
+      },
       http_1_enabled: http_1_enabled,
       http_2_enabled: http_2_enabled,
       websocket_enabled: websocket_enabled

@@ -1147,7 +1147,7 @@ defmodule HTTP1RequestTest do
 
     test "falls back to no encoding if compression is disabled", context do
       context =
-        http_server(context, http_1_options: [compress: false])
+        http_server(context, http_options: [compress: false])
         |> Enum.into(context)
 
       response =
