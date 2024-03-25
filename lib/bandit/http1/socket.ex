@@ -44,9 +44,9 @@ defmodule Bandit.HTTP1.Socket do
   defimpl Bandit.HTTPTransport do
     def transport_info(%@for{} = socket), do: Bandit.TransportInfo.init(socket.socket)
 
-    def version(socket), do: socket.version
+    def version(%@for{} = socket), do: socket.version
 
-    def read_headers(%{read_state: :unread} = socket) do
+    def read_headers(%@for{read_state: :unread} = socket) do
       {method, request_target, socket} = do_read_request_line!(socket)
       {headers, socket} = do_read_headers!(socket)
       body_size = get_content_length!(headers)
@@ -172,7 +172,10 @@ defmodule Bandit.HTTP1.Socket do
     defp should_keepalive?(:"HTTP/1.1", _), do: true
     defp should_keepalive?(_, _), do: false
 
-    def read_data(%{read_state: :headers_read, bytes_remaining: bytes_remaining} = socket, opts)
+    def read_data(
+          %@for{read_state: :headers_read, bytes_remaining: bytes_remaining} = socket,
+          opts
+        )
         when is_number(bytes_remaining) do
       {to_return, buffer, bytes_remaining} =
         do_read_content_length_data!(socket.socket, socket.buffer, bytes_remaining, opts)
@@ -184,7 +187,7 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    def read_data(%{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
+    def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
       read_size = Keyword.get(opts, :read_length, 1_000_000)
       read_timeout = Keyword.get(opts, :read_timeout)
 
@@ -196,12 +199,12 @@ defmodule Bandit.HTTP1.Socket do
       {:ok, body, %{socket | read_state: :read, buffer: buffer}}
     end
 
-    def read_data(%{read_state: :headers_read, body_encoding: body_encoding}, _opts)
+    def read_data(%@for{read_state: :headers_read, body_encoding: body_encoding}, _opts)
         when not is_nil(body_encoding) do
       request_error!("Unsupported transfer-encoding")
     end
 
-    def read_data(%{} = socket, _opts), do: {:ok, <<>>, socket}
+    def read_data(%@for{} = socket, _opts), do: {:ok, <<>>, socket}
 
     defp do_read_content_length_data!(socket, buffer, bytes_remaining, opts) do
       max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
@@ -317,7 +320,7 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    def send_headers(%{write_state: :unsent} = socket, status, headers, body_disposition) do
+    def send_headers(%@for{write_state: :unsent} = socket, status, headers, body_disposition) do
       resp_line = "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n"
 
       case body_disposition do
@@ -348,13 +351,13 @@ defmodule Bandit.HTTP1.Socket do
       |> then(&[&1 | ["\r\n"]])
     end
 
-    def send_data(%{write_state: :writing} = socket, data, end_request) do
+    def send_data(%@for{write_state: :writing} = socket, data, end_request) do
       _ = ThousandIsland.Socket.send(socket.socket, [socket.send_buffer | data])
       write_state = if end_request, do: :sent, else: :writing
       %{socket | write_state: write_state, send_buffer: []}
     end
 
-    def send_data(%{write_state: :chunking} = socket, data, end_request) do
+    def send_data(%@for{write_state: :chunking} = socket, data, end_request) do
       byte_size = data |> IO.iodata_length()
       payload = [Integer.to_string(byte_size, 16), "\r\n", data, "\r\n"]
       _ = ThousandIsland.Socket.send(socket.socket, payload)
@@ -362,15 +365,15 @@ defmodule Bandit.HTTP1.Socket do
       %{socket | write_state: write_state}
     end
 
-    def sendfile(%{write_state: :writing} = socket, path, offset, length) do
+    def sendfile(%@for{write_state: :writing} = socket, path, offset, length) do
       _ = ThousandIsland.Socket.send(socket.socket, socket.send_buffer)
       _ = ThousandIsland.Socket.sendfile(socket.socket, path, offset, length)
       %{socket | write_state: :sent}
     end
 
-    def ensure_completed(%{read_state: :read} = socket), do: socket
+    def ensure_completed(%@for{read_state: :read} = socket), do: socket
 
-    def ensure_completed(%{} = socket) do
+    def ensure_completed(%@for{} = socket) do
       case read_data(socket, []) do
         {:ok, _data, socket} -> socket
         {:more, _data, socket} -> ensure_completed(socket)
