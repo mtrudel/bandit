@@ -20,9 +20,6 @@ defmodule Bandit.HTTP2.Connection do
             plug: nil,
             opts: %{}
 
-  @type initial_request ::
-          {Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), binary()}
-
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
           local_settings: Bandit.HTTP2.Settings.t(),
@@ -43,14 +40,8 @@ defmodule Bandit.HTTP2.Connection do
           }
         }
 
-  @spec init(
-          ThousandIsland.Socket.t(),
-          Bandit.Pipeline.plug_def(),
-          map(),
-          initial_request() | nil,
-          Bandit.HTTP2.Settings.t() | nil
-        ) :: t()
-  def init(socket, plug, opts, initial_request \\ nil, remote_settings \\ nil) do
+  @spec init(ThousandIsland.Socket.t(), Bandit.Pipeline.plug_def(), map()) :: t()
+  def init(socket, plug, opts) do
     transport_info =
       case Bandit.TransportInfo.init(socket) do
         {:ok, transport_info} -> transport_info
@@ -60,7 +51,6 @@ defmodule Bandit.HTTP2.Connection do
     connection = %__MODULE__{
       local_settings:
         struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
-      remote_settings: remote_settings || %Bandit.HTTP2.Settings{},
       transport_info: transport_info,
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
@@ -71,24 +61,7 @@ defmodule Bandit.HTTP2.Connection do
     %Bandit.HTTP2.Frame.Settings{ack: false, settings: connection.local_settings}
     |> send_frame(socket, connection)
 
-    if initial_request do
-      handle_initial_request(initial_request, connection)
-    else
-      connection
-    end
-  end
-
-  defp handle_initial_request({method, request_target, headers, data}, connection) do
-    {_, _, _, path} = request_target
-    headers = [{":scheme", "http"}, {":method", method}, {":path", path} | headers]
-
-    streams =
-      with_stream(connection, 1, fn stream ->
-        Bandit.HTTP2.Stream.deliver_headers(stream, headers, false)
-        Bandit.HTTP2.Stream.deliver_data(stream, data, true)
-      end)
-
-    %{connection | streams: streams}
+    connection
   end
 
   #
