@@ -385,7 +385,7 @@ defmodule Bandit.HTTP1.Socket do
     @spec request_error!(term()) :: no_return()
     @spec request_error!(term(), atom()) :: no_return()
     defp request_error!(reason, status \\ :bad_request) do
-      raise Bandit.HTTP1.Error, message: reason, status: Plug.Conn.Status.code(status)
+      raise Bandit.HTTPError, message: reason, status: Plug.Conn.Status.code(status)
     end
   end
 

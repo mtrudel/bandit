@@ -45,7 +45,7 @@ defmodule Bandit.HTTP1.Handler do
           {:switch, Bandit.WebSocket.Handler, state}
       end
     rescue
-      error in Bandit.HTTP1.Error ->
+      error in Bandit.HTTPError ->
         _ = attempt_to_send_fallback(transport, error.status)
         Bandit.Telemetry.stop_span(span, %{}, %{error: error.message, status: error.status})
 
@@ -88,7 +88,7 @@ defmodule Bandit.HTTP1.Handler do
 
         {:continue, Map.put(state, :requests_processed, requests_processed)}
       rescue
-        _error in Bandit.HTTP1.Error -> {:close, state}
+        _error in Bandit.HTTPError -> {:close, state}
       end
     else
       {:close, state}
