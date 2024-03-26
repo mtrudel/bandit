@@ -33,7 +33,7 @@ defmodule Bandit.Pipeline do
           Plug.Conn.headers()
         ) :: {:ok, Plug.Conn.t()} | {:error, String.t()}
   defp build_conn({mod, adapter}, transport, method, request_target, headers) do
-    with {:ok, transport_info} <- Bandit.HTTPTransport.transport_info(transport),
+    with transport_info <- Bandit.HTTPTransport.transport_info(transport),
          {:ok, scheme} <- determine_scheme(transport_info, request_target),
          version <- mod.get_http_protocol(adapter),
          {:ok, host, port} <- determine_host_and_port(scheme, version, request_target, headers),

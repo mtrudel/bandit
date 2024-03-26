@@ -102,7 +102,7 @@ defmodule Bandit.HTTP2.Stream do
   def deliver_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
 
   defimpl Bandit.HTTPTransport do
-    def transport_info(stream), do: {:ok, stream.transport_info}
+    def transport_info(stream), do: stream.transport_info
 
     def version(%{}), do: :"HTTP/2"
 

@@ -11,18 +11,19 @@ defmodule Bandit.TransportInfo do
           peercert: :public_key.der_encoded() | nil
         }
 
-  @spec init(ThousandIsland.Socket.t()) :: {:ok, t()} | {:error, term()}
+  @spec init(ThousandIsland.Socket.t()) :: t()
   def init(socket) do
     with {:ok, sockname} <- ThousandIsland.Socket.sockname(socket),
          {:ok, peername} <- ThousandIsland.Socket.peername(socket),
          {:ok, peercert} <- peercert(socket) do
-      {:ok,
-       %__MODULE__{
-         secure?: ThousandIsland.Socket.secure?(socket),
-         sockname: sockname,
-         peername: peername,
-         peercert: peercert
-       }}
+      %__MODULE__{
+        secure?: ThousandIsland.Socket.secure?(socket),
+        sockname: sockname,
+        peername: peername,
+        peercert: peercert
+      }
+    else
+      {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
     end
   end
 
