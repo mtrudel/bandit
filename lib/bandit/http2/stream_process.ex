@@ -32,18 +32,9 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   @impl GenServer
   def handle_continue(:start_stream, state) do
-    {:ok, method, request_target, headers, stream} =
-      Bandit.HTTPTransport.read_headers(state.stream)
-
-    adapter = Bandit.Adapter.init(self(), stream, method, headers, state.opts)
-    adapter = {Bandit.Adapter, adapter}
-
-    transport_info = state.stream.transport_info
-
-    case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, state.plug) do
-      {:ok, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn} ->
+    case Bandit.Pipeline.run(state.stream, state.plug, state.opts) do
+      {:ok, %Plug.Conn{adapter: {_mod, adapter}} = conn} ->
         stream = Bandit.HTTPTransport.ensure_completed(adapter.transport)
-
         Bandit.Telemetry.stop_span(state.span, adapter.metrics, %{conn: conn})
         {:stop, :normal, %{state | stream: stream}}
 

@@ -15,43 +15,21 @@ defmodule Bandit.HTTP1.Handler do
         connection_telemetry_span_context: connection_span.telemetry_span_context
       })
 
-    {:ok, transport_info} = Bandit.TransportInfo.init(socket)
     transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
 
     try do
-      {:ok, method, request_target, headers, transport} =
-        Bandit.HTTPTransport.read_headers(transport)
+      case Bandit.Pipeline.run(transport, state.plug, state.opts) do
+        {:ok, %Plug.Conn{adapter: {_mod, adapter}} = conn} ->
+          Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
+          maybe_keepalive(adapter, state)
 
-      adapter =
-        Bandit.Adapter.init(
-          self(),
-          transport,
-          method,
-          headers,
-          state.opts
-        )
-
-      with {:ok, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn} <-
-             Bandit.Pipeline.run(
-               {Bandit.Adapter, adapter},
-               transport_info,
-               adapter.method,
-               request_target,
-               headers,
-               state.plug
-             ) do
-        Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
-        maybe_keepalive(adapter, state)
-      else
         {:error, reason} ->
           attempt_to_send_fallback(transport, 400)
           Bandit.Telemetry.stop_span(span, %{}, %{error: reason, status: 400})
 
-          if Keyword.get(state.opts.http_1, :log_protocol_errors, true) do
-            {:error, reason, state}
-          else
-            {:close, state}
-          end
+          if Keyword.get(state.opts.http_1, :log_protocol_errors, true),
+            do: {:error, reason, state},
+            else: {:close, state}
 
         {:ok, :websocket, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn, upgrade_opts} ->
           Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
@@ -71,11 +49,9 @@ defmodule Bandit.HTTP1.Handler do
         _ = attempt_to_send_fallback(transport, error.status)
         Bandit.Telemetry.stop_span(span, %{}, %{error: error.message, status: error.status})
 
-        if Keyword.get(state.opts.http_1, :log_protocol_errors, true) do
-          {:error, error.message, state}
-        else
-          {:close, state}
-        end
+        if Keyword.get(state.opts.http_1, :log_protocol_errors, true),
+          do: {:error, error.message, state},
+          else: {:close, state}
 
       error ->
         _ = attempt_to_send_fallback(transport, 500)
