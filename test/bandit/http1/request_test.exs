@@ -761,8 +761,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~
-               "(ArgumentError) upgrade to unsupported not supported by Bandit.HTTP1.Adapter"
+      assert errors =~ "(ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -934,11 +933,11 @@ defmodule HTTP1RequestTest do
              ~> {:ok, "200 OK",
               [
                 date: string(),
-                "content-length": "85",
+                "content-length": "79",
                 vary: "accept-encoding",
                 "cache-control": "max-age=0, private, must-revalidate"
               ],
-              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.HTTP1.Adapter\"}"}
+              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.Adapter\"}"}
     end
 
     defmodule MyNoopWebSock do
@@ -1148,7 +1147,7 @@ defmodule HTTP1RequestTest do
 
     test "falls back to no encoding if compression is disabled", context do
       context =
-        http_server(context, http_1_options: [compress: false])
+        http_server(context, http_options: [compress: false])
         |> Enum.into(context)
 
       response =
@@ -1605,10 +1604,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "GET",
-                  request_target: {nil, nil, nil, "/send_200"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1639,10 +1635,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "POST",
-                  request_target: {nil, nil, nil, "/do_read_body"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1677,10 +1670,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "POST",
-                  request_target: {nil, nil, nil, "/do_read_body"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1711,10 +1701,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "POST",
-                  request_target: {nil, nil, nil, "/do_read_body"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1751,10 +1738,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "POST",
-                  request_target: {nil, nil, nil, "/do_read_body"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1781,10 +1765,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "GET",
-                  request_target: {nil, nil, nil, "/send_chunked_200"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1811,10 +1792,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  status: 200,
-                  method: "GET",
-                  request_target: {nil, nil, nil, "/send_full_file"}
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end

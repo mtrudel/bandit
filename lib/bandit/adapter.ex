@@ -1,51 +1,50 @@
-defmodule Bandit.HTTP1.Adapter do
+defmodule Bandit.Adapter do
   @moduledoc false
+  # Implements the Plug-facing `Plug.Conn.Adapter` behaviour. These functions provide the primary
+  # mechanism for Plug applications to interact with a client, including functions to read the
+  # client body (if sent) and send response information back to the client. The concerns in this
+  # module are broadly about the semantics of HTTP in general, and less about transport-specific
+  # concerns, which are managed by the underlying `Bandit.HTTPTransport` implementation
 
   @behaviour Plug.Conn.Adapter
 
-  defstruct owner_pid: nil,
-            transport: nil,
-            transport_info: nil,
+  defstruct transport: nil,
+            owner_pid: nil,
             method: nil,
             status: nil,
             content_encoding: nil,
             upgrade: nil,
             metrics: %{},
-            websocket_enabled: false,
             opts: []
 
   @typedoc "A struct for backing a Plug.Conn.Adapter"
   @type t :: %__MODULE__{
+          transport: Bandit.HTTPTransport.t(),
           owner_pid: pid() | nil,
-          transport: Bandit.HTTPTransport.transport(),
-          transport_info: Bandit.TransportInfo.t(),
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
           content_encoding: String.t(),
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           metrics: %{},
-          websocket_enabled: boolean(),
           opts: %{
-            required(:http_1) => Bandit.http_1_options(),
+            required(:http) => Bandit.http_options(),
             required(:websocket) => Bandit.websocket_options()
           }
         }
 
-  def init(owner_pid, transport, transport_info, method, headers, websocket_enabled, opts) do
+  def init(owner_pid, transport, method, headers, opts) do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
-        Keyword.get(opts.http_1, :compress, true)
+        Keyword.get(opts.http, :compress, true)
       )
 
     %__MODULE__{
-      owner_pid: owner_pid,
       transport: transport,
-      transport_info: transport_info,
+      owner_pid: owner_pid,
       method: method,
       content_encoding: content_encoding,
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
-      websocket_enabled: websocket_enabled,
       opts: opts
     }
   end
@@ -58,7 +57,7 @@ defmodule Bandit.HTTP1.Adapter do
       adapter.metrics
       |> Map.put_new_lazy(:req_body_start_time, &Bandit.Telemetry.monotonic_time/0)
 
-    case Bandit.HTTP1.Socket.read_data(adapter.transport, opts) do
+    case Bandit.HTTPTransport.read_data(adapter.transport, opts) do
       {:ok, body, transport} ->
         body = IO.iodata_to_binary(body)
 
@@ -115,7 +114,7 @@ defmodule Bandit.HTTP1.Adapter do
             resp_compression_method: content_encoding
           }
 
-          deflate_options = Keyword.get(adapter.opts.http_1, :deflate_options, [])
+          deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
           deflated_body = Bandit.Compression.compress(body, content_encoding, deflate_options)
           headers = [{"content-encoding", adapter.content_encoding} | headers]
           {deflated_body, headers, metrics}
@@ -124,7 +123,7 @@ defmodule Bandit.HTTP1.Adapter do
           {body, headers, %{}}
       end
 
-    compress = Keyword.get(adapter.opts.http_1, :compress, true)
+    compress = Keyword.get(adapter.opts.http, :compress, true)
     headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
     headers = Bandit.Headers.add_content_length(headers, IO.iodata_length(body), status)
 
@@ -161,7 +160,7 @@ defmodule Bandit.HTTP1.Adapter do
 
       {socket, bytes_actually_written} =
         if send_resp_body?(adapter),
-          do: {Bandit.HTTP1.Socket.sendfile(adapter.transport, path, offset, length), length},
+          do: {Bandit.HTTPTransport.sendfile(adapter.transport, path, offset, length), length},
           else: {adapter.transport, 0}
 
       metrics =
@@ -187,6 +186,12 @@ defmodule Bandit.HTTP1.Adapter do
 
   @impl Plug.Conn.Adapter
   def chunk(%__MODULE__{} = adapter, chunk) do
+    # Sending an empty chunk implicitly ends the response. This is a bit of an undefined corner of
+    # the Plug.Conn.Adapter behaviour (see https://github.com/elixir-plug/plug/pull/535 for
+    # details) and ending the response here carves closest to the underlying HTTP/1.1 behaviour
+    # (RFC9112§7.1). Since there is no notion of chunked encoding is in HTTP/2 anyway (RFC9113§8.1)
+    # this entire section of the API is a bit slanty regardless.
+
     validate_calling_process!(adapter)
     {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
   end
@@ -217,7 +222,7 @@ defmodule Bandit.HTTP1.Adapter do
     body_disposition = if send_resp_body?(adapter), do: body_disposition, else: :no_body
 
     socket =
-      Bandit.HTTP1.Socket.send_headers(adapter.transport, status, headers, body_disposition)
+      Bandit.HTTPTransport.send_headers(adapter.transport, status, headers, body_disposition)
 
     %{adapter | transport: socket}
   end
@@ -225,7 +230,7 @@ defmodule Bandit.HTTP1.Adapter do
   defp send_data(adapter, data, end_request) do
     socket =
       if send_resp_body?(adapter),
-        do: Bandit.HTTP1.Socket.send_data(adapter.transport, data, end_request),
+        do: Bandit.HTTPTransport.send_data(adapter.transport, data, end_request),
         else: adapter.transport
 
     data_size = IO.iodata_length(data)
@@ -245,21 +250,27 @@ defmodule Bandit.HTTP1.Adapter do
   defp send_resp_body?(_adapter), do: true
 
   @impl Plug.Conn.Adapter
-  def upgrade(%__MODULE__{websocket_enabled: true} = adapter, :websocket, opts),
-    do: {:ok, %{adapter | upgrade: {:websocket, opts, adapter.opts.websocket}}}
-
-  def upgrade(_adapter, _upgrade, _opts), do: {:error, :not_supported}
+  def upgrade(%__MODULE__{} = adapter, protocol, opts) do
+    if Keyword.get(adapter.opts.websocket, :enabled, true) &&
+         Bandit.HTTPTransport.supported_upgrade?(adapter.transport, protocol),
+       do: {:ok, %{adapter | upgrade: {protocol, opts, adapter.opts.websocket}}},
+       else: {:error, :not_supported}
+  end
 
   @impl Plug.Conn.Adapter
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{transport_info: transport_info}),
-    do: Bandit.TransportInfo.peer_data(transport_info)
+  def get_peer_data(%__MODULE__{} = adapter) do
+    case Bandit.HTTPTransport.transport_info(adapter.transport) do
+      {:ok, transport_info} -> Bandit.TransportInfo.peer_data(transport_info)
+      {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
+    end
+  end
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{} = adapter),
-    do: Bandit.HTTP1.Socket.version(adapter.transport)
+    do: Bandit.HTTPTransport.version(adapter.transport)
 
   defp validate_calling_process!(%{owner_pid: owner}) when owner == self(), do: :ok
   defp validate_calling_process!(_), do: raise("Adapter functions must be called by stream owner")

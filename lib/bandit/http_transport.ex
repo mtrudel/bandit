@@ -1,31 +1,38 @@
-defmodule Bandit.HTTPTransport do
+defprotocol Bandit.HTTPTransport do
   @moduledoc false
-  # A behaviour implemented by the lower level transports (HTTP/1 and HTTP/2) to encapsulate the
+  # A protocol implemented by the lower level transports (HTTP/1 and HTTP/2) to encapsulate the
   # low-level mechanics needed to complete an HTTP request/response cycle. Implementations of this
-  # behaviour should be broadly concerned with the protocol-specific aspects of a connection, and
+  # protocol should be broadly concerned with the protocol-specific aspects of a connection, and
   # can rely on higher-level code taking care of shared HTTP semantics
-
-  @type transport :: Bandit.HTTP1.Socket.t() | Bandit.HTTP2.Stream.t()
 
   @typedoc "How the response body is to be delivered"
   @type body_disposition :: :raw | :chunk_encoded | :no_body | :inform
 
-  @callback version(transport()) :: Plug.Conn.Adapter.http_protocol()
+  @spec transport_info(t()) :: {:ok, Bandit.TransportInfo.t()} | {:error, term()}
+  def transport_info(transport)
 
-  @callback read_headers(transport()) ::
-              {:ok, Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(),
-               transport()}
+  @spec version(t()) :: Plug.Conn.Adapter.http_protocol()
+  def version(transport)
 
-  @callback read_data(transport(), opts :: keyword()) ::
-              {:ok, iodata(), transport()} | {:more, iodata(), transport()}
+  @spec read_headers(t()) ::
+          {:ok, Plug.Conn.method(), Bandit.Pipeline.request_target(), Plug.Conn.headers(), t()}
+  def read_headers(transport)
 
-  @callback send_headers(transport(), Plug.Conn.status(), Plug.Conn.headers(), body_disposition()) ::
-              transport()
+  @spec read_data(t(), opts :: keyword()) :: {:ok, iodata(), t()} | {:more, iodata(), t()}
+  def read_data(transport, opts)
 
-  @callback send_data(transport(), data :: iodata(), end_request :: boolean()) :: transport()
+  @spec send_headers(t(), Plug.Conn.status(), Plug.Conn.headers(), body_disposition()) :: t()
+  def send_headers(transport, status, heeaders, disposition)
 
-  @callback sendfile(transport(), Path.t(), offset :: integer(), length :: integer() | :all) ::
-              transport()
+  @spec send_data(t(), data :: iodata(), end_request :: boolean()) :: t()
+  def send_data(transport, data, end_request)
 
-  @callback ensure_completed(transport()) :: transport()
+  @spec sendfile(t(), Path.t(), offset :: integer(), length :: integer() | :all) :: t()
+  def sendfile(transport, path, offset, length)
+
+  @spec ensure_completed(t()) :: t()
+  def ensure_completed(transport)
+
+  @spec supported_upgrade?(t(), atom()) :: boolean()
+  def supported_upgrade?(transport, protocol)
 end

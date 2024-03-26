@@ -43,11 +43,11 @@ defmodule Bandit.HTTP2.Errors do
 
   # Represents a stream error as defined in RFC9113§5.4.2
   defmodule StreamError do
-    defexception [:message, :method, :request_target, :error_code]
+    defexception [:message, :error_code]
   end
 
   # Represents a stream error as defined in RFC9113§5.4.3
   defmodule ConnectionError do
-    defexception [:message, :method, :request_target, :error_code]
+    defexception [:message, :error_code]
   end
 end

@@ -9,18 +9,16 @@ defmodule Bandit.Pipeline do
   @type scheme :: String.t() | nil
   @type path :: String.t() | :*
 
-  @spec run(
-          Plug.Conn.adapter(),
-          Bandit.TransportInfo.t(),
-          Plug.Conn.method(),
-          request_target(),
-          Plug.Conn.headers(),
-          plug_def()
-        ) :: {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
-  def run(adapter, transport_info, method, request_target, headers, plug) do
+  @spec run(Bandit.HTTPTransport.t(), plug_def(), map()) ::
+          {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
+  def run(transport, plug, opts) do
     Logger.reset_metadata()
 
-    with {:ok, conn} <- build_conn(adapter, transport_info, method, request_target, headers),
+    with {:ok, method, request_target, headers, transport} <-
+           Bandit.HTTPTransport.read_headers(transport),
+         adapter <-
+           {Bandit.Adapter, Bandit.Adapter.init(self(), transport, method, headers, opts)},
+         {:ok, conn} <- build_conn(adapter, transport, method, request_target, headers),
          conn <- call_plug(conn, plug),
          {:ok, :no_upgrade} <- maybe_upgrade(conn) do
       {:ok, commit_response(conn)}
@@ -29,13 +27,14 @@ defmodule Bandit.Pipeline do
 
   @spec build_conn(
           Plug.Conn.adapter(),
-          Bandit.TransportInfo.t(),
+          Bandit.HTTPTransport.t(),
           Plug.Conn.method(),
           request_target(),
           Plug.Conn.headers()
         ) :: {:ok, Plug.Conn.t()} | {:error, String.t()}
-  defp build_conn({mod, adapter}, transport_info, method, request_target, headers) do
-    with {:ok, scheme} <- determine_scheme(transport_info, request_target),
+  defp build_conn({mod, adapter}, transport, method, request_target, headers) do
+    with {:ok, transport_info} <- Bandit.HTTPTransport.transport_info(transport),
+         {:ok, scheme} <- determine_scheme(transport_info, request_target),
          version <- mod.get_http_protocol(adapter),
          {:ok, host, port} <- determine_host_and_port(scheme, version, request_target, headers),
          {path, query} <- determine_path_and_query(request_target) do

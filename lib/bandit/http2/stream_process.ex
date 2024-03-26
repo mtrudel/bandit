@@ -32,26 +32,10 @@ defmodule Bandit.HTTP2.StreamProcess do
 
   @impl GenServer
   def handle_continue(:start_stream, state) do
-    {:ok, method, request_target, headers, stream} =
-      Bandit.HTTP2.Stream.read_headers(state.stream)
-
-    adapter =
-      {Bandit.HTTP2.Adapter,
-       Bandit.HTTP2.Adapter.init(stream, method, headers, self(), state.opts)}
-
-    transport_info = state.stream.transport_info
-
-    case Bandit.Pipeline.run(adapter, transport_info, method, request_target, headers, state.plug) do
-      {:ok, %Plug.Conn{adapter: {Bandit.HTTP2.Adapter, adapter}} = conn} ->
-        stream = Bandit.HTTP2.Stream.ensure_completed(adapter.stream)
-
-        Bandit.Telemetry.stop_span(state.span, adapter.metrics, %{
-          conn: conn,
-          method: method,
-          request_target: request_target,
-          status: conn.status
-        })
-
+    case Bandit.Pipeline.run(state.stream, state.plug, state.opts) do
+      {:ok, %Plug.Conn{adapter: {_mod, adapter}} = conn} ->
+        stream = Bandit.HTTPTransport.ensure_completed(adapter.transport)
+        Bandit.Telemetry.stop_span(state.span, adapter.metrics, %{conn: conn})
         {:stop, :normal, %{state | stream: stream}}
 
       {:error, reason} ->
@@ -65,22 +49,12 @@ defmodule Bandit.HTTP2.StreamProcess do
   def terminate(:normal, _state), do: :ok
 
   def terminate({%Bandit.HTTP2.Errors.StreamError{} = error, _stacktrace}, state) do
-    Bandit.Telemetry.stop_span(state.span, %{}, %{
-      error: error.message,
-      method: error.method,
-      request_target: error.request_target
-    })
-
+    Bandit.Telemetry.stop_span(state.span, %{}, %{error: error.message})
     Bandit.HTTP2.Stream.reset_stream(state.stream, error.error_code)
   end
 
   def terminate({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, state) do
-    Bandit.Telemetry.stop_span(state.span, %{}, %{
-      error: error.message,
-      method: error.method,
-      request_target: error.request_target
-    })
-
+    Bandit.Telemetry.stop_span(state.span, %{}, %{error: error.message})
     Bandit.HTTP2.Stream.close_connection(state.stream, error.error_code, error.message)
   end
 

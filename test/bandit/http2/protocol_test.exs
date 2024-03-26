@@ -525,7 +525,7 @@ defmodule HTTP2ProtocolTest do
     end
 
     test "falls back to no encoding if compression is disabled", context do
-      context = https_server(context, http_2_options: [compress: false])
+      context = https_server(context, http_options: [compress: false])
 
       socket = SimpleH2Client.setup_connection(context)
 
@@ -602,7 +602,7 @@ defmodule HTTP2ProtocolTest do
     end
 
     test "replaces any incorrect provided content-length headers", context do
-      context = https_server(context, http_2_options: [compress: false])
+      context = https_server(context, http_options: [compress: false])
 
       socket = SimpleH2Client.setup_connection(context)
 
@@ -832,8 +832,8 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/echo", context.port)
 
-      # A zero byte body being written will cause end_stream to be set on the header frame
-      assert SimpleH2Client.successful_response?(socket, 1, true)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
     end
 
     def echo(conn) do
@@ -1002,22 +1002,23 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "HEADERS frames" do
-    test "sends end of stream headers when there is no body", context do
-      socket = SimpleH2Client.setup_connection(context)
-      SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
-      assert {:ok, 1, true, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
-    end
-
-    def no_body_response(conn) do
-      conn |> send_resp(200, <<>>)
-    end
-
     test "sends non-end of stream headers when there is a body", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
       assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
       assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"})
+    end
+
+    test "sends non-end of stream headers when there is a zero length body", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_body_response", context.port)
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert(SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""})
+    end
+
+    def no_body_response(conn) do
+      conn |> send_resp(200, <<>>)
     end
 
     test "breaks large headers into multiple CONTINUATION frames when sending", context do
@@ -1743,7 +1744,8 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 99, :get, "/echo", context.port)
-      SimpleH2Client.successful_response?(socket, 99, true)
+      SimpleH2Client.successful_response?(socket, 99, false)
+      SimpleH2Client.recv_body(socket)
       SimpleH2Client.send_goaway(socket, 0, 0)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 99, 0}
