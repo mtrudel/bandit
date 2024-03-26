@@ -111,25 +111,18 @@ defmodule Bandit.HTTP2.Stream do
         {:headers, headers, stream} ->
           method = Bandit.Headers.get_header(headers, ":method")
           request_target = build_request_target!(headers)
-
-          try do
-            {pseudo_headers, headers} = split_headers!(headers)
-            pseudo_headers_all_request!(pseudo_headers)
-            exactly_one_instance_of!(pseudo_headers, ":scheme")
-            exactly_one_instance_of!(pseudo_headers, ":method")
-            exactly_one_instance_of!(pseudo_headers, ":path")
-            headers_all_lowercase!(headers)
-            no_connection_headers!(headers)
-            valid_te_header!(headers)
-            content_length = get_content_length!(headers)
-            headers = combine_cookie_crumbs(headers)
-            stream = %{stream | bytes_remaining: content_length}
-            {:ok, method, request_target, headers, stream}
-          rescue
-            exception ->
-              reraise %{exception | method: method, request_target: request_target},
-                      __STACKTRACE__
-          end
+          {pseudo_headers, headers} = split_headers!(headers)
+          pseudo_headers_all_request!(pseudo_headers)
+          exactly_one_instance_of!(pseudo_headers, ":scheme")
+          exactly_one_instance_of!(pseudo_headers, ":method")
+          exactly_one_instance_of!(pseudo_headers, ":path")
+          headers_all_lowercase!(headers)
+          no_connection_headers!(headers)
+          valid_te_header!(headers)
+          content_length = get_content_length!(headers)
+          headers = combine_cookie_crumbs(headers)
+          stream = %{stream | bytes_remaining: content_length}
+          {:ok, method, request_target, headers, stream}
 
         :timeout ->
           stream_error!("Timed out waiting for HEADER")

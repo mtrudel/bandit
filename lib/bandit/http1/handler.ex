@@ -40,24 +40,12 @@ defmodule Bandit.HTTP1.Handler do
                headers,
                state.plug
              ) do
-        Bandit.Telemetry.stop_span(span, adapter.metrics, %{
-          conn: conn,
-          status: conn.status,
-          method: adapter.method,
-          request_target: request_target
-        })
-
+        Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
         maybe_keepalive(adapter, state)
       else
         {:error, reason} ->
           attempt_to_send_fallback(transport, 400)
-
-          Bandit.Telemetry.stop_span(span, %{}, %{
-            error: reason,
-            status: 400,
-            method: adapter.method,
-            request_target: request_target
-          })
+          Bandit.Telemetry.stop_span(span, %{}, %{error: reason, status: 400})
 
           if Keyword.get(state.opts.http_1, :log_protocol_errors, true) do
             {:error, reason, state}
@@ -66,12 +54,7 @@ defmodule Bandit.HTTP1.Handler do
           end
 
         {:ok, :websocket, %Plug.Conn{adapter: {Bandit.Adapter, adapter}} = conn, upgrade_opts} ->
-          Bandit.Telemetry.stop_span(span, adapter.metrics, %{
-            conn: conn,
-            status: conn.status,
-            method: adapter.method,
-            request_target: request_target
-          })
+          Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
 
           state =
             state
