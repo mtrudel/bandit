@@ -132,7 +132,6 @@ defmodule Bandit.Pipeline do
         {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
-        _ = %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
         {:error, reason}
     end
   end

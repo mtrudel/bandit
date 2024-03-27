@@ -789,9 +789,7 @@ defmodule HTTP1RequestTest do
             ]
           )
 
-          assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(), "HTTP method POST unsupported"}
-
+          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
           Process.sleep(100)
         end)
 
@@ -817,10 +815,7 @@ defmodule HTTP1RequestTest do
             ]
           )
 
-          assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "'upgrade' header must contain 'websocket', got [\"NOPE\"]"}
-
+          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
           Process.sleep(100)
         end)
 
@@ -846,10 +841,7 @@ defmodule HTTP1RequestTest do
             ]
           )
 
-          assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "'connection' header must contain 'upgrade', got [\"NOPE\"]"}
-
+          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
           Process.sleep(100)
         end)
 
@@ -874,9 +866,7 @@ defmodule HTTP1RequestTest do
             ]
           )
 
-          assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(), "'sec-websocket-key' header is absent"}
-
+          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
           Process.sleep(100)
         end)
 
@@ -902,10 +892,7 @@ defmodule HTTP1RequestTest do
             ]
           )
 
-          assert SimpleHTTP1Client.recv_reply(client)
-                 ~> {:ok, "400 Bad Request", list(),
-                  "'sec-websocket-version' header must equal '13', got [\"99\"]"}
-
+          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
           Process.sleep(100)
         end)
 
