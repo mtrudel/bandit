@@ -1,5 +1,9 @@
 ## 1.4.0 (26 Mar 2024)
 
+> [!WARNING]
+> **IMPORTANT** Phoenix users MUST upgrade to WebSockAdapter `0.5.6` or newer when
+> upgrading to Bandit `1.4.0` or newer as some internal module names have changed
+
 ### Enhancements
 
 * Complete refactor of HTTP/2. Improved process model is MUCH easier to
