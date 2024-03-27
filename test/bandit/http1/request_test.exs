@@ -684,12 +684,18 @@ defmodule HTTP1RequestTest do
          context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      Transport.send(
-        client,
-        "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
-      )
+      errors =
+        capture_log(fn ->
+          Transport.send(
+            client,
+            "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
+          )
 
-      assert {:ok, "200 OK", _, "OK"} = SimpleHTTP1Client.recv_reply(client)
+          assert {:ok, "200 OK", _, "OK"} = SimpleHTTP1Client.recv_reply(client)
+          Process.sleep(1100)
+        end)
+
+      assert errors =~ "(Bandit.HTTPError) Unable to read remaining data in request body"
     end
 
     def short_body(conn) do

@@ -376,7 +376,7 @@ defmodule Bandit.HTTP1.Socket do
     def ensure_completed(%@for{} = socket) do
       case read_data(socket, []) do
         {:ok, _data, socket} -> socket
-        {:more, _data, socket} -> ensure_completed(socket)
+        {:more, _data, _socket} -> request_error!("Unable to read remaining data in request body")
       end
     end
 
