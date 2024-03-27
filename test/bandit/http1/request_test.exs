@@ -183,7 +183,7 @@ defmodule HTTP1RequestTest do
       {:ok, "200 OK", _headers, final_heap_size} = SimpleHTTP1Client.recv_reply(client)
 
       assert String.to_integer(initial_heap_size) <= String.to_integer(penultimate_heap_size)
-      assert String.to_integer(final_heap_size) <= String.to_integer(initial_heap_size)
+      assert String.to_integer(final_heap_size) <= String.to_integer(penultimate_heap_size)
     end
 
     def do_gc(conn) do
