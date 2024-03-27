@@ -141,14 +141,8 @@ defmodule Bandit.HTTP2.Stream do
 
     defp get_host_and_port!(headers) do
       case Bandit.Headers.get_header(headers, ":authority") do
-        authority when not is_nil(authority) ->
-          case Bandit.Headers.parse_hostlike_header(authority) do
-            {:ok, host, port} -> {host, port}
-            {:error, reason} -> stream_error!(reason)
-          end
-
-        nil ->
-          {nil, nil}
+        authority when not is_nil(authority) -> Bandit.Headers.parse_hostlike_header!(authority)
+        nil -> {nil, nil}
       end
     end
 
