@@ -193,7 +193,7 @@ defmodule HTTP1RequestTest do
 
     def heap_size(conn) do
       # Exercise the heap a bit
-      _trash = String.duplicate("a", 10_000)
+      _trash = String.duplicate("a", 10_000) |> :binary.bin_to_list()
       {:heap_size, heap_size} = :erlang.process_info(self(), :heap_size)
       send_resp(conn, 200, inspect(heap_size))
     end
