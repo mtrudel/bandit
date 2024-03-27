@@ -14,35 +14,35 @@ defmodule Bandit.Headers do
   end
 
   # Covers IPv6 addresses, like `[::1]:4000` as defined in RFC3986.
-  @spec parse_hostlike_header(host_header :: binary()) ::
-          {:ok, Plug.Conn.host(), nil | Plug.Conn.port_number()} | {:error, String.t()}
-  def parse_hostlike_header("[" <> _ = host_header) do
+  @spec parse_hostlike_header!(host_header :: binary()) ::
+          {Plug.Conn.host(), nil | Plug.Conn.port_number()}
+  def parse_hostlike_header!("[" <> _ = host_header) do
     host_header
     |> :binary.split("]:")
     |> case do
       [host, port] ->
         case parse_integer(port) do
-          {port, ""} when is_port_number(port) -> {:ok, host <> "]", port}
-          _ -> {:error, "Header contains invalid port"}
+          {port, ""} when is_port_number(port) -> {host <> "]", port}
+          _ -> raise Bandit.HTTPError, "Header contains invalid port"
         end
 
       [host] ->
-        {:ok, host, nil}
+        {host, nil}
     end
   end
 
-  def parse_hostlike_header(host_header) do
+  def parse_hostlike_header!(host_header) do
     host_header
     |> :binary.split(":")
     |> case do
       [host, port] ->
         case parse_integer(port) do
-          {port, ""} when is_port_number(port) -> {:ok, host, port}
-          _ -> {:error, "Header contains invalid port"}
+          {port, ""} when is_port_number(port) -> {host, port}
+          _ -> raise Bandit.HTTPError, "Header contains invalid port"
         end
 
       [host] ->
-        {:ok, host, nil}
+        {host, nil}
     end
   end
 

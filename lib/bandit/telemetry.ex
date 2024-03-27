@@ -21,6 +21,9 @@ defmodule Bandit.Telemetry do
       * `telemetry_span_context`: A unique identifier for this span
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
+      * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
+        is also set and the nature of error is such that Bandit was unable to successfully build
+        the conn
 
   This span is ended by the following event:
 
@@ -51,8 +54,8 @@ defmodule Bandit.Telemetry do
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
       * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
-        is also set
-      * `stream_id`: The stream ID of the request, if part of an HTTP/2 connection
+        is also set and the nature of error is such that Bandit was unable to successfully build
+        the conn
       * `error`: The error that caused the span to end, if it ended in error
 
   The following events may be emitted within this span:
@@ -70,6 +73,9 @@ defmodule Bandit.Telemetry do
       * `telemetry_span_context`: A unique identifier for this span
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
+      * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
+        is also set and the nature of error is such that Bandit was unable to successfully build
+        the conn
       * `kind`: The kind of unexpected condition, typically `:exit`
       * `exception`: The exception which caused this unexpected termination
       * `stacktrace`: The stacktrace of the location which caused this unexpected termination
@@ -92,8 +98,6 @@ defmodule Bandit.Telemetry do
       This event contains the following metadata:
 
       * `telemetry_span_context`: A unique identifier for this span
-      * `origin_telemetry_span_context`: The span context of the Bandit `:request` span from which
-        this connection originated
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
 

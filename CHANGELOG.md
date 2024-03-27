@@ -1,3 +1,21 @@
+## 1.4.1 (TBD)
+
+### Changes
+
+* **BREAKING CHANGE** Move `log_protocol_errors` configuration option into
+  shared `http_options` top-level config (and apply it to HTTP/2 errors as well)
+* **BREAKING CHANGE** Remove `origin_telemetry_span_context` from WebSocket
+  telemetry events
+* **BREAKING CHANGE** Remove `stream_id` from HTTP/2 telemetry events
+* Add `conn` to the metadata of telemetry start events for HTTP requests
+* Stop sending WebSocket upgrade failure reasons to the client (they're still
+  logged)
+
+### Fixes
+
+* Return HTTP semantic errors to HTTP/2 clients as protocol errors instead of
+  internal errors
+
 ## 1.4.0 (26 Mar 2024)
 
 > [!WARNING]

@@ -376,26 +376,42 @@ defmodule Bandit.HTTP1.Socket do
     def ensure_completed(%@for{} = socket) do
       case read_data(socket, []) do
         {:ok, _data, socket} -> socket
-        {:more, _data, socket} -> ensure_completed(socket)
+        {:more, _data, _socket} -> request_error!("Unable to read remaining data in request body")
       end
     end
 
     def supported_upgrade?(_socket, protocol), do: protocol == :websocket
 
+    def send_on_error(%@for{} = socket, %Bandit.HTTPError{} = error) do
+      _ = send_error(socket, error.status)
+      %{socket | write_state: :sent}
+    end
+
+    def send_on_error(%@for{} = socket, _error) do
+      _ = send_error(socket, 500)
+      %{socket | write_state: :sent}
+    end
+
+    defp send_error(socket, status) do
+      receive do
+        {:plug_conn, :sent} -> :ok
+      after
+        0 ->
+          try do
+            reason = Plug.Conn.Status.reason_phrase(status)
+            response_line = "#{socket.version} #{status} #{reason}\r\n\r\n"
+            _ = ThousandIsland.Socket.send(socket.socket, response_line)
+            ThousandIsland.Socket.close(socket.socket)
+          rescue
+            _ -> :ok
+          end
+      end
+    end
+
     @spec request_error!(term()) :: no_return()
     @spec request_error!(term(), atom()) :: no_return()
     defp request_error!(reason, status \\ :bad_request) do
-      raise Bandit.HTTP1.Error, message: reason, status: Plug.Conn.Status.code(status)
+      raise Bandit.HTTPError, message: to_string(reason), status: Plug.Conn.Status.code(status)
     end
-  end
-
-  def send_error(%__MODULE__{} = socket, status) do
-    _ =
-      ThousandIsland.Socket.send(
-        socket.socket,
-        "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n\r\n"
-      )
-
-    ThousandIsland.Socket.close(socket.socket)
   end
 end

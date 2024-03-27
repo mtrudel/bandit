@@ -112,6 +112,27 @@ defmodule HTTP2ProtocolTest do
                "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
+    test "stream errors are not logged if so configured", context do
+      context =
+        context
+        |> https_server(http_options: [log_protocol_errors: false])
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      output =
+        capture_log(fn ->
+          # Send trailers with pseudo headers
+          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert output == ""
+    end
+
     @tag capture_log: true
     test "it should shut down the connection after read timeout has been reached with no initial data sent",
          context do
@@ -2148,7 +2169,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
     test "derives port from host header", context do
@@ -2215,7 +2236,7 @@ defmodule HTTP2ProtocolTest do
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
     end
 
     test "derives port from schema default if no port specified in host header", context do

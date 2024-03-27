@@ -42,16 +42,10 @@ defmodule Bandit.HTTP2.Connection do
 
   @spec init(ThousandIsland.Socket.t(), Bandit.Pipeline.plug_def(), map()) :: t()
   def init(socket, plug, opts) do
-    transport_info =
-      case Bandit.TransportInfo.init(socket) do
-        {:ok, transport_info} -> transport_info
-        {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
-      end
-
     connection = %__MODULE__{
       local_settings:
         struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
-      transport_info: transport_info,
+      transport_info: Bandit.TransportInfo.init(socket),
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
       opts: opts
@@ -232,8 +226,8 @@ defmodule Bandit.HTTP2.Connection do
           case Bandit.HTTP2.StreamProcess.start_link(
                  stream,
                  connection.plug,
-                 connection.opts,
-                 connection.telemetry_span
+                 connection.telemetry_span,
+                 connection.opts
                ) do
             {:ok, pid} ->
               streams = Bandit.HTTP2.StreamCollection.insert(connection.streams, stream_id, pid)

@@ -9,76 +9,124 @@ defmodule Bandit.Pipeline do
   @type scheme :: String.t() | nil
   @type path :: String.t() | :*
 
-  @spec run(Bandit.HTTPTransport.t(), plug_def(), map()) ::
-          {:ok, Plug.Conn.t()} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, term()}
-  def run(transport, plug, opts) do
-    Logger.reset_metadata()
+  require Logger
 
-    with {:ok, method, request_target, headers, transport} <-
-           Bandit.HTTPTransport.read_headers(transport),
-         adapter <-
-           {Bandit.Adapter, Bandit.Adapter.init(self(), transport, method, headers, opts)},
-         {:ok, conn} <- build_conn(adapter, transport, method, request_target, headers),
-         conn <- call_plug(conn, plug),
-         {:ok, :no_upgrade} <- maybe_upgrade(conn) do
-      {:ok, commit_response(conn)}
+  @spec run(
+          Bandit.HTTPTransport.t(),
+          plug_def(),
+          ThousandIsland.Telemetry.t() | Bandit.Telemetry.t(),
+          map()
+        ) ::
+          {:ok, Bandit.HTTPTransport.t()}
+          | {:upgrade, Bandit.HTTPTransport.t(), :websocket, tuple()}
+          | {:error, term()}
+  def run(transport, plug, connection_span, opts) do
+    measurements = %{monotonic_time: Bandit.Telemetry.monotonic_time()}
+    metadata = %{connection_telemetry_span_context: connection_span.telemetry_span_context}
+
+    try do
+      {:ok, method, request_target, headers, transport} =
+        Bandit.HTTPTransport.read_headers(transport)
+
+      conn = build_conn!(transport, method, request_target, headers, opts)
+      span = Bandit.Telemetry.start_span(:request, measurements, Map.put(metadata, :conn, conn))
+
+      try do
+        conn
+        |> call_plug!(plug)
+        |> maybe_upgrade!()
+        |> case do
+          {:no_upgrade, conn} ->
+            %Plug.Conn{adapter: {_mod, adapter}} = conn = commit_response!(conn)
+            Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
+            {:ok, adapter.transport}
+
+          {:upgrade, %Plug.Conn{adapter: {_mod, adapter}} = conn, protocol, opts} ->
+            Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
+            {:upgrade, adapter.transport, protocol, opts}
+        end
+      rescue
+        error in [
+          Bandit.HTTPError,
+          Bandit.HTTP2.Errors.StreamError,
+          Bandit.HTTP2.Errors.ConnectionError
+        ] ->
+          Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
+
+          if Keyword.get(opts.http, :log_protocol_errors, true),
+            do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
+
+          Bandit.HTTPTransport.send_on_error(transport, error)
+          {:error, error}
+
+        error ->
+          Bandit.Telemetry.span_exception(span, :exit, error, __STACKTRACE__)
+          Bandit.HTTPTransport.send_on_error(transport, error)
+          reraise error, __STACKTRACE__
+      end
+    rescue
+      error in [
+        Bandit.HTTPError,
+        Bandit.HTTP2.Errors.StreamError,
+        Bandit.HTTP2.Errors.ConnectionError
+      ] ->
+        span = Bandit.Telemetry.start_span(:request, measurements, metadata)
+        Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
+
+        if Keyword.get(opts.http, :log_protocol_errors, true),
+          do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
+
+        Bandit.HTTPTransport.send_on_error(transport, error)
+        {:error, error}
     end
   end
 
-  @spec build_conn(
-          Plug.Conn.adapter(),
+  @spec build_conn!(
           Bandit.HTTPTransport.t(),
           Plug.Conn.method(),
           request_target(),
-          Plug.Conn.headers()
-        ) :: {:ok, Plug.Conn.t()} | {:error, String.t()}
-  defp build_conn({mod, adapter}, transport, method, request_target, headers) do
-    with {:ok, transport_info} <- Bandit.HTTPTransport.transport_info(transport),
-         {:ok, scheme} <- determine_scheme(transport_info, request_target),
-         version <- mod.get_http_protocol(adapter),
-         {:ok, host, port} <- determine_host_and_port(scheme, version, request_target, headers),
-         {path, query} <- determine_path_and_query(request_target) do
-      uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-      %Bandit.TransportInfo{peername: {remote_ip, _port}} = transport_info
-      {:ok, Plug.Conn.Adapter.conn({mod, adapter}, method, uri, remote_ip, headers)}
-    end
+          Plug.Conn.headers(),
+          map()
+        ) :: Plug.Conn.t()
+  defp build_conn!(transport, method, request_target, headers, opts) do
+    adapter = Bandit.Adapter.init(self(), transport, method, headers, opts)
+    transport_info = Bandit.HTTPTransport.transport_info(transport)
+    scheme = determine_scheme(transport_info, request_target)
+    version = Bandit.HTTPTransport.version(transport)
+    {host, port} = determine_host_and_port!(scheme, version, request_target, headers)
+    {path, query} = determine_path_and_query(request_target)
+    uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
+    %{address: peer_addr} = Bandit.TransportInfo.peer_data(transport_info)
+    Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_addr, headers)
   end
 
-  @spec determine_scheme(Bandit.TransportInfo.t(), request_target()) ::
-          {:ok, String.t()} | {:error, String.t()}
+  @spec determine_scheme(Bandit.TransportInfo.t(), request_target()) :: String.t() | nil
   defp determine_scheme(%Bandit.TransportInfo{secure?: secure?}, {scheme, _, _, _}) do
     case {scheme, secure?} do
-      {nil, true} -> {:ok, "https"}
-      {nil, false} -> {:ok, "http"}
-      {scheme, _} -> {:ok, scheme}
+      {nil, true} -> "https"
+      {nil, false} -> "http"
+      {scheme, _} -> scheme
     end
   end
 
-  @spec determine_host_and_port(
-          scheme :: binary(),
-          version :: atom(),
-          request_target(),
-          Plug.Conn.headers()
-        ) ::
-          {:ok, Plug.Conn.host(), Plug.Conn.port_number()} | {:error, String.t()}
-  defp determine_host_and_port(scheme, version, {_, nil, nil, _}, headers) do
-    with host_header when is_binary(host_header) <- Bandit.Headers.get_header(headers, "host"),
-         {:ok, host, port} <- Bandit.Headers.parse_hostlike_header(host_header) do
-      {:ok, host, port || URI.default_port(scheme)}
-    else
-      nil ->
-        case version do
-          :"HTTP/1.0" -> {:ok, "", URI.default_port(scheme)}
-          _ -> {:error, "No host header"}
-        end
+  @spec determine_host_and_port!(binary(), atom(), request_target(), Plug.Conn.headers()) ::
+          {Plug.Conn.host(), Plug.Conn.port_number()}
+  defp determine_host_and_port!(scheme, version, {_, nil, nil, _}, headers) do
+    case {Bandit.Headers.get_header(headers, "host"), version} do
+      {nil, :"HTTP/1.0"} ->
+        {"", URI.default_port(scheme)}
 
-      error ->
-        error
+      {nil, _} ->
+        request_error!("Unable to obtain host and port: No host header")
+
+      {host_header, _} ->
+        {host, port} = Bandit.Headers.parse_hostlike_header!(host_header)
+        {host, port || URI.default_port(scheme)}
     end
   end
 
-  defp determine_host_and_port(scheme, _version, {_, host, port, _}, _headers),
-    do: {:ok, to_string(host), port || URI.default_port(scheme)}
+  defp determine_host_and_port!(scheme, _version, {_, host, port, _}, _headers),
+    do: {to_string(host), port || URI.default_port(scheme)}
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}
@@ -97,24 +145,24 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  @spec call_plug(Plug.Conn.t(), plug_def()) :: Plug.Conn.t() | no_return()
-  defp call_plug(%Plug.Conn{} = conn, {plug, plug_opts}) when is_atom(plug) do
+  @spec call_plug!(Plug.Conn.t(), plug_def()) :: Plug.Conn.t() | no_return()
+  defp call_plug!(%Plug.Conn{} = conn, {plug, plug_opts}) when is_atom(plug) do
     case plug.call(conn, plug_opts) do
       %Plug.Conn{} = conn -> conn
       other -> raise("Expected #{plug}.call/2 to return %Plug.Conn{} but got: #{inspect(other)}")
     end
   end
 
-  defp call_plug(%Plug.Conn{} = conn, {plug_fn, plug_opts}) when is_function(plug_fn) do
+  defp call_plug!(%Plug.Conn{} = conn, {plug_fn, plug_opts}) when is_function(plug_fn) do
     case plug_fn.(conn, plug_opts) do
       %Plug.Conn{} = conn -> conn
       other -> raise("Expected Plug function to return %Plug.Conn{} but got: #{inspect(other)}")
     end
   end
 
-  @spec maybe_upgrade(Plug.Conn.t()) ::
-          {:ok, :no_upgrade} | {:ok, :websocket, Plug.Conn.t(), tuple()} | {:error, any()}
-  defp maybe_upgrade(
+  @spec maybe_upgrade!(Plug.Conn.t()) ::
+          {:no_upgrade, Plug.Conn.t()} | {:upgrade, Plug.Conn.t(), :websocket, tuple()}
+  defp maybe_upgrade!(
          %Plug.Conn{
            state: :upgraded,
            adapter:
@@ -129,18 +177,17 @@ defmodule Bandit.Pipeline do
            websocket_opts
          ) do
       {:ok, conn, connection_opts} ->
-        {:ok, :websocket, conn, {websock, websock_opts, connection_opts}}
+        {:upgrade, conn, :websocket, {websock, websock_opts, connection_opts}}
 
       {:error, reason} ->
-        _ = %{conn | state: :unset} |> Plug.Conn.send_resp(400, reason)
-        {:error, reason}
+        request_error!(reason)
     end
   end
 
-  defp maybe_upgrade(_conn), do: {:ok, :no_upgrade}
+  defp maybe_upgrade!(conn), do: {:no_upgrade, conn}
 
-  @spec commit_response(Plug.Conn.t()) :: Plug.Conn.t() | no_return()
-  defp commit_response(conn) do
+  @spec commit_response!(Plug.Conn.t()) :: Plug.Conn.t() | no_return()
+  defp commit_response!(conn) do
     case conn do
       %Plug.Conn{state: :unset} ->
         raise(Plug.Conn.NotSentError)
@@ -160,5 +207,15 @@ defmodule Bandit.Pipeline do
       %Plug.Conn{} ->
         conn
     end
+    |> then(fn %Plug.Conn{adapter: {mod, adapter}} = conn ->
+      transport = Bandit.HTTPTransport.ensure_completed(adapter.transport)
+      %{conn | adapter: {mod, %{adapter | transport: transport}}}
+    end)
+  end
+
+  @spec request_error!(term()) :: no_return()
+  @spec request_error!(term(), atom()) :: no_return()
+  defp request_error!(reason, status \\ :bad_request) do
+    raise Bandit.HTTPError, message: reason, status: Plug.Conn.Status.code(status)
   end
 end

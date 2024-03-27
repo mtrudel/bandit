@@ -262,10 +262,9 @@ defmodule Bandit.Adapter do
 
   @impl Plug.Conn.Adapter
   def get_peer_data(%__MODULE__{} = adapter) do
-    case Bandit.HTTPTransport.transport_info(adapter.transport) do
-      {:ok, transport_info} -> Bandit.TransportInfo.peer_data(transport_info)
-      {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
-    end
+    adapter.transport
+    |> Bandit.HTTPTransport.transport_info()
+    |> Bandit.TransportInfo.peer_data()
   end
 
   @impl Plug.Conn.Adapter

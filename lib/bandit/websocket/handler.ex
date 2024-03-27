@@ -16,20 +16,12 @@ defmodule Bandit.WebSocket.Handler do
 
     connection_opts = Keyword.merge(state.opts.websocket, connection_opts)
 
-    origin_telemetry_span_context = state.origin_telemetry_span_context
-
     state =
       state
       |> Map.take([:handler_module])
       |> Map.put(:buffer, <<>>)
 
-    case Connection.init(
-           websock,
-           websock_opts,
-           connection_opts,
-           socket,
-           origin_telemetry_span_context
-         ) do
+    case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->
         case Keyword.get(connection_opts, :timeout) do
           nil -> {:continue, Map.put(state, :connection, connection)}

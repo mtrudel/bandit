@@ -19,25 +19,29 @@ defmodule Bandit.HeadersTest do
 
     test "parses host and port for all valid ports" do
       for port <- @valid_ports do
-        assert {:ok, "banana", ^port} = Headers.parse_hostlike_header("banana:#{port}")
+        assert {"banana", ^port} = Headers.parse_hostlike_header!("banana:#{port}")
       end
     end
 
     test "parses host and port for ipv6 all valid ports" do
       for port <- @valid_ports do
-        assert {:ok, "[::1]", ^port} = Headers.parse_hostlike_header("[::1]:#{port}")
+        assert {"[::1]", ^port} = Headers.parse_hostlike_header!("[::1]:#{port}")
       end
     end
 
     test "returns error for invalid ports" do
       for port <- @invalid_ports do
-        assert {:error, @error_msg} = Headers.parse_hostlike_header("banana:#{port}")
+        assert_raise(Bandit.HTTPError, @error_msg, fn ->
+          Headers.parse_hostlike_header!("banana:#{port}")
+        end)
       end
     end
 
     test "returns error for ipv6 invalid ports" do
       for port <- @invalid_ports do
-        assert {:error, @error_msg} = Headers.parse_hostlike_header("[::1]:#{port}")
+        assert_raise(Bandit.HTTPError, @error_msg, fn ->
+          Headers.parse_hostlike_header!("[::1]:#{port}")
+        end)
       end
     end
   end
