@@ -793,7 +793,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "HTTP method POST unsupported"
+      assert errors =~ "(Bandit.HTTPError) HTTP method POST unsupported"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
@@ -819,7 +819,8 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "'upgrade' header must contain 'websocket', got [\\\"NOPE\\\"]"
+      assert errors =~
+               "(Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
@@ -845,7 +846,8 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "'connection' header must contain 'upgrade', got [\\\"NOPE\\\"]"
+      assert errors =~
+               "(Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
@@ -870,7 +872,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "'sec-websocket-key' header is absent"
+      assert errors =~ "(Bandit.HTTPError) 'sec-websocket-key' header is absent"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
@@ -896,7 +898,8 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "'sec-websocket-version' header must equal '13', got [\\\"99\\\"]"
+      assert errors =~
+               "(Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do
@@ -1562,7 +1565,8 @@ defmodule HTTP1RequestTest do
                {[:bandit, :request, :start], %{monotonic_time: integer()},
                 %{
                   connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference()
+                  telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -1799,8 +1803,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: string(),
-                  status: 400
+                  error: string()
                 }}
              ]
     end
@@ -1820,8 +1823,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  error: "Header read timeout",
-                  status: 408
+                  error: "Header read timeout"
                 }}
              ]
     end
@@ -1841,6 +1843,7 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
+                  conn: struct_like(Plug.Conn, []),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},
                   stacktrace: list()

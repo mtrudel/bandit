@@ -1284,7 +1284,6 @@ defmodule WebSocketWebSockTest do
                 %{monotonic_time: integer(), compress: maybe(boolean())},
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference()
                 }}
              ]
@@ -1328,7 +1327,6 @@ defmodule WebSocketWebSockTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference()
                 }}
              ]
@@ -1354,7 +1352,6 @@ defmodule WebSocketWebSockTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference()
                 }}
              ]
@@ -1380,7 +1377,6 @@ defmodule WebSocketWebSockTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference()
                 }}
              ]
@@ -1400,7 +1396,6 @@ defmodule WebSocketWebSockTest do
                {[:bandit, :websocket, :stop], %{monotonic_time: integer(), duration: integer()},
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference()
                 }}
              ]
@@ -1427,7 +1422,6 @@ defmodule WebSocketWebSockTest do
                 },
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
                   error: :nope
                 }}
@@ -1447,7 +1441,6 @@ defmodule WebSocketWebSockTest do
                {[:bandit, :websocket, :stop], %{monotonic_time: integer(), duration: integer()},
                 %{
                   connection_telemetry_span_context: reference(),
-                  origin_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
                   error: :timeout
                 }}

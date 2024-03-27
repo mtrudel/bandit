@@ -669,7 +669,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -698,8 +698,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -728,8 +727,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -762,8 +760,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -798,8 +795,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -824,8 +820,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -850,8 +845,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  stream_id: integer()
+                  conn: struct_like(Plug.Conn, [])
                 }}
              ]
     end
@@ -878,7 +872,6 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  stream_id: integer(),
                   error: string()
                 }}
              ]
@@ -899,7 +892,7 @@ defmodule HTTP2PlugTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  stream_id: integer(),
+                  conn: struct_like(Plug.Conn, []),
                   kind: :exit,
                   exception: %RuntimeError{message: "boom"},
                   stacktrace: list()

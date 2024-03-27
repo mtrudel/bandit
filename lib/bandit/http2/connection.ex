@@ -226,8 +226,8 @@ defmodule Bandit.HTTP2.Connection do
           case Bandit.HTTP2.StreamProcess.start_link(
                  stream,
                  connection.plug,
-                 connection.opts,
-                 connection.telemetry_span
+                 connection.telemetry_span,
+                 connection.opts
                ) do
             {:ok, pid} ->
               streams = Bandit.HTTP2.StreamCollection.insert(connection.streams, stream_id, pid)

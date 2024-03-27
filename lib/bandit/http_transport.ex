@@ -35,4 +35,7 @@ defprotocol Bandit.HTTPTransport do
 
   @spec supported_upgrade?(t(), atom()) :: boolean()
   def supported_upgrade?(transport, protocol)
+
+  @spec send_on_error(t(), struct()) :: t()
+  def send_on_error(transport, error)
 end

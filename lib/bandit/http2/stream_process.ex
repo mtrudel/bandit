@@ -12,54 +12,19 @@ defmodule Bandit.HTTP2.StreamProcess do
   @spec start_link(
           Bandit.HTTP2.Stream.t(),
           Bandit.Pipeline.plug_def(),
-          keyword(),
-          Bandit.Telemetry.t()
+          Bandit.Telemetry.t(),
+          keyword()
         ) :: GenServer.on_start()
-  def start_link(stream, plug, opts, connection_span) do
-    GenServer.start_link(__MODULE__, {stream, plug, opts, connection_span})
+  def start_link(stream, plug, connection_span, opts) do
+    GenServer.start_link(__MODULE__, {stream, plug, connection_span, opts})
   end
 
   @impl GenServer
-  def init({stream, plug, opts, connection_span}) do
-    span =
-      Bandit.Telemetry.start_span(:request, %{}, %{
-        connection_telemetry_span_context: connection_span.telemetry_span_context,
-        stream_id: stream.stream_id
-      })
-
-    {:ok, %{stream: stream, plug: plug, opts: opts, span: span}, {:continue, :start_stream}}
-  end
+  def init(state), do: {:ok, state, {:continue, :start_stream}}
 
   @impl GenServer
-  def handle_continue(:start_stream, state) do
-    case Bandit.Pipeline.run(state.stream, state.plug, state.opts) do
-      {:ok, %Plug.Conn{adapter: {_mod, adapter}} = conn} ->
-        stream = Bandit.HTTPTransport.ensure_completed(adapter.transport)
-        Bandit.Telemetry.stop_span(state.span, adapter.metrics, %{conn: conn})
-        {:stop, :normal, %{state | stream: stream}}
-
-      {:error, reason} ->
-        raise Bandit.HTTP2.Errors.StreamError,
-          message: reason,
-          error_code: Bandit.HTTP2.Errors.internal_error()
-    end
-  end
-
-  @impl GenServer
-  def terminate(:normal, _state), do: :ok
-
-  def terminate({%Bandit.HTTP2.Errors.StreamError{} = error, _stacktrace}, state) do
-    Bandit.Telemetry.stop_span(state.span, %{}, %{error: error.message})
-    Bandit.HTTP2.Stream.reset_stream(state.stream, error.error_code)
-  end
-
-  def terminate({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, state) do
-    Bandit.Telemetry.stop_span(state.span, %{}, %{error: error.message})
-    Bandit.HTTP2.Stream.close_connection(state.stream, error.error_code, error.message)
-  end
-
-  def terminate({exception, stacktrace}, state) do
-    Bandit.Telemetry.span_exception(state.span, :exit, exception, stacktrace)
-    Bandit.HTTP2.Stream.reset_stream(state.stream, Bandit.HTTP2.Errors.internal_error())
+  def handle_continue(:start_stream, {stream, plug, connection_span, opts} = state) do
+    _ = Bandit.Pipeline.run(stream, plug, connection_span, opts)
+    {:stop, :normal, state}
   end
 end

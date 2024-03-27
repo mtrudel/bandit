@@ -28,7 +28,7 @@ defmodule Bandit.WebSocket.Connection do
           metrics: map()
         }
 
-  def init(websock, websock_state, connection_opts, socket, origin_telemetry_span_context) do
+  def init(websock, websock_state, connection_opts, socket) do
     compress = Keyword.get(connection_opts, :compress)
 
     connection_telemetry_span_context =
@@ -36,8 +36,7 @@ defmodule Bandit.WebSocket.Connection do
 
     span =
       Bandit.Telemetry.start_span(:websocket, %{compress: compress}, %{
-        connection_telemetry_span_context: connection_telemetry_span_context,
-        origin_telemetry_span_context: origin_telemetry_span_context
+        connection_telemetry_span_context: connection_telemetry_span_context
       })
 
     instance = %__MODULE__{

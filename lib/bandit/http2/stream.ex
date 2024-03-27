@@ -494,7 +494,7 @@ defmodule Bandit.HTTP2.Stream do
         {:data, _data, true} -> do_recv_end_stream(stream, true)
       after
         # RFC9113§8.1 - hint the client to stop sending data
-        0 -> Bandit.HTTP2.Stream.reset_stream(stream, Bandit.HTTP2.Errors.no_error())
+        0 -> do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})
       end
     end
 
@@ -503,6 +503,26 @@ defmodule Bandit.HTTP2.Stream do
     end
 
     def supported_upgrade?(_stream, _protocol), do: false
+
+    def send_on_error(%@for{} = stream, %Bandit.HTTPError{}) do
+      do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.protocol_error()})
+      %{stream | state: :closed}
+    end
+
+    def send_on_error(%@for{} = stream, %Bandit.HTTP2.Errors.StreamError{} = error) do
+      do_send(stream, {:send_rst_stream, error.error_code})
+      %{stream | state: :closed}
+    end
+
+    def send_on_error(%@for{} = stream, %Bandit.HTTP2.Errors.ConnectionError{} = error) do
+      do_send(stream, {:close_connection, error.error_code, error.message})
+      stream
+    end
+
+    def send_on_error(%@for{} = stream, _error) do
+      do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.internal_error()})
+      %{stream | state: :closed}
+    end
 
     # Helpers
 
@@ -521,14 +541,4 @@ defmodule Bandit.HTTP2.Stream do
     defp connection_error!(message, error_code \\ Bandit.HTTP2.Errors.protocol_error()),
       do: raise(Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code)
   end
-
-  def reset_stream(%__MODULE__{} = stream, error_code) do
-    do_send(stream, {:send_rst_stream, error_code})
-    %{stream | state: :closed}
-  end
-
-  def close_connection(%__MODULE__{} = stream, error_code, msg),
-    do: do_send(stream, {:close_connection, error_code, msg})
-
-  defp do_send(stream, msg), do: send(stream.connection_pid, {msg, stream.stream_id})
 end
