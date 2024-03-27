@@ -93,10 +93,13 @@ defmodule Bandit do
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
+  * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
+    Defaults to `true`
   """
   @type http_options :: [
           compress: boolean(),
-          deflate_opions: deflate_options()
+          deflate_opions: deflate_options(),
+          log_protocol_errors: boolean()
         ]
 
   @typedoc """
@@ -116,8 +119,6 @@ defmodule Bandit do
     every 5 requests). This option is currently experimental, and may change at any time
   * `log_unknown_messages`: Whether or not to log unknown messages sent to the handler process.
     Defaults to `false`
-  * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
-    Defaults to `true`
   """
   @type http_1_options :: [
           enabled: boolean(),
@@ -126,8 +127,7 @@ defmodule Bandit do
           max_header_count: pos_integer(),
           max_requests: pos_integer(),
           gc_every_n_keepalive_requests: pos_integer(),
-          log_unknown_messages: boolean(),
-          log_protocol_errors: boolean()
+          log_unknown_messages: boolean()
         ]
 
   @typedoc """
@@ -196,8 +196,8 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
-  @http_keys ~w(compress deflate_options)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages log_protocol_errors)a
+  @http_keys ~w(compress deflate_options log_protocol_errors)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()

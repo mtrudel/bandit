@@ -53,7 +53,7 @@ defmodule Bandit.Pipeline do
         ] ->
           Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
-          if Keyword.get(opts.http_1, :log_protocol_errors, true),
+          if Keyword.get(opts.http, :log_protocol_errors, true),
             do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
 
           Bandit.HTTPTransport.send_on_error(transport, error)
@@ -73,7 +73,7 @@ defmodule Bandit.Pipeline do
         span = Bandit.Telemetry.start_span(:request, measurements, metadata)
         Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
-        if Keyword.get(opts.http_1, :log_protocol_errors, true),
+        if Keyword.get(opts.http, :log_protocol_errors, true),
           do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
 
         Bandit.HTTPTransport.send_on_error(transport, error)

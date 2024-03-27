@@ -35,7 +35,7 @@ defmodule HTTP1RequestTest do
 
   describe "suppressing protocol error logging" do
     test "errors are not logged if so configured", context do
-      context = http_server(context, http_1_options: [log_protocol_errors: false])
+      context = http_server(context, http_options: [log_protocol_errors: false])
 
       output =
         capture_log(fn ->

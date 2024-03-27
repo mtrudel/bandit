@@ -2,6 +2,8 @@
 
 ### Changes
 
+* **BREAKING CHANGE** Move `log_protocol_errors` configuration option into
+  shared `http_options` top-level config (and apply it to HTTP/2 errors as well)
 * **BREAKING CHANGE** Remove `origin_telemetry_span_context` from WebSocket
   telemetry events
 * **BREAKING CHANGE** Remove `stream_id` from HTTP/2 telemetry events
