@@ -850,54 +850,62 @@ defmodule HTTP2PlugTest do
              ]
     end
 
-    @tag capture_log: true
     test "it should send `stop` events for malformed requests", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
 
-      socket = SimpleH2Client.setup_connection(context)
+          socket = SimpleH2Client.setup_connection(context)
 
-      # Take uppercase header example from H2Spec
-      headers =
-        <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
-          129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
+          # Take uppercase header example from H2Spec
+          headers =
+            <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92,
+              11, 129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
+          SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
-      Process.sleep(100)
+          Process.sleep(100)
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  error: string()
-                }}
-             ]
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      error: string()
+                    }}
+                 ]
+        end)
+
+      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received uppercase header"
     end
 
-    @tag capture_log: true
     test "it should send `exception` events for erroring requests", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
-      Req.get(context.req, url: "/raise_error")
+          Req.get(context.req, url: "/raise_error")
 
-      Process.sleep(100)
+          Process.sleep(100)
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :exception], %{monotonic_time: integer()},
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  kind: :exit,
-                  exception: %RuntimeError{message: "boom"},
-                  stacktrace: list()
-                }}
-             ]
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :exit,
+                      exception: %RuntimeError{message: "boom"},
+                      stacktrace: list()
+                    }}
+                 ]
+        end)
+
+      assert output =~ "(RuntimeError) boom"
     end
 
     def raise_error(_conn) do
