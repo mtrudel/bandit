@@ -2,6 +2,8 @@ defmodule WebSocketProtocolTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
+  import ExUnit.CaptureLog
+
   setup :http_server
 
   def call(conn, _opts) do
@@ -105,15 +107,20 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
     end
 
-    @tag capture_log: true
     test "over-sized frames are rejected", context do
-      context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+      output =
+        capture_log(fn ->
+          context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-      payload = String.duplicate("0123456789", 200_001)
-      SimpleWebSocketClient.send_text_frame(client, payload)
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+          payload = String.duplicate("0123456789", 200_001)
+          SimpleWebSocketClient.send_text_frame(client, payload)
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+          Process.sleep(100)
+        end)
+
+      assert output =~ "{:deserializing, :max_frame_size_exceeded}"
     end
   end
 
@@ -348,130 +355,165 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "error handling" do
-    @tag capture_log: true
     test "server sends a 1002 on an unexpected continuation frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received unexpected continuation frame (RFC6455§5.4)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected continuation frame (RFC6455§5.4)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received unexpected continuation frame (RFC6455§5.4)"
     end
 
-    @tag capture_log: true
     test "server sends a 1002 on a text frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
+          SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received unexpected text frame (RFC6455§5.4)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected text frame (RFC6455§5.4)"}
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received unexpected text frame (RFC6455§5.4)"
     end
 
-    @tag capture_log: true
     test "server sends a 1002 on a binary frame during continuation", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
-      # This is not allowed by RFC6455§5.4
-      SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
+          SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received unexpected binary frame (RFC6455§5.4)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected binary frame (RFC6455§5.4)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received unexpected binary frame (RFC6455§5.4)"
     end
 
-    @tag capture_log: true
     test "server sends a 1002 on a compressed frame when deflate not negotiated", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
-      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+          deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+          SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received unexpected compressed frame (RFC6455§5.2)"
     end
 
-    @tag capture_log: true
     test "server sends a 1007 on a malformed compressed frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
 
-      deflated_payload = <<1, 2, 3>>
-      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+          deflated_payload = <<1, 2, 3>>
+          SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Inflation error"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Inflation error"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Inflation error"
     end
 
-    @tag capture_log: true
     test "server sends a 1007 on a non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+          SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
     end
 
-    @tag capture_log: true
     test "server sends a 1007 on fragmented non UTF-8 text frame", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
-      SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
+          SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
+          SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
 
-      # Get the error that terminate saw, to ensure we're closing for the expected reason
-      assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
 
-      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
 
-      # Verify that the server didn't send any extraneous frames
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
     end
 
     test "server does NOT send a 1007 on a non UTF-8 text frame when so configured", context do
@@ -486,7 +528,6 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "timeout conditions" do
-    @tag capture_log: true
     test "server sends a 1002 if no frames sent at all", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -501,7 +542,6 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
-    @tag capture_log: true
     test "server sends a 1002 on timeout between frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -524,7 +564,6 @@ defmodule WebSocketProtocolTest do
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
-    @tag capture_log: true
     test "server times out waiting for client connection close", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TimeoutCloseWebSock)

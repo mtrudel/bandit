@@ -51,7 +51,6 @@ defmodule InitialHandlerTest do
       assert "HTTP/1.1 https" == Req.get!(context.req, url: "/report_version").body
     end
 
-    @tag :capture_log
     test "closes with an error if HTTP/1.1 is attempted over an h2 ALPN connection", context do
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "GET / HTTP/1.1\r\n")
@@ -76,7 +75,6 @@ defmodule InitialHandlerTest do
       assert "HTTP/2 https" == Req.get!(context.req, url: "/report_version").body
     end
 
-    @tag :capture_log
     test "closes with an error if HTTP2 is attempted over a HTTP/1.1 connection", context do
       socket = Transport.tls_client(context, ["http/1.1"])
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")

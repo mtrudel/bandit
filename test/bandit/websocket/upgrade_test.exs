@@ -35,7 +35,6 @@ defmodule WebSocketUpgradeTest do
   def send(msg), do: send(__MODULE__, msg)
 
   describe "upgrade support" do
-    @tag capture_log: true
     test "upgrades to a {websock, websock_opts, conn_opts} tuple, respecting options", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock, timeout: "250")

@@ -95,7 +95,7 @@ defmodule Bandit.HTTP1.Socket do
           request_error!("Request line HTTP error: #{inspect(reason)}")
 
         {:error, :invalid} ->
-          request_error!("Request uri is too long", :request_uri_too_long)
+          request_error!("Request URI is too long", :request_uri_too_long)
 
         {:error, reason} ->
           request_error!("Request line unknown error: #{inspect(reason)}")

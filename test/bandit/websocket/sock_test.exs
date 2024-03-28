@@ -145,13 +145,18 @@ defmodule WebSocketWebSockTest do
       def init(_opts), do: {:stop, :abnormal, :init}
     end
 
-    @tag capture_log: true
     test "can close a connection with an error by returning an abnormal stop tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, InitAbnormalCloseWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, InitAbnormalCloseWebSock)
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :abnormal"
     end
 
     defmodule InitCloseWithCodeWebSock do
@@ -416,15 +421,20 @@ defmodule WebSocketWebSockTest do
       def handle_in(_data, state), do: {:stop, :abnormal, state}
     end
 
-    @tag capture_log: true
     test "can close a connection with an error by returning an abnormal stop tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, HandleInAbnormalCloseWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, HandleInAbnormalCloseWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, "OK")
+          SimpleWebSocketClient.send_text_frame(client, "OK")
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :abnormal"
     end
 
     defmodule HandleInCloseWithCodeWebSock do
@@ -736,16 +746,21 @@ defmodule WebSocketWebSockTest do
       def handle_control(_data, state), do: {:stop, :abnormal, state}
     end
 
-    @tag capture_log: true
     test "can close a connection with an error by returning an abnormal stop tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, HandleControlAbnormalCloseWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, HandleControlAbnormalCloseWebSock)
 
-      SimpleWebSocketClient.send_ping_frame(client, "OK")
-      _ = SimpleWebSocketClient.recv_pong_frame(client)
+          SimpleWebSocketClient.send_ping_frame(client, "OK")
+          _ = SimpleWebSocketClient.recv_pong_frame(client)
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :abnormal"
     end
 
     defmodule HandleControlCloseWithCodeWebSock do
@@ -1019,18 +1034,23 @@ defmodule WebSocketWebSockTest do
       def handle_info(_data, state), do: {:stop, :abnormal, state}
     end
 
-    @tag capture_log: true
     test "can close a connection with an error by returning an abnormal stop tuple", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, HandleInfoAbnormalCloseWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, HandleInfoAbnormalCloseWebSock)
 
-      SimpleWebSocketClient.send_text_frame(client, "whoami")
-      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
-      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
-      Process.send(pid, "OK", [])
+          SimpleWebSocketClient.send_text_frame(client, "whoami")
+          {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+          pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+          Process.send(pid, "OK", [])
 
-      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
-      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :abnormal"
     end
 
     defmodule HandleInfoCloseWithCodeWebSock do
@@ -1214,15 +1234,20 @@ defmodule WebSocketWebSockTest do
       assert_receive :normal
     end
 
-    @tag capture_log: true
     test "is called with {:error, reason} on an error connection shutdown", context do
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
-      # Get the websock to tell bandit to shut down
-      SimpleWebSocketClient.send_text_frame(client, "boom")
+          # Get the websock to tell bandit to shut down
+          SimpleWebSocketClient.send_text_frame(client, "boom")
 
-      assert_receive {:error, :boom}
+          assert_receive {:error, :boom}
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :boom"
     end
 
     test "is called with :shutdown on a server shutdown", context do
@@ -1253,7 +1278,6 @@ defmodule WebSocketWebSockTest do
       assert_receive {:error, :closed}
     end
 
-    @tag capture_log: true
     test "is called with :timeout on a timeout", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -1401,31 +1425,37 @@ defmodule WebSocketWebSockTest do
              ]
     end
 
-    @tag capture_log: true
     test "it should send `stop` events on abnormal websocket server disconnection", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :websocket, :stop]]})
 
-      client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
-      SimpleWebSocketClient.send_text_frame(client, "abnormal_close")
-      Process.sleep(100)
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+          SimpleWebSocketClient.send_text_frame(client, "abnormal_close")
+          Process.sleep(100)
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :websocket, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  recv_text_frame_count: 1,
-                  recv_text_frame_bytes: 14
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  error: :nope
-                }}
-             ]
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :websocket, :stop],
+                    %{
+                      monotonic_time: integer(),
+                      duration: integer(),
+                      recv_text_frame_count: 1,
+                      recv_text_frame_bytes: 14
+                    },
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      error: :nope
+                    }}
+                 ]
+
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(stop) :nope"
     end
 
     test "it should send `stop` events on timeout", context do

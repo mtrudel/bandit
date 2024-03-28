@@ -367,7 +367,7 @@ defmodule Bandit.HTTP2.Stream do
         end
 
       if stream.bytes_remaining not in [nil, 0],
-        do: stream_error!("Received END_STREAM with byte still pending!")
+        do: stream_error!("Received END_STREAM with byte still pending")
 
       %{stream | state: next_state}
     end
