@@ -2075,7 +2075,7 @@ defmodule HTTP2ProtocolTest do
         headers_for_header_read_test(context)
 
       SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
-      SimpleH2Client.send_frame(socket, 6, 0, 1, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
     end
