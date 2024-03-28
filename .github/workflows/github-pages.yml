@@ -1,0 +1,87 @@
+name: Github Pages
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  MIX_ENV: test
+
+jobs:
+  benchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install nghttp2
+      run: sudo apt-get install nghttp2
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with: 
+        repository: mtrudel/benchmark
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: 1.14.x
+        otp-version: 25.1
+    - name: Install mix dependencies
+      run: mix deps.get
+    - name: Compile code
+      run: mix compile
+    - name: Run benchmark
+      run: mix benchmark --profile normal --protocol http/1.1,h2c,ws cowboy@master bandit@main
+    - name: Upload results file
+      uses: actions/upload-artifact@v4
+      with:
+        name: http-benchmark.csv
+        path: http-benchmark.csv
+  build:
+    name: Build Site
+    runs-on: ubuntu-latest
+    needs: benchmark
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Download results
+      uses: actions/download-artifact@v4
+      with:
+        name: http-benchmark.csv
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+    - name: Setup PNPM
+      uses: pnpm/action-setup@v3
+      with:
+          version: latest
+          run_install: false
+    - name: Build
+      run: |
+        mv http-benchmark.csv www/sources/results/data.csv
+        sed -i 's/```elixir/```code/g' README.md
+        cp README.md www/pages/index.md
+        cp CODE_OF_CONDUCT.md www/pages/code-of-conduct.md
+        cp CHANGELOG.md www/pages/changelog.md
+        cd www
+        pnpm install
+        pnpm run sources
+        pnpm run build
+        chmod -R 777 build
+    - name: Upload Site
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: "www/build"
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
