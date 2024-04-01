@@ -37,6 +37,24 @@ defmodule ServerTest do
              "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port #{port} already in use"
   end
 
+  test "special cases :inet option" do
+    logs =
+      capture_log(fn ->
+        start_supervised({Bandit, [{:plug, __MODULE__}, :inet, {:port, 0}, {:ip, :loopback}]})
+      end)
+
+    assert logs =~ "at 127.0.0.1"
+  end
+
+  test "special cases :inet6 option" do
+    logs =
+      capture_log(fn ->
+        start_supervised({Bandit, [{:plug, __MODULE__}, :inet6, {:port, 0}, {:ip, :loopback}]})
+      end)
+
+    assert logs =~ "at ::1"
+  end
+
   test "can run multiple instances of Bandit" do
     start_supervised({Bandit, plug: __MODULE__, port: 4000})
     start_supervised({Bandit, plug: __MODULE__, port: 4001})
