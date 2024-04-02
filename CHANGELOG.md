@@ -1,3 +1,9 @@
+## 1.4.2 (2 Apr 2024)
+
+### Enhancements
+
+* Support top-level :inet and :inet6 options for Plug.Cowboy compatibility (#337)
+
 ## 1.4.1 (27 Mar 2024)
 
 ### Changes
