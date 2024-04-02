@@ -36,6 +36,12 @@ defmodule Bandit do
       * `:any` for all interfaces (ie: `0.0.0.0`)
       * `{:local, "/path/to/socket"}` for a Unix domain socket. If this option is used, the `port`
         option *must* be set to `0`
+  * `inet`: Only bind to IPv4 interfaces. This option is offered as a convenience and actually sets the
+    option of the same name within `thousand_island_options.transport_options`. Must be specified
+    as a bare atom `:inet`
+  * `inet6`: Only bind to IPv6 interfaces. This option is offered as a convenience and actually sets the
+    option of the same name within `thousand_island_options.transport_options`. Must be specified
+    as a bare atom `:inet6`
   * `keyfile`: The path to a file containing the SSL key to use for this server. This option is
     offered as a convenience and actually sets the option of the same name within
     `thousand_island_options.transport_options`. If a relative path is used here, you will also
@@ -68,21 +74,23 @@ defmodule Bandit do
     be found at `t:websocket_options/0`
   """
   @type options :: [
-          plug: module() | {module(), Plug.opts()},
-          scheme: :http | :https,
-          port: :inet.port_number(),
-          ip: :inet.socket_address(),
-          keyfile: binary(),
-          certfile: binary(),
-          otp_app: Application.app(),
-          cipher_suite: :strong | :compatible,
-          display_plug: module(),
-          startup_log: Logger.level() | false,
-          thousand_island_options: ThousandIsland.options(),
-          http_options: http_options(),
-          http_1_options: http_1_options(),
-          http_2_options: http_2_options(),
-          websocket_options: websocket_options()
+          {:plug, module() | {module(), Plug.opts()}}
+          | {:scheme, :http | :https}
+          | {:port, :inet.port_number()}
+          | {:ip, :inet.socket_address()}
+          | :inet
+          | :inet6
+          | {:keyfile, binary()}
+          | {:certfile, binary()}
+          | {:otp_app, Application.app()}
+          | {:cipher_suite, :strong | :compatible}
+          | {:display_plug, module()}
+          | {:startup_log, Logger.level() | false}
+          | {:thousand_island_options, ThousandIsland.options()}
+          | {:http_options, http_options()}
+          | {:http_1_options, http_1_options()}
+          | {:http_2_options, http_2_options()}
+          | {:websocket_options, websocket_options()}
         ]
 
   @typedoc """
@@ -97,9 +105,9 @@ defmodule Bandit do
     Defaults to `true`
   """
   @type http_options :: [
-          compress: boolean(),
-          deflate_opions: deflate_options(),
-          log_protocol_errors: boolean()
+          {:compress, boolean()}
+          | {:deflate_opions, deflate_options()}
+          | {:log_protocol_errors, boolean()}
         ]
 
   @typedoc """
@@ -121,13 +129,13 @@ defmodule Bandit do
     Defaults to `false`
   """
   @type http_1_options :: [
-          enabled: boolean(),
-          max_request_line_length: pos_integer(),
-          max_header_length: pos_integer(),
-          max_header_count: pos_integer(),
-          max_requests: pos_integer(),
-          gc_every_n_keepalive_requests: pos_integer(),
-          log_unknown_messages: boolean()
+          {:enabled, boolean()}
+          | {:max_request_line_length, pos_integer()}
+          | {:max_header_length, pos_integer()}
+          | {:max_header_count, pos_integer()}
+          | {:max_requests, pos_integer()}
+          | {:gc_every_n_keepalive_requests, pos_integer()}
+          | {:log_unknown_messages, boolean()}
         ]
 
   @typedoc """
@@ -143,10 +151,10 @@ defmodule Bandit do
     settings. Values provided here will override the defaults specified in RFC9113§6.5.2
   """
   @type http_2_options :: [
-          enabled: boolean(),
-          max_header_block_size: pos_integer(),
-          max_requests: pos_integer(),
-          default_local_settings: Bandit.HTTP2.Settings.t()
+          {:enabled, boolean()}
+          | {:max_header_block_size, pos_integer()}
+          | {:max_requests, pos_integer()}
+          | {:default_local_settings, Bandit.HTTP2.Settings.t()}
         ]
 
   @typedoc """
@@ -164,20 +172,20 @@ defmodule Bandit do
     for details). Defaults to `true`
   """
   @type websocket_options :: [
-          enabled: boolean(),
-          max_frame_size: pos_integer(),
-          validate_text_frames: boolean(),
-          compress: boolean()
+          {:enabled, boolean()}
+          | {:max_frame_size, pos_integer()}
+          | {:validate_text_frames, boolean()}
+          | {:compress, boolean()}
         ]
 
   @typedoc """
   Options to configure the deflate library used for HTTP compression
   """
   @type deflate_options :: [
-          level: :zlib.zlevel(),
-          window_bits: :zlib.zwindowbits(),
-          memory_level: :zlib.zmemlevel(),
-          strategy: :zlib.zstrategy()
+          {:level, :zlib.zlevel()}
+          | {:window_bits, :zlib.zwindowbits()}
+          | {:memory_level, :zlib.zmemlevel()}
+          | {:strategy, :zlib.zstrategy()}
         ]
 
   @typep scheme :: :http | :https
@@ -210,7 +218,8 @@ defmodule Bandit do
   """
   @spec start_link(options()) :: Supervisor.on_start()
   def start_link(arg) do
-    arg = validate_options(arg, @top_level_keys, "top level")
+    # Special case top-level `:inet` and `:inet6` options so we can use keyword logic everywhere else
+    arg = arg |> special_case_inet_options() |> validate_options(@top_level_keys, "top level")
 
     thousand_island_options =
       Keyword.get(arg, :thousand_island_options, [])
@@ -302,6 +311,24 @@ defmodule Bandit do
 
       {:error, _} = error ->
         error
+    end
+  end
+
+  @spec special_case_inet_options(options()) :: options()
+  defp special_case_inet_options(opts) do
+    {inet_opts, opts} = Enum.split_with(opts, &(&1 in [:inet, :inet6]))
+
+    if inet_opts == [] do
+      opts
+    else
+      Keyword.update(
+        opts,
+        :thousand_island_options,
+        [transport_options: inet_opts],
+        fn thousand_island_opts ->
+          Keyword.update(thousand_island_opts, :transport_options, inet_opts, &(&1 ++ inet_opts))
+        end
+      )
     end
   end
 
