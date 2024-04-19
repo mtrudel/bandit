@@ -101,12 +101,16 @@ defmodule Bandit do
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`
+  * `log_exceptions_with_status_codes`: Which exceptions to log. Bandit will log only those
+    exceptions whose status codes (as determined by `Plug.Exception.status/1`) match the specified
+    list or range. Defaults to `500..599`
   * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
     Defaults to `true`
   """
   @type http_options :: [
           {:compress, boolean()}
           | {:deflate_opions, deflate_options()}
+          | {:log_exceptions_with_status_codes, list() | Range.t()}
           | {:log_protocol_errors, boolean()}
         ]
 
@@ -204,7 +208,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
-  @http_keys ~w(compress deflate_options log_protocol_errors)a
+  @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a

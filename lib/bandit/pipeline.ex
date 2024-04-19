@@ -46,38 +46,12 @@ defmodule Bandit.Pipeline do
             {:upgrade, adapter.transport, protocol, opts}
         end
       rescue
-        error in [
-          Bandit.HTTPError,
-          Bandit.HTTP2.Errors.StreamError,
-          Bandit.HTTP2.Errors.ConnectionError
-        ] ->
-          Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
-
-          if Keyword.get(opts.http, :log_protocol_errors, true),
-            do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
-
-          Bandit.HTTPTransport.send_on_error(transport, error)
-          {:error, error}
-
-        error ->
-          Bandit.Telemetry.span_exception(span, :exit, error, __STACKTRACE__)
-          Bandit.HTTPTransport.send_on_error(transport, error)
-          reraise error, __STACKTRACE__
+        error -> handle_error(error, __STACKTRACE__, transport, span, opts)
       end
     rescue
-      error in [
-        Bandit.HTTPError,
-        Bandit.HTTP2.Errors.StreamError,
-        Bandit.HTTP2.Errors.ConnectionError
-      ] ->
+      error ->
         span = Bandit.Telemetry.start_span(:request, measurements, metadata)
-        Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
-
-        if Keyword.get(opts.http, :log_protocol_errors, true),
-          do: Logger.error(Exception.format(:error, error, __STACKTRACE__))
-
-        Bandit.HTTPTransport.send_on_error(transport, error)
-        {:error, error}
+        handle_error(error, __STACKTRACE__, transport, span, opts)
     end
   end
 
@@ -217,5 +191,43 @@ defmodule Bandit.Pipeline do
   @spec request_error!(term(), Plug.Conn.status()) :: no_return()
   defp request_error!(reason, plug_status \\ :bad_request) do
     raise Bandit.HTTPError, message: reason, plug_status: plug_status
+  end
+
+  @spec handle_error(
+          Exception.t(),
+          Exception.stacktrace(),
+          Bandit.HTTPTransport.t(),
+          Bandit.Telemetry.t(),
+          map()
+        ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
+  defp handle_error(%type{} = error, stacktrace, transport, span, opts)
+       when type in [
+              Bandit.HTTPError,
+              Bandit.HTTP2.Errors.StreamError,
+              Bandit.HTTP2.Errors.ConnectionError
+            ] do
+    Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
+
+    if Keyword.get(opts.http, :log_protocol_errors, true),
+      do: Logger.error(Exception.format(:error, error, stacktrace))
+
+    # We want to do this at the end of the function, since the HTTP2 stack may kill this process
+    # in the course of handling a ConnectionError
+    Bandit.HTTPTransport.send_on_error(transport, error)
+    {:error, error}
+  end
+
+  defp handle_error(error, stacktrace, transport, span, opts) do
+    Bandit.Telemetry.span_exception(span, :exit, error, stacktrace)
+    status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
+
+    if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
+      Logger.error(Exception.format(:error, error, stacktrace))
+      Bandit.HTTPTransport.send_on_error(transport, error)
+      {:error, error}
+    else
+      Bandit.HTTPTransport.send_on_error(transport, error)
+      {:ok, transport}
+    end
   end
 end

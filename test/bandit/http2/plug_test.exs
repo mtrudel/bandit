@@ -49,10 +49,26 @@ defmodule HTTP2PlugTest do
       raise "boom"
     end
 
-    test "it should return the code and log when known exceptions are raised", context do
+    test "it should return the code and not log when known exceptions are raised", context do
       output =
         capture_log(fn ->
           {:ok, response} = Req.get(context.req, url: "/known_crasher")
+          assert response.status == 418
+          Process.sleep(100)
+        end)
+
+      assert output == ""
+    end
+
+    test "it should log known exceptions if so configured", context do
+      context =
+        context
+        |> https_server(http_options: [log_exceptions_with_status_codes: 100..599])
+        |> Enum.into(context)
+
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
           assert response.status == 418
           Process.sleep(100)
         end)
