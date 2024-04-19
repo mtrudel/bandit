@@ -49,6 +49,38 @@ defmodule HTTP1RequestTest do
     end
   end
 
+  describe "plug error logging" do
+    test "it should return 500 and log when unknown exceptions are raised", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
+          assert response.status == 500
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(RuntimeError) boom"
+    end
+
+    def unknown_crasher(_conn) do
+      raise "boom"
+    end
+
+    test "it should return the code and log when known exceptions are raised", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/known_crasher")
+          assert response.status == 418
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(SafeError) boom"
+    end
+
+    def known_crasher(_conn) do
+      raise SafeError, "boom"
+    end
+  end
+
   describe "invalid requests" do
     test "returns a 400 if the request cannot be parsed", context do
       output =

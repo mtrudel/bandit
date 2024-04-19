@@ -383,28 +383,22 @@ defmodule Bandit.HTTP1.Socket do
     def supported_upgrade?(_socket, protocol), do: protocol == :websocket
 
     def send_on_error(%@for{} = socket, %Bandit.HTTPError{} = error) do
-      _ = send_error(socket, error.status)
+      socket = maybe_send_error(socket, error.status)
       %{socket | write_state: :sent}
     end
 
-    def send_on_error(%@for{} = socket, _error) do
-      _ = send_error(socket, 500)
+    def send_on_error(%@for{} = socket, error) do
+      socket = maybe_send_error(socket, Plug.Exception.status(error))
       %{socket | write_state: :sent}
     end
 
-    defp send_error(socket, status) do
+    defp maybe_send_error(socket, error) do
       receive do
-        {:plug_conn, :sent} -> :ok
+        {:plug_conn, :sent} -> socket
       after
         0 ->
-          try do
-            reason = Plug.Conn.Status.reason_phrase(status)
-            response_line = "#{socket.version} #{status} #{reason}\r\n\r\n"
-            _ = ThousandIsland.Socket.send(socket.socket, response_line)
-            ThousandIsland.Socket.close(socket.socket)
-          rescue
-            _ -> :ok
-          end
+          status = error |> Plug.Conn.Status.code()
+          send_headers(socket, status, [], :no_body)
       end
     end
 
