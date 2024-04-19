@@ -1765,31 +1765,6 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
     end
 
-    test "sends RST_FRAME with error if stream task crashes", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
-
-          SimpleH2Client.send_simple_headers(socket, 1, :get, "/crasher", context.port)
-          SimpleH2Client.recv_headers(socket)
-          SimpleH2Client.recv_body(socket)
-
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
-
-      assert output =~ "(RuntimeError) boom"
-    end
-
-    def crasher(conn) do
-      conn
-      |> send_chunked(200)
-      |> chunk("OK")
-
-      raise "boom"
-    end
-
     test "sends RST_FRAME with internal error if we don't set a response with a closed client",
          context do
       socket = SimpleH2Client.setup_connection(context)

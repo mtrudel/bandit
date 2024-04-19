@@ -519,9 +519,26 @@ defmodule Bandit.HTTP2.Stream do
       stream
     end
 
-    def send_on_error(%@for{} = stream, _error) do
-      do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.internal_error()})
+    def send_on_error(%@for{state: state} = stream, error) when state in [:idle, :open] do
+      stream = maybe_send_error(%{stream | state: :open}, error)
+      %{stream | state: :local_closed}
+    end
+
+    def send_on_error(%@for{state: :remote_closed} = stream, error) do
+      stream = maybe_send_error(%{stream | state: :open}, error)
       %{stream | state: :closed}
+    end
+
+    def send_on_error(%@for{} = stream, _error), do: stream
+
+    defp maybe_send_error(stream, error) do
+      receive do
+        {:plug_conn, :sent} -> stream
+      after
+        0 ->
+          status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
+          send_headers(stream, status, [], :no_body)
+      end
     end
 
     # Helpers

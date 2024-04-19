@@ -33,6 +33,38 @@ defmodule HTTP2PlugTest do
     end
   end
 
+  describe "error response & logging" do
+    test "it should return 500 and log when unknown exceptions are raised", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
+          assert response.status == 500
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(RuntimeError) boom"
+    end
+
+    def unknown_crasher(_conn) do
+      raise "boom"
+    end
+
+    test "it should return the code and log when known exceptions are raised", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/known_crasher")
+          assert response.status == 418
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(SafeError) boom"
+    end
+
+    def known_crasher(_conn) do
+      raise SafeError, "boom"
+    end
+  end
+
   test "reading request headers", context do
     response =
       Req.head!(context.req, url: "/header_read_test", headers: [{"x-request-header", "Request"}])
@@ -319,10 +351,8 @@ defmodule HTTP2PlugTest do
     test "raises an ArgumentError on unsupported upgrades", context do
       errors =
         capture_log(fn ->
-          response = Req.get(context.req, url: "/upgrade_unsupported")
-
-          assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
-                   response
+          {:ok, response} = Req.get(context.req, url: "/upgrade_unsupported")
+          assert response.status == 500
 
           Process.sleep(100)
         end)
@@ -341,10 +371,8 @@ defmodule HTTP2PlugTest do
   test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
     errors =
       capture_log(fn ->
-        response = Req.get(context.req, url: "/noop")
-
-        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
-                 response
+        {:ok, response} = Req.get(context.req, url: "/noop")
+        assert response.status == 500
 
         Process.sleep(100)
       end)
@@ -358,10 +386,8 @@ defmodule HTTP2PlugTest do
   test "raises an error if the conn returns garbage", context do
     errors =
       capture_log(fn ->
-        response = Req.get(context.req, url: "/garbage")
-
-        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
-                 response
+        {:ok, response} = Req.get(context.req, url: "/garbage")
+        assert response.status == 500
 
         Process.sleep(100)
       end)
@@ -409,10 +435,8 @@ defmodule HTTP2PlugTest do
   test "errors out if asked to read beyond the file", context do
     errors =
       capture_log(fn ->
-        response = Req.get(context.req, url: "/send_file?offset=1&length=3000")
-
-        assert {:error, %Mint.HTTPError{reason: {:server_closed_request, :internal_error}}} =
-                 response
+        {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
+        assert response.status == 500
 
         Process.sleep(100)
       end)
