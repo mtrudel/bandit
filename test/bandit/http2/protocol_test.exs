@@ -2309,7 +2309,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
-    test "resets stream if no host header set", context do
+    test "sends 400 if no host header set", context do
       output =
         capture_log(fn ->
           socket = SimpleH2Client.setup_connection(context)
@@ -2321,7 +2321,7 @@ defmodule HTTP2ProtocolTest do
           ]
 
           SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
           Process.sleep(100)
         end)
 
@@ -2380,7 +2380,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
-    test "resets stream if port cannot be parsed from host header", context do
+    test "sends 400 if port cannot be parsed from host header", context do
       output =
         capture_log(fn ->
           socket = SimpleH2Client.setup_connection(context)
@@ -2393,7 +2393,7 @@ defmodule HTTP2ProtocolTest do
           ]
 
           SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
           Process.sleep(100)
         end)
 

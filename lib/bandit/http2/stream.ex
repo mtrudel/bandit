@@ -504,11 +504,6 @@ defmodule Bandit.HTTP2.Stream do
 
     def supported_upgrade?(_stream, _protocol), do: false
 
-    def send_on_error(%@for{} = stream, %Bandit.HTTPError{}) do
-      do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.protocol_error()})
-      %{stream | state: :closed}
-    end
-
     def send_on_error(%@for{} = stream, %Bandit.HTTP2.Errors.StreamError{} = error) do
       do_send(stream, {:send_rst_stream, error.error_code})
       %{stream | state: :closed}

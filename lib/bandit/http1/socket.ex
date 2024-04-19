@@ -382,30 +382,20 @@ defmodule Bandit.HTTP1.Socket do
 
     def supported_upgrade?(_socket, protocol), do: protocol == :websocket
 
-    def send_on_error(%@for{} = socket, %Bandit.HTTPError{} = error) do
-      socket = maybe_send_error(socket, error.status)
-      %{socket | write_state: :sent}
-    end
-
     def send_on_error(%@for{} = socket, error) do
-      socket = maybe_send_error(socket, Plug.Exception.status(error))
-      %{socket | write_state: :sent}
-    end
-
-    defp maybe_send_error(socket, error) do
       receive do
-        {:plug_conn, :sent} -> socket
+        {:plug_conn, :sent} -> %{socket | write_state: :sent}
       after
         0 ->
-          status = error |> Plug.Conn.Status.code()
+          status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
           send_headers(socket, status, [], :no_body)
       end
     end
 
     @spec request_error!(term()) :: no_return()
-    @spec request_error!(term(), atom()) :: no_return()
-    defp request_error!(reason, status \\ :bad_request) do
-      raise Bandit.HTTPError, message: to_string(reason), status: Plug.Conn.Status.code(status)
+    @spec request_error!(term(), Plug.Conn.status()) :: no_return()
+    defp request_error!(reason, plug_status \\ :bad_request) do
+      raise Bandit.HTTPError, message: to_string(reason), plug_status: plug_status
     end
   end
 end

@@ -214,8 +214,8 @@ defmodule Bandit.Pipeline do
   end
 
   @spec request_error!(term()) :: no_return()
-  @spec request_error!(term(), atom()) :: no_return()
-  defp request_error!(reason, status \\ :bad_request) do
-    raise Bandit.HTTPError, message: reason, status: Plug.Conn.Status.code(status)
+  @spec request_error!(term(), Plug.Conn.status()) :: no_return()
+  defp request_error!(reason, plug_status \\ :bad_request) do
+    raise Bandit.HTTPError, message: reason, plug_status: plug_status
   end
 end
