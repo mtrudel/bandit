@@ -1,3 +1,24 @@
+## 1.5.0 (21 Apr 2024)
+
+### Enhancements
+
+* Bandit now respects an exception's conformance to `Plug.Exception` when
+  determining which status code to return to the client (if the plug did not
+  already send one). Previously they were always returned as 500 (for HTTP/1)
+  or an 'internal error' stream error (for HTTP/2)
+* Bandit now only logs the stacktrace of plug-generated exceptions whose status
+  code (as determined by `Plug.Exception.status/1`) is contained within the new
+  `log_exceptions_with_status_codes` configuration option (defaulting to
+  `500..599`)
+* As a corollary to the above, Bandit request handler processes no longer exit
+  abnormally in the case of plug-generated exceptions
+
+### Changes
+
+* HTTP semantic errors encountered in an HTTP/2 request are returned to the
+  client using their proper status code instead of as a 'protocol error' stream
+  error
+
 ## 1.4.2 (2 Apr 2024)
 
 ### Enhancements
