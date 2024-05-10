@@ -128,6 +128,9 @@ defmodule Bandit do
     Defaults to 50 headers
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `clear_process_dict`: Whether to clear the process dictionary of all non-internal entries
+    between subsequent keepalive requests. If set, all keys not starting with `$` are removed from
+    the process dictionary between requests. Defaults to `true`
   * `gc_every_n_keepalive_requests`: How often to run a full garbage collection pass between subsequent
     keepalive requests on the same HTTP/1.1 connection. Defaults to 5 (garbage collect between
     every 5 requests). This option is currently experimental, and may change at any time
@@ -140,6 +143,7 @@ defmodule Bandit do
           | {:max_header_length, pos_integer()}
           | {:max_header_count, pos_integer()}
           | {:max_requests, pos_integer()}
+          | {:clear_process_dict, boolean()}
           | {:gc_every_n_keepalive_requests, pos_integer()}
           | {:log_unknown_messages, boolean()}
         ]
@@ -211,7 +215,7 @@ defmodule Bandit do
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
   @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests gc_every_n_keepalive_requests log_unknown_messages)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()

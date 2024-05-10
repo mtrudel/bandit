@@ -23,12 +23,19 @@ defmodule Bandit.HTTP1.Handler do
 
     if under_limit && transport.keepalive do
       Logger.reset_metadata()
+      if Keyword.get(state.opts.http_1, :clear_process_dict, true), do: clear_process_dict()
       gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
       if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
       {:continue, Map.put(state, :requests_processed, requests_processed)}
     else
       {:close, state}
     end
+  end
+
+  defp clear_process_dict do
+    Enum.each(Process.get_keys(), fn key ->
+      if !(key |> to_string() |> String.starts_with?("$")), do: Process.delete(key)
+    end)
   end
 
   defp do_websocket_upgrade(upgrade_opts, state) do

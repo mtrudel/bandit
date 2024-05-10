@@ -232,6 +232,27 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, inspect(existing_metadata))
     end
 
+    test "process dictionary is reset on every request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+
+      # Keep one $ value unfiltered to test that we do not clobber those
+      assert {:ok, "200 OK", _headers, "[\"$logger_metadata$\": %{}]"} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def pdict(conn) do
+      existing_pdict =
+        Process.get() |> Keyword.drop(~w[$ancestors $initial_call]a)
+
+      Process.put(:garbage, :garbage)
+      send_resp(conn, 200, inspect(existing_pdict))
+    end
+
     test "gc_every_n_keepalive_requests is respected", context do
       context = http_server(context, http_1_options: [gc_every_n_keepalive_requests: 3])
       client = SimpleHTTP1Client.tcp_client(context)
