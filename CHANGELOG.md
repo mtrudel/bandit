@@ -1,3 +1,12 @@
+## 1.5.1 (10 May 2024)
+
+### Enhancements
+
+* Process dictionary is now cleared of all non-system process dictionary entries
+  between keepalive requests (#349)
+* Explicitly run a GC before upgrading a connection to websocket (#348)
+* Improve docs around deflate options (thanks @kotsius!)
+
 ## 1.5.0 (21 Apr 2024)
 
 ### Enhancements
