@@ -22,7 +22,6 @@ defmodule Bandit.HTTP1.Handler do
     under_limit = request_limit == 0 || requests_processed < request_limit
 
     if under_limit && transport.keepalive do
-      Logger.reset_metadata()
       if Keyword.get(state.opts.http_1, :clear_process_dict, true), do: clear_process_dict()
       gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
       if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
@@ -33,12 +32,8 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp clear_process_dict do
-    Enum.each(Process.get_keys(), fn
-      key when is_atom(key) ->
-        if !match?("$" <> _, to_string(key)), do: Process.delete(key)
-
-      key ->
-        Process.delete(key)
+    Enum.each(Process.get_keys(), fn key ->
+      if key not in ~w[$ancestors $initial_call]a, do: Process.delete(key)
     end)
   end
 

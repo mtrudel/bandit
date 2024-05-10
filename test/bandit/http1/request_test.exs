@@ -239,10 +239,7 @@ defmodule HTTP1RequestTest do
       assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
 
       SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
-
-      # Keep one $ value unfiltered to test that we do not clobber those
-      assert {:ok, "200 OK", _headers, "[\"$logger_metadata$\": %{}]"} =
-               SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
     end
 
     def pdict(conn) do
