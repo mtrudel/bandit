@@ -250,6 +250,7 @@ defmodule HTTP1RequestTest do
         Process.get() |> Keyword.drop(~w[$ancestors $initial_call]a)
 
       Process.put(:garbage, :garbage)
+      Process.put({:garbage, :test}, :garbage)
       send_resp(conn, 200, inspect(existing_pdict))
     end
 

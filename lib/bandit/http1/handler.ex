@@ -33,8 +33,12 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp clear_process_dict do
-    Enum.each(Process.get_keys(), fn key ->
-      if !match?("$" <> _, to_string(key)), do: Process.delete(key)
+    Enum.each(Process.get_keys(), fn
+      key when is_atom(key) ->
+        if !match?("$" <> _, to_string(key)), do: Process.delete(key)
+
+      key ->
+        Process.delete(key)
     end)
   end
 
