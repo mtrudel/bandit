@@ -34,7 +34,7 @@ defmodule Bandit.HTTP1.Handler do
 
   defp clear_process_dict do
     Enum.each(Process.get_keys(), fn key ->
-      if !(key |> to_string() |> String.starts_with?("$")), do: Process.delete(key)
+      if !match?("$" <> _, to_string(key)), do: Process.delete(key)
     end)
   end
 
