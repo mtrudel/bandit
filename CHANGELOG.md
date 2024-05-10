@@ -1,3 +1,10 @@
+## 1.5.2 (10 May 2024)
+
+### Fixes
+
+* Don't crash on non-stringable process dictionary keys (#350, thanks
+  @ryanwinchester, @chrismccord!)
+
 ## 1.5.1 (10 May 2024)
 
 ### Enhancements
