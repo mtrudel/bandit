@@ -100,7 +100,9 @@ defmodule Bandit do
     negotiation as described in
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
-    be found at `t:deflate_options/0`
+    be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
+    'deflate' content encoding; 'gzip' does not have any configurable options (this is a
+    limitation of the underlying `:zlib` library)
   * `log_exceptions_with_status_codes`: Which exceptions to log. Bandit will log only those
     exceptions whose status codes (as determined by `Plug.Exception.status/1`) match the specified
     list or range. Defaults to `500..599`
