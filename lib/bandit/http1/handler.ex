@@ -31,8 +31,10 @@ defmodule Bandit.HTTP1.Handler do
     end
   end
 
-  defp do_websocket_upgrade(upgrade_opts, state),
-    do: {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}
+  defp do_websocket_upgrade(upgrade_opts, state) do
+    :erlang.garbage_collect()
+    {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}
+  end
 
   def handle_info({:plug_conn, :sent}, {socket, state}),
     do: {:noreply, {socket, state}, socket.read_timeout}
