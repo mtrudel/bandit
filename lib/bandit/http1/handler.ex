@@ -6,6 +6,10 @@ defmodule Bandit.HTTP1.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
+    # Plug calls may take arbitrarily long, and since they all happen inside the current stack we
+    # have no way to be interrupted if the client closes the request other than to stop trapping
+    # exits. Requests that are closed mid-request will thus eagerly terminate the server process
+    Process.flag(:trap_exit, false)
     transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
     connection_span = ThousandIsland.Socket.telemetry_span(socket)
 
@@ -14,6 +18,9 @@ defmodule Bandit.HTTP1.Handler do
       {:error, _reason} -> {:close, state}
       {:upgrade, _transport, :websocket, opts} -> do_websocket_upgrade(opts, state)
     end
+  after
+    # Between keepalives (or when transitioning to WebSockets), turn exit trapping back on
+    Process.flag(:trap_exit, true)
   end
 
   defp maybe_keepalive(transport, state) do

@@ -1689,28 +1689,34 @@ defmodule HTTP1RequestTest do
     end
   end
 
-  test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
-       context do
-    context = http_server(context, http_1_options: [log_unknown_messages: true])
-
-    errors =
-      capture_log(fn ->
-        Req.get!(url: "/spawn_abnormal_child", base_url: context[:base])
-
-        # Let the backing process see & handle the handle_info EXIT message
-        Process.sleep(100)
-      end)
-
-    # The return value here isn't relevant, since the HTTP call is done within
-    # a single GenServer call & will complete before the handler process handles
-    # the handle_info call returned by the spawned process. Look at the logged
-    # errors instead
-    assert errors =~ ~r[received unexpected message in handle_info/2]
+  test "closes early on abnormally termianting spawned processes", context do
+    # It's lamentable that this is our expected behaviour (specifically, that we're letting a
+    # server-side crash get out to the client as a simple closed socket and not a 500), but it's
+    # unavoidable if we want to eagerly shutdown plug handlers when the client disconnects
+    assert_raise(Mint.TransportError, "socket closed", fn ->
+      Req.get!(context.req, url: "/spawn_abnormal_child")
+    end)
   end
 
   def spawn_abnormal_child(conn) do
     spawn_link(fn -> exit(:abnormal) end)
     send_resp(conn, 204, "")
+  end
+
+  test "eagerly terminates the handler if the remote client closes", context do
+    client = SimpleHTTP1Client.tcp_client(context)
+    SimpleHTTP1Client.send(client, "GET", "/pid_and_wait", ["host: localhost"])
+    assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+    pid = body |> String.to_charlist() |> :erlang.list_to_pid()
+    assert Process.alive?(pid)
+    Transport.close(client)
+    Process.sleep(1000)
+    refute Process.alive?(pid)
+  end
+
+  def pid_and_wait(conn) do
+    send_resp(conn, 200, :erlang.pid_to_list(self()))
+    Process.sleep(:infinity)
   end
 
   describe "telemetry" do
