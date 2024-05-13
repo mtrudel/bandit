@@ -97,6 +97,22 @@ defmodule Bandit.Headers do
       else: headers
   end
 
+  # Respect the content-length header (if set) for valid HEAD responses
+  # so that the handler can avoid rendering the body to specify its length.
+  @spec override_content_length?(
+          headers :: Plug.Conn.headers(),
+          status :: Plug.Conn.int_status(),
+          method :: Plug.Conn.method()
+        ) ::
+          boolean()
+
+  def override_content_length?(headers, status, "HEAD") do
+    value = get_header(headers, "content-length")
+    is_nil(value) or not add_content_length?(status)
+  end
+
+  def override_content_length?(_headers, _status, _method), do: true
+
   # Per RFC9110§8.6
   @spec add_content_length?(Plug.Conn.int_status()) :: boolean()
   defp add_content_length?(status) when status in 100..199, do: false
