@@ -274,7 +274,20 @@ defmodule HTTP2PlugTest do
     |> send_resp(200, <<>>)
   end
 
-  test "overriding user-defined HEAD response content-length", context do
+  test "respecting user-defined HEAD response content-length: 0", context do
+    response = Req.head!(context.req, url: "/head_zero_content_length_test")
+
+    assert response.status == 200
+    assert response.headers["content-length"] == ["0"]
+  end
+
+  def head_zero_content_length_test(conn) do
+    conn
+    |> put_resp_header("content-length", "0")
+    |> send_resp(200, <<>>)
+  end
+
+  test "overriding incorrect user-defined HEAD response content-length", context do
     response = Req.head!(context.req, url: "/head_override_content_length_test")
 
     assert response.status == 200

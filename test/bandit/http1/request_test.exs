@@ -1443,6 +1443,20 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "")
     end
 
+    test "writes out a response with zero content-length for HEAD 200 responses", context do
+      response = Req.head!(context.req, url: "/send_200_zero_content_length")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_200_zero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "0")
+      |> send_resp(200, "")
+    end
+
     test "writes out a response with zero content-length for 301 responses", context do
       response = Req.get!(context.req, url: "/send_301")
 
