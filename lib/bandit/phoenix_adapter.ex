@@ -39,6 +39,30 @@ defmodule Bandit.PhoenixAdapter do
   In the event that you *have* made advanced changes to your endpoint configuration, you may need
   to update this config to work with Bandit. Consult Bandit's documentation at
   `t:Bandit.options/0` for details.
+
+  It can be difficult to know exactly *where* to put the options that you may need to set from the
+  ones available at `t:Bandit.options/0`. The general idea is that anything inside the `http:` or
+  `https:` keyword lists in your configuration are passed directly to `Bandit.start_link/1`, so an
+  example may look like so:
+
+  ```elixir
+  # config/{dev,prod,etc}.exs
+
+  config :your_app, YourAppWeb.Endpoint,
+    http: [
+      ip: {127, 0, 0, 1},
+      port: 4000,
+      thousand_island_options: [num_acceptors: 123],
+      http_options: [log_protocol_errors: false],
+      http_1_options: [max_requests: 1],
+      websocket_options: [compress: false]
+    ],
+  ```
+
+  Note that, unlike the `adapter: Bandit.PhoenixAdapter` configuration change outlined previously,
+  configuration of specific `http:` and `https:` values is done on a per-environment basis in
+  Phoenix, so these changes will typically be in your `config/dev.exs`, `config/prod.exs` and
+  similar files.
   """
 
   @doc """
