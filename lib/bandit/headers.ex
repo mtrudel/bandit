@@ -95,7 +95,7 @@ defmodule Bandit.Headers do
         ) ::
           Plug.Conn.headers()
 
-  # For HEAD responses, respect existing the content-length header (if set)
+  # For HEAD responses, respect the existing content-length header (if set)
   # EXCEPT if the status code forbids a content-length header.
   # If content-length is not set, the server will not send a content-length header.
   def add_content_length(headers, 0, status, "HEAD") do
