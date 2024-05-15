@@ -125,7 +125,9 @@ defmodule Bandit.Adapter do
 
     compress = Keyword.get(adapter.opts.http, :compress, true)
     headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
-    headers = Bandit.Headers.add_content_length(headers, IO.iodata_length(body), status)
+
+    length = IO.iodata_length(body)
+    headers = Bandit.Headers.add_content_length(headers, length, status, adapter.method)
 
     metrics =
       adapter.metrics
@@ -155,7 +157,7 @@ defmodule Bandit.Adapter do
     length = if length == :all, do: size - offset, else: length
 
     if offset + length <= size do
-      headers = Bandit.Headers.add_content_length(headers, length, status)
+      headers = Bandit.Headers.add_content_length(headers, length, status, adapter.method)
       adapter = send_headers(adapter, status, headers, :raw)
 
       {socket, bytes_actually_written} =

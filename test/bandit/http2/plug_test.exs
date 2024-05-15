@@ -214,11 +214,10 @@ defmodule HTTP2PlugTest do
     response = Req.head!(context.req, url: "/header_write_test")
 
     assert response.status == 200
-    assert map_size(response.headers) == 5
+    assert map_size(response.headers) == 4
 
     assert %{
              "date" => [date],
-             "content-length" => ["0"],
              "vary" => ["accept-encoding"],
              "cache-control" => ["max-age=0, private, must-revalidate"],
              "X-Response-Header" => ["Response"]
@@ -239,7 +238,6 @@ defmodule HTTP2PlugTest do
     assert response.status == 200
 
     assert response.headers == %{
-             "content-length" => ["0"],
              "vary" => ["accept-encoding"],
              "cache-control" => ["max-age=0, private, must-revalidate"],
              "date" => ["Tue, 27 Sep 2022 07:17:32 GMT"]
@@ -250,6 +248,56 @@ defmodule HTTP2PlugTest do
     conn
     |> put_resp_header("date", "Tue, 27 Sep 2022 07:17:32 GMT")
     |> send_resp(200, <<>>)
+  end
+
+  test "omitting HEAD response content-length", context do
+    response = Req.head!(context.req, url: "/head_omit_content_length_test")
+
+    assert response.status == 200
+    assert response.headers["content-length"] == nil
+  end
+
+  def head_omit_content_length_test(conn) do
+    conn |> send_resp(200, <<>>)
+  end
+
+  test "respecting user-defined HEAD response content-length", context do
+    response = Req.head!(context.req, url: "/head_preserve_content_length_test")
+
+    assert response.status == 200
+    assert response.headers["content-length"] == ["6"]
+  end
+
+  def head_preserve_content_length_test(conn) do
+    conn
+    |> put_resp_header("content-length", "6")
+    |> send_resp(200, <<>>)
+  end
+
+  test "respecting user-defined HEAD response content-length: 0", context do
+    response = Req.head!(context.req, url: "/head_zero_content_length_test")
+
+    assert response.status == 200
+    assert response.headers["content-length"] == ["0"]
+  end
+
+  def head_zero_content_length_test(conn) do
+    conn
+    |> put_resp_header("content-length", "0")
+    |> send_resp(200, <<>>)
+  end
+
+  test "overriding incorrect user-defined HEAD response content-length", context do
+    response = Req.head!(context.req, url: "/head_override_content_length_test")
+
+    assert response.status == 200
+    assert response.headers["content-length"] == ["2"]
+  end
+
+  def head_override_content_length_test(conn) do
+    conn
+    |> put_resp_header("content-length", "6")
+    |> send_resp(200, "OK")
   end
 
   test "sending a body", context do

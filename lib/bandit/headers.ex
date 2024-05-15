@@ -87,20 +87,41 @@ defmodule Bandit.Headers do
 
   defp parse_integer(rest, total), do: {total, rest}
 
-  @spec add_content_length(Plug.Conn.headers(), non_neg_integer(), Plug.Conn.int_status()) ::
+  @spec add_content_length(
+          headers :: Plug.Conn.headers(),
+          length :: non_neg_integer(),
+          status :: Plug.Conn.int_status(),
+          method :: Plug.Conn.method()
+        ) ::
           Plug.Conn.headers()
-  def add_content_length(headers, length, status) do
-    headers = Enum.reject(headers, &(elem(&1, 0) == "content-length"))
 
-    if add_content_length?(status),
+  # For HEAD responses, respect the existing content-length header (if set)
+  # EXCEPT if the status code forbids a content-length header.
+  # If content-length is not set, the server will not send a content-length header.
+  def add_content_length(headers, 0, status, "HEAD") do
+    if send_content_length?(status),
+      do: headers,
+      else: drop_content_length(headers)
+  end
+
+  # For non-HEAD responses, override the existing content-length header.
+  def add_content_length(headers, length, status, _method) do
+    headers = drop_content_length(headers)
+
+    if send_content_length?(status),
       do: [{"content-length", to_string(length)} | headers],
       else: headers
   end
 
+  @spec drop_content_length(Plug.Conn.headers()) :: Plug.Conn.headers()
+  defp drop_content_length(headers) do
+    Enum.reject(headers, &(elem(&1, 0) == "content-length"))
+  end
+
   # Per RFC9110§8.6
-  @spec add_content_length?(Plug.Conn.int_status()) :: boolean()
-  defp add_content_length?(status) when status in 100..199, do: false
-  defp add_content_length?(204), do: false
-  defp add_content_length?(304), do: false
-  defp add_content_length?(_), do: true
+  @spec send_content_length?(Plug.Conn.int_status()) :: boolean()
+  defp send_content_length?(status) when status in 100..199, do: false
+  defp send_content_length?(204), do: false
+  defp send_content_length?(304), do: false
+  defp send_content_length?(_), do: true
 end

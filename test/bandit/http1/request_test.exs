@@ -1360,12 +1360,35 @@ defmodule HTTP1RequestTest do
       assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
     end
 
+    test "respects provided content-length headers for HEAD responses", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/head_preserve_content_length", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10001"
+    end
+
+    def head_preserve_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "10001")
+      |> send_resp(200, "")
+    end
+
     test "replaces any incorrect provided content-length headers", context do
       response = Req.get!(context.req, url: "/send_incorrect_content_length")
 
       assert response.status == 200
       assert response.headers["content-length"] == ["10000"]
       assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "replaces any incorrect provided content-length headers for HEAD responses", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "HEAD", "/send_incorrect_content_length", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
     end
 
     def send_incorrect_content_length(conn) do
@@ -1408,8 +1431,30 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-length"] == ["0"]
     end
 
+    test "writes out a response omitting content-length for HEAD 200 responses", context do
+      response = Req.head!(context.req, url: "/send_200")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == nil
+    end
+
     def send_200(conn) do
       send_resp(conn, 200, "")
+    end
+
+    test "writes out a response with zero content-length for HEAD 200 responses", context do
+      response = Req.head!(context.req, url: "/send_200_zero_content_length")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_200_zero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "0")
+      |> send_resp(200, "")
     end
 
     test "writes out a response with zero content-length for 301 responses", context do
