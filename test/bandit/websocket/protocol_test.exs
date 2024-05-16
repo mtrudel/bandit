@@ -308,7 +308,24 @@ defmodule WebSocketProtocolTest do
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
-    test "returns a corresponding connection close frame", context do
+    test "shuts down on dirty client shutdown", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Close the connection from the client
+      Transport.close(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(100)
+      refute Process.alive?(pid)
+    end
+
+    test "returns a corresponding connection close frame on clean client shutdown", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
 
