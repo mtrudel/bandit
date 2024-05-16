@@ -142,4 +142,9 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
   end
 
   def deflate(_data, nil), do: {:error, :no_compress}
+
+  def close(%__MODULE__{} = context) do
+    :zlib.close(context.inflate_context)
+    :zlib.close(context.deflate_context)
+  end
 end

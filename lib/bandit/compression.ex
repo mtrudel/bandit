@@ -15,17 +15,21 @@ defmodule Bandit.Compression do
   def compress(response, "deflate", opts) do
     deflate_context = :zlib.open()
 
-    :ok =
-      :zlib.deflateInit(
-        deflate_context,
-        Keyword.get(opts, :level, :default),
-        :deflated,
-        Keyword.get(opts, :window_bits, 15),
-        Keyword.get(opts, :mem_level, 8),
-        Keyword.get(opts, :strategy, :default)
-      )
+    try do
+      :ok =
+        :zlib.deflateInit(
+          deflate_context,
+          Keyword.get(opts, :level, :default),
+          :deflated,
+          Keyword.get(opts, :window_bits, 15),
+          Keyword.get(opts, :mem_level, 8),
+          Keyword.get(opts, :strategy, :default)
+        )
 
-    :zlib.deflate(deflate_context, response, :sync)
+      :zlib.deflate(deflate_context, response, :sync)
+    after
+      :zlib.close(deflate_context)
+    end
   end
 
   def compress(response, "x-gzip", _opts), do: compress(response, "gzip", [])

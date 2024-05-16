@@ -233,6 +233,7 @@ defmodule Bandit.WebSocket.Connection do
         connection.websock.terminate(reason, connection.websock_state)
       end
 
+      if connection.compress, do: PerMessageDeflate.close(connection.compress)
       _ = Socket.close(socket, code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics)
     end
@@ -246,6 +247,7 @@ defmodule Bandit.WebSocket.Connection do
         connection.websock.terminate(maybe_wrap_reason(reason), connection.websock_state)
       end
 
+      if connection.compress, do: PerMessageDeflate.close(connection.compress)
       _ = Socket.close(socket, code)
       Bandit.Telemetry.stop_span(connection.span, connection.metrics, %{error: reason})
     end
