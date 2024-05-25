@@ -41,6 +41,14 @@ defmodule InitialHandlerTest do
     test "sets up the HTTP 1.x handler", context do
       assert "HTTP/1.1 http" == Req.get!(context.req, url: "/report_version").body
     end
+
+    test "accepts tiny requests shorter than the H2 connection prefix", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET /rv HTTP/1.0\r\n\r\n")
+      assert {:ok, "200 OK", _headers, "HTTP/1.0 http"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def rv(conn), do: report_version(conn)
   end
 
   describe "HTTP/1.x handling over SSL" do

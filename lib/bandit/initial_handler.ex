@@ -64,6 +64,7 @@ defmodule Bandit.InitialHandler do
       {:ok, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"} -> Bandit.HTTP2.Handler
       {:ok, <<22::8, 3::8, minor::8, _::binary>>} when minor in [1, 3] -> :likely_tls
       {:ok, data} -> {:no_match, data}
+      {:error, :timeout} -> {:no_match, <<>>}
       {:error, error} -> {:error, error}
     end
   end
