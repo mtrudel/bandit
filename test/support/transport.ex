@@ -3,7 +3,12 @@ defmodule Transport do
 
   def tcp_client(context) do
     {:ok, socket} =
-      :gen_tcp.connect(~c"localhost", context[:port], active: false, mode: :binary, nodelay: true)
+      :gen_tcp.connect(~c"localhost", context[:port],
+        active: false,
+        linger: {true, 0},
+        mode: :binary,
+        nodelay: true
+      )
 
     {:client, %{socket: socket, transport: :gen_tcp}}
   end

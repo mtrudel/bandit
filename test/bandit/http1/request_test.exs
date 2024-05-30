@@ -7,6 +7,8 @@ defmodule HTTP1RequestTest do
 
   import ExUnit.CaptureLog
 
+  require Logger
+
   setup :http_server
   setup :req_http1_client
 
@@ -2087,6 +2089,119 @@ defmodule HTTP1RequestTest do
         end)
 
       assert output =~ "(RuntimeError) boom"
+    end
+  end
+
+  describe "connection closure / error handling" do
+    test "raises an error if client closes while headers are being read", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nHost:")
+      Transport.close(client)
+      Process.sleep(100)
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+    end
+
+    test "raises an error if client closes while body is being read", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "content-length: 6"
+      ])
+
+      Transport.send(client, "ABC")
+
+      output =
+        capture_log(fn ->
+          Transport.close(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "(Bandit.HTTPError) closed"
+      refute output =~ "IMPOSSIBLE"
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+    end
+
+    def expect_incomplete_body(conn) do
+      {:ok, _body, _conn} = Plug.Conn.read_body(conn)
+      Logger.error("IMPOSSIBLE")
+    end
+
+    test "raises an error if client closes while body is being written", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
+      Process.sleep(100)
+      Transport.close(client)
+
+      output = capture_log(fn -> Process.sleep(500) end)
+      assert output =~ "(Bandit.HTTPError) closed"
+      refute output =~ "IMPOSSIBLE"
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+    end
+
+    def sleep_and_send(conn) do
+      Process.sleep(200)
+
+      conn = send_resp(conn, 200, "IMPOSSIBLE")
+
+      Logger.error("IMPOSSIBLE")
+      conn
+    end
+
+    test "returns an error if client closes while chunked body is being written", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send_chunked", ["host: localhost"])
+      Process.sleep(100)
+      Transport.close(client)
+
+      output = capture_log(fn -> Process.sleep(500) end)
+      assert output == ""
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+    end
+
+    def sleep_and_send_chunked(conn) do
+      conn = send_chunked(conn, 200)
+
+      Process.sleep(200)
+      assert chunk(conn, "IMPOSSIBLE") == {:error, "closed"}
+
+      conn
+    end
+
+    test "raises an error if client closes before sendfile body is being written", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_sendfile", ["host: localhost"])
+      Process.sleep(100)
+      Transport.close(client)
+
+      output = capture_log(fn -> Process.sleep(500) end)
+      assert output =~ "(Bandit.HTTPError) closed"
+      refute output =~ "IMPOSSIBLE"
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+    end
+
+    def sleep_and_sendfile(conn) do
+      Process.sleep(200)
+
+      conn = send_file(conn, 204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+
+      Logger.error("IMPOSSIBLE")
+      conn
+    end
+
+    test "silently exits if client closes during keepalive", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: localhost"])
+      Process.sleep(100)
+      SimpleHTTP1Client.recv_reply(client)
+      Transport.close(client)
+      Process.sleep(500)
+
+      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
     end
   end
 end

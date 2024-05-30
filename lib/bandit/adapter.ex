@@ -195,7 +195,14 @@ defmodule Bandit.Adapter do
     # this entire section of the API is a bit slanty regardless.
 
     validate_calling_process!(adapter)
-    {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
+
+    # chunk/2 is unique among Plug.Conn.Adapter's sending callbacks in that it can return an error
+    # tuple instead of just raising or dying on error. Rescue here to implement this
+    try do
+      {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
+    rescue
+      error -> {:error, error.message}
+    end
   end
 
   @impl Plug.Conn.Adapter
