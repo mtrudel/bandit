@@ -117,6 +117,51 @@ defmodule HTTP2ProtocolTest do
                "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
+    test "stream errors are short logged by default", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      output =
+        capture_log(fn ->
+          # Send trailers with pseudo headers
+          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert output =~
+               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+
+      # Make sure we don't log a stacktrace
+      refute output =~ "lib/bandit/pipeline.ex:"
+    end
+
+    test "stream errors are verbosely logged if so configured", context do
+      context =
+        context
+        |> https_server(http_options: [log_protocol_errors: :verbose])
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      output =
+        capture_log(fn ->
+          # Send trailers with pseudo headers
+          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+          Process.sleep(100)
+        end)
+
+      assert output =~
+               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+
+      # Make sure we log a stacktrace
+      assert output =~ "lib/bandit/pipeline.ex:"
+    end
+
     test "stream errors are not logged if so configured", context do
       context =
         context

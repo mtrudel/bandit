@@ -36,6 +36,38 @@ defmodule HTTP1RequestTest do
   end
 
   describe "suppressing protocol error logging" do
+    test "errors are short logged by default", context do
+      output =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "[error] ** (Bandit.HTTPError) Header read HTTP error"
+
+      # Make sure we don't log a stacktrace
+      refute output =~ "lib/bandit/pipeline.ex:"
+    end
+
+    test "errors are verbosely logged if so configured", context do
+      context = http_server(context, http_options: [log_protocol_errors: :verbose])
+
+      output =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+          Process.sleep(100)
+        end)
+
+      assert output =~ "[error] ** (Bandit.HTTPError) Header read HTTP error"
+
+      # Make sure we log a stacktrace
+      assert output =~ "lib/bandit/pipeline.ex:"
+    end
+
     test "errors are not logged if so configured", context do
       context = http_server(context, http_options: [log_protocol_errors: false])
 

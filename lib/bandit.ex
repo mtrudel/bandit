@@ -106,14 +106,15 @@ defmodule Bandit do
   * `log_exceptions_with_status_codes`: Which exceptions to log. Bandit will log only those
     exceptions whose status codes (as determined by `Plug.Exception.status/1`) match the specified
     list or range. Defaults to `500..599`
-  * `log_protocol_errors`: Whether or not to log protocol errors such as malformed requests.
-    Defaults to `true`
+  * `log_protocol_errors`: How to log protocol errors such as malformed requests. `:short` will
+    log a single-line summary, while `:verbose` will log full stack traces. The value of `false`
+    will disable protocol error logging entirely. Defaults to `:short`
   """
   @type http_options :: [
           {:compress, boolean()}
           | {:deflate_opions, deflate_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
-          | {:log_protocol_errors, boolean()}
+          | {:log_protocol_errors, :short | :verbose | false}
         ]
 
   @typedoc """
