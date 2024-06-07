@@ -1,3 +1,25 @@
+## 1.5.3 (7 Jun 2024)
+
+### Changes
+
+* Add `:short` and `:verbose` options to `log_protocol_errors` configuration
+  option. **Change default value to `:short`, which will log protocol
+  errors as a single summary line instead of a full stack trace**
+* Raise `Bandit.HTTPError` errors when attempting to write to a closed client
+  connection (except for chunk/2 calls, which now return `{:error, reason}`).
+  Unless otherwise caught by the user, these errors will bubble out past the
+  configured plug and terminate the plug process. This closely mimics the
+  behaviour of Cowboy in this regard (#359)
+* Respect the plug-provided content-length on HEAD responses (#353, thanks
+  @meeq!)
+* Minor changes to how 'non-system process dictionary entries' are identified
+
+### Fixes
+
+* No longer closes on HTTP/1 requests smaller than the size of the HTTP/2
+  preamble
+* Close deflate contexts more eagerly for reduced memory use
+
 ## 1.5.2 (10 May 2024)
 
 ### Fixes
