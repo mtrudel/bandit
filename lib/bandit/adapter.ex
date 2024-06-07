@@ -201,7 +201,7 @@ defmodule Bandit.Adapter do
     try do
       {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
     rescue
-      error -> {:error, error.message}
+      error -> {:error, Exception.message(error)}
     end
   end
 
