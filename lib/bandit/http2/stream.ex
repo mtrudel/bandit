@@ -443,7 +443,11 @@ defmodule Bandit.HTTP2.Stream do
             |> do_recv_send_window_update(delta)
             |> send_data(rest, end_stream)
         after
-          stream.read_timeout -> raise "Timeout waiting for space in the send_window"
+          stream.read_timeout ->
+            stream_error!(
+              "Timeout waiting for space in the send_window",
+              Bandit.HTTP2.Errors.flow_control_error()
+            )
         end
       end
     end
