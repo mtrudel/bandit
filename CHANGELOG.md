@@ -1,3 +1,10 @@
+## 1.5.4 (14 Jun 2024)
+
+### Changes
+
+* Raise HTTP/2 send window timeouts as stream errors so that they're logged as
+  protocol errors (thanks @hunterboerner!)
+
 ## 1.5.3 (7 Jun 2024)
 
 ### Changes
