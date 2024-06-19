@@ -13,26 +13,24 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
-    try do
-      connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
-      {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
-    rescue
-      error ->
-        case Keyword.get(state.opts.http, :log_protocol_errors, :short) do
-          :short ->
-            Logger.error(Exception.format_banner(:error, error, __STACKTRACE__),
-              domain: [:bandit]
-            )
+    connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
+    {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
+  rescue
+    error ->
+      case Keyword.get(state.opts.http, :log_protocol_errors, :short) do
+        :short ->
+          Logger.error(Exception.format_banner(:error, error, __STACKTRACE__),
+            domain: [:bandit]
+          )
 
-          :verbose ->
-            Logger.error(Exception.format(:error, error, __STACKTRACE__), domain: [:bandit])
+        :verbose ->
+          Logger.error(Exception.format(:error, error, __STACKTRACE__), domain: [:bandit])
 
-          false ->
-            :ok
-        end
+        false ->
+          :ok
+      end
 
-        {:close, state}
-    end
+      {:close, state}
   end
 
   @impl ThousandIsland.Handler
