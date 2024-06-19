@@ -1,3 +1,10 @@
+## 1.5.5 (19 Jun 2024)
+
+### Changes
+
+* Add `domain: [:bandit]` to the metadata of all logger calls
+* Bring logging of early-connect HTTP2 errors under the `log_protocol_errors` umbrella
+
 ## 1.5.4 (14 Jun 2024)
 
 ### Changes
