@@ -243,7 +243,7 @@ defmodule Bandit.HTTP2.Stream do
       case do_recv(stream, timeout) do
         {:headers, trailers, stream} ->
           no_pseudo_headers!(trailers)
-          Logger.warning("Ignoring trailers #{inspect(trailers)}")
+          Logger.warning("Ignoring trailers #{inspect(trailers)}", domain: [:bandit])
           do_read_data(stream, max_bytes, timeout, acc)
 
         {:data, data, stream} ->

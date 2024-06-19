@@ -69,7 +69,8 @@ defmodule Bandit.Logger do
         ) :: :ok
   def log_error(event, measurements, metadata, _config) do
     Logger.error(
-      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
+      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}",
+      domain: [:bandit]
     )
   end
 
@@ -82,7 +83,8 @@ defmodule Bandit.Logger do
         ) :: :ok
   def log_info(event, measurements, metadata, _config) do
     Logger.info(
-      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}"
+      "#{inspect(event)} metadata: #{inspect(metadata)}, measurements: #{inspect(measurements)}",
+      domain: [:bandit]
     )
   end
 end

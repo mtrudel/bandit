@@ -19,9 +19,16 @@ defmodule Bandit.HTTP2.Handler do
     rescue
       error ->
         case Keyword.get(state.opts.http, :log_protocol_errors, :short) do
-          :short -> Logger.error(Exception.format_banner(:error, error, __STACKTRACE__))
-          :verbose -> Logger.error(Exception.format(:error, error, __STACKTRACE__))
-          false -> :ok
+          :short ->
+            Logger.error(Exception.format_banner(:error, error, __STACKTRACE__),
+              domain: [:bandit]
+            )
+
+          :verbose ->
+            Logger.error(Exception.format(:error, error, __STACKTRACE__), domain: [:bandit])
+
+          false ->
+            :ok
         end
 
         {:close, state}

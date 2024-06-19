@@ -209,9 +209,14 @@ defmodule Bandit.Pipeline do
     Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
     case Keyword.get(opts.http, :log_protocol_errors, :short) do
-      :short -> Logger.error(Exception.format_banner(:error, error, stacktrace))
-      :verbose -> Logger.error(Exception.format(:error, error, stacktrace))
-      false -> :ok
+      :short ->
+        Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
+
+      :verbose ->
+        Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
+
+      false ->
+        :ok
     end
 
     # We want to do this at the end of the function, since the HTTP2 stack may kill this process
@@ -225,7 +230,7 @@ defmodule Bandit.Pipeline do
     status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
-      Logger.error(Exception.format(:error, error, stacktrace))
+      Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
       Bandit.HTTPTransport.send_on_error(transport, error)
       {:error, error}
     else
