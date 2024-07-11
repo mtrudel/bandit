@@ -66,7 +66,7 @@ defmodule Bandit.PhoenixAdapter do
   """
 
   @doc """
-  Returns the Bandit server proccess for the provided scheme within the given Phoenix Endpoint
+  Returns the Bandit server process for the provided scheme within the given Phoenix Endpoint
   """
   @spec bandit_pid(module()) ::
           {:ok, Supervisor.child() | :restarting | :undefined} | {:error, :no_server_found}
