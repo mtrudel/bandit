@@ -1,3 +1,10 @@
+## 1.5.6 (1 Aug 2024)
+
+### Fixes
+
+* Improve handling of the end of stream condition for HTTP/2 requests that send
+  a body which isn't read by the Plug (#387, thanks @fekle!)
+
 ## 1.5.5 (19 Jun 2024)
 
 ### Changes
