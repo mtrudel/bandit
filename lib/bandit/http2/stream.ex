@@ -495,7 +495,7 @@ defmodule Bandit.HTTP2.Stream do
     def ensure_completed(%@for{state: :local_closed} = stream) do
       receive do
         {:headers, _headers, true} -> do_recv_end_stream(stream, true)
-        {:data, _data, true} -> do_recv_end_stream(stream, true)
+        {:data, data, true} -> do_recv_data(stream, data) |> do_recv_end_stream(true)
       after
         # RFC9113§8.1 - hint the client to stop sending data
         0 -> do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})
