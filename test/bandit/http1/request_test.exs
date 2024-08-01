@@ -875,17 +875,16 @@ defmodule HTTP1RequestTest do
             "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
           )
 
-          assert {:ok, "200 OK", _, "OK"} = SimpleHTTP1Client.recv_reply(client)
+          assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
           Process.sleep(1100)
         end)
 
-      assert errors =~ "(Bandit.HTTPError) Unable to read remaining data in request body"
+      assert errors =~ "(Bandit.HTTPError) Body read timeout"
     end
 
     def short_body(conn) do
-      {:more, "ABC", conn} = Plug.Conn.read_body(conn)
-      {:more, "", conn} = Plug.Conn.read_body(conn)
-      send_resp(conn, 200, "OK")
+      Plug.Conn.read_body(conn)
+      raise "Shouldn't get here"
     end
 
     test "handles the case where the declared content length is less than what is sent",
