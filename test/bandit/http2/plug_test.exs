@@ -210,6 +210,33 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, <<>>)
   end
 
+  test "stream is closed without error if plug does not read body", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    headers = [
+      {":method", "post"},
+      {":path", "/no_body_read"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"},
+      {"content-length", "3"}
+    ]
+
+    SimpleH2Client.send_headers(socket, 1, false, headers)
+    SimpleH2Client.send_body(socket, 1, true, "ABC")
+
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+
+    Process.sleep(1000)
+  end
+
+  def no_body_read(conn) do
+    Process.sleep(100)
+    conn |> send_resp(200, <<>>)
+  end
+
   test "writing response headers", context do
     response = Req.head!(context.req, url: "/header_write_test")
 
