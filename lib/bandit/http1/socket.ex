@@ -206,6 +206,7 @@ defmodule Bandit.HTTP1.Socket do
 
     def read_data(%@for{} = socket, _opts), do: {:ok, <<>>, socket}
 
+    @dialyzer {:no_improper_lists, do_read_content_length_data!: 4}
     defp do_read_content_length_data!(socket, buffer, bytes_remaining, opts) do
       max_desired_bytes = Keyword.get(opts, :length, 8_000_000)
 
@@ -235,6 +236,7 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
+    @dialyzer {:no_improper_lists, do_read_chunked_data!: 5}
     defp do_read_chunked_data!(socket, buffer, body, read_size, read_timeout) do
       case :binary.split(buffer, "\r\n") do
         ["0", _] ->
