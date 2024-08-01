@@ -313,7 +313,7 @@ defmodule Bandit.HTTP1.Socket do
           end
 
         {:error, :timeout} ->
-          already_read
+          request_error!("Body read timeout", :request_timeout)
 
         {:error, reason} ->
           request_error!(reason)
