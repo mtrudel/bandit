@@ -1,3 +1,12 @@
+## 1.5.7 (1 Aug 2024)
+
+### Changes
+
+* Timeouts encountered while reading a request body will now result in a `408
+  Request Timeout` being returned to the client by way of a `Bandit.HTTPError`
+  being raised. Previously, a `:more` tuple was returned (#385, thanks
+  @martosaur!)
+
 ## 1.5.6 (1 Aug 2024)
 
 ### Fixes
