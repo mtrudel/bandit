@@ -4,7 +4,7 @@ defmodule Bandit.WebSocket.Handler do
 
   use ThousandIsland.Handler
 
-  alias Bandit.WebSocket.{Connection, Frame}
+  alias Bandit.WebSocket.{Connection, Extractor}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
@@ -19,7 +19,7 @@ defmodule Bandit.WebSocket.Handler do
     state =
       state
       |> Map.take([:handler_module])
-      |> Map.put(:buffer, <<>>)
+      |> Map.put(:extractor, Extractor.new(connection_opts))
 
     case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->
@@ -35,29 +35,31 @@ defmodule Bandit.WebSocket.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
-    (state.buffer <> data)
-    |> Stream.unfold(
-      &Frame.deserialize(&1, Keyword.get(state.connection.opts, :max_frame_size, 0))
-    )
-    |> Enum.reduce_while({:continue, state}, fn
-      {:ok, frame}, {:continue, state} ->
+    state.extractor
+    |> Extractor.push_data(data)
+    |> pop_frame(socket, state)
+  end
+
+  defp pop_frame(extractor, socket, state) do
+    case Extractor.pop_frame(extractor) do
+      {extractor, {:ok, frame}} ->
         case Connection.handle_frame(frame, socket, state.connection) do
           {:continue, connection} ->
-            {:cont, {:continue, %{state | connection: connection, buffer: <<>>}}}
+            pop_frame(extractor, socket, %{state | extractor: extractor, connection: connection})
 
           {:close, connection} ->
-            {:halt, {:close, %{state | connection: connection, buffer: <<>>}}}
+            {:close, %{state | extractor: extractor, connection: connection}}
 
           {:error, reason, connection} ->
-            {:halt, {:error, reason, %{state | connection: connection, buffer: <<>>}}}
+            {:error, reason, %{state | extractor: extractor, connection: connection}}
         end
 
-      {:more, rest}, {:continue, state} ->
-        {:halt, {:continue, %{state | buffer: rest}}}
+      {extractor, {:error, reason}} ->
+        {:error, {:deserializing, reason}, %{state | extractor: extractor}}
 
-      {:error, message}, {:continue, state} ->
-        {:halt, {:error, {:deserializing, message}, state}}
-    end)
+      {extractor, :more} ->
+        {:continue, %{state | extractor: extractor}}
+    end
   end
 
   @impl ThousandIsland.Handler

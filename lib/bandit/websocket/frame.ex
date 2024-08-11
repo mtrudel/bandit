@@ -21,50 +21,78 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Ping.t()
           | Frame.Pong.t()
 
-  @spec deserialize(binary(), non_neg_integer()) ::
-          {{:ok, frame()}, iodata()}
-          | {{:more, binary()}, <<>>}
-          | {{:error, term()}, iodata()}
-          | nil
-  def deserialize(
-        <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
-          payload::binary-size(length), rest::binary>>,
+  @spec header_and_payload_length(binary(), non_neg_integer()) ::
+          {:ok, {header_length :: integer(), payload_length :: integer()}}
+          | {:error, :max_frame_size_exceeded | :client_frame_without_mask}
+          | :more
+  def header_and_payload_length(
+        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 1::1, 127::7, length::64, _mask::32,
+          _rest::binary>>,
+        max_frame_size
+      ) do
+    validate_max_frame_size(14, length, max_frame_size)
+  end
+
+  def header_and_payload_length(
+        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 1::1, 126::7, length::16, _mask::32,
+          _rest::binary>>,
+        max_frame_size
+      ) do
+    validate_max_frame_size(8, length, max_frame_size)
+  end
+
+  def header_and_payload_length(
+        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 1::1, length::7, _mask::32,
+          _rest::binary>>,
         max_frame_size
       )
-      when max_frame_size == 0 or length <= max_frame_size do
-    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
+      when length <= 125 do
+    validate_max_frame_size(6, length, max_frame_size)
+  end
+
+  def header_and_payload_length(
+        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 0::1, _rest::binary>>,
+        _max_frame_size
+      ) do
+    {:error, :client_frame_without_mask}
+  end
+
+  def header_and_payload_length(_msg, _max_frame_size) do
+    :more
+  end
+
+  defp validate_max_frame_size(header_length, payload_length, max_frame_size) do
+    if max_frame_size != 0 and header_length + payload_length > max_frame_size do
+      {:error, :max_frame_size_exceeded}
+    else
+      {:ok, {header_length, payload_length}}
+    end
+  end
+
+  @spec deserialize(binary()) :: {:ok, frame()} | {:error, term()}
+  def deserialize(
+        <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,
+          payload::binary-size(length)>>
+      ) do
+    to_frame(fin, compressed, rsv, opcode, mask, payload)
   end
 
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 126::7, length::16, mask::32,
-          payload::binary-size(length), rest::binary>>,
-        max_frame_size
-      )
-      when max_frame_size == 0 or length <= max_frame_size do
-    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
+          payload::binary-size(length)>>
+      ) do
+    to_frame(fin, compressed, rsv, opcode, mask, payload)
   end
 
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, length::7, mask::32,
-          payload::binary-size(length), rest::binary>>,
-        max_frame_size
-      )
-      when length <= 125 and (max_frame_size == 0 or length <= max_frame_size) do
-    to_frame(fin, compressed, rsv, opcode, mask, payload, rest)
+          payload::binary-size(length)>>
+      ) do
+    to_frame(fin, compressed, rsv, opcode, mask, payload)
   end
 
-  # nil is used to indicate for Stream.unfold/2 that the frame deserialization is finished
-  def deserialize(<<>>, _max_frame_size) do
-    nil
-  end
-
-  def deserialize(msg, max_frame_size)
-      when max_frame_size != 0 and byte_size(msg) > max_frame_size do
-    {{:error, :max_frame_size_exceeded}, msg}
-  end
-
-  def deserialize(msg, _max_frame_size) do
-    {{:more, msg}, <<>>}
+  def deserialize(_msg) do
+    {:error, :deserialization_failed}
   end
 
   def recv_metrics(%frame_type{} = frame) do
@@ -123,11 +151,11 @@ defmodule Bandit.WebSocket.Frame do
     end
   end
 
-  defp to_frame(_fin, _compressed, rsv, _opcode, _mask, _payload, rest) when rsv != 0x0 do
-    {{:error, "Received unsupported RSV flags #{rsv}"}, rest}
+  defp to_frame(_fin, _compressed, rsv, _opcode, _mask, _payload) when rsv != 0x0 do
+    {:error, "Received unsupported RSV flags #{rsv}"}
   end
 
-  defp to_frame(fin, compressed, 0x0, opcode, mask, payload, rest) do
+  defp to_frame(fin, compressed, 0x0, opcode, mask, payload) do
     fin = fin == 0x1
     compressed = compressed == 0x1
     unmasked_payload = mask(payload, mask)
@@ -141,10 +169,6 @@ defmodule Bandit.WebSocket.Frame do
       0x9 -> Frame.Ping.deserialize(fin, compressed, unmasked_payload)
       0xA -> Frame.Pong.deserialize(fin, compressed, unmasked_payload)
       unknown -> {:error, "unknown opcode #{unknown}"}
-    end
-    |> case do
-      {:ok, frame} -> {{:ok, frame}, rest}
-      {:error, reason} -> {{:error, reason}, rest}
     end
   end
 
