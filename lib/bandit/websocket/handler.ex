@@ -4,7 +4,8 @@ defmodule Bandit.WebSocket.Handler do
 
   use ThousandIsland.Handler
 
-  alias Bandit.WebSocket.{Connection, Extractor}
+  alias Bandit.Extractor
+  alias Bandit.WebSocket.{Connection, Frame}
 
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
@@ -19,7 +20,7 @@ defmodule Bandit.WebSocket.Handler do
     state =
       state
       |> Map.take([:handler_module])
-      |> Map.put(:extractor, Extractor.new(connection_opts))
+      |> Map.put(:extractor, Extractor.new(Frame, connection_opts))
 
     case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->

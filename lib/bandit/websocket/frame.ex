@@ -3,6 +3,8 @@ defmodule Bandit.WebSocket.Frame do
 
   alias Bandit.WebSocket.Frame
 
+  @behaviour Bandit.Extractor
+
   @typedoc "Indicates an opcode"
   @type opcode ::
           (binary :: 0x2)
@@ -21,6 +23,7 @@ defmodule Bandit.WebSocket.Frame do
           | Frame.Ping.t()
           | Frame.Pong.t()
 
+  @impl Bandit.Extractor
   @spec header_and_payload_length(binary(), non_neg_integer()) ::
           {:ok, {header_length :: integer(), payload_length :: integer()}}
           | {:error, :max_frame_size_exceeded | :client_frame_without_mask}
@@ -69,6 +72,7 @@ defmodule Bandit.WebSocket.Frame do
     end
   end
 
+  @impl Bandit.Extractor
   @spec deserialize(binary()) :: {:ok, frame()} | {:error, term()}
   def deserialize(
         <<fin::1, compressed::1, rsv::2, opcode::4, 1::1, 127::7, length::64, mask::32,

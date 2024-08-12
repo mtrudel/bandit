@@ -1,8 +1,15 @@
-defmodule Bandit.WebSocket.Extractor do
+defmodule Bandit.Extractor do
   @moduledoc false
   # A state machine for efficiently extracting full frames from received packets
 
-  alias Bandit.WebSocket.Frame
+  @type deserialize_result :: any()
+
+  @callback header_and_payload_length(binary(), max_frame_size :: integer()) ::
+              {:ok, {header_length :: integer(), payload_length :: integer()}}
+              | {:error, term()}
+              | :more
+
+  @callback deserialize(binary()) :: deserialize_result()
 
   @type t :: %__MODULE__{
           header: binary(),
@@ -10,7 +17,8 @@ defmodule Bandit.WebSocket.Extractor do
           payload_length: non_neg_integer(),
           required_length: non_neg_integer(),
           mode: :header_parsing | :payload_parsing,
-          max_frame_size: non_neg_integer()
+          max_frame_size: non_neg_integer(),
+          frame_parser: atom()
         }
 
   defstruct header: <<>>,
@@ -18,14 +26,16 @@ defmodule Bandit.WebSocket.Extractor do
             payload_length: 0,
             required_length: 0,
             mode: :header_parsing,
-            max_frame_size: 0
+            max_frame_size: 0,
+            frame_parser: nil
 
-  @spec new(Keyword.t()) :: t()
-  def new(opts) do
+  @spec new(module(), Keyword.t()) :: t()
+  def new(frame_parser, opts) do
     max_frame_size = Keyword.get(opts, :max_frame_size, 0)
 
     %__MODULE__{
-      max_frame_size: max_frame_size
+      max_frame_size: max_frame_size,
+      frame_parser: frame_parser
     }
   end
 
@@ -40,11 +50,11 @@ defmodule Bandit.WebSocket.Extractor do
     end
   end
 
-  @spec pop_frame(t()) :: {t(), {:ok, Frame.frame()} | {:error, term()} | :more}
+  @spec pop_frame(t()) :: {t(), :more | deserialize_result()}
   def pop_frame(state)
 
   def pop_frame(%__MODULE__{mode: :header_parsing} = state) do
-    case Frame.header_and_payload_length(state.header, state.max_frame_size) do
+    case state.frame_parser.header_and_payload_length(state.header, state.max_frame_size) do
       {:ok, {header_length, required_length}} ->
         state
         |> transition_to_payload_parsing(header_length, required_length)
@@ -58,12 +68,18 @@ defmodule Bandit.WebSocket.Extractor do
     end
   end
 
-  def pop_frame(%__MODULE__{mode: :payload_parsing} = state) do
-    if state.payload_length >= state.required_length do
-      <<payload::binary-size(state.required_length), rest::binary>> =
+  def pop_frame(
+        %__MODULE__{
+          mode: :payload_parsing,
+          payload_length: payload_length,
+          required_length: required_length
+        } = state
+      ) do
+    if payload_length >= required_length do
+      <<payload::binary-size(required_length), rest::binary>> =
         IO.iodata_to_binary(state.payload)
 
-      frame = Frame.deserialize(state.header <> payload)
+      frame = state.frame_parser.deserialize(state.header <> payload)
       state = transition_to_header_parsing(state, rest)
 
       {state, frame}
