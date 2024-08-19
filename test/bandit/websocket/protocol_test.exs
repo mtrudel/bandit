@@ -108,7 +108,7 @@ defmodule WebSocketProtocolTest do
     end
 
     test "over-sized frames are rejected", context do
-      _output =
+      output =
         capture_log(fn ->
           context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
           client = SimpleWebSocketClient.tcp_client(context)
@@ -116,9 +116,11 @@ defmodule WebSocketProtocolTest do
 
           payload = String.duplicate("0123456789", 200_001)
           SimpleWebSocketClient.send_text_frame(client, payload)
+          Process.sleep(100)
         end)
 
       assert_receive {:error, :max_frame_size_exceeded}
+      assert output =~ "{:deserializing, :max_frame_size_exceeded}"
     end
   end
 
