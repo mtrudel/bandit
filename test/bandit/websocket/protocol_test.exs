@@ -112,14 +112,14 @@ defmodule WebSocketProtocolTest do
         capture_log(fn ->
           context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
           client = SimpleWebSocketClient.tcp_client(context)
-          SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
 
           payload = String.duplicate("0123456789", 200_001)
           SimpleWebSocketClient.send_text_frame(client, payload)
-          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
           Process.sleep(100)
         end)
 
+      assert_receive {:error, :max_frame_size_exceeded}
       assert output =~ "{:deserializing, :max_frame_size_exceeded}"
     end
   end
