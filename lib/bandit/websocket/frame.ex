@@ -201,23 +201,27 @@ defmodule Bandit.WebSocket.Frame do
 
   # Note that masking is an involution, so we don't need a separate unmask function
   @spec mask(binary(), integer()) :: binary()
-  def mask(payload, mask)
-      when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
-    mask(<<>>, payload, mask)
-  end
-
-  defp mask(acc, <<h::32, rest::binary>>, mask) do
-    mask(<<acc::binary, (<<Bitwise.bxor(h, mask)::32>>)>>, rest, mask)
-  end
-
-  for size <- [24, 16, 8] do
-    defp mask(acc, <<h::unquote(size)>>, mask) do
-      <<mask::unquote(size), _::binary>> = <<mask::32>>
-      <<acc::binary, (<<Bitwise.bxor(h, mask)::unquote(size)>>)>>
+  if Code.ensure_loaded?(BanditNative) do
+    def mask(payload, mask), do: BanditNative.ws_mask(payload, mask)
+  else
+    def mask(payload, mask)
+        when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
+      mask(<<>>, payload, mask)
     end
-  end
 
-  defp mask(acc, <<>>, _mask) do
-    acc
+    defp mask(acc, <<h::32, rest::binary>>, mask) do
+      mask(<<acc::binary, (<<Bitwise.bxor(h, mask)::32>>)>>, rest, mask)
+    end
+
+    for size <- [24, 16, 8] do
+      defp mask(acc, <<h::unquote(size)>>, mask) do
+        <<mask::unquote(size), _::binary>> = <<mask::32>>
+        <<acc::binary, (<<Bitwise.bxor(h, mask)::unquote(size)>>)>>
+      end
+    end
+
+    defp mask(acc, <<>>, _mask) do
+      acc
+    end
   end
 end
