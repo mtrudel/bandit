@@ -34,11 +34,12 @@ defmodule Bandit.MixProject do
       {:websock, "~> 0.5"},
       {:hpax, "~> 1.0.0"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
-      {:req, "~> 0.3", only: [:dev, :test]},
+      {:req, "~> 0.3", only: [:dev, :test], override: true},
       {:machete, ">= 0.0.0", only: [:dev, :test]},
       {:ex_doc, "~> 0.24", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.0", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.0", only: [:dev, :test], runtime: false},
+      {:bandit_native, github: "alisinabh/bandit_native", optional: true},
       {:mix_test_watch, "~> 1.0", only: :dev, runtime: false}
     ]
   end
