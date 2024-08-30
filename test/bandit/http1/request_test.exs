@@ -2136,7 +2136,7 @@ defmodule HTTP1RequestTest do
 
           Process.sleep(100)
 
-          assert Bandit.TelemetryCollector.get_events(collector_pid) |> IO.inspect()
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
                  ~> [
                    {[:bandit, :request, :exception], %{monotonic_time: integer()},
                     %{
