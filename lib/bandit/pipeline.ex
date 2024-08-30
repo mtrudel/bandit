@@ -47,6 +47,9 @@ defmodule Bandit.Pipeline do
         end
       rescue
         error -> handle_error(error, __STACKTRACE__, transport, span, opts)
+      catch
+        :throw, value ->
+          handle_throw(value, __STACKTRACE__, transport, span, opts)
       end
     rescue
       error ->
@@ -236,6 +239,17 @@ defmodule Bandit.Pipeline do
     else
       Bandit.HTTPTransport.send_on_error(transport, error)
       {:ok, transport}
+    end
+  end
+
+  defp handle_throw(value, stacktrace, transport, span, opts) do
+    Bandit.Telemetry.span_exception(span, :throw, value, stacktrace)
+    status = 500
+
+    if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
+      Logger.error(Exception.format(:throw, value, stacktrace), domain: [:bandit])
+      Bandit.HTTPTransport.send_on_error(transport, value)
+      {:error, value}
     end
   end
 end
