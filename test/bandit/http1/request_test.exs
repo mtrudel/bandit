@@ -81,6 +81,38 @@ defmodule HTTP1RequestTest do
 
       assert output == ""
     end
+
+    test "client closure protocol errors are not logged by default", context do
+      context = http_server(context, http_options: [log_protocol_errors: :verbose])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
+      Process.sleep(100)
+
+      output =
+        capture_log(fn ->
+          Transport.close(client)
+          Process.sleep(500)
+        end)
+
+      assert output == ""
+    end
+
+    test "client closure protocol errors are logged if so configured", context do
+      context = http_server(context, http_options: [log_client_closures: true])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
+      Process.sleep(100)
+
+      output =
+        capture_log(fn ->
+          Transport.close(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "[error] ** (Bandit.HTTPError) closed"
+    end
   end
 
   describe "plug error logging" do
@@ -2133,6 +2165,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes while body is being read", context do
+      context = http_server(context, http_options: [log_client_closures: true])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
@@ -2150,7 +2183,7 @@ defmodule HTTP1RequestTest do
 
       assert output =~ "(Bandit.HTTPError) closed"
       refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
 
     def expect_incomplete_body(conn) do
@@ -2159,6 +2192,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes while body is being written", context do
+      context = http_server(context, http_options: [log_client_closures: true])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
@@ -2168,7 +2202,7 @@ defmodule HTTP1RequestTest do
       output = capture_log(fn -> Process.sleep(500) end)
       assert output =~ "(Bandit.HTTPError) closed"
       refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
 
     def sleep_and_send(conn) do
@@ -2181,6 +2215,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "returns an error if client closes while chunked body is being written", context do
+      context = http_server(context, http_options: [log_client_closures: true])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send_chunked", ["host: localhost"])
@@ -2189,7 +2224,7 @@ defmodule HTTP1RequestTest do
 
       output = capture_log(fn -> Process.sleep(500) end)
       assert output == ""
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
 
     def sleep_and_send_chunked(conn) do
@@ -2202,6 +2237,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes before sendfile body is being written", context do
+      context = http_server(context, http_options: [log_client_closures: true])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_sendfile", ["host: localhost"])
@@ -2211,7 +2247,7 @@ defmodule HTTP1RequestTest do
       output = capture_log(fn -> Process.sleep(500) end)
       assert output =~ "(Bandit.HTTPError) closed"
       refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
 
     def sleep_and_sendfile(conn) do
