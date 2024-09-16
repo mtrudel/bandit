@@ -60,7 +60,27 @@ defmodule Bandit.Telemetry do
 
   The following events may be emitted within this span:
 
-  * `[:bandit, :request, :exception]`
+  * `[:bandit, :request, :error]`
+
+      The request for this span ended unexpectedly
+
+      This event contains the following measurements:
+
+      * `monotonic_time`: The time of this event, in `:native` units
+
+      This event contains the following metadata:
+
+      * `telemetry_span_context`: A unique identifier for this span
+      * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
+        span which contains this request
+      * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
+        is also set and the nature of error is such that Bandit was unable to successfully build
+        the conn
+      * `kind`: The kind of unexpected condition, typically `:error`, `:throw` or `:exit`
+      * `reason`: The exception, throw value or exit reason which caused this unexpected termination
+      * `stacktrace`: The stacktrace of the location which caused this unexpected termination
+
+  * `[:bandit, :request, :exception]` (DEPRECATED)
 
       The request for this span ended unexpectedly
 
@@ -198,6 +218,16 @@ defmodule Bandit.Telemetry do
       })
 
     span_event(span, :exception, %{}, metadata)
+  end
+
+  @spec span_error(t(), :error | :throw | :exit, term(), Exception.stacktrace()) :: :ok
+  def span_error(span, kind, reason, stacktrace) do
+    span_event(
+      span,
+      :error,
+      %{},
+      Map.merge(span.start_metadata, %{kind: kind, reason: reason, stacktrace: stacktrace})
+    )
   end
 
   @doc false

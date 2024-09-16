@@ -228,7 +228,12 @@ defmodule Bandit.Pipeline do
   end
 
   defp handle_error(kind, reason, stacktrace, transport, span, opts) do
-    Bandit.Telemetry.span_exception(span, kind, reason, stacktrace)
+    # Backwards compatibility
+    if kind == :error && is_exception(reason) do
+      Bandit.Telemetry.span_exception(span, :exit, reason, stacktrace)
+    end
+
+    Bandit.Telemetry.span_error(span, kind, reason, stacktrace)
     status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
