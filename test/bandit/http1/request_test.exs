@@ -2112,7 +2112,7 @@ defmodule HTTP1RequestTest do
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       conn: struct_like(Plug.Conn, []),
-                      kind: :exit,
+                      kind: :error,
                       exception: %RuntimeError{message: "boom"},
                       stacktrace: list()
                     }}
@@ -2120,6 +2120,68 @@ defmodule HTTP1RequestTest do
         end)
 
       assert output =~ "(RuntimeError) boom"
+    end
+
+    def uncaught_throw(_conn) do
+      throw "thrown"
+    end
+
+    test "it should send `exception` events for uncaught throw requests", context do
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+          Req.get!(context.req, url: "/uncaught_throw")
+
+          Process.sleep(100)
+
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :throw,
+                      exception: "thrown",
+                      stacktrace: list()
+                    }}
+                 ]
+        end)
+
+      assert output =~ "(throw) \"thrown\""
+    end
+
+    def abnormal_exit(_conn) do
+      exit(:abnormal)
+    end
+
+    test "it should send `exception` events for abnormal exit requests", context do
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+          Req.get!(context.req, url: "/abnormal_exit")
+
+          Process.sleep(100)
+
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :exit,
+                      exception: :abnormal,
+                      stacktrace: list()
+                    }}
+                 ]
+        end)
+
+      assert output =~ "(exit) :abnormal"
     end
   end
 
