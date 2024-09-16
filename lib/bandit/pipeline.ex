@@ -208,10 +208,7 @@ defmodule Bandit.Pipeline do
             ] do
     Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
-    log_protocol_errors = Keyword.get(opts.http, :log_protocol_errors, :short)
-    log_client_closures? = Keyword.get(opts.http, :log_client_closures, false)
-
-    maybe_log_error(error, stacktrace, log_protocol_errors, log_client_closures?)
+    maybe_log_error(error, stacktrace, opts.http)
 
     # We want to do this at the end of the function, since the HTTP2 stack may kill this process
     # in the course of handling a ConnectionError
@@ -233,22 +230,21 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp maybe_log_error(error, stacktrace, log_protocol_errors, log_client_closures?)
-  defp maybe_log_error(_error, _stacktrace, false, _log_client_closures), do: :ok
+  def maybe_log_error(%Bandit.HTTPError{message: "closed"} = error, stacktrace, http_opts) do
+    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_client_closures, false))
+  end
 
-  defp maybe_log_error(
-         %Bandit.HTTPError{message: "closed"},
-         _stacktrace,
-         _log_protocol_errors,
-         false
-       ),
-       do: :ok
+  def maybe_log_error(error, stacktrace, http_opts) do
+    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_protocol_errors, :short))
+  end
 
-  defp maybe_log_error(error, stacktrace, :short, _log_client_closures) do
+  defp do_maybe_log_error(error, stacktrace, :short) do
     Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
   end
 
-  defp maybe_log_error(error, stacktrace, :verbose, _log_client_closures) do
+  defp do_maybe_log_error(error, stacktrace, :verbose) do
     Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
   end
+
+  defp do_maybe_log_error(_error, _stacktrace, false), do: :ok
 end

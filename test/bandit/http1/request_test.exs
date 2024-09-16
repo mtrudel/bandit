@@ -98,8 +98,8 @@ defmodule HTTP1RequestTest do
       assert output == ""
     end
 
-    test "client closure protocol errors are logged if so configured", context do
-      context = http_server(context, http_options: [log_client_closures: true])
+    test "client closure protocol errors are short logged if so configured", context do
+      context = http_server(context, http_options: [log_client_closures: :short])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
@@ -112,6 +112,28 @@ defmodule HTTP1RequestTest do
         end)
 
       assert output =~ "[error] ** (Bandit.HTTPError) closed"
+
+      # Make sure we don't log a stacktrace
+      refute output =~ "lib/bandit/pipeline.ex:"
+    end
+
+    test "client closure protocol errors are verbosely logged if so configured", context do
+      context = http_server(context, http_options: [log_client_closures: :verbose])
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
+      Process.sleep(100)
+
+      output =
+        capture_log(fn ->
+          Transport.close(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "[error] ** (Bandit.HTTPError) closed"
+
+      # Make sure we log a stacktrace
+      assert output =~ "lib/bandit/pipeline.ex:"
     end
   end
 
@@ -2165,7 +2187,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes while body is being read", context do
-      context = http_server(context, http_options: [log_client_closures: true])
+      context = http_server(context, http_options: [log_client_closures: :verbose])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
@@ -2192,7 +2214,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes while body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: true])
+      context = http_server(context, http_options: [log_client_closures: :verbose])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
@@ -2215,7 +2237,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "returns an error if client closes while chunked body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: true])
+      context = http_server(context, http_options: [log_client_closures: :verbose])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send_chunked", ["host: localhost"])
@@ -2237,7 +2259,7 @@ defmodule HTTP1RequestTest do
     end
 
     test "raises an error if client closes before sendfile body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: true])
+      context = http_server(context, http_options: [log_client_closures: :verbose])
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_sendfile", ["host: localhost"])

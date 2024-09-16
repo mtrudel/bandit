@@ -9,19 +9,14 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
-  require Logger
-
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
     connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
     {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
   rescue
     error ->
-      log_protocol_errors = Keyword.get(state.opts.http, :log_protocol_errors, :short)
-      log_client_closures? = Keyword.get(state.opts.http, :log_client_closures, false)
-
-      maybe_log_error(error, __STACKTRACE__, log_protocol_errors, log_client_closures?)
-
+      # Reuse Pipeline's error configuration logic
+      Bandit.Pipeline.maybe_log_error(error, __STACKTRACE__, state.opts.http)
       {:close, state}
   end
 
@@ -146,24 +141,5 @@ defmodule Bandit.HTTP2.Handler do
   def handle_info({:EXIT, pid, _reason}, {socket, state}) do
     connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
-  end
-
-  defp maybe_log_error(error, stacktrace, log_protocol_errors, log_client_closures?)
-  defp maybe_log_error(_error, _stacktrace, false, _log_client_closures), do: :ok
-
-  defp maybe_log_error(
-         %Bandit.HTTPError{message: :closed},
-         _stacktrace,
-         _log_protocol_errors,
-         false
-       ),
-       do: :ok
-
-  defp maybe_log_error(error, stacktrace, :short, _log_client_closures) do
-    Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
-  end
-
-  defp maybe_log_error(error, stacktrace, :verbose, _log_client_closures) do
-    Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
   end
 end
