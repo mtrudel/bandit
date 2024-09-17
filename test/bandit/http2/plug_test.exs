@@ -1015,6 +1015,7 @@ defmodule HTTP2PlugTest do
                       conn: struct_like(Plug.Conn, []),
                       kind: :error,
                       reason: %RuntimeError{message: "boom"},
+                      exception: %RuntimeError{message: "boom"},
                       stacktrace: list()
                     }}
                  ]
