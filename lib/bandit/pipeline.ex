@@ -45,6 +45,8 @@ defmodule Bandit.Pipeline do
             Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
             {:upgrade, adapter.transport, protocol, opts}
         end
+      rescue
+        error -> handle_error(:error, error, __STACKTRACE__, transport, span, opts)
       catch
         kind, reason ->
           handle_error(kind, reason, __STACKTRACE__, transport, span, opts)
