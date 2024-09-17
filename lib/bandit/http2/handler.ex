@@ -9,27 +9,14 @@ defmodule Bandit.HTTP2.Handler do
 
   use ThousandIsland.Handler
 
-  require Logger
-
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
     connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
     {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
   rescue
     error ->
-      case Keyword.get(state.opts.http, :log_protocol_errors, :short) do
-        :short ->
-          Logger.error(Exception.format_banner(:error, error, __STACKTRACE__),
-            domain: [:bandit]
-          )
-
-        :verbose ->
-          Logger.error(Exception.format(:error, error, __STACKTRACE__), domain: [:bandit])
-
-        false ->
-          :ok
-      end
-
+      # Reuse Pipeline's error configuration logic
+      Bandit.Pipeline.maybe_log_error(error, __STACKTRACE__, state.opts.http)
       {:close, state}
   end
 

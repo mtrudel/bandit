@@ -109,12 +109,16 @@ defmodule Bandit do
   * `log_protocol_errors`: How to log protocol errors such as malformed requests. `:short` will
     log a single-line summary, while `:verbose` will log full stack traces. The value of `false`
     will disable protocol error logging entirely. Defaults to `:short`
+  * `log_client_closures`: How to log cases where the client closes the connection. These happen
+    routinely in the real world and so the handling of them is configured separately since they
+    can be quite noisy. Takes the same options as `log_protocol_errors`, but defaults to `false`
   """
   @type http_options :: [
           {:compress, boolean()}
           | {:deflate_opions, deflate_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
           | {:log_protocol_errors, :short | :verbose | false}
+          | {:log_client_closures, :short | :verbose | false}
         ]
 
   @typedoc """
@@ -215,7 +219,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
-  @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors)a
+  @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress)a

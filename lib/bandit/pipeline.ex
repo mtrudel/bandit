@@ -208,16 +208,7 @@ defmodule Bandit.Pipeline do
             ] do
     Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
-    case Keyword.get(opts.http, :log_protocol_errors, :short) do
-      :short ->
-        Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
-
-      :verbose ->
-        Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
-
-      false ->
-        :ok
-    end
+    maybe_log_error(error, stacktrace, opts.http)
 
     # We want to do this at the end of the function, since the HTTP2 stack may kill this process
     # in the course of handling a ConnectionError
@@ -238,4 +229,22 @@ defmodule Bandit.Pipeline do
       {:ok, transport}
     end
   end
+
+  def maybe_log_error(%Bandit.HTTPError{message: "closed"} = error, stacktrace, http_opts) do
+    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_client_closures, false))
+  end
+
+  def maybe_log_error(error, stacktrace, http_opts) do
+    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_protocol_errors, :short))
+  end
+
+  defp do_maybe_log_error(error, stacktrace, :short) do
+    Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
+  end
+
+  defp do_maybe_log_error(error, stacktrace, :verbose) do
+    Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
+  end
+
+  defp do_maybe_log_error(_error, _stacktrace, false), do: :ok
 end
