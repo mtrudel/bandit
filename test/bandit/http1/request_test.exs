@@ -2099,13 +2099,7 @@ defmodule HTTP1RequestTest do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
-            start_supervised({
-              Bandit.TelemetryCollector,
-              [
-                [:bandit, :request, :exception],
-                [:bandit, :request, :error]
-              ]
-            })
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
           Req.get!(context.req, url: "/raise_error")
 
@@ -2114,15 +2108,6 @@ defmodule HTTP1RequestTest do
           assert Bandit.TelemetryCollector.get_events(collector_pid)
                  ~> [
                    {[:bandit, :request, :exception], %{monotonic_time: integer()},
-                    %{
-                      connection_telemetry_span_context: reference(),
-                      telemetry_span_context: reference(),
-                      conn: struct_like(Plug.Conn, []),
-                      kind: :exit,
-                      exception: %RuntimeError{message: "boom"},
-                      stacktrace: list()
-                    }},
-                   {[:bandit, :request, :error], %{monotonic_time: integer()},
                     %{
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
@@ -2145,13 +2130,7 @@ defmodule HTTP1RequestTest do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
-            start_supervised({
-              Bandit.TelemetryCollector,
-              [
-                [:bandit, :request, :exception],
-                [:bandit, :request, :error]
-              ]
-            })
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
           Req.get!(context.req, url: "/uncaught_throw")
 
@@ -2159,7 +2138,7 @@ defmodule HTTP1RequestTest do
 
           assert Bandit.TelemetryCollector.get_events(collector_pid)
                  ~> [
-                   {[:bandit, :request, :error], %{monotonic_time: integer()},
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
                     %{
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
@@ -2182,13 +2161,7 @@ defmodule HTTP1RequestTest do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
-            start_supervised({
-              Bandit.TelemetryCollector,
-              [
-                [:bandit, :request, :exception],
-                [:bandit, :request, :error]
-              ]
-            })
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
 
           Req.get!(context.req, url: "/abnormal_exit")
 
@@ -2196,7 +2169,7 @@ defmodule HTTP1RequestTest do
 
           assert Bandit.TelemetryCollector.get_events(collector_pid)
                  ~> [
-                   {[:bandit, :request, :error], %{monotonic_time: integer()},
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
                     %{
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
