@@ -16,6 +16,8 @@ jobs:
   autobahn:
     uses: ./.github/workflows/autobahn.yml
   re-run:
+    permissions:
+      actions: write
     needs: [test, lint, h2spec, autobahn]
     if: failure() && fromJSON(github.run_attempt) < 3
     runs-on: ubuntu-latest
@@ -23,5 +25,4 @@ jobs:
       - env:
           GH_REPO: ${{ github.repository }}
           GH_TOKEN: ${{ github.token }}
-          GH_DEBUG: api
         run: gh workflow run rerun.yml -F run_id=${{ github.run_id }}
