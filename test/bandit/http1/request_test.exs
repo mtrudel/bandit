@@ -140,13 +140,14 @@ defmodule HTTP1RequestTest do
   describe "plug error logging" do
     test "it should return 500 and log when unknown exceptions are raised", context do
       output =
-        capture_log(fn ->
+        capture_log([metadata: [:domain]], fn ->
           {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
           assert response.status == 500
           Process.sleep(100)
         end)
 
       assert output =~ "(RuntimeError) boom"
+      assert output =~ "domain=bandit"
     end
 
     def unknown_crasher(_conn) do

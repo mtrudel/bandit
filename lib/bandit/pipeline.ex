@@ -230,7 +230,6 @@ defmodule Bandit.Pipeline do
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
       Bandit.HTTPTransport.send_on_error(transport, error)
 
-      # TODO: somehow include domain: [:bandit]
       # :erlang.raise(:exit, {{error, stacktrace}, {}}, [])
       reraise error, stacktrace
     else
