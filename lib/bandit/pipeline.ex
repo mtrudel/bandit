@@ -9,6 +9,12 @@ defmodule Bandit.Pipeline do
   @type scheme :: String.t() | nil
   @type path :: String.t() | :*
 
+  @protocol_errors [
+    Bandit.HTTPError,
+    Bandit.HTTP2.Errors.StreamError,
+    Bandit.HTTP2.Errors.ConnectionError
+  ]
+
   require Logger
 
   @spec run(
@@ -49,9 +55,14 @@ defmodule Bandit.Pipeline do
         error -> handle_error(error, __STACKTRACE__, transport, span, opts)
       end
     rescue
-      error ->
-        span = Bandit.Telemetry.start_span(:request, measurements, metadata)
-        handle_error(error, __STACKTRACE__, transport, span, opts)
+      error in @protocol_errors ->
+        handle_error(
+          error,
+          __STACKTRACE__,
+          transport,
+          Bandit.Telemetry.start_span(:request, measurements, metadata),
+          opts
+        )
     end
   end
 
@@ -201,11 +212,7 @@ defmodule Bandit.Pipeline do
           map()
         ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
   defp handle_error(%type{} = error, stacktrace, transport, span, opts)
-       when type in [
-              Bandit.HTTPError,
-              Bandit.HTTP2.Errors.StreamError,
-              Bandit.HTTP2.Errors.ConnectionError
-            ] do
+       when type in @protocol_errors do
     Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
     maybe_log_error(error, stacktrace, opts.http)
@@ -221,9 +228,11 @@ defmodule Bandit.Pipeline do
     status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
-      Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
       Bandit.HTTPTransport.send_on_error(transport, error)
-      {:error, error}
+
+      # TODO: somehow include domain: [:bandit]
+      # :erlang.raise(:exit, {{error, stacktrace}, {}}, [])
+      reraise error, stacktrace
     else
       Bandit.HTTPTransport.send_on_error(transport, error)
       {:ok, transport}
