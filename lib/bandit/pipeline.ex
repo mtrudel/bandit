@@ -227,6 +227,7 @@ defmodule Bandit.Pipeline do
   end
 
   defp handle_error(kind, reason, stacktrace, transport, span, opts) do
+    # TODO: Fix this telementry kind
     Bandit.Telemetry.span_exception(span, :exit, reason, stacktrace)
     status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
