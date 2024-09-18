@@ -3,7 +3,7 @@ defmodule Bandit.LoggerTranslator do
     {
       :ok,
       Exception.format(:error, exception, stacktrace),
-      domain: :bandit
+      crash_reason: {exception, stacktrace}, domain: :bandit
     }
   end
 
