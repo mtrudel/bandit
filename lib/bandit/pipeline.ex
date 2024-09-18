@@ -51,12 +51,14 @@ defmodule Bandit.Pipeline do
             Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
             {:upgrade, adapter.transport, protocol, opts}
         end
-      rescue
-        error -> handle_error(error, __STACKTRACE__, transport, span, opts)
+      catch
+        kind, reason ->
+          handle_error(kind, reason, __STACKTRACE__, transport, span, opts)
       end
     rescue
       error in @protocol_errors ->
         handle_error(
+          :error,
           error,
           __STACKTRACE__,
           transport,
@@ -205,13 +207,14 @@ defmodule Bandit.Pipeline do
   end
 
   @spec handle_error(
+          :error | :throw | :exit,
           Exception.t(),
           Exception.stacktrace(),
           Bandit.HTTPTransport.t(),
           Bandit.Telemetry.t(),
           map()
         ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
-  defp handle_error(%type{} = error, stacktrace, transport, span, opts)
+  defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts)
        when type in @protocol_errors do
     Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
 
@@ -223,17 +226,16 @@ defmodule Bandit.Pipeline do
     {:error, error}
   end
 
-  defp handle_error(error, stacktrace, transport, span, opts) do
-    Bandit.Telemetry.span_exception(span, :exit, error, stacktrace)
-    status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
+  defp handle_error(kind, reason, stacktrace, transport, span, opts) do
+    Bandit.Telemetry.span_exception(span, :exit, reason, stacktrace)
+    status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
-      Bandit.HTTPTransport.send_on_error(transport, error)
+      Bandit.HTTPTransport.send_on_error(transport, reason)
 
-      # :erlang.raise(:exit, {{error, stacktrace}, {}}, [])
-      reraise error, stacktrace
+      :erlang.raise(kind, reason, stacktrace)
     else
-      Bandit.HTTPTransport.send_on_error(transport, error)
+      Bandit.HTTPTransport.send_on_error(transport, reason)
       {:ok, transport}
     end
   end

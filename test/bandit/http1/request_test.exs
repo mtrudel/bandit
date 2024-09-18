@@ -154,6 +154,36 @@ defmodule HTTP1RequestTest do
       raise "boom"
     end
 
+    test "it should return 500 and log when throws", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/uncaught_throw")
+          assert response.status == 500
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(throw) \"something\""
+    end
+
+    def uncaught_throw(_conn) do
+      throw "something"
+    end
+
+    test "it should return 500 and log when abnormal exit", context do
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/abnormal_exit")
+          assert response.status == 500
+          Process.sleep(100)
+        end)
+
+      assert output =~ "(exit) :abnormal"
+    end
+
+    def abnormal_exit(_conn) do
+      exit(:abnormal)
+    end
+
     test "it should return the code and not log when known exceptions are raised", context do
       output =
         capture_log(fn ->
