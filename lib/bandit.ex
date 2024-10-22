@@ -115,7 +115,7 @@ defmodule Bandit do
   """
   @type http_options :: [
           {:compress, boolean()}
-          | {:deflate_opions, deflate_options()}
+          | {:deflate_options, deflate_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
           | {:log_protocol_errors, :short | :verbose | false}
           | {:log_client_closures, :short | :verbose | false}
