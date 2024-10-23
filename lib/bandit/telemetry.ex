@@ -76,8 +76,8 @@ defmodule Bandit.Telemetry do
       * `conn`: The `Plug.Conn` representing this connection. Not present in cases where `error`
         is also set and the nature of error is such that Bandit was unable to successfully build
         the conn
-      * `kind`: The kind of unexpected condition, typically `:exit`
-      * `exception`: The exception which caused this unexpected termination
+      * `kind`: The kind of unexpected condition, typically `:error` or `:throw`
+      * `reason`: The error reason. An Exception struct or the thrown value
       * `stacktrace`: The stacktrace of the location which caused this unexpected termination
 
   ## `[:bandit, :websocket, *]`
@@ -188,14 +188,22 @@ defmodule Bandit.Telemetry do
     untimed_span_event(span, :stop, measurements, metadata)
   end
 
-  @spec span_exception(t(), Exception.kind(), Exception.t(), Exception.stacktrace()) :: :ok
-  def span_exception(span, kind, exception, stacktrace) do
+  @spec span_exception(t(), Exception.kind(), Exception.t() | term(), Exception.stacktrace()) :: :ok
+  def span_exception(span, kind, reason, stacktrace) do
     metadata =
       Map.merge(span.start_metadata, %{
         kind: kind,
-        exception: exception,
+        reason: reason,
         stacktrace: stacktrace
       })
+
+    # Keeps exception field for backwards compatibility
+    metadata =
+      if kind == :error and is_exception(reason) do
+        Map.put(metadata, :exception, reason)
+      else
+        metadata
+      end
 
     span_event(span, :exception, %{}, metadata)
   end
