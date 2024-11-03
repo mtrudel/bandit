@@ -9,7 +9,7 @@ defmodule Bandit.Extractor do
               | {:error, term()}
               | :more
 
-  @callback deserialize(binary()) :: deserialize_result()
+  @callback deserialize(binary(), primitive_ops_module :: module()) :: deserialize_result()
 
   @type t :: %__MODULE__{
           header: binary(),
@@ -18,7 +18,8 @@ defmodule Bandit.Extractor do
           required_length: non_neg_integer(),
           mode: :header_parsing | :payload_parsing,
           max_frame_size: non_neg_integer(),
-          frame_parser: atom()
+          frame_parser: atom(),
+          primitive_ops_module: module()
         }
 
   defstruct header: <<>>,
@@ -27,15 +28,18 @@ defmodule Bandit.Extractor do
             required_length: 0,
             mode: :header_parsing,
             max_frame_size: 0,
-            frame_parser: nil
+            frame_parser: nil,
+            primitive_ops_module: nil
 
   @spec new(module(), Keyword.t()) :: t()
   def new(frame_parser, opts) do
     max_frame_size = Keyword.get(opts, :max_frame_size, 0)
+    primitive_ops_module = Keyword.get(opts, :primitive_ops_module) || Bandit.PrimitiveOps.Default
 
     %__MODULE__{
       max_frame_size: max_frame_size,
-      frame_parser: frame_parser
+      frame_parser: frame_parser,
+      primitive_ops_module: primitive_ops_module
     }
   end
 
@@ -79,7 +83,7 @@ defmodule Bandit.Extractor do
       <<payload::binary-size(required_length), rest::binary>> =
         IO.iodata_to_binary(state.payload)
 
-      frame = state.frame_parser.deserialize(state.header <> payload)
+      frame = state.frame_parser.deserialize(state.header <> payload, state.primitive_ops_module)
       state = transition_to_header_parsing(state, rest)
 
       {state, frame}
