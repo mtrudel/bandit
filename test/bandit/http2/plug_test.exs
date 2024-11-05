@@ -996,7 +996,7 @@ defmodule HTTP2PlugTest do
       assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received uppercase header"
     end
 
-    test "it should send `exception` events for erroring requests", context do
+    test "it should send `exception` events for raising requests", context do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
@@ -1013,7 +1013,8 @@ defmodule HTTP2PlugTest do
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       conn: struct_like(Plug.Conn, []),
-                      kind: :exit,
+                      kind: :error,
+                      reason: %RuntimeError{message: "boom"},
                       exception: %RuntimeError{message: "boom"},
                       stacktrace: list()
                     }}
@@ -1025,6 +1026,37 @@ defmodule HTTP2PlugTest do
 
     def raise_error(_conn) do
       raise "boom"
+    end
+
+    test "it should send `exception` events for throwing requests", context do
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+          Req.get!(context.req, url: "/uncaught_throw")
+
+          Process.sleep(100)
+
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :throw,
+                      reason: "thrown",
+                      stacktrace: list()
+                    }}
+                 ]
+        end)
+
+      assert output =~ "(throw) \"thrown\""
+    end
+
+    def uncaught_throw(_conn) do
+      throw("thrown")
     end
   end
 end
