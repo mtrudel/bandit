@@ -1805,7 +1805,7 @@ defmodule HTTP1RequestTest do
     end
 
     def throws(_conn) do
-      throw "something"
+      throw("something")
     end
 
     test "does not send an error response if the plug has already sent one before raising",
