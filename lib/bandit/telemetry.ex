@@ -188,16 +188,22 @@ defmodule Bandit.Telemetry do
     untimed_span_event(span, :stop, measurements, metadata)
   end
 
-  @spec span_exception(t(), Exception.kind(), Exception.t(), Exception.stacktrace()) :: :ok
-  def span_exception(span, kind, exception, stacktrace) do
+  @spec span_exception(t(), Exception.kind(), Exception.t() | term(), Exception.stacktrace()) ::
+          :ok
+  def span_exception(span, :error, reason, stacktrace) when is_exception(reason) do
     metadata =
       Map.merge(span.start_metadata, %{
-        kind: kind,
-        exception: exception,
+        # Using :exit for backwards-compatiblity with Bandit =< 1.5.7
+        kind: :exit,
+        exception: reason,
         stacktrace: stacktrace
       })
 
     span_event(span, :exception, %{}, metadata)
+  end
+
+  def span_exception(_span, _kind, _reason, _stacktrace) do
+    :ok
   end
 
   @doc false

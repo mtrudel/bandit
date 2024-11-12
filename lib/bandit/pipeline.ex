@@ -46,12 +46,15 @@ defmodule Bandit.Pipeline do
             {:upgrade, adapter.transport, protocol, opts}
         end
       rescue
-        error -> handle_error(error, __STACKTRACE__, transport, span, opts)
+        exception -> handle_error(:error, exception, __STACKTRACE__, transport, span, opts)
+      catch
+        :throw, value ->
+          handle_error(:throw, value, __STACKTRACE__, transport, span, opts)
       end
     rescue
-      error ->
+      exception ->
         span = Bandit.Telemetry.start_span(:request, measurements, metadata)
-        handle_error(error, __STACKTRACE__, transport, span, opts)
+        handle_error(:error, exception, __STACKTRACE__, transport, span, opts)
     end
   end
 
@@ -194,13 +197,14 @@ defmodule Bandit.Pipeline do
   end
 
   @spec handle_error(
-          Exception.t(),
+          :error | :throw,
+          Exception.t() | term(),
           Exception.stacktrace(),
           Bandit.HTTPTransport.t(),
           Bandit.Telemetry.t(),
           map()
         ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
-  defp handle_error(%type{} = error, stacktrace, transport, span, opts)
+  defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts)
        when type in [
               Bandit.HTTPError,
               Bandit.HTTP2.Errors.StreamError,
@@ -216,21 +220,21 @@ defmodule Bandit.Pipeline do
     {:error, error}
   end
 
-  defp handle_error(error, stacktrace, transport, span, opts) do
-    Bandit.Telemetry.span_exception(span, :exit, error, stacktrace)
-    status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
+  defp handle_error(kind, reason, stacktrace, transport, span, opts) do
+    Bandit.Telemetry.span_exception(span, kind, reason, stacktrace)
+    status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
       Logger.error(
-        Exception.format(:error, error, stacktrace),
+        Exception.format(kind, reason, stacktrace),
         domain: [:bandit],
-        crash_reason: {error, stacktrace}
+        crash_reason: crash_reason(kind, reason, stacktrace)
       )
 
-      Bandit.HTTPTransport.send_on_error(transport, error)
-      {:error, error}
+      Bandit.HTTPTransport.send_on_error(transport, reason)
+      {:error, reason}
     else
-      Bandit.HTTPTransport.send_on_error(transport, error)
+      Bandit.HTTPTransport.send_on_error(transport, reason)
       {:ok, transport}
     end
   end
@@ -252,4 +256,7 @@ defmodule Bandit.Pipeline do
   end
 
   defp do_maybe_log_error(_error, _stacktrace, false), do: :ok
+
+  defp crash_reason(:throw, reason, stacktrace), do: {{:nocatch, reason}, stacktrace}
+  defp crash_reason(_, reason, stacktrace), do: {reason, stacktrace}
 end
