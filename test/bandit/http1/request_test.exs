@@ -297,6 +297,21 @@ defmodule HTTP1RequestTest do
       assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
     end
 
+    test "keepalive are explicitly signalled in HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: keep-alive"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert [{:connection, "keep-alive"} | _headers] = headers
+    end
+
     test "unread content length bodies are read before starting a new request", context do
       client = SimpleHTTP1Client.tcp_client(context)
 

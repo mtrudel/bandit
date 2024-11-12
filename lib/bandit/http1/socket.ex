@@ -325,6 +325,8 @@ defmodule Bandit.HTTP1.Socket do
     def send_headers(%@for{write_state: :unsent} = socket, status, headers, body_disposition) do
       resp_line = "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n"
 
+      headers = maybe_add_keepalive_header(status, headers, socket)
+
       case body_disposition do
         :raw ->
           # This is an optimization for the common case of sending a non-encoded body (or file),
@@ -346,6 +348,13 @@ defmodule Bandit.HTTP1.Socket do
           %{socket | write_state: :unsent}
       end
     end
+
+    # RFC 9112§9.3
+    defp maybe_add_keepalive_header(status, headers, %@for{version: :"HTTP/1.0", keepalive: true})
+         when status not in 100..199,
+         do: [{"connection", "keep-alive"} | headers]
+
+    defp maybe_add_keepalive_header(_status, headers, _socket), do: headers
 
     defp encode_headers(headers) do
       headers
