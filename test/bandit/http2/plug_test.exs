@@ -1013,8 +1013,7 @@ defmodule HTTP2PlugTest do
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       conn: struct_like(Plug.Conn, []),
-                      kind: :error,
-                      reason: %RuntimeError{message: "boom"},
+                      kind: :exit,
                       exception: %RuntimeError{message: "boom"},
                       stacktrace: list()
                     }}
@@ -1028,7 +1027,7 @@ defmodule HTTP2PlugTest do
       raise "boom"
     end
 
-    test "it should send `exception` events for throwing requests", context do
+    test "it should not send `exception` events for throwing requests", context do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
@@ -1038,18 +1037,7 @@ defmodule HTTP2PlugTest do
 
           Process.sleep(100)
 
-          assert Bandit.TelemetryCollector.get_events(collector_pid)
-                 ~> [
-                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
-                    %{
-                      connection_telemetry_span_context: reference(),
-                      telemetry_span_context: reference(),
-                      conn: struct_like(Plug.Conn, []),
-                      kind: :throw,
-                      reason: "thrown",
-                      stacktrace: list()
-                    }}
-                 ]
+          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
         end)
 
       assert output =~ "(throw) \"thrown\""
