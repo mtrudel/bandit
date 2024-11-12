@@ -225,7 +225,12 @@ defmodule Bandit.Pipeline do
     status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
-      Logger.error(Exception.format(kind, reason, stacktrace), domain: [:bandit])
+      Logger.error(
+        Exception.format(kind, reason, stacktrace),
+        domain: [:bandit],
+        crash_reason: crash_reason(kind, reason, stacktrace)
+      )
+
       Bandit.HTTPTransport.send_on_error(transport, reason)
       {:error, reason}
     else
@@ -251,4 +256,7 @@ defmodule Bandit.Pipeline do
   end
 
   defp do_maybe_log_error(_error, _stacktrace, false), do: :ok
+
+  defp crash_reason(:throw, reason, stacktrace), do: {{:nocatch, reason}, stacktrace}
+  defp crash_reason(_, reason, stacktrace), do: {reason, stacktrace}
 end

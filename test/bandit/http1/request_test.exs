@@ -149,6 +149,33 @@ defmodule HTTP1RequestTest do
       assert output =~ "(RuntimeError) boom"
     end
 
+    @tag capture_log: true
+    test "it should provide useful metadata to logger handlers when unknown exceptions are raised",
+         context do
+      defmodule TestLoggerHandler do
+        def log(log_event, %{config: %{test_pid: test_pid}}) do
+          send(test_pid, {:log_event, log_event})
+        end
+      end
+
+      :logger.add_handler(
+        TestLoggerHandler,
+        TestLoggerHandler,
+        %{level: :error, config: %{test_pid: self()}}
+      )
+
+      {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
+      assert response.status == 500
+
+      assert_receive {:log_event, log_event}
+
+      assert %{
+               level: :error,
+               msg: _msg,
+               meta: %{crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace}}
+             } = log_event
+    end
+
     def unknown_crasher(_conn) do
       raise "boom"
     end
