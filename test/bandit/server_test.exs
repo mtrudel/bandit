@@ -25,8 +25,9 @@ defmodule ServerTest do
   end
 
   test "server logs connection error detail log at startup" do
-    pid = start_supervised!({Bandit, scheme: :http, plug: __MODULE__})
-    {:ok, {address, port}} = ThousandIsland.listener_info(pid)
+    {:ok, {address, port}} =
+      start_supervised!({Bandit, scheme: :http, plug: __MODULE__, port: 0})
+      |> ThousandIsland.listener_info()
 
     logs =
       capture_log(fn ->
@@ -56,11 +57,16 @@ defmodule ServerTest do
   end
 
   test "can run multiple instances of Bandit" do
-    start_supervised({Bandit, plug: __MODULE__, port: 4000})
-    start_supervised({Bandit, plug: __MODULE__, port: 4001})
+    {:ok, {_address1, port1}} =
+      start_supervised!({Bandit, plug: __MODULE__, port: 0})
+      |> ThousandIsland.listener_info()
 
-    assert 200 == Req.get!("http://localhost:4000/hello").status
-    assert 200 == Req.get!("http://localhost:4001/hello").status
+    {:ok, {_address2, port2}} =
+      start_supervised!({Bandit, plug: __MODULE__, port: 0})
+      |> ThousandIsland.listener_info()
+
+    assert 200 == Req.get!("http://localhost:#{port1}/hello").status
+    assert 200 == Req.get!("http://localhost:#{port2}/hello").status
   end
 
   def hello(conn) do
