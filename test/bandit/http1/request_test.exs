@@ -172,7 +172,10 @@ defmodule HTTP1RequestTest do
       assert %{
                level: :error,
                msg: _msg,
-               meta: %{crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace}}
+               meta: %{
+                 crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
+                 conn: %Plug.Conn{}
+               }
              } = log_event
     end
 
