@@ -169,7 +169,7 @@ defmodule Bandit do
           {:enabled, boolean()}
           | {:max_header_block_size, pos_integer()}
           | {:max_requests, pos_integer()}
-          | {:default_local_settings, Bandit.HTTP2.Settings.t()}
+          | {:default_local_settings, keyword()}
         ]
 
   @typedoc """
