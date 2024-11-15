@@ -230,8 +230,7 @@ defmodule Bandit.Adapter do
 
     body_disposition = if send_resp_body?(adapter), do: body_disposition, else: :no_body
 
-    IO.inspect(headers)
-    headers = Enum.filter(headers, &(elem(&1, 0) |> String.starts_with?(":")))
+    headers = [{"foo", "bar"}, {"foo", "bar"}]
 
     socket =
       Bandit.HTTPTransport.send_headers(adapter.transport, status, headers, body_disposition)
