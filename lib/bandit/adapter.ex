@@ -230,7 +230,7 @@ defmodule Bandit.Adapter do
 
     body_disposition = if send_resp_body?(adapter), do: body_disposition, else: :no_body
 
-    headers = [{"foo", "bar"}, {"foo", "bar"}]
+    headers = []
 
     socket =
       Bandit.HTTPTransport.send_headers(adapter.transport, status, headers, body_disposition)
