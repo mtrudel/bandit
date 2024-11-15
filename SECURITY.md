@@ -2,8 +2,7 @@
 
 ## Supported Versions
 
-As Bandit is still in active development (its [major version is still 0](https://semver.org/#spec-item-4)), 
-no formal support exists for any version earlier than the most recently released version.
+Bug and security fixes are provided only for the most recent version of Bandit.
 
 ## Reporting a Vulnerability
 
