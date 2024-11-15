@@ -18,7 +18,7 @@ defmodule Bandit.WebSocket.Handler do
     connection_opts =
       state.opts.websocket
       |> Keyword.merge(connection_opts)
-      |> Keyword.put(:primitive_ops_module, Keyword.get(state.opts.http_1, :primitive_ops_module))
+      |> Keyword.put_new(:primitive_ops_module, Bandit.PrimitiveOps.WebSocket)
 
     state =
       state

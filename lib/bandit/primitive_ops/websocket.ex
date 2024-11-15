@@ -1,12 +1,17 @@
-defmodule Bandit.PrimitiveOps.Default do
+defmodule Bandit.PrimitiveOps.WebSocket do
   @moduledoc """
-  Default implementation of `Bandit.PrimitiveOps`
+  WebSocket primitive operations behaviour and default implementation
   """
 
-  @behaviour Bandit.PrimitiveOps
+  @doc """
+  WebSocket masking according to [RFC6455§5.3](https://www.rfc-editor.org/rfc/rfc6455#section-5.3)
+  """
+  @callback ws_mask(payload :: binary(), mask :: integer()) :: binary()
+
+  @behaviour __MODULE__
 
   # Note that masking is an involution, so we don't need a separate unmask function
-  @impl Bandit.PrimitiveOps
+  @impl true
   def ws_mask(payload, mask)
       when is_binary(payload) and is_integer(mask) and mask >= 0x00000000 and mask <= 0xFFFFFFFF do
     ws_mask(<<>>, payload, mask)
