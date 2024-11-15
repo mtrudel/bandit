@@ -1542,17 +1542,45 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 204, "this is an invalid body")
     end
 
-    test "writes out a response with no content-length header or body for 304 responses",
+    test "writes out a response with content-length header but no body for 304 responses",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/send_304", ["host: localhost"])
 
-      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client)
-      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "5"
     end
 
     def send_304(conn) do
-      send_resp(conn, 304, "this is an invalid body")
+      send_resp(conn, 304, "abcde")
+    end
+
+    test "respects plug-provided zero content-length and no body for 304 responses", context do
+      response = Req.head!(context.req, url: "/send_304_zero_content_length")
+
+      assert response.status == 304
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_304_zero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "0")
+      |> send_resp(304, "")
+    end
+
+    test "respects plug-provided nonzero content-length but no body for 304 responses", context do
+      response = Req.head!(context.req, url: "/send_304_nonzero_content_length")
+
+      assert response.status == 304
+      assert response.body == ""
+      assert response.headers["content-length"] == ["5"]
+    end
+
+    def send_304_nonzero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "5")
+      |> send_resp(304, "abcde")
     end
 
     test "writes out a response with zero content-length for 200 responses", context do
@@ -1575,7 +1603,8 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, "")
     end
 
-    test "writes out a response with zero content-length for HEAD 200 responses", context do
+    test "respects plug-provided zero content-length and no body for HEAD 200 responses",
+         context do
       response = Req.head!(context.req, url: "/send_200_zero_content_length")
 
       assert response.status == 200
@@ -1587,6 +1616,21 @@ defmodule HTTP1RequestTest do
       conn
       |> put_resp_header("content-length", "0")
       |> send_resp(200, "")
+    end
+
+    test "respects plug-provided nonzero content-length but no body for HEAD 200 responses",
+         context do
+      response = Req.head!(context.req, url: "/send_200_nonzero_content_length")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["5"]
+    end
+
+    def send_200_nonzero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "5")
+      |> send_resp(200, "abcde")
     end
 
     test "writes out a response with zero content-length for 301 responses", context do
@@ -1712,13 +1756,12 @@ defmodule HTTP1RequestTest do
       |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
-    test "does not write out a content-length header or body for files on a 304",
-         context do
+    test "write out a content-length header but no body for files on a 304", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_304", ["host: localhost"])
 
       assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 

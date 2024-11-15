@@ -723,7 +723,7 @@ defmodule HTTP2ProtocolTest do
       send_resp(conn, 204, "this is an invalid body")
     end
 
-    test "sends no content-length header or body for 304 responses", context do
+    test "sends content-length header but no body for 304 responses", context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_304", context[:port])
@@ -732,13 +732,14 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "304"},
                 {"date", _date},
+                {"content-length", "5"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
     end
 
     def send_304(conn) do
-      send_resp(conn, 304, "this is an invalid body")
+      send_resp(conn, 304, "abcde")
     end
 
     test "sends headers but no body for a HEAD request to a file", context do
@@ -791,6 +792,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "304"},
                 {"date", _date},
+                {"content-length", "6"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
