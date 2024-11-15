@@ -20,7 +20,7 @@ defmodule Bandit.Compression do
     |> Enum.find(&(&1 in ~w(deflate gzip x-gzip)))
   end
 
-  def new(adapter, headers) do
+  def new(adapter, headers, streamable \\ false) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
     response_has_strong_etag =
@@ -45,7 +45,7 @@ defmodule Bandit.Compression do
          !response_has_strong_etag && !response_indicates_no_transform do
       deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
 
-      case start_stream(adapter.content_encoding, deflate_options) do
+      case start_stream(adapter.content_encoding, deflate_options, streamable) do
         {:ok, context} -> {[{"content-encoding", adapter.content_encoding} | headers], context}
         {:error, :unsupported_encoding} -> {headers, %__MODULE__{method: :identity}}
       end
@@ -54,7 +54,7 @@ defmodule Bandit.Compression do
     end
   end
 
-  defp start_stream("deflate", opts) do
+  defp start_stream("deflate", opts, _streamable) do
     deflate_context = :zlib.open()
 
     :zlib.deflateInit(
@@ -69,9 +69,9 @@ defmodule Bandit.Compression do
     {:ok, %__MODULE__{method: :deflate, lib_context: deflate_context}}
   end
 
-  defp start_stream("x-gzip", _opts), do: {:ok, %__MODULE__{method: :gzip}}
-  defp start_stream("gzip", _opts), do: {:ok, %__MODULE__{method: :gzip}}
-  defp start_stream(_encoding, _opts), do: {:error, :unsupported_encoding}
+  defp start_stream("x-gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
+  defp start_stream("gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
+  defp start_stream(_encoding, _opts, _streamable), do: {:error, :unsupported_encoding}
 
   def compress_chunk(chunk, %__MODULE__{method: :deflate} = context) do
     result = :zlib.deflate(context.lib_context, chunk, :sync)
