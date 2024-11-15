@@ -1,7 +1,7 @@
 defmodule SimpleWebSocketClient do
   @moduledoc false
 
-  alias Bandit.WebSocket.Frame
+  alias Bandit.PrimitiveOps.WebSocket, as: WebSocketPrimitiveOps
 
   defdelegate tcp_client(context), to: Transport
 
@@ -140,7 +140,7 @@ defmodule SimpleWebSocketClient do
 
   defp send_frame(client, flags, opcode, data) do
     mask = :rand.uniform(1_000_000)
-    masked_data = Frame.mask(data, mask)
+    masked_data = WebSocketPrimitiveOps.ws_mask(data, mask)
 
     mask_flag_and_size =
       case byte_size(masked_data) do
