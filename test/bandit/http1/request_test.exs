@@ -1275,15 +1275,11 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
-
-      assert response.body == expected
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
@@ -1320,15 +1316,11 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
-
-      assert response.body == expected
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out an encoded response for an iolist body", context do
@@ -1340,15 +1332,14 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
 
-      assert response.body == expected
+
     end
 
     test "falls back to no encoding if no encodings provided", context do
