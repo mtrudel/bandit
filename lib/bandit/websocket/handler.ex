@@ -15,15 +15,15 @@ defmodule Bandit.WebSocket.Handler do
     |> Keyword.take([:fullsweep_after, :max_heap_size])
     |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
 
-    connection_opts =
-      state.opts.websocket
-      |> Keyword.merge(connection_opts)
-      |> Keyword.put_new(:primitive_ops_module, Bandit.PrimitiveOps.WebSocket)
+    connection_opts = Keyword.merge(state.opts.websocket, connection_opts)
+
+    primitive_ops_module =
+      Keyword.get(state.opts.websocket, :primitive_ops_module, Bandit.PrimitiveOps.WebSocket)
 
     state =
       state
       |> Map.take([:handler_module])
-      |> Map.put(:extractor, Extractor.new(Frame, connection_opts))
+      |> Map.put(:extractor, Extractor.new(Frame, primitive_ops_module, connection_opts))
 
     case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->
