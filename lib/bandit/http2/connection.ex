@@ -98,9 +98,15 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, socket, connection) do
     %Bandit.HTTP2.Frame.Settings{ack: true} |> send_frame(socket, connection)
-    IO.inspect(frame.settings)
 
-    send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
+    send_hpack_state = %{
+      HPAX.resize(
+        connection.send_hpack_state,
+        frame.settings.header_table_size
+      )
+      | max_table_size: frame.settings.header_table_size
+    }
+
     delta = frame.settings.initial_window_size - connection.remote_settings.initial_window_size
 
     Bandit.HTTP2.StreamCollection.get_pids(connection.streams)
