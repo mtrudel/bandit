@@ -87,47 +87,16 @@ defmodule Bandit.Adapter do
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
-    response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
-    response_has_strong_etag =
-      case Bandit.Headers.get_header(headers, "etag") do
-        nil -> false
-        "\W" <> _rest -> false
-        _strong_etag -> true
-      end
+    {headers, compression_context} = Bandit.Compression.new(adapter, headers)
 
-    response_indicates_no_transform =
-      case Bandit.Headers.get_header(headers, "cache-control") do
-        nil -> false
-        header -> "no-transform" in Plug.Conn.Utils.list(header)
-      end
+    {encoded_body, compression_context} =
+      Bandit.Compression.compress_chunk(body, compression_context)
 
-    raw_body_bytes = IO.iodata_length(body)
+    compression_metrics = Bandit.Compression.close(compression_context)
 
-    {body, headers, compression_metrics} =
-      case {body, adapter.content_encoding, response_content_encoding_header,
-            response_has_strong_etag, response_indicates_no_transform} do
-        {body, content_encoding, nil, false, false}
-        when raw_body_bytes > 0 and not is_nil(content_encoding) ->
-          metrics = %{
-            resp_uncompressed_body_bytes: raw_body_bytes,
-            resp_compression_method: content_encoding
-          }
-
-          deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
-          deflated_body = Bandit.Compression.compress(body, content_encoding, deflate_options)
-          headers = [{"content-encoding", adapter.content_encoding} | headers]
-          {deflated_body, headers, metrics}
-
-        _ ->
-          {body, headers, %{}}
-      end
-
-    compress = Keyword.get(adapter.opts.http, :compress, true)
-    headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
-
-    length = IO.iodata_length(body)
-    headers = Bandit.Headers.add_content_length(headers, length, status, adapter.method)
+    encoded_length = IO.iodata_length(encoded_body)
+    headers = Bandit.Headers.add_content_length(headers, encoded_length, status, adapter.method)
 
     metrics =
       adapter.metrics
@@ -137,7 +106,7 @@ defmodule Bandit.Adapter do
     adapter =
       %{adapter | metrics: metrics}
       |> send_headers(status, headers, :raw)
-      |> send_data(body, true)
+      |> send_data(encoded_body, true)
 
     {:ok, nil, adapter}
   end

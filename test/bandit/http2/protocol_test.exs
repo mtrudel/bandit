@@ -300,8 +300,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -334,8 +334,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -362,8 +362,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "x-gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -390,8 +390,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -424,8 +424,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -512,8 +512,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"etag", "W/\"1234\""}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
