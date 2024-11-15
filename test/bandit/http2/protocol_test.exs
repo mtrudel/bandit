@@ -809,6 +809,64 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
     end
 
+    test "deflate encodes multiple DATA frames when chunking", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      {:ok, 1, false, chunk_1} = SimpleH2Client.recv_body(socket)
+      {:ok, 1, false, chunk_2} = SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, true, ""} == SimpleH2Client.recv_body(socket)
+
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, [chunk_1, chunk_2]) |> IO.iodata_to_binary()
+
+      assert inflated_body == "OKDOKEE"
+    end
+
+    test "does not gzip encode DATA frames when chunking", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert {:ok, 1, false, "OK"} == SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, false, "DOKEE"} == SimpleH2Client.recv_body(socket)
+    end
+
     test "does not write out a body for a chunked response to a HEAD request", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -818,6 +876,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -842,6 +901,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "204"},
                 {"date", _date},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -864,6 +924,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "304"},
                 {"date", _date},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 

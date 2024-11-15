@@ -13,6 +13,7 @@ defmodule Bandit.Adapter do
             method: nil,
             status: nil,
             content_encoding: nil,
+            compression_context: nil,
             upgrade: nil,
             metrics: %{},
             opts: []
@@ -24,6 +25,7 @@ defmodule Bandit.Adapter do
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
           content_encoding: String.t(),
+          compression_context: Bandit.Compression.t() | nil,
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           metrics: %{},
           opts: %{
@@ -151,7 +153,9 @@ defmodule Bandit.Adapter do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
     metrics = Map.put(adapter.metrics, :resp_start_time, start_time)
-    adapter = %{adapter | metrics: metrics}
+
+    {headers, compression_context} = Bandit.Compression.new(adapter, headers, true)
+    adapter = %{adapter | metrics: metrics, compression_context: compression_context}
     {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
   end
 
@@ -168,7 +172,17 @@ defmodule Bandit.Adapter do
     # chunk/2 is unique among Plug.Conn.Adapter's sending callbacks in that it can return an error
     # tuple instead of just raising or dying on error. Rescue here to implement this
     try do
-      {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
+      if IO.iodata_length(chunk) == 0 do
+        compression_metrics = Bandit.Compression.close(adapter.compression_context)
+        adapter = %{adapter | metrics: Map.merge(adapter.metrics, compression_metrics)}
+        {:ok, nil, send_data(adapter, chunk, true)}
+      else
+        {encoded_chunk, compression_context} =
+          Bandit.Compression.compress_chunk(chunk, adapter.compression_context)
+
+        adapter = %{adapter | compression_context: compression_context}
+        {:ok, nil, send_data(adapter, encoded_chunk, false)}
+      end
     rescue
       error -> {:error, Exception.message(error)}
     end
