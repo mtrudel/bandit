@@ -305,15 +305,13 @@ defmodule HTTP2ProtocolTest do
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
@@ -395,15 +393,13 @@ defmodule HTTP2ProtocolTest do
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out a response with deflate encoding for an iolist body", context do
@@ -429,15 +425,13 @@ defmodule HTTP2ProtocolTest do
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "does no encoding if content-encoding header already present in response", context do
