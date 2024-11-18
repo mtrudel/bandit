@@ -1,3 +1,24 @@
+## 1.6.0 (1 Aug 2024)
+
+### Enhancements
+
+* Add framework for supporting optimized native code on various hot paths (#394,
+  thanks @alisinabh!)
+* Pass conn and exception data as logger metadata (#417 & #420, thanks @grzuy!)
+* Loosen hpax dependency requirements
+* Add `log_client_closures` http option, defaulting to false (#397, thanks @goncalotomas!)
+* Handle plugs that throw a result (#411, thanks @grzuy!)
+
+### Fixes
+
+* Improve content-length send logic per RFC9110§8.6/8.7
+* Explicitly signal keepalives in HTTP/1.0 requests
+
+### Changes
+
+* Fix typo & clarify docs
+* Update security policy
+
 ## 1.5.7 (1 Aug 2024)
 
 ### Changes
