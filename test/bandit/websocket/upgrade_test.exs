@@ -50,6 +50,21 @@ defmodule WebSocketUpgradeTest do
       assert_in_delta now, then + 250, 50
     end
 
+    test "upgrade responses do not include content-encoding headers", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock, timeout: "250")
+
+      SimpleWebSocketClient.send_text_frame(client, "")
+      {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
+      assert result == inspect([:upgrade, :init])
+
+      # Ensure that the passed timeout was recognized
+      then = System.monotonic_time(:millisecond)
+      assert_receive :timeout, 500
+      now = System.monotonic_time(:millisecond)
+      assert_in_delta now, then + 250, 50
+    end
+
     defmodule MyNoopWebSock do
       use NoopWebSock
     end
@@ -69,10 +84,7 @@ defmodule WebSocketUpgradeTest do
                 %{
                   monotonic_time: integer(),
                   duration: integer(),
-                  req_header_end_time: integer(),
-                  resp_body_bytes: 0,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
+                  req_header_end_time: integer()
                 },
                 %{
                   connection_telemetry_span_context: reference(),
