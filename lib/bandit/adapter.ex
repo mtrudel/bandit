@@ -214,6 +214,8 @@ defmodule Bandit.Adapter do
     if get_http_protocol(adapter) == :"HTTP/1.0" do
       {:error, :not_supported}
     else
+      # inform/3 is unique in that headers comes in as a keyword list
+      headers = Enum.map(headers, fn {header, value} -> {to_string(header), value} end)
       {:ok, send_headers(adapter, status, headers, :inform)}
     end
   end

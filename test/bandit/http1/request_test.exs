@@ -1809,7 +1809,7 @@ defmodule HTTP1RequestTest do
   end
 
   def send_inform(conn) do
-    conn = conn |> inform(100, [{"x-from", "inform"}])
+    conn = conn |> inform(100, [{:"x-from", "inform"}])
     conn |> send_resp(200, "Informer")
   end
 
