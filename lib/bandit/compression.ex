@@ -20,7 +20,7 @@ defmodule Bandit.Compression do
     |> Enum.find(&(&1 in ~w(deflate gzip x-gzip)))
   end
 
-  def new(adapter, headers, streamable \\ false) do
+  def new(adapter, status, headers, empty_body?, streamable \\ false) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
     response_has_strong_etag =
@@ -37,12 +37,13 @@ defmodule Bandit.Compression do
       end
 
     headers =
-      if Keyword.get(adapter.opts.http, :compress, true),
+      if status != 204 && Keyword.get(adapter.opts.http, :compress, true),
         do: [{"vary", "accept-encoding"} | headers],
         else: headers
 
-    if not is_nil(adapter.content_encoding) && is_nil(response_content_encoding_header) &&
-         !response_has_strong_etag && !response_indicates_no_transform do
+    if status not in [204, 304] && not is_nil(adapter.content_encoding) &&
+         is_nil(response_content_encoding_header) &&
+         !response_has_strong_etag && !response_indicates_no_transform && !empty_body? do
       deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
 
       case start_stream(adapter.content_encoding, deflate_options, streamable) do

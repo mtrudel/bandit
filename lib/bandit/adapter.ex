@@ -90,7 +90,9 @@ defmodule Bandit.Adapter do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
 
-    {headers, compression_context} = Bandit.Compression.new(adapter, headers)
+    # Save an extra iodata_length by checking common cases
+    empty_body? = body == "" || body == []
+    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
 
     {encoded_body, compression_context} =
       Bandit.Compression.compress_chunk(body, compression_context)
@@ -154,7 +156,7 @@ defmodule Bandit.Adapter do
     start_time = Bandit.Telemetry.monotonic_time()
     metrics = Map.put(adapter.metrics, :resp_start_time, start_time)
 
-    {headers, compression_context} = Bandit.Compression.new(adapter, headers, true)
+    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, false, true)
     adapter = %{adapter | metrics: metrics, compression_context: compression_context}
     {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
   end

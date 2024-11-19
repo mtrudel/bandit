@@ -402,6 +402,82 @@ defmodule HTTP2ProtocolTest do
       assert inflated_body == String.duplicate("a", 10_000)
     end
 
+    test "does not indicate content encoding or vary for 204 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_204"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "204"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    # RFC9110§15.4.5
+    test "does not indicate content encoding but indicates vary for 304 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_304"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "304"},
+                {"date", _date},
+                {"content-length", "5"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    test "does not indicate content encoding but indicates vary for zero byte responses",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_empty"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "0"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    end
+
+    def send_empty(conn) do
+      conn
+      |> send_resp(200, "")
+    end
+
     test "writes out a response with deflate encoding for an iolist body", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -708,7 +784,6 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "204"},
                 {"date", _date},
-                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
     end
@@ -901,7 +976,6 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "204"},
                 {"date", _date},
-                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 

@@ -1323,6 +1323,42 @@ defmodule HTTP1RequestTest do
       assert inflated_body == String.duplicate("a", 10_000)
     end
 
+    test "does not indicate content encoding or vary for 204 responses", context do
+      response =
+        Req.get!(context.req, url: "/send_204", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 204
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == nil
+      assert response.body == ""
+    end
+
+    test "does not indicate content encoding but indicates vary for 304 responses", context do
+      response =
+        Req.get!(context.req, url: "/send_304", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 304
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == ""
+    end
+
+    test "does not indicate content encoding but indicates vary for zero byte responses",
+         context do
+      response =
+        Req.get!(context.req, url: "/send_empty", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == ""
+    end
+
+    def send_empty(conn) do
+      conn
+      |> send_resp(200, "")
+    end
+
     test "writes out an encoded response for an iolist body", context do
       response =
         Req.get!(context.req, url: "/send_iolist_body", headers: [{"accept-encoding", "deflate"}])
