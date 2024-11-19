@@ -23,27 +23,12 @@ defmodule Bandit.Compression do
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
-    response_has_strong_etag =
-      case Bandit.Headers.get_header(headers, "etag") do
-        nil -> false
-        "\W" <> _rest -> false
-        _strong_etag -> true
-      end
-
-    response_indicates_no_transform =
-      case Bandit.Headers.get_header(headers, "cache-control") do
-        nil -> false
-        header -> "no-transform" in Plug.Conn.Utils.list(header)
-      end
-
-    headers =
-      if status != 204 && Keyword.get(adapter.opts.http, :compress, true),
-        do: [{"vary", "accept-encoding"} | headers],
-        else: headers
+    headers = maybe_add_vary_header(adapter, status, headers)
 
     if status not in [204, 304] && not is_nil(adapter.content_encoding) &&
          is_nil(response_content_encoding_header) &&
-         !response_has_strong_etag && !response_indicates_no_transform && !empty_body? do
+         !response_has_strong_etag(headers) && !response_indicates_no_transform(headers) &&
+         !empty_body? do
       deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
 
       case start_stream(adapter.content_encoding, deflate_options, streamable) do
@@ -52,6 +37,27 @@ defmodule Bandit.Compression do
       end
     else
       {headers, %__MODULE__{method: :identity}}
+    end
+  end
+
+  defp maybe_add_vary_header(adapter, status, headers) do
+    if status != 204 && Keyword.get(adapter.opts.http, :compress, true),
+      do: [{"vary", "accept-encoding"} | headers],
+      else: headers
+  end
+
+  defp response_has_strong_etag(headers) do
+    case Bandit.Headers.get_header(headers, "etag") do
+      nil -> false
+      "\W" <> _rest -> false
+      _strong_etag -> true
+    end
+  end
+
+  defp response_indicates_no_transform(headers) do
+    case Bandit.Headers.get_header(headers, "cache-control") do
+      nil -> false
+      header -> "no-transform" in Plug.Conn.Utils.list(header)
     end
   end
 
