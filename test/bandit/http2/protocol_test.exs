@@ -300,20 +300,18 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
@@ -334,8 +332,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -362,8 +360,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "x-gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -390,20 +388,94 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
+
+    test "does not indicate content encoding or vary for 204 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_204"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "204"},
+                {"date", _date},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    # RFC9110§15.4.5
+    test "does not indicate content encoding but indicates vary for 304 responses", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_304"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, true,
+              [
+                {":status", "304"},
+                {"date", _date},
+                {"content-length", "5"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    test "does not indicate content encoding but indicates vary for zero byte responses",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_empty"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "0"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    end
+
+    def send_empty(conn) do
+      conn
+      |> send_resp(200, "")
     end
 
     test "writes out a response with deflate encoding for an iolist body", context do
@@ -424,20 +496,18 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "34"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
 
-      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "does no encoding if content-encoding header already present in response", context do
@@ -512,8 +582,8 @@ defmodule HTTP2ProtocolTest do
                 {":status", "200"},
                 {"date", _date},
                 {"content-length", "46"},
-                {"vary", "accept-encoding"},
                 {"content-encoding", "gzip"},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"},
                 {"etag", "W/\"1234\""}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
@@ -714,7 +784,6 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "204"},
                 {"date", _date},
-                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
     end
@@ -815,6 +884,64 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
     end
 
+    test "deflate encodes multiple DATA frames when chunking", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "deflate"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      {:ok, 1, false, chunk_1} = SimpleH2Client.recv_body(socket)
+      {:ok, 1, false, chunk_2} = SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, true, ""} == SimpleH2Client.recv_body(socket)
+
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, [chunk_1, chunk_2]) |> IO.iodata_to_binary()
+
+      assert inflated_body == "OKDOKEE"
+    end
+
+    test "does not gzip encode DATA frames when chunking", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert {:ok, 1, false, "OK"} == SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, false, "DOKEE"} == SimpleH2Client.recv_body(socket)
+    end
+
     test "does not write out a body for a chunked response to a HEAD request", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -824,6 +951,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
@@ -870,6 +998,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "304"},
                 {"date", _date},
+                {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 

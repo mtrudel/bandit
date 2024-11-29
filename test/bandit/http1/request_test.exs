@@ -1275,15 +1275,11 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
-
-      assert response.body == expected
+      assert inflated_body == String.duplicate("a", 10_000)
     end
 
     test "writes out a response with gzip encoding if so negotiated", context do
@@ -1320,15 +1316,47 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
 
-      assert response.body == expected
+    test "does not indicate content encoding or vary for 204 responses", context do
+      response =
+        Req.get!(context.req, url: "/send_204", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 204
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == nil
+      assert response.body == ""
+    end
+
+    test "does not indicate content encoding but indicates vary for 304 responses", context do
+      response =
+        Req.get!(context.req, url: "/send_304", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 304
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == ""
+    end
+
+    test "does not indicate content encoding but indicates vary for zero byte responses",
+         context do
+      response =
+        Req.get!(context.req, url: "/send_empty", headers: [{"accept-encoding", "deflate"}])
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == ""
+    end
+
+    def send_empty(conn) do
+      conn
+      |> send_resp(200, "")
     end
 
     test "writes out an encoded response for an iolist body", context do
@@ -1340,15 +1368,42 @@ defmodule HTTP1RequestTest do
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      deflate_context = :zlib.open()
-      :ok = :zlib.deflateInit(deflate_context)
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
 
-      expected =
-        deflate_context
-        |> :zlib.deflate(String.duplicate("a", 10_000), :sync)
-        |> IO.iodata_to_binary()
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
 
-      assert response.body == expected
+    test "deflate encodes chunk responses", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_chunked",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
+
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
+
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
+
+    test "does not gzip encode chunk responses", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_chunked",
+          headers: [{"accept-encoding", "gzip"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
     end
 
     test "falls back to no encoding if no encodings provided", context do
@@ -1451,6 +1506,23 @@ defmodule HTTP1RequestTest do
       conn
       |> put_resp_header("content-length", "10000")
       |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_big_body_chunked(conn) do
+      conn = send_chunked(conn, 200)
+
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+      {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+
+      conn
     end
 
     def send_iolist_body(conn) do

@@ -13,6 +13,7 @@ defmodule Bandit.Adapter do
             method: nil,
             status: nil,
             content_encoding: nil,
+            compression_context: nil,
             upgrade: nil,
             metrics: %{},
             opts: []
@@ -24,6 +25,7 @@ defmodule Bandit.Adapter do
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
           content_encoding: String.t(),
+          compression_context: Bandit.Compression.t() | nil,
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           metrics: %{},
           opts: %{
@@ -87,47 +89,18 @@ defmodule Bandit.Adapter do
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
-    response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
-    response_has_strong_etag =
-      case Bandit.Headers.get_header(headers, "etag") do
-        nil -> false
-        "\W" <> _rest -> false
-        _strong_etag -> true
-      end
+    # Save an extra iodata_length by checking common cases
+    empty_body? = body == "" || body == []
+    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
 
-    response_indicates_no_transform =
-      case Bandit.Headers.get_header(headers, "cache-control") do
-        nil -> false
-        header -> "no-transform" in Plug.Conn.Utils.list(header)
-      end
+    {encoded_body, compression_context} =
+      Bandit.Compression.compress_chunk(body, compression_context)
 
-    raw_body_bytes = IO.iodata_length(body)
+    compression_metrics = Bandit.Compression.close(compression_context)
 
-    {body, headers, compression_metrics} =
-      case {body, adapter.content_encoding, response_content_encoding_header,
-            response_has_strong_etag, response_indicates_no_transform} do
-        {body, content_encoding, nil, false, false}
-        when raw_body_bytes > 0 and not is_nil(content_encoding) ->
-          metrics = %{
-            resp_uncompressed_body_bytes: raw_body_bytes,
-            resp_compression_method: content_encoding
-          }
-
-          deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
-          deflated_body = Bandit.Compression.compress(body, content_encoding, deflate_options)
-          headers = [{"content-encoding", adapter.content_encoding} | headers]
-          {deflated_body, headers, metrics}
-
-        _ ->
-          {body, headers, %{}}
-      end
-
-    compress = Keyword.get(adapter.opts.http, :compress, true)
-    headers = if compress, do: [{"vary", "accept-encoding"} | headers], else: headers
-
-    length = IO.iodata_length(body)
-    headers = Bandit.Headers.add_content_length(headers, length, status, adapter.method)
+    encoded_length = IO.iodata_length(encoded_body)
+    headers = Bandit.Headers.add_content_length(headers, encoded_length, status, adapter.method)
 
     metrics =
       adapter.metrics
@@ -137,7 +110,7 @@ defmodule Bandit.Adapter do
     adapter =
       %{adapter | metrics: metrics}
       |> send_headers(status, headers, :raw)
-      |> send_data(body, true)
+      |> send_data(encoded_body, true)
 
     {:ok, nil, adapter}
   end
@@ -182,7 +155,9 @@ defmodule Bandit.Adapter do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
     metrics = Map.put(adapter.metrics, :resp_start_time, start_time)
-    adapter = %{adapter | metrics: metrics}
+
+    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, false, true)
+    adapter = %{adapter | metrics: metrics, compression_context: compression_context}
     {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
   end
 
@@ -199,7 +174,17 @@ defmodule Bandit.Adapter do
     # chunk/2 is unique among Plug.Conn.Adapter's sending callbacks in that it can return an error
     # tuple instead of just raising or dying on error. Rescue here to implement this
     try do
-      {:ok, nil, send_data(adapter, chunk, IO.iodata_length(chunk) == 0)}
+      if IO.iodata_length(chunk) == 0 do
+        compression_metrics = Bandit.Compression.close(adapter.compression_context)
+        adapter = %{adapter | metrics: Map.merge(adapter.metrics, compression_metrics)}
+        {:ok, nil, send_data(adapter, chunk, true)}
+      else
+        {encoded_chunk, compression_context} =
+          Bandit.Compression.compress_chunk(chunk, adapter.compression_context)
+
+        adapter = %{adapter | compression_context: compression_context}
+        {:ok, nil, send_data(adapter, encoded_chunk, false)}
+      end
     rescue
       error -> {:error, Exception.message(error)}
     end
