@@ -33,6 +33,25 @@ defmodule WebSocketHTTP1HandshakeTest do
       assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
     end
 
+    test "does not set content-encoding headers", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/", [
+        "Host: server.example.com",
+        "Accept-Encoding: deflate",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13"
+      ])
+
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert Keyword.get(headers, :"content-encoding") == nil
+      assert Keyword.get(headers, :vary) == nil
+    end
+
     test "negotiates permessage-deflate if so configured", context do
       client = SimpleWebSocketClient.tcp_client(context)
 

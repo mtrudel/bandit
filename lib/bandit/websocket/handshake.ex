@@ -69,19 +69,21 @@ defmodule Bandit.WebSocket.Handshake do
     hashed_key = :crypto.hash(:sha, concatenated_key)
     server_key = Base.encode64(hashed_key)
 
-    conn
-    |> resp(101, "")
-    |> put_resp_header("upgrade", "websocket")
-    |> put_resp_header("connection", "Upgrade")
-    |> put_resp_header("sec-websocket-accept", server_key)
-    |> put_websocket_extension_header(extensions)
-    |> send_resp()
+    headers =
+      [
+        {:upgrade, "websocket"},
+        {:connection, "Upgrade"},
+        {:"sec-websocket-accept", server_key}
+      ] ++
+        websocket_extension_header(extensions)
+
+    inform(conn, 101, headers)
   end
 
-  @spec put_websocket_extension_header(Plug.Conn.t(), extensions()) :: Plug.Conn.t()
-  defp put_websocket_extension_header(conn, []), do: conn
+  @spec websocket_extension_header(extensions()) :: keyword()
+  defp websocket_extension_header([]), do: []
 
-  defp put_websocket_extension_header(conn, extensions) do
+  defp websocket_extension_header(extensions) do
     extensions =
       extensions
       |> Enum.map_join(",", fn {extension, params} ->
@@ -97,6 +99,6 @@ defmodule Bandit.WebSocket.Handshake do
         |> Enum.join(";")
       end)
 
-    put_resp_header(conn, "sec-websocket-extensions", extensions)
+    [{:"sec-websocket-extensions", extensions}]
   end
 end
