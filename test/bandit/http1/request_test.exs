@@ -111,7 +111,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(500)
         end)
 
-      assert output =~ "[error] ** (Bandit.HTTPError) closed"
+      assert output =~ "[error] ** (Bandit.SocketError) Unrecoverable socket error: closed"
 
       # Make sure we don't log a stacktrace
       refute output =~ "lib/bandit/pipeline.ex:"
@@ -130,7 +130,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(500)
         end)
 
-      assert output =~ "[error] ** (Bandit.HTTPError) closed"
+      assert output =~ "[error] ** (Bandit.SocketError) Unrecoverable socket error: closed"
 
       # Make sure we log a stacktrace
       assert output =~ "lib/bandit/pipeline.ex:"
@@ -2398,7 +2398,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(500)
         end)
 
-      assert output =~ "(Bandit.HTTPError) closed"
+      assert output =~ "(Bandit.SocketError) Unrecoverable socket error: closed"
       refute output =~ "IMPOSSIBLE"
       assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
@@ -2417,7 +2417,7 @@ defmodule HTTP1RequestTest do
       Transport.close(client)
 
       output = capture_log(fn -> Process.sleep(500) end)
-      assert output =~ "(Bandit.HTTPError) closed"
+      assert output =~ "[error] ** (Bandit.SocketError) Unrecoverable socket error: closed"
       refute output =~ "IMPOSSIBLE"
       assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
@@ -2462,7 +2462,7 @@ defmodule HTTP1RequestTest do
       Transport.close(client)
 
       output = capture_log(fn -> Process.sleep(500) end)
-      assert output =~ "(Bandit.HTTPError) closed"
+      assert output =~ "(Bandit.SocketError) Unrecoverable socket error: closed"
       refute output =~ "IMPOSSIBLE"
       assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
