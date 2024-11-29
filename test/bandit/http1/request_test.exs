@@ -2448,7 +2448,7 @@ defmodule HTTP1RequestTest do
       conn = send_chunked(conn, 200)
 
       Process.sleep(200)
-      assert chunk(conn, "IMPOSSIBLE") == {:error, "closed"}
+      assert chunk(conn, "IMPOSSIBLE") == {:error, :closed}
 
       conn
     end
