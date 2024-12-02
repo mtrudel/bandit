@@ -408,7 +408,7 @@ defmodule Bandit.HTTP1.Socket do
 
     def supported_upgrade?(_socket, protocol), do: protocol == :websocket
 
-    def send_on_error(%@for{}, %Bandit.SocketError{}), do: :ok
+    def send_on_error(%@for{}, %Bandit.TransportError{}), do: :ok
 
     def send_on_error(%@for{} = socket, error) do
       receive do
@@ -433,9 +433,7 @@ defmodule Bandit.HTTP1.Socket do
 
     @spec socket_error!(term()) :: no_return()
     defp socket_error!(reason) do
-      raise Bandit.SocketError,
-        message: "Unrecoverable socket error: #{reason}",
-        socket_error: reason
+      raise Bandit.TransportError, message: "Unrecoverable error: #{reason}", error: reason
     end
   end
 end
