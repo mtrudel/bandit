@@ -242,6 +242,22 @@ defmodule HTTP1RequestTest do
   end
 
   describe "keepalive requests" do
+    test "handles pipeline requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        String.duplicate("GET /hello_world HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
+      )
+
+      for _ <- 1..50 do
+        # Need to read the exact size of the expected response because SimpleHTTP1Client
+        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
+        {:ok, bytes} = Transport.recv(client, 152)
+        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
+      end
+    end
+
     test "closes connection after max_requests is reached", context do
       context = http_server(context, http_1_options: [max_requests: 3])
       client = SimpleHTTP1Client.tcp_client(context)

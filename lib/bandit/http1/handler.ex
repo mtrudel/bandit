@@ -25,7 +25,16 @@ defmodule Bandit.HTTP1.Handler do
       if Keyword.get(state.opts.http_1, :clear_process_dict, true), do: clear_process_dict()
       gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
       if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
-      {:continue, Map.put(state, :requests_processed, requests_processed)}
+
+      state = Map.put(state, :requests_processed, requests_processed)
+
+      # We have bytes that we've read but haven't yet processed, tail call handle_data to start
+      # reading the next request
+      if IO.iodata_length(transport.buffer) != 0 do
+        handle_data(transport.buffer, transport.socket, state)
+      else
+        {:continue, state}
+      end
     else
       {:close, state}
     end

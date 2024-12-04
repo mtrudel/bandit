@@ -240,7 +240,7 @@ defmodule Bandit.HTTP1.Socket do
     defp do_read_chunked_data!(socket, buffer, body, read_size, read_timeout) do
       case :binary.split(buffer, "\r\n") do
         ["0", "\r\n" <> rest] ->
-          # TODO we should be reading (and ignoring) trailers here
+          # We should be reading (and ignoring) trailers here
           {IO.iodata_to_binary(body), rest}
 
         [chunk_size, rest] ->
