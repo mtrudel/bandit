@@ -978,7 +978,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(1100)
         end)
 
-      assert errors =~ "(Bandit.HTTPError) Body read timeout"
+      assert errors =~ "[error] ** (Bandit.HTTPError) Body read timeout"
     end
 
     def short_body(conn) do
@@ -1054,7 +1054,8 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "(ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
+      assert errors =~
+               "[error] ** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -1086,7 +1087,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "(Bandit.HTTPError) HTTP method POST unsupported"
+      assert errors =~ "[error] ** (Bandit.HTTPError) HTTP method POST unsupported"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
@@ -1113,7 +1114,7 @@ defmodule HTTP1RequestTest do
         end)
 
       assert errors =~
-               "(Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
+               "[error] ** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
@@ -1140,7 +1141,7 @@ defmodule HTTP1RequestTest do
         end)
 
       assert errors =~
-               "(Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
+               "[error] ** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
@@ -1165,7 +1166,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "(Bandit.HTTPError) 'sec-websocket-key' header is absent"
+      assert errors =~ "[error] ** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
     end
 
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
@@ -1192,7 +1193,7 @@ defmodule HTTP1RequestTest do
         end)
 
       assert errors =~
-               "(Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
+               "[error] ** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do
@@ -2398,7 +2399,7 @@ defmodule HTTP1RequestTest do
           Process.sleep(500)
         end)
 
-      assert output =~ "(Bandit.TransportError) Unrecoverable error: closed"
+      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
       refute output =~ "IMPOSSIBLE"
       assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
@@ -2462,7 +2463,7 @@ defmodule HTTP1RequestTest do
       Transport.close(client)
 
       output = capture_log(fn -> Process.sleep(500) end)
-      assert output =~ "(Bandit.TransportError) Unrecoverable error: closed"
+      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
       refute output =~ "IMPOSSIBLE"
       assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end

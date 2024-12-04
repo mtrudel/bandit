@@ -96,7 +96,7 @@ defmodule HTTP2ProtocolTest do
         end)
 
       assert errors =~
-               "(Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
+               "[error] ** (Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
     end
 
     test "it should shut down the stream gracefully and log when encountering a stream error",
@@ -114,7 +114,7 @@ defmodule HTTP2ProtocolTest do
         end)
 
       assert errors =~
-               "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
     test "stream errors are short logged by default", context do
@@ -1952,7 +1952,8 @@ defmodule HTTP2ProtocolTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "Terminating stream in remote_closed state"
+      assert errors =~
+               "[error] ** (Bandit.HTTP2.Errors.StreamError) Terminating stream in remote_closed state"
     end
 
     def no_response_get(conn) do
@@ -1974,7 +1975,8 @@ defmodule HTTP2ProtocolTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "Terminating stream in open state"
+      assert errors =~
+               "[error] ** (Bandit.HTTP2.Errors.StreamError) Terminating stream in open state"
     end
 
     def no_response_post(conn) do
@@ -2007,7 +2009,8 @@ defmodule HTTP2ProtocolTest do
           Process.sleep(100)
         end)
 
-      assert errors =~ "(Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
+      assert errors =~
+               "[error] ** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
     def expect_reset(conn) do
@@ -2024,7 +2027,8 @@ defmodule HTTP2ProtocolTest do
           Process.sleep(200)
         end)
 
-      assert errors =~ "(Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
+      assert errors =~
+               "[error] ** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
     def write_after_delay(conn) do
