@@ -13,7 +13,7 @@ HTTP/2 and WebSocket clients over both HTTP and HTTPS. It is written with
 correctness, clarity & performance as fundamental goals.
 
 In [ongoing automated performance
-tests](https://github.com/mtrudel/bandit/actions/runs/4449308920),
+tests](https://github.com/mtrudel/bandit/actions/workflows/manual_benchmark.yml),
 Bandit's HTTP/1.x engine is up to 4x faster than Cowboy depending on the number of concurrent
 requests. When comparing HTTP/2 performance, Bandit is up to 1.5x faster than Cowboy. This is
 possible because Bandit has been built from the ground up for use with Plug applications; this
