@@ -239,8 +239,9 @@ defmodule Bandit.HTTP1.Socket do
     @dialyzer {:no_improper_lists, do_read_chunked_data!: 5}
     defp do_read_chunked_data!(socket, buffer, body, read_size, read_timeout) do
       case :binary.split(buffer, "\r\n") do
-        ["0", _] ->
-          {IO.iodata_to_binary(body), buffer}
+        ["0", "\r\n" <> rest] ->
+          # We should be reading (and ignoring) trailers here
+          {IO.iodata_to_binary(body), rest}
 
         [chunk_size, rest] ->
           chunk_size = String.to_integer(chunk_size, 16)
