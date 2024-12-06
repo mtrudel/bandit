@@ -36,10 +36,16 @@ defmodule Bandit.HTTP2.Errors do
     http_1_1_requires: 0xD
   }
 
+  @spec to_reason(integer()) :: atom()
+
   for {name, value} <- error_codes do
     @spec unquote(name)() :: unquote(Macro.var(name, Elixir)) :: unquote(value)
     def unquote(name)(), do: unquote(value)
+
+    def to_reason(unquote(value)), do: unquote(name)
   end
+
+  def to_reason(_), do: :unknown
 
   # Represents a stream error as defined in RFC9113§5.4.2
   defmodule StreamError do

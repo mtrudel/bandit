@@ -380,8 +380,18 @@ defmodule Bandit.HTTP2.Stream do
     end
 
     @spec do_recv_rst_stream!(term(), term()) :: no_return()
-    defp do_recv_rst_stream!(_stream, error_code),
-      do: raise("Client sent RST_STREAM with error code #{error_code}")
+    defp do_recv_rst_stream!(_stream, error_code) do
+      case Bandit.HTTP2.Errors.to_reason(error_code) do
+        reason when reason in [:no_error, :cancel] ->
+          raise(Bandit.TransportError, message: "Client reset stream normally", error: :closed)
+
+        reason ->
+          raise(Bandit.TransportError,
+            message: "Received RST_STREAM from client: #{reason} (#{error_code})",
+            error: reason
+          )
+      end
+    end
 
     @spec do_stream_closed_error!(term()) :: no_return()
     defp do_stream_closed_error!(msg), do: stream_error!(msg, Bandit.HTTP2.Errors.stream_closed())
@@ -418,6 +428,7 @@ defmodule Bandit.HTTP2.Stream do
       stream =
         receive do
           {:send_window_update, delta} -> do_recv_send_window_update(stream, delta)
+          {:rst_stream, error_code} -> do_recv_rst_stream!(stream, error_code)
         after
           0 -> stream
         end

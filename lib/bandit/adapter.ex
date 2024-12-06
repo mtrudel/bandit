@@ -186,6 +186,7 @@ defmodule Bandit.Adapter do
         {:ok, nil, send_data(adapter, encoded_chunk, false)}
       end
     rescue
+      error in Bandit.TransportError -> {:error, error.error}
       error -> {:error, Exception.message(error)}
     end
   end

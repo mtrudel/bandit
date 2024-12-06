@@ -290,7 +290,7 @@ defmodule Bandit.HTTP1.Socket do
       case ThousandIsland.Socket.recv(socket, 0, read_timeout) do
         {:ok, chunk} -> chunk
         {:error, :timeout} -> <<>>
-        {:error, reason} -> request_error!(reason)
+        {:error, reason} -> socket_error!(reason)
       end
     end
 
@@ -318,7 +318,7 @@ defmodule Bandit.HTTP1.Socket do
           request_error!("Body read timeout", :request_timeout)
 
         {:error, reason} ->
-          request_error!(reason)
+          socket_error!(reason)
       end
     end
 
@@ -380,7 +380,7 @@ defmodule Bandit.HTTP1.Socket do
 
       case ThousandIsland.Socket.sendfile(socket.socket, path, offset, length) do
         {:ok, _bytes_written} -> %{socket | write_state: :sent}
-        {:error, reason} -> request_error!(reason)
+        {:error, reason} -> socket_error!(reason)
       end
     end
 
@@ -393,7 +393,7 @@ defmodule Bandit.HTTP1.Socket do
         {:error, reason} ->
           # Prevent error handlers from possibly trying to send again
           send(self(), {:plug_conn, :sent})
-          request_error!(reason)
+          socket_error!(reason)
       end
     end
 
@@ -407,6 +407,8 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     def supported_upgrade?(_socket, protocol), do: protocol == :websocket
+
+    def send_on_error(%@for{}, %Bandit.TransportError{}), do: :ok
 
     def send_on_error(%@for{} = socket, error) do
       receive do
@@ -427,6 +429,11 @@ defmodule Bandit.HTTP1.Socket do
     @spec request_error!(term(), Plug.Conn.status()) :: no_return()
     defp request_error!(reason, plug_status \\ :bad_request) do
       raise Bandit.HTTPError, message: to_string(reason), plug_status: plug_status
+    end
+
+    @spec socket_error!(term()) :: no_return()
+    defp socket_error!(reason) do
+      raise Bandit.TransportError, message: "Unrecoverable error: #{reason}", error: reason
     end
   end
 end

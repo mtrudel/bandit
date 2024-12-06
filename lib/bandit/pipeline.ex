@@ -210,6 +210,7 @@ defmodule Bandit.Pipeline do
   defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts, _conn)
        when type in [
               Bandit.HTTPError,
+              Bandit.TransportError,
               Bandit.HTTP2.Errors.StreamError,
               Bandit.HTTP2.Errors.ConnectionError
             ] do
@@ -243,7 +244,7 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  def maybe_log_error(%Bandit.HTTPError{message: "closed"} = error, stacktrace, http_opts) do
+  def maybe_log_error(%Bandit.TransportError{error: :closed} = error, stacktrace, http_opts) do
     do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_client_closures, false))
   end
 
