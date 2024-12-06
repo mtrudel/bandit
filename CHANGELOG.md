@@ -1,3 +1,20 @@
+## 1.6.1 (6 Dec 2024)
+
+### Enhancements
+
+* Add deflate support when sending chunked responses (#429)
+
+### Fixes
+
+* Bring in updated HPAX to fix HTTP/2 error cases seen in AWS load balancing
+  environments (#392)
+* Improve handle of pipelined HTTP/1.1 requests (#437)
+* Improve error handling when dealing with socket errors (#433)
+
+### Changes
+
+* Use `Plug.Call.inform/2` to send websocket upgrades (#428)
+
 ## 1.6.0 (18 Nov 2024)
 
 ### Enhancements
