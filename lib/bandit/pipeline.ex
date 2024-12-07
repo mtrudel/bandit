@@ -46,10 +46,14 @@ defmodule Bandit.Pipeline do
             {:upgrade, adapter.transport, protocol, opts}
         end
       rescue
-        exception -> handle_error(:error, exception, __STACKTRACE__, transport, span, opts, conn)
+        exception ->
+          handle_error(:error, exception, __STACKTRACE__, transport, span, opts, conn)
       catch
         :throw, value ->
           handle_error(:throw, value, __STACKTRACE__, transport, span, opts, conn)
+
+        :exit, value ->
+          handle_error(:exit, value, __STACKTRACE__, transport, span, opts, conn)
       end
     rescue
       exception ->
@@ -197,7 +201,7 @@ defmodule Bandit.Pipeline do
   end
 
   @spec handle_error(
-          :error | :throw,
+          :error | :throw | :exit,
           Exception.t() | term(),
           Exception.stacktrace(),
           Bandit.HTTPTransport.t(),

@@ -1046,5 +1046,25 @@ defmodule HTTP2PlugTest do
     def uncaught_throw(_conn) do
       throw("thrown")
     end
+
+    test "it should not send `exception` events for exiting requests", context do
+      output =
+        capture_log(fn ->
+          {:ok, collector_pid} =
+            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+
+          Req.get!(context.req, url: "/uncaught_exit")
+
+          Process.sleep(100)
+
+          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
+        end)
+
+      assert output =~ "(exit) \"exited\""
+    end
+
+    def uncaught_exit(_conn) do
+      exit("exited")
+    end
   end
 end
