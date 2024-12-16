@@ -32,7 +32,7 @@ defmodule Bandit.PhoenixAdapter do
 
   This adapter supports the standard Phoenix structure for endpoint configuration. Top-level keys for
   `:http` and `:https` are supported, and configuration values within each of those are interpreted
-  as raw Bandit configuration as specified by `t:Bandit.options/0`. Bandit's confguration supports
+  as raw Bandit configuration as specified by `t:Bandit.options/0`. Bandit's configuration supports
   all values used in a standard out-of-the-box Phoenix application, so if you haven't made any
   substantial changes to your endpoint configuration things should 'just work' for you.
 

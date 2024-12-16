@@ -2025,7 +2025,7 @@ defmodule HTTP1RequestTest do
       :nope
     end
 
-    test "silently accepts EXIT messages from normally terminating spwaned processes", context do
+    test "silently accepts EXIT messages from normally terminating spawned processes", context do
       errors =
         capture_log(fn ->
           Req.get!(context.req, url: "/spawn_child")
@@ -2047,7 +2047,7 @@ defmodule HTTP1RequestTest do
     end
   end
 
-  test "does not do anything special with EXIT messages from abnormally terminating spwaned processes",
+  test "does not do anything special with EXIT messages from abnormally terminating spawned processes",
        context do
     context = http_server(context, http_1_options: [log_unknown_messages: true])
 
