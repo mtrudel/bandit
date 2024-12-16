@@ -193,7 +193,7 @@ defmodule Bandit.Telemetry do
   def span_exception(span, :error, reason, stacktrace) when is_exception(reason) do
     metadata =
       Map.merge(span.start_metadata, %{
-        # Using :exit for backwards-compatiblity with Bandit =< 1.5.7
+        # Using :exit for backwards-compatibility with Bandit =< 1.5.7
         kind: :exit,
         exception: reason,
         stacktrace: stacktrace

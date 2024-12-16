@@ -749,7 +749,7 @@ defmodule HTTP2PlugTest do
     send_resp(conn, 200, conn |> get_peer_data() |> inspect())
   end
 
-  test "silently accepts EXIT messages from normally terminating spwaned processes", context do
+  test "silently accepts EXIT messages from normally terminating spawned processes", context do
     errors =
       capture_log(fn ->
         Req.get!(context.req, url: "/spawn_child")
