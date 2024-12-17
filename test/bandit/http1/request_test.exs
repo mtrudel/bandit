@@ -247,7 +247,7 @@ defmodule HTTP1RequestTest do
 
       Transport.send(
         client,
-        String.duplicate("GET /hello_world HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
+        String.duplicate("GET /send_ok HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
       )
 
       for _ <- 1..50 do
@@ -256,6 +256,29 @@ defmodule HTTP1RequestTest do
         {:ok, bytes} = Transport.recv(client, 152)
         assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
       end
+    end
+
+    test "handles pipeline requests with unread POST bodies", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        String.duplicate(
+          "POST /send_ok HTTP/1.1\r\nHost: localhost\r\nContent-Length:3\r\n\r\nABC",
+          50
+        )
+      )
+
+      for _ <- 1..50 do
+        # Need to read the exact size of the expected response because SimpleHTTP1Client
+        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
+        {:ok, bytes} = Transport.recv(client, 152)
+        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
+      end
+    end
+
+    def send_ok(conn) do
+      send_resp(conn, 200, "OK")
     end
 
     test "closes connection after max_requests is reached", context do
