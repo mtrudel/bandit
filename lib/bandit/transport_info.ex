@@ -23,7 +23,8 @@ defmodule Bandit.TransportInfo do
         peercert: peercert
       }
     else
-      {:error, reason} -> raise "Unable to obtain transport_info: #{inspect(reason)}"
+      {:error, reason} ->
+        raise Bandit.TransportError, message: "Unable to obtain transport_info", reason: reason
     end
   end
 
