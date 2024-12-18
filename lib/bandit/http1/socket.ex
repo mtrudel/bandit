@@ -425,7 +425,7 @@ defmodule Bandit.HTTP1.Socket do
           try do
             send_headers(socket, status, [], :no_body)
           rescue
-            Bandit.HTTPError -> :ok
+            _e in [Bandit.TransportError, Bandit.HTTPError] -> :ok
           end
       end
     end
