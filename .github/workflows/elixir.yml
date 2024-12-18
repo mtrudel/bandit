@@ -19,7 +19,7 @@ jobs:
     permissions:
       actions: write
     needs: [test, lint, h2spec, autobahn]
-    if: failure() && fromJSON(github.run_attempt) < 3
+    if: failure() && fromJSON(github.run_attempt) < 5
     runs-on: ubuntu-latest
     steps:
       - env:
