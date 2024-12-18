@@ -213,6 +213,36 @@ defmodule HTTP1RequestTest do
     def known_crasher(_conn) do
       raise SafeError, "boom"
     end
+
+    defmodule Router do
+      use Plug.Router
+      plug(Plug.Logger)
+      plug(:match)
+      plug(:dispatch)
+
+      get "/" do
+        # Quiet the compiler
+        _ = conn
+        raise "boom"
+      end
+    end
+
+    test "it should unwrap Plug.Conn.WrapperErrors and handle the inner error", context do
+      context =
+        context
+        |> http_server(plug: Router)
+        |> Enum.into(context)
+
+      output =
+        capture_log(fn ->
+          {:ok, response} = Req.get(context.req, url: "/", base_url: context.base)
+          assert response.status == 500
+          Process.sleep(100)
+        end)
+
+      refute output =~ "(Plug.Conn.WrapperError)"
+      assert output =~ "[error] ** (RuntimeError) boom"
+    end
   end
 
   describe "invalid requests" do
