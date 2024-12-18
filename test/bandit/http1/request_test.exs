@@ -247,7 +247,7 @@ defmodule HTTP1RequestTest do
 
       Transport.send(
         client,
-        String.duplicate("GET /hello_world HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
+        String.duplicate("GET /send_ok HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
       )
 
       for _ <- 1..50 do
@@ -256,6 +256,29 @@ defmodule HTTP1RequestTest do
         {:ok, bytes} = Transport.recv(client, 152)
         assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
       end
+    end
+
+    test "handles pipeline requests with unread POST bodies", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        String.duplicate(
+          "POST /send_ok HTTP/1.1\r\nHost: localhost\r\nContent-Length:3\r\n\r\nABC",
+          50
+        )
+      )
+
+      for _ <- 1..50 do
+        # Need to read the exact size of the expected response because SimpleHTTP1Client
+        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
+        {:ok, bytes} = Transport.recv(client, 152)
+        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
+      end
+    end
+
+    def send_ok(conn) do
+      send_resp(conn, 200, "OK")
     end
 
     test "closes connection after max_requests is reached", context do
@@ -1000,29 +1023,6 @@ defmodule HTTP1RequestTest do
     def short_body(conn) do
       Plug.Conn.read_body(conn)
       raise "Shouldn't get here"
-    end
-
-    test "handles the case where the declared content length is less than what is sent",
-         context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-
-          Transport.send(
-            client,
-            "POST /long_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 3\r\n\r\nABCDE"
-          )
-
-          assert {:ok, "400 Bad Request", _, ""} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
-
-      assert output =~ "(Bandit.HTTPError) Excess body read"
-    end
-
-    def long_body(conn) do
-      Plug.Conn.read_body(conn)
-      raise "should not get here"
     end
 
     test "reading request body multiple times works as expected", context do
