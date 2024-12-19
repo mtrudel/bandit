@@ -394,6 +394,8 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp send_frame(frame, socket, connection) do
+    IO.inspect(frame, label: :send, limit: :infinity)
+
     _ =
       ThousandIsland.Socket.send(
         socket,

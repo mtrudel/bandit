@@ -28,6 +28,7 @@ defmodule Bandit.HTTP2.Handler do
     )
     |> Enum.reduce_while(state, fn
       {:ok, frame}, state ->
+        IO.inspect(frame, label: :recv, limit: :infinity)
         connection = Bandit.HTTP2.Connection.handle_frame(frame, socket, state.connection)
         {:cont, %{state | connection: connection, buffer: <<>>}}
 
