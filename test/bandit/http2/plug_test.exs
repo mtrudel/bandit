@@ -1027,7 +1027,7 @@ defmodule HTTP2PlugTest do
       raise "boom"
     end
 
-    test "it should not send `exception` events for throwing requests", context do
+    test "it should send `exception` events for throwing requests", context do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
@@ -1037,7 +1037,18 @@ defmodule HTTP2PlugTest do
 
           Process.sleep(100)
 
-          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :throw,
+                      exception: "thrown",
+                      stacktrace: list()
+                    }}
+                 ]
         end)
 
       assert output =~ "(throw) \"thrown\""
@@ -1047,7 +1058,7 @@ defmodule HTTP2PlugTest do
       throw("thrown")
     end
 
-    test "it should not send `exception` events for exiting requests", context do
+    test "it should send `exception` events for exiting requests", context do
       output =
         capture_log(fn ->
           {:ok, collector_pid} =
@@ -1057,7 +1068,18 @@ defmodule HTTP2PlugTest do
 
           Process.sleep(100)
 
-          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
+          assert Bandit.TelemetryCollector.get_events(collector_pid)
+                 ~> [
+                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
+                    %{
+                      connection_telemetry_span_context: reference(),
+                      telemetry_span_context: reference(),
+                      conn: struct_like(Plug.Conn, []),
+                      kind: :exit,
+                      exception: "exited",
+                      stacktrace: list()
+                    }}
+                 ]
         end)
 
       assert output =~ "(exit) \"exited\""

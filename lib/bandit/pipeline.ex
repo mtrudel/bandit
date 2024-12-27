@@ -49,11 +49,7 @@ defmodule Bandit.Pipeline do
         exception ->
           handle_error(:error, exception, __STACKTRACE__, transport, span, opts, conn)
       catch
-        :throw, value ->
-          handle_error(:throw, value, __STACKTRACE__, transport, span, opts, conn)
-
-        :exit, value ->
-          handle_error(:exit, value, __STACKTRACE__, transport, span, opts, conn)
+        kind, value -> handle_error(kind, value, __STACKTRACE__, transport, span, opts, conn)
       end
     rescue
       exception ->
