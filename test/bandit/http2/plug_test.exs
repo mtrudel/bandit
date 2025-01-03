@@ -220,17 +220,21 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_headers(socket, 1, false, headers)
     SimpleH2Client.send_body(socket, 1, true, "ABC")
 
-    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-
-    assert SimpleH2Client.successful_response?(socket, 1, false)
-    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    # Ordering of window update frames can be racy due to h2's internal message passing
+    assert [
+             SimpleH2Client.recv_frame(socket),
+             SimpleH2Client.recv_frame(socket),
+             SimpleH2Client.recv_frame(socket)
+           ]
+           ~> in_any_order([
+             {:ok, :window_update, term(), 0, term()},
+             {:ok, :headers, term(), 1, term()},
+             {:ok, :data, term(), 1, term()}
+           ])
   end
 
   def no_body_read(conn) do
-    conn = conn |> send_resp(200, "OK")
-    # Ensure that the ordering of window updates will be consistent
-    Process.sleep(10)
-    conn
+    conn |> send_resp(200, "")
   end
 
   test "writing response headers", context do
