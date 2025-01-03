@@ -94,7 +94,12 @@ defmodule InitialHandlerTest do
 
     @tag :capture_log
     test "TLS connection is made to a TCP server", context do
-      base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 1000])
+        |> Enum.into(context)
+
+      base_url = String.replace_prefix(context.base, "http", "https")
       _ = Req.get(context.req, url: "/report_version", base_url: base_url)
 
       assert_receive {:log, %{level: :warning, msg: {:string, msg}}}, 500
