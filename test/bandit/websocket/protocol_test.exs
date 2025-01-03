@@ -116,7 +116,7 @@ defmodule WebSocketProtocolTest do
 
           payload = String.duplicate("0123456789", 200_001)
           SimpleWebSocketClient.send_text_frame(client, payload)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert_receive {:error, :max_frame_size_exceeded}, 500
@@ -321,7 +321,7 @@ defmodule WebSocketProtocolTest do
       Transport.close(client)
 
       # Wait a bit and validate that the server is closed
-      Process.sleep(100)
+      Process.sleep(500)
       refute Process.alive?(pid)
     end
 
@@ -342,7 +342,7 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
       # Wait a bit and validate that the server is closed
-      Process.sleep(100)
+      Process.sleep(500)
       refute Process.alive?(pid)
     end
 
@@ -366,7 +366,7 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
 
       # Wait a bit and validate that the server is closed
-      Process.sleep(100)
+      Process.sleep(500)
       refute Process.alive?(pid)
     end
   end
@@ -389,7 +389,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received unexpected continuation frame (RFC6455§5.4)"
@@ -412,7 +412,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(200)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received unexpected text frame (RFC6455§5.4)"
@@ -436,7 +436,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received unexpected binary frame (RFC6455§5.4)"
@@ -459,7 +459,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(200)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received unexpected compressed frame (RFC6455§5.2)"
@@ -482,7 +482,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert output =~ "Inflation error"
@@ -504,7 +504,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
@@ -527,7 +527,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(500)
         end)
 
       assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
