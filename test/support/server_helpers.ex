@@ -14,7 +14,7 @@ defmodule ServerHelpers do
           scheme: :http,
           port: 0,
           ip: :loopback,
-          thousand_island_options: [read_timeout: 1000]
+          thousand_island_options: [read_timeout: 100]
         ]
         |> start_server(opts)
       end
@@ -27,7 +27,7 @@ defmodule ServerHelpers do
           ip: :loopback,
           certfile: Path.join(__DIR__, "../support/cert.pem") |> Path.expand(),
           keyfile: Path.join(__DIR__, "../support/key.pem") |> Path.expand(),
-          thousand_island_options: [read_timeout: 1000]
+          thousand_island_options: [read_timeout: 100]
         ]
         |> start_server(opts)
       end
