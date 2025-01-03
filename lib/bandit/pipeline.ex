@@ -22,7 +22,11 @@ defmodule Bandit.Pipeline do
           | {:error, term()}
   def run(transport, plug, connection_span, opts) do
     measurements = %{monotonic_time: Bandit.Telemetry.monotonic_time()}
-    metadata = %{connection_telemetry_span_context: connection_span.telemetry_span_context}
+
+    metadata = %{
+      connection_telemetry_span_context: connection_span.telemetry_span_context,
+      plug: plug
+    }
 
     try do
       {:ok, method, request_target, headers, transport} =
