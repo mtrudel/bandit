@@ -19,9 +19,9 @@ defmodule HTTP2ProtocolTest do
       end)
       |> Enum.each(fn byte -> Transport.send(socket, byte) end)
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
 
     test "it should handle cases where multiple frames arrive in the same packet", context do
@@ -34,9 +34,9 @@ defmodule HTTP2ProtocolTest do
           <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
       )
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
@@ -217,7 +217,7 @@ defmodule HTTP2ProtocolTest do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert SimpleH2Client.recv_frame(socket) == {:ok, 4, 0, 0, <<>>}
+      assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<>>}
     end
 
     test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
@@ -228,10 +228,10 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.recv_headers(socket)
 
       expected = String.duplicate("a", 20_000)
-      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
-      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
       expected = String.duplicate("a", 10_000)
-      assert {:ok, 0, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
     end
 
     def send_50k(conn) do
@@ -1258,10 +1258,10 @@ defmodule HTTP2ProtocolTest do
       # We assume that 60k of random data will get hpacked down into somewhere
       # between 49152 and 65536 bytes, so we'll need 3 packets total
 
-      {:ok, 1, 0, 1, fragment_1} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 0, 1, fragment_2} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 0, 1, fragment_3} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 4, 1, fragment_4} = SimpleH2Client.recv_frame(socket)
+      {:ok, :headers, 0, 1, fragment_1} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 0, 1, fragment_2} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 0, 1, fragment_3} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 4, 1, fragment_4} = SimpleH2Client.recv_frame(socket)
 
       {:ok, headers, _ctx} =
         [fragment_1, fragment_2, fragment_3, fragment_4]
@@ -1985,7 +1985,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
       SimpleH2Client.send_frame(socket, 4, 0, 0, <<>>)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
@@ -2010,7 +2010,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
