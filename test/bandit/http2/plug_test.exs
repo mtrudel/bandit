@@ -5,8 +5,6 @@ defmodule HTTP2PlugTest do
   use ReqHelpers
   use Machete
 
-  import ExUnit.CaptureLog
-
   setup :https_server
   setup :req_h2_client
 
@@ -34,15 +32,13 @@ defmodule HTTP2PlugTest do
   end
 
   describe "error response & logging" do
+    @tag :capture_log
     test "it should return 500 and log when unknown exceptions are raised", context do
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
+      assert response.status == 500
 
-      assert output =~ "(RuntimeError) boom"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (RuntimeError) boom"
     end
 
     def unknown_crasher(_conn) do
@@ -50,30 +46,24 @@ defmodule HTTP2PlugTest do
     end
 
     test "it should return the code and not log when known exceptions are raised", context do
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/known_crasher")
-          assert response.status == 418
-          Process.sleep(100)
-        end)
+      {:ok, response} = Req.get(context.req, url: "/known_crasher")
+      assert response.status == 418
 
-      assert output == ""
+      refute_receive {:log, %{level: :error}}
     end
 
+    @tag :capture_log
     test "it should log known exceptions if so configured", context do
       context =
         context
         |> https_server(http_options: [log_exceptions_with_status_codes: 100..599])
         |> Enum.into(context)
 
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
-          assert response.status == 418
-          Process.sleep(100)
-        end)
+      {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
+      assert response.status == 418
 
-      assert output =~ "(SafeError) boom"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (SafeError) boom"
     end
 
     def known_crasher(_conn) do
@@ -143,6 +133,7 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, body)
   end
 
+  @tag :capture_log
   test "reading request body from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_body_read", body: "OK")
 
@@ -195,7 +186,7 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_body(socket, 1, false, "A")
     {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
     {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
-    Process.sleep(500)
+    Process.sleep(100)
     SimpleH2Client.send_body(socket, 1, true, "BC")
 
     assert SimpleH2Client.successful_response?(socket, 1, false)
@@ -203,7 +194,7 @@ defmodule HTTP2PlugTest do
   end
 
   def timeout_body_read(conn) do
-    {:more, body, conn} = read_body(conn, read_timeout: 100)
+    {:more, body, conn} = read_body(conn, read_timeout: 10)
     assert body == "A"
     {:ok, body, conn} = read_body(conn)
     assert body == "BC"
@@ -228,12 +219,9 @@ defmodule HTTP2PlugTest do
 
     assert SimpleH2Client.successful_response?(socket, 1, false)
     assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
-
-    Process.sleep(1000)
   end
 
   def no_body_read(conn) do
-    Process.sleep(100)
     conn |> send_resp(200, <<>>)
   end
 
@@ -360,6 +348,7 @@ defmodule HTTP2PlugTest do
     conn |> resp(200, "OK")
   end
 
+  @tag :capture_log
   test "sending a body from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_send_body", body: "OK")
 
@@ -396,6 +385,7 @@ defmodule HTTP2PlugTest do
     |> elem(1)
   end
 
+  @tag :capture_log
   test "setting a chunked response from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_set_chunk", body: "OK")
 
@@ -416,6 +406,7 @@ defmodule HTTP2PlugTest do
     end
   end
 
+  @tag :capture_log
   test "sending a chunk from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_send_chunk", body: "OK")
 
@@ -434,22 +425,20 @@ defmodule HTTP2PlugTest do
     end)
     |> Task.await()
     |> case do
-      :ok -> tap(conn, &chunk(&1, "OK"))
+      :ok ->
+        {:ok, conn} = chunk(conn, "OK")
+        conn
     end
   end
 
   describe "upgrade handling" do
+    @tag :capture_log
     test "raises an ArgumentError on unsupported upgrades", context do
-      errors =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/upgrade_unsupported")
-          assert response.status == 500
+      {:ok, response} = Req.get(context.req, url: "/upgrade_unsupported")
+      assert response.status == 500
 
-          Process.sleep(100)
-        end)
-
-      assert errors =~
-               "(ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -459,32 +448,28 @@ defmodule HTTP2PlugTest do
     end
   end
 
+  @tag :capture_log
   test "raises a Plug.Conn.NotSentError if nothing was set in the conn", context do
-    errors =
-      capture_log(fn ->
-        {:ok, response} = Req.get(context.req, url: "/noop")
-        assert response.status == 500
+    {:ok, response} = Req.get(context.req, url: "/noop")
+    assert response.status == 500
 
-        Process.sleep(100)
-      end)
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
 
-    assert errors =~
-             "(Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
+    assert msg =~
+             "** (Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
   end
 
   def noop(conn), do: conn
 
+  @tag :capture_log
   test "raises an error if the conn returns garbage", context do
-    errors =
-      capture_log(fn ->
-        {:ok, response} = Req.get(context.req, url: "/garbage")
-        assert response.status == 500
+    {:ok, response} = Req.get(context.req, url: "/garbage")
+    assert response.status == 500
 
-        Process.sleep(100)
-      end)
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
 
-    assert errors =~
-             "(RuntimeError) Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom"
+    assert msg =~
+             "** (RuntimeError) Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom"
   end
 
   def garbage(_conn), do: :boom
@@ -523,16 +508,13 @@ defmodule HTTP2PlugTest do
     |> send_file(200, @large_file_path, 0, :all)
   end
 
+  @tag :capture_log
   test "errors out if asked to read beyond the file", context do
-    errors =
-      capture_log(fn ->
-        {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
-        assert response.status == 500
+    {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
+    assert response.status == 500
 
-        Process.sleep(100)
-      end)
-
-    assert errors =~ "(RuntimeError) Cannot read 3000 bytes starting at 1"
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+    assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
   end
 
   def send_file(conn) do
@@ -547,6 +529,7 @@ defmodule HTTP2PlugTest do
     )
   end
 
+  @tag :capture_log
   test "sending a file from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_send_file", body: "OK")
 
@@ -604,7 +587,7 @@ defmodule HTTP2PlugTest do
     {:ok, 1, false, timings} = SimpleH2Client.recv_body(socket)
     [non_blocked, blocked] = Jason.decode!(timings)
 
-    # Ensure the the non-blocked chunks (60k worth) were *much* faster than the
+    # Ensure the non-blocked chunks (60k worth) were *much* faster than the
     # blocked chunk (which only did 10k)
     assert non_blocked < 20
     assert blocked > 100
@@ -703,6 +686,7 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, "Informer")
   end
 
+  @tag :capture_log
   test "sending an inform response from another process works as expected", context do
     response = Req.post!(context.req, url: "/other_process_send_inform", body: "OK")
 
@@ -750,24 +734,15 @@ defmodule HTTP2PlugTest do
   end
 
   test "silently accepts EXIT messages from normally terminating spawned processes", context do
-    errors =
-      capture_log(fn ->
-        Req.get!(context.req, url: "/spawn_child")
+    response = Req.get!(context.req, url: "/spawn_child")
+    assert response.status == 204
 
-        # Let the backing process see & handle the handle_info EXIT message
-        Process.sleep(100)
-      end)
-
-    # The return value here isn't relevant, since the HTTP call is done within
-    # a single Task call & may complete before the spawned process exits. Look
-    # at the logged errors instead
-    assert errors == ""
+    refute_receive {:log, %{level: :error}}
   end
 
   def spawn_child(conn) do
     spawn_link(fn -> exit(:normal) end)
-    # Ensure that the spawned process has a chance to exit
-    Process.sleep(100)
+    Process.sleep(10)
     send_resp(conn, 204, "")
   end
 

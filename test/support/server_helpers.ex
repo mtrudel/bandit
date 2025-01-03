@@ -5,6 +5,7 @@ defmodule ServerHelpers do
     quote location: :keep do
       import Plug.Conn
 
+      require LoggerHelpers
       require TelemetryHelpers
 
       def http_server(context, opts \\ []) do
@@ -39,6 +40,7 @@ defmodule ServerHelpers do
           |> start_supervised()
 
         TelemetryHelpers.attach_all_events(__MODULE__)
+        LoggerHelpers.receive_all_log_events(__MODULE__)
 
         {:ok, {_ip, port}} = ThousandIsland.listener_info(server_pid)
         [base: "#{config[:scheme]}://localhost:#{port}", port: port, server_pid: server_pid]

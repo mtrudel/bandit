@@ -3,8 +3,6 @@ defmodule InitialHandlerTest do
   use ServerHelpers
   use ReqHelpers
 
-  import ExUnit.CaptureLog
-
   def report_version(conn) do
     body = "#{get_http_protocol(conn)} #{conn.scheme}"
     send_resp(conn, 200, body)
@@ -94,16 +92,13 @@ defmodule InitialHandlerTest do
     setup :http_server
     setup :req_http1_client
 
+    @tag :capture_log
     test "TLS connection is made to a TCP server", context do
-      warnings =
-        capture_log(fn ->
-          base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
-          _ = Req.get(context.req, url: "/report_version", base_url: base_url)
+      base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
+      _ = Req.get(context.req, url: "/report_version", base_url: base_url)
 
-          Process.sleep(250)
-        end)
-
-      assert warnings =~ "Connection that looks like TLS received on a clear channel"
+      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}
+      assert msg == "Connection that looks like TLS received on a clear channel"
     end
   end
 end

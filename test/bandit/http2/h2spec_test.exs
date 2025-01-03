@@ -11,7 +11,7 @@ defmodule H2SpecTest do
     conn |> send_resp(200, "OK")
   end
 
-  @tag capture_log: true
+  @tag :capture_log
   test "passes h2spec", context do
     {cmd, opts} =
       case System.find_executable("h2spec") do
