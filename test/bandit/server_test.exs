@@ -6,6 +6,8 @@ defmodule ServerTest do
 
   test "server logs connection details at startup" do
     LoggerHelpers.receive_all_log_events(__MODULE__)
+    Process.sleep(100)
+
     start_supervised({Bandit, plug: __MODULE__, port: 0, ip: :loopback})
 
     assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
@@ -22,6 +24,7 @@ defmodule ServerTest do
   @tag :capture_log
   test "server logs connection error detail log at startup" do
     LoggerHelpers.receive_all_log_events(__MODULE__)
+    Process.sleep(100)
 
     {:ok, {address, port}} =
       start_supervised!({Bandit, scheme: :http, plug: __MODULE__, port: 0})
@@ -37,6 +40,8 @@ defmodule ServerTest do
 
   test "special cases :inet option" do
     LoggerHelpers.receive_all_log_events(__MODULE__)
+    Process.sleep(100)
+
     start_supervised({Bandit, [{:plug, __MODULE__}, :inet, {:port, 0}, {:ip, :loopback}]})
 
     assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
@@ -45,6 +50,8 @@ defmodule ServerTest do
 
   test "special cases :inet6 option" do
     LoggerHelpers.receive_all_log_events(__MODULE__)
+    Process.sleep(100)
+
     start_supervised({Bandit, [{:plug, __MODULE__}, :inet6, {:port, 0}, {:ip, :loopback}]})
 
     assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
