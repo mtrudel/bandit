@@ -1948,7 +1948,7 @@ defmodule HTTP2ProtocolTest do
     end
 
     def write_after_delay(conn) do
-      Process.sleep(100)
+      Process.sleep(10)
       send_resp(conn, 200, "OK")
     end
 
