@@ -1,7 +1,7 @@
 defmodule WebsocketAutobahnTest do
   use ExUnit.Case, async: true
 
-  @moduletag :external_conformance
+  @moduletag :slow
   @moduletag timeout: 3_600_000
 
   defmodule EchoWebSock do

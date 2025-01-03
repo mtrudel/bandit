@@ -2087,6 +2087,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
+    @tag :slow
     test "does not issue a subsequent update until receive window goes below 2^30", context do
       socket = SimpleH2Client.setup_connection(context)
 
