@@ -49,20 +49,14 @@ defmodule Bandit.Pipeline do
             Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
             {:upgrade, adapter.transport, protocol, opts}
         end
-      rescue
-        exception ->
-          handle_error(:error, exception, __STACKTRACE__, transport, span, opts, conn)
       catch
-        :throw, value ->
-          handle_error(:throw, value, __STACKTRACE__, transport, span, opts, conn)
-
-        :exit, value ->
-          handle_error(:exit, value, __STACKTRACE__, transport, span, opts, conn)
+        kind, value ->
+          handle_error(kind, value, __STACKTRACE__, transport, span, opts, plug: plug, conn: conn)
       end
     rescue
       exception ->
         span = Bandit.Telemetry.start_span(:request, measurements, metadata)
-        handle_error(:error, exception, __STACKTRACE__, transport, span, opts)
+        handle_error(:error, exception, __STACKTRACE__, transport, span, opts, plug: plug)
     end
   end
 
@@ -211,33 +205,23 @@ defmodule Bandit.Pipeline do
           Bandit.HTTPTransport.t(),
           Bandit.Telemetry.t(),
           map(),
-          Plug.Conn.t() | nil
+          keyword()
         ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
-  defp handle_error(kind, error, stacktrace, transport, span, opts, conn \\ nil)
-
-  defp handle_error(
-         :error,
-         %Plug.Conn.WrapperError{} = error,
-         _stacktrace,
-         transport,
-         span,
-         opts,
-         conn
-       ) do
+  defp handle_error(:error, %Plug.Conn.WrapperError{} = error, _, transport, span, opts, metadata) do
     # Unwrap the inner error and handle it
-    handle_error(error.kind, error.reason, error.stack, transport, span, opts, conn)
+    handle_error(error.kind, error.reason, error.stack, transport, span, opts, metadata)
   end
 
-  defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts, _conn)
+  defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts, metadata)
        when type in [
               Bandit.HTTPError,
               Bandit.TransportError,
               Bandit.HTTP2.Errors.StreamError,
               Bandit.HTTP2.Errors.ConnectionError
             ] do
-    Bandit.Telemetry.stop_span(span, %{}, %{error: error.message})
+    Bandit.Telemetry.stop_span(span, %{}, Enum.into(metadata, %{error: error.message}))
 
-    maybe_log_error(error, stacktrace, opts.http)
+    Bandit.Logger.maybe_log_protocol_error(error, stacktrace, opts, metadata)
 
     # We want to do this at the end of the function, since the HTTP2 stack may kill this process
     # in the course of handling a ConnectionError
@@ -245,17 +229,13 @@ defmodule Bandit.Pipeline do
     {:error, error}
   end
 
-  defp handle_error(kind, reason, stacktrace, transport, span, opts, conn) do
+  defp handle_error(kind, reason, stacktrace, transport, span, opts, metadata) do
     Bandit.Telemetry.span_exception(span, kind, reason, stacktrace)
     status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
-      Logger.error(
-        Exception.format(kind, reason, stacktrace),
-        domain: [:bandit],
-        crash_reason: crash_reason(kind, reason, stacktrace),
-        conn: conn
-      )
+      logger_metadata = Bandit.Logger.logger_metadata_for(kind, reason, stacktrace, metadata)
+      Logger.error(Exception.format(kind, reason, stacktrace), logger_metadata)
 
       Bandit.HTTPTransport.send_on_error(transport, reason)
       {:error, reason}
@@ -264,25 +244,4 @@ defmodule Bandit.Pipeline do
       {:ok, transport}
     end
   end
-
-  def maybe_log_error(%Bandit.TransportError{error: :closed} = error, stacktrace, http_opts) do
-    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_client_closures, false))
-  end
-
-  def maybe_log_error(error, stacktrace, http_opts) do
-    do_maybe_log_error(error, stacktrace, Keyword.get(http_opts, :log_protocol_errors, :short))
-  end
-
-  defp do_maybe_log_error(error, stacktrace, :short) do
-    Logger.error(Exception.format_banner(:error, error, stacktrace), domain: [:bandit])
-  end
-
-  defp do_maybe_log_error(error, stacktrace, :verbose) do
-    Logger.error(Exception.format(:error, error, stacktrace), domain: [:bandit])
-  end
-
-  defp do_maybe_log_error(_error, _stacktrace, false), do: :ok
-
-  defp crash_reason(:throw, reason, stacktrace), do: {{:nocatch, reason}, stacktrace}
-  defp crash_reason(_, reason, stacktrace), do: {reason, stacktrace}
 end

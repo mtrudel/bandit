@@ -14,10 +14,7 @@ defmodule Bandit.HTTP2.Handler do
     connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
     {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
   rescue
-    error ->
-      # Reuse Pipeline's error configuration logic
-      Bandit.Pipeline.maybe_log_error(error, __STACKTRACE__, state.opts.http)
-      {:close, state}
+    error -> rescue_error(error, __STACKTRACE__, socket, state)
   end
 
   @impl ThousandIsland.Handler
@@ -40,6 +37,8 @@ defmodule Bandit.HTTP2.Handler do
         raise Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code
     end)
     |> then(&{:continue, &1})
+  rescue
+    error -> rescue_error(error, __STACKTRACE__, socket, state)
   end
 
   @impl ThousandIsland.Handler
@@ -61,18 +60,6 @@ defmodule Bandit.HTTP2.Handler do
       state.connection
     )
   end
-
-  @impl ThousandIsland.Handler
-  def handle_error({%Bandit.HTTP2.Errors.ConnectionError{} = error, _stacktrace}, socket, state) do
-    Bandit.HTTP2.Connection.close_connection(
-      error.error_code,
-      error.message,
-      socket,
-      state.connection
-    )
-  end
-
-  def handle_error(_error, _socket, _state), do: :ok
 
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
@@ -100,6 +87,8 @@ defmodule Bandit.HTTP2.Handler do
       )
 
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_info({{:send_headers, headers, end_stream}, stream_id}, {socket, state}) do
@@ -113,6 +102,8 @@ defmodule Bandit.HTTP2.Handler do
       )
 
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_info({{:send_recv_window_update, size_increment}, stream_id}, {socket, state}) do
@@ -124,22 +115,48 @@ defmodule Bandit.HTTP2.Handler do
     )
 
     {:noreply, {socket, state}, socket.read_timeout}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_info({{:send_rst_stream, error_code}, stream_id}, {socket, state}) do
     Bandit.HTTP2.Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
     {:noreply, {socket, state}, socket.read_timeout}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_info({{:close_connection, error_code, msg}, _stream_id}, {socket, state}) do
-    {:error, reason, connection} =
-      Bandit.HTTP2.Connection.close_connection(error_code, msg, socket, state.connection)
-
-    {:stop, reason, {socket, %{state | connection: connection}}}
+    Bandit.HTTP2.Connection.close_connection(error_code, msg, socket, state.connection)
+    {:stop, :normal, {socket, state}}
   end
 
   def handle_info({:EXIT, pid, _reason}, {socket, state}) do
     connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+  end
+
+  defp rescue_error(error, stacktrace, socket, state) do
+    do_rescue_error(error, stacktrace, socket, state)
+    {:close, state}
+  end
+
+  defp rescue_error_handle_info(error, stacktrace, socket, state) do
+    do_rescue_error(error, stacktrace, socket, state)
+    {:stop, :normal}
+  end
+
+  defp do_rescue_error(error, stacktrace, socket, state) do
+    _ =
+      if state.connection do
+        Bandit.HTTP2.Connection.close_connection(
+          error.error_code,
+          error.message,
+          socket,
+          state.connection
+        )
+      end
+
+    Bandit.Logger.maybe_log_protocol_error(error, stacktrace, state.opts, plug: state.plug)
   end
 end

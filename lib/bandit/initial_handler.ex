@@ -23,7 +23,8 @@ defmodule Bandit.InitialHandler do
     case {state.http_1_enabled, state.http_2_enabled, alpn_protocol(socket), sniff_wire(socket)} do
       {_, _, _, :likely_tls} ->
         Logger.warning("Connection that looks like TLS received on a clear channel",
-          domain: [:bandit]
+          domain: [:bandit],
+          plug: state.plug
         )
 
         {:close, state}
