@@ -2116,7 +2116,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2145,7 +2146,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2176,7 +2178,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2211,7 +2214,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2242,7 +2246,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2279,7 +2284,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2306,7 +2312,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2333,7 +2340,8 @@ defmodule HTTP1RequestTest do
                 %{
                   connection_telemetry_span_context: reference(),
                   telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, [])
+                  conn: struct_like(Plug.Conn, []),
+                  plug: {__MODULE__, []}
                 }}
              ]
     end
@@ -2352,6 +2360,7 @@ defmodule HTTP1RequestTest do
                  ~> [
                    {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
                     %{
+                      plug: {__MODULE__, []},
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       error: string()
@@ -2376,6 +2385,7 @@ defmodule HTTP1RequestTest do
                  ~> [
                    {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
                     %{
+                      plug: {__MODULE__, []},
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       error: "Header read timeout"
@@ -2403,6 +2413,7 @@ defmodule HTTP1RequestTest do
                       connection_telemetry_span_context: reference(),
                       telemetry_span_context: reference(),
                       conn: struct_like(Plug.Conn, []),
+                      plug: {__MODULE__, []},
                       kind: :exit,
                       exception: %RuntimeError{message: "boom"},
                       stacktrace: list()
