@@ -1,6 +1,5 @@
 defmodule WebSocketUpgradeTest do
-  # False due to log & telemetry capture
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use ServerHelpers
   use Machete
 
@@ -70,29 +69,25 @@ defmodule WebSocketUpgradeTest do
     end
 
     test "emits HTTP telemetry on upgrade", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, MyNoopWebSock)
 
-      Process.sleep(100)
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
   end
 end
