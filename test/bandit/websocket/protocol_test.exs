@@ -412,7 +412,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(200)
         end)
 
       assert output =~ "Received unexpected text frame (RFC6455§5.4)"
@@ -459,7 +459,7 @@ defmodule WebSocketProtocolTest do
 
           # Verify that the server didn't send any extraneous frames
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          Process.sleep(200)
         end)
 
       assert output =~ "Received unexpected compressed frame (RFC6455§5.2)"

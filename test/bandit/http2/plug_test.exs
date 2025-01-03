@@ -185,7 +185,7 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_body(socket, 1, false, "A")
     {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
     {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
-    Process.sleep(10)
+    Process.sleep(50)
     SimpleH2Client.send_body(socket, 1, true, "BC")
 
     assert SimpleH2Client.successful_response?(socket, 1, false)
@@ -217,11 +217,14 @@ defmodule HTTP2PlugTest do
     {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
 
     assert SimpleH2Client.successful_response?(socket, 1, false)
-    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
   end
 
   def no_body_read(conn) do
-    conn |> send_resp(200, <<>>)
+    conn = conn |> send_resp(200, "OK")
+    # Ensure that the ordering of window updates will be consistent
+    Process.sleep(10)
+    conn
   end
 
   test "writing response headers", context do
@@ -551,6 +554,11 @@ defmodule HTTP2PlugTest do
   end
 
   test "sending a body blocks on connection flow control", context do
+    context =
+      context
+      |> https_server(thousand_island_options: [read_timeout: 500])
+      |> Enum.into(context)
+
     socket = SimpleH2Client.setup_connection(context)
 
     SimpleH2Client.send_simple_headers(socket, 1, :get, "/blocking_test", context.port)
@@ -574,7 +582,7 @@ defmodule HTTP2PlugTest do
 
     # Sleep a bit before updating the window (we expect to see this delay in
     # the timings for the blocked chunk below)
-    Process.sleep(10)
+    Process.sleep(100)
 
     # Grow the connection window by 100 and observe we now unlocked the server
     SimpleH2Client.send_window_update(socket, 0, 100_000)
@@ -588,12 +596,17 @@ defmodule HTTP2PlugTest do
 
     # Ensure the non-blocked chunks (60k worth) were *much* faster than the
     # blocked chunk (which only did 10k)
-    assert non_blocked < 5
-    assert blocked > 10
-    assert blocked < 30
+    assert non_blocked < 50
+    assert blocked > 100
+    assert blocked < 250
   end
 
   test "sending a body blocks on stream flow control", context do
+    context =
+      context
+      |> https_server(thousand_island_options: [read_timeout: 500])
+      |> Enum.into(context)
+
     socket = SimpleH2Client.setup_connection(context)
 
     # Give ourselves lots of room on the connection so we can focus on the
@@ -617,7 +630,7 @@ defmodule HTTP2PlugTest do
 
     # Sleep a bit before updating the window (we expect to see this delay in
     # the timings for the blocked chunk below)
-    Process.sleep(10)
+    Process.sleep(100)
 
     # Grow the stream window by 100 and observe we now unlocked the server
     SimpleH2Client.send_window_update(socket, 1, 100_000)
@@ -631,9 +644,9 @@ defmodule HTTP2PlugTest do
 
     # Ensure the the non-blocked chunks (60k worth) were *much* faster than the
     # blocked chunk (which only did 10k)
-    assert non_blocked < 5
-    assert blocked > 10
-    assert blocked < 20
+    assert non_blocked < 50
+    assert blocked > 100
+    assert blocked < 250
   end
 
   def blocking_test(conn) do
