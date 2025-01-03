@@ -773,21 +773,19 @@ defmodule HTTP2PlugTest do
 
   describe "telemetry" do
     test "it should send `start` events for normally completing requests", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :start]]})
-
       Req.get!(context.req, url: "/send_200")
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :start], %{monotonic_time: integer()},
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}
+
+      assert measurements ~> %{monotonic_time: integer()}
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     def send_200(conn) do
@@ -795,59 +793,55 @@ defmodule HTTP2PlugTest do
     end
 
     test "it should send `stop` events for normally completing requests", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.get!(context.req, url: "/send_200")
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  resp_body_bytes: 0,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               resp_body_bytes: 0,
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     test "it should add req metrics to `stop` events for requests with no request body",
          context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.post!(context.req, url: "/do_read_body", body: <<>>)
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  req_body_start_time: integer(),
-                  req_body_end_time: integer(),
-                  req_body_bytes: 0,
-                  resp_body_bytes: 2,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               req_body_start_time: integer(),
+               req_body_end_time: integer(),
+               req_body_bytes: 0,
+               resp_body_bytes: 2,
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     def do_read_body(conn) do
@@ -856,220 +850,178 @@ defmodule HTTP2PlugTest do
     end
 
     test "it should add req metrics to `stop` events for requests with request body", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  req_body_start_time: integer(),
-                  req_body_end_time: integer(),
-                  req_body_bytes: 80,
-                  resp_body_bytes: 2,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               req_body_start_time: integer(),
+               req_body_end_time: integer(),
+               req_body_bytes: 80,
+               resp_body_bytes: 2,
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     test "it should add req metrics to `stop` events for requests with content encoding",
          context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.post!(context.req,
         url: "/do_read_body",
         body: String.duplicate("a", 80),
         headers: [{"accept-encoding", "gzip"}]
       )
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  req_body_start_time: integer(),
-                  req_body_end_time: integer(),
-                  req_body_bytes: 80,
-                  resp_uncompressed_body_bytes: 2,
-                  resp_body_bytes: 22,
-                  resp_compression_method: "gzip",
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               req_body_start_time: integer(),
+               req_body_end_time: integer(),
+               req_body_bytes: 80,
+               resp_uncompressed_body_bytes: 2,
+               resp_body_bytes: 22,
+               resp_compression_method: "gzip",
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     test "it should add resp metrics to `stop` events for chunked responses", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.get!(context.req, url: "/chunk_test")
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  resp_body_bytes: 4,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               resp_body_bytes: 4,
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
     test "it should add resp metrics to `stop` events for sendfile responses", context do
-      {:ok, collector_pid} =
-        start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
-
       Req.get!(context.req, url: "/send_full_file")
 
-      assert Bandit.TelemetryCollector.get_events(collector_pid)
-             ~> [
-               {[:bandit, :request, :stop],
-                %{
-                  monotonic_time: integer(),
-                  duration: integer(),
-                  req_header_end_time: integer(),
-                  resp_body_bytes: 6,
-                  resp_start_time: integer(),
-                  resp_end_time: integer()
-                },
-                %{
-                  connection_telemetry_span_context: reference(),
-                  telemetry_span_context: reference(),
-                  conn: struct_like(Plug.Conn, []),
-                  plug: {__MODULE__, []}
-                }}
-             ]
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(),
+               duration: integer(),
+               req_header_end_time: integer(),
+               resp_body_bytes: 6,
+               resp_start_time: integer(),
+               resp_end_time: integer()
+             }
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []}
+             }
     end
 
+    @tag :capture_log
     test "it should send `stop` events for malformed requests", context do
-      output =
-        capture_log(fn ->
-          {:ok, collector_pid} =
-            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :stop]]})
+      socket = SimpleH2Client.setup_connection(context)
 
-          socket = SimpleH2Client.setup_connection(context)
+      # Take uppercase header example from H2Spec
+      headers =
+        <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
+          129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-          # Take uppercase header example from H2Spec
-          headers =
-            <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92,
-              11, 129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
-          SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
 
-          Process.sleep(100)
+      assert measurements ~> %{monotonic_time: integer(), duration: integer()}
 
-          assert Bandit.TelemetryCollector.get_events(collector_pid)
-                 ~> [
-                   {[:bandit, :request, :stop], %{monotonic_time: integer(), duration: integer()},
-                    %{
-                      plug: {__MODULE__, []},
-                      connection_telemetry_span_context: reference(),
-                      telemetry_span_context: reference(),
-                      error: string()
-                    }}
-                 ]
-        end)
-
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received uppercase header"
+      assert metadata
+             ~> %{
+               plug: {__MODULE__, []},
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               error: string()
+             }
     end
 
+    @tag :capture_log
     test "it should send `exception` events for raising requests", context do
-      output =
-        capture_log(fn ->
-          {:ok, collector_pid} =
-            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+      Req.get(context.req, url: "/raise_error")
 
-          Req.get(context.req, url: "/raise_error")
+      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}
 
-          Process.sleep(100)
+      assert measurements ~> %{monotonic_time: integer()}
 
-          assert Bandit.TelemetryCollector.get_events(collector_pid)
-                 ~> [
-                   {[:bandit, :request, :exception], %{monotonic_time: integer()},
-                    %{
-                      connection_telemetry_span_context: reference(),
-                      telemetry_span_context: reference(),
-                      conn: struct_like(Plug.Conn, []),
-                      plug: {__MODULE__, []},
-                      kind: :exit,
-                      exception: %RuntimeError{message: "boom"},
-                      stacktrace: list()
-                    }}
-                 ]
-        end)
-
-      assert output =~ "(RuntimeError) boom"
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []},
+               kind: :exit,
+               exception: %RuntimeError{message: "boom"},
+               stacktrace: list()
+             }
     end
 
     def raise_error(_conn) do
       raise "boom"
     end
 
+    @tag :capture_log
     test "it should not send `exception` events for throwing requests", context do
-      output =
-        capture_log(fn ->
-          {:ok, collector_pid} =
-            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+      Req.get!(context.req, url: "/uncaught_throw")
 
-          Req.get!(context.req, url: "/uncaught_throw")
-
-          Process.sleep(100)
-
-          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
-        end)
-
-      assert output =~ "(throw) \"thrown\""
+      refute_receive {:telemetry, [:bandit, :request, :exception], _, _}
     end
 
     def uncaught_throw(_conn) do
       throw("thrown")
     end
 
+    @tag :capture_log
     test "it should not send `exception` events for exiting requests", context do
-      output =
-        capture_log(fn ->
-          {:ok, collector_pid} =
-            start_supervised({Bandit.TelemetryCollector, [[:bandit, :request, :exception]]})
+      Req.get!(context.req, url: "/uncaught_exit")
 
-          Req.get!(context.req, url: "/uncaught_exit")
-
-          Process.sleep(100)
-
-          assert [] = Bandit.TelemetryCollector.get_events(collector_pid)
-        end)
-
-      assert output =~ "(exit) \"exited\""
+      refute_receive {:telemetry, [:bandit, :request, :exception], _, _}
     end
 
     def uncaught_exit(_conn) do

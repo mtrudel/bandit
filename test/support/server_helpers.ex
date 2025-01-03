@@ -5,6 +5,7 @@ defmodule ServerHelpers do
     quote location: :keep do
       import Plug.Conn
 
+      require TelemetryHelpers
 
       def http_server(context, opts \\ []) do
         [
@@ -36,6 +37,8 @@ defmodule ServerHelpers do
           |> Keyword.merge(opts)
           |> Bandit.child_spec()
           |> start_supervised()
+
+        TelemetryHelpers.attach_all_events(__MODULE__)
 
         {:ok, {_ip, port}} = ThousandIsland.listener_info(server_pid)
         [base: "#{config[:scheme]}://localhost:#{port}", port: port, server_pid: server_pid]
