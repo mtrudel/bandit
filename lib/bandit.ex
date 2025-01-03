@@ -317,12 +317,15 @@ defmodule Bandit do
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
-        startup_log && Logger.log(startup_log, info(scheme, display_plug, pid), domain: [:bandit])
+        startup_log &&
+          Logger.log(startup_log, info(scheme, display_plug, pid), domain: [:bandit], plug: plug)
+
         {:ok, pid}
 
       {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
         Logger.error([info(scheme, display_plug, nil), " failed, port #{port} already in use"],
-          domain: [:bandit]
+          domain: [:bandit],
+          plug: plug
         )
 
         error

@@ -203,7 +203,11 @@ defmodule Bandit.HTTP2.Connection do
   # Catch-all handler for unknown frame types
 
   def handle_frame(%Bandit.HTTP2.Frame.Unknown{} = frame, _socket, connection) do
-    Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})", domain: [:bandit])
+    Logger.warning("Unknown frame (#{inspect(Map.from_struct(frame))})",
+      domain: [:bandit],
+      plug: connection.plug
+    )
+
     connection
   end
 
