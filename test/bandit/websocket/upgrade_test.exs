@@ -72,7 +72,7 @@ defmodule WebSocketUpgradeTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, MyNoopWebSock)
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{

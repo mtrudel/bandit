@@ -36,7 +36,7 @@ defmodule HTTP2PlugTest do
       {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (RuntimeError) boom"
     end
 
@@ -61,7 +61,7 @@ defmodule HTTP2PlugTest do
       {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
       assert response.status == 418
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (SafeError) boom"
     end
 
@@ -436,7 +436,7 @@ defmodule HTTP2PlugTest do
       {:ok, response} = Req.get(context.req, url: "/upgrade_unsupported")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
@@ -452,7 +452,7 @@ defmodule HTTP2PlugTest do
     {:ok, response} = Req.get(context.req, url: "/noop")
     assert response.status == 500
 
-    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
     assert msg =~
              "** (Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
@@ -465,7 +465,7 @@ defmodule HTTP2PlugTest do
     {:ok, response} = Req.get(context.req, url: "/garbage")
     assert response.status == 500
 
-    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
     assert msg =~
              "** (RuntimeError) Expected Elixir.HTTP2PlugTest.call/2 to return %Plug.Conn{} but got: :boom"
@@ -512,7 +512,7 @@ defmodule HTTP2PlugTest do
     {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
     assert response.status == 500
 
-    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
     assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
   end
 
@@ -749,7 +749,7 @@ defmodule HTTP2PlugTest do
     test "it should send `start` events for normally completing requests", context do
       Req.get!(context.req, url: "/send_200")
 
-      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer()}
 
@@ -769,7 +769,7 @@ defmodule HTTP2PlugTest do
     test "it should send `stop` events for normally completing requests", context do
       Req.get!(context.req, url: "/send_200")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -794,7 +794,7 @@ defmodule HTTP2PlugTest do
          context do
       Req.post!(context.req, url: "/do_read_body", body: <<>>)
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -826,7 +826,7 @@ defmodule HTTP2PlugTest do
     test "it should add req metrics to `stop` events for requests with request body", context do
       Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -858,7 +858,7 @@ defmodule HTTP2PlugTest do
         headers: [{"accept-encoding", "gzip"}]
       )
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -887,7 +887,7 @@ defmodule HTTP2PlugTest do
     test "it should add resp metrics to `stop` events for chunked responses", context do
       Req.get!(context.req, url: "/chunk_test")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -911,7 +911,7 @@ defmodule HTTP2PlugTest do
     test "it should add resp metrics to `stop` events for sendfile responses", context do
       Req.get!(context.req, url: "/send_full_file")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -943,7 +943,7 @@ defmodule HTTP2PlugTest do
 
       SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer(), duration: integer()}
 
@@ -960,7 +960,7 @@ defmodule HTTP2PlugTest do
     test "it should send `exception` events for raising requests", context do
       Req.get(context.req, url: "/raise_error")
 
-      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer()}
 

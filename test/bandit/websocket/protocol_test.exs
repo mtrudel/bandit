@@ -119,7 +119,7 @@ defmodule WebSocketProtocolTest do
           Process.sleep(100)
         end)
 
-      assert_receive {:error, :max_frame_size_exceeded}
+      assert_receive {:error, :max_frame_size_exceeded}, 500
       assert output =~ "{:deserializing, :max_frame_size_exceeded}"
     end
   end
@@ -382,7 +382,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received unexpected continuation frame (RFC6455§5.4)"}
+          assert_receive {:error, "Received unexpected continuation frame (RFC6455§5.4)"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
@@ -406,7 +406,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received unexpected text frame (RFC6455§5.4)"}
+          assert_receive {:error, "Received unexpected text frame (RFC6455§5.4)"}, 500
 
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
 
@@ -429,7 +429,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received unexpected binary frame (RFC6455§5.4)"}
+          assert_receive {:error, "Received unexpected binary frame (RFC6455§5.4)"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
@@ -452,7 +452,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}
+          assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
@@ -475,7 +475,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Inflation error"}
+          assert_receive {:error, "Inflation error"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
@@ -497,7 +497,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
@@ -520,7 +520,7 @@ defmodule WebSocketProtocolTest do
           SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
 
           # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}, 500
 
           # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}

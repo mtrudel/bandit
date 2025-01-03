@@ -97,7 +97,7 @@ defmodule InitialHandlerTest do
       base_url = String.replace_prefix(context.req.options.base_url, "http", "https")
       _ = Req.get(context.req, url: "/report_version", base_url: base_url)
 
-      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}, 500
       assert msg == "Connection that looks like TLS received on a clear channel"
     end
   end

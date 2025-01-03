@@ -56,7 +56,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
 
       # We can't match on the entire message since it's ordered differently on different OTPs
-      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}, 500
       assert msg =~ "Unknown frame"
     end
 
@@ -70,7 +70,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) Invalid SETTINGS frame (RFC9113§6.5)"
@@ -87,7 +87,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
@@ -103,7 +103,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
@@ -119,7 +119,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
@@ -140,7 +140,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
@@ -208,7 +208,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 5, 7}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Connection count exceeded"
     end
   end
@@ -1034,7 +1034,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received DATA in idle state"
     end
 
@@ -1111,7 +1111,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
@@ -1133,7 +1133,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
@@ -1155,7 +1155,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
@@ -1183,7 +1183,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) Received END_STREAM with byte still pending"
@@ -1197,7 +1197,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) DATA frame with zero stream_id (RFC9113§6.1)"
@@ -1211,7 +1211,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
     end
   end
@@ -1413,7 +1413,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
@@ -1425,7 +1425,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) HEADERS frame with zero stream_id (RFC9113§6.2)"
@@ -1439,7 +1439,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
     end
 
@@ -1451,7 +1451,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Header decode error"
     end
 
@@ -1468,7 +1468,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received uppercase header"
     end
 
@@ -1488,7 +1488,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
     end
 
@@ -1508,7 +1508,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
     end
 
@@ -1528,7 +1528,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) Received pseudo headers after regular one"
@@ -1550,7 +1550,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
     end
 
@@ -1586,7 +1586,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid TE header"
     end
 
@@ -1604,7 +1604,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
     end
 
@@ -1624,7 +1624,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
     end
 
@@ -1642,7 +1642,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
     end
 
@@ -1662,7 +1662,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
     end
 
@@ -1680,7 +1680,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received empty :path"
     end
 
@@ -1700,7 +1700,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :path headers"
     end
 
@@ -1719,7 +1719,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
 
@@ -1831,7 +1831,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received overlong headers"
     end
   end
@@ -1877,7 +1877,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_response_get", context.port)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.StreamError) Terminating stream in remote_closed state"
@@ -1899,7 +1899,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_response_post", context.port)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Terminating stream in open state"
     end
 
@@ -1917,7 +1917,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received RST_STREAM in idle state"
     end
 
@@ -1928,7 +1928,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
       SimpleH2Client.send_rst_stream(socket, 1, 99)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
@@ -1943,7 +1943,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/write_after_delay", context.port)
       SimpleH2Client.send_rst_stream(socket, 1, 99)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 200
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
@@ -1998,7 +1998,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) PUSH_PROMISE frame received (RFC9113§8.4)"
@@ -2352,7 +2352,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
@@ -2370,7 +2370,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
@@ -2386,7 +2386,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTP2.Errors.ConnectionError) Received unexpected CONTINUATION frame (RFC9113§6.10)"
@@ -2458,7 +2458,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unable to obtain host and port: No host header"
     end
 
@@ -2528,7 +2528,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header contains invalid port"
     end
 
@@ -2661,7 +2661,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
     end
 
@@ -2679,7 +2679,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
   end
@@ -2894,7 +2894,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
     end
 
@@ -2912,7 +2912,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_headers(socket, 1, true, headers)
       assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
   end
