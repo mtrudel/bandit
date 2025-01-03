@@ -3,7 +3,6 @@ defmodule HTTP2ProtocolTest do
   use ServerHelpers
 
   import Bitwise
-  import ExUnit.CaptureLog
 
   setup :https_server
 
@@ -20,9 +19,9 @@ defmodule HTTP2ProtocolTest do
       end)
       |> Enum.each(fn byte -> Transport.send(socket, byte) end)
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
 
     test "it should handle cases where multiple frames arrive in the same packet", context do
@@ -35,15 +34,14 @@ defmodule HTTP2ProtocolTest do
           <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
       )
 
-      assert {:ok, 4, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
   describe "errors and unexpected frames" do
-    test "it should silently ignore client closes",
-         context do
+    test "it should silently ignore client closes", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
       SimpleH2Client.send_goaway(socket, 0, 0)
@@ -51,92 +49,83 @@ defmodule HTTP2ProtocolTest do
       Process.sleep(100)
     end
 
+    @tag :capture_log
     test "it should ignore unknown frame types", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
-          SimpleH2Client.send_frame(socket, 254, 0, 0, <<>>)
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_frame(socket, 254, 0, 0, <<>>)
+      assert SimpleH2Client.connection_alive?(socket)
 
       # We can't match on the entire message since it's ordered differently on different OTPs
-      assert output =~ "Unknown frame"
+      assert_receive {:log, %{level: :warning, msg: {:string, msg}}}, 500
+      assert msg =~ "Unknown frame"
     end
 
+    @tag :capture_log
     test "it should shut down the connection gracefully and log when encountering a connection error",
          context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      errors =
-        capture_log(fn ->
-          # Send a bogus SETTINGS frame
-          SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      # Send a bogus SETTINGS frame
+      SimpleH2Client.send_frame(socket, 4, 0, 1, <<>>)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert errors =~
-               "(Bandit.HTTP2.Errors.ConnectionError) Invalid SETTINGS frame (RFC9113§6.5)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Invalid SETTINGS frame (RFC9113§6.5)"
     end
 
+    @tag :capture_log
     test "it should shut down the connection gracefully and log when encountering a connection error related to a stream",
          context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      errors =
-        capture_log(fn ->
-          # Send a WINDOW_UPDATE on an idle stream
-          SimpleH2Client.send_window_update(socket, 1, 1234)
+      # Send a WINDOW_UPDATE on an idle stream
+      SimpleH2Client.send_window_update(socket, 1, 1234)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Received WINDOW_UPDATE in idle state"
     end
 
+    @tag :capture_log
     test "it should shut down the stream gracefully and log when encountering a stream error",
          context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
+      # Send trailers with pseudo headers
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      errors =
-        capture_log(fn ->
-          # Send trailers with pseudo headers
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
-      assert errors =~
-               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
+    @tag :capture_log
     test "stream errors are short logged by default", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      output =
-        capture_log(fn ->
-          # Send trailers with pseudo headers
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      # Send trailers with pseudo headers
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~
-               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
-      # Make sure we don't log a stacktrace
-      refute output =~ "lib/bandit/pipeline.ex:"
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
+    @tag :capture_log
     test "stream errors are verbosely logged if so configured", context do
       context =
         context
@@ -146,20 +135,14 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      output =
-        capture_log(fn ->
-          # Send trailers with pseudo headers
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      # Send trailers with pseudo headers
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~
-               "[error] ** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
-
-      # Make sure we log a stacktrace
-      assert output =~ "lib/bandit/pipeline.ex:"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+      assert msg =~ "lib/bandit/pipeline.ex:"
     end
 
     test "stream errors are not logged if so configured", context do
@@ -171,66 +154,62 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
 
-      output =
-        capture_log(fn ->
-          # Send trailers with pseudo headers
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      # Send trailers with pseudo headers
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output == ""
+      refute_receive {:log, %{level: :error}}
     end
 
     test "it should shut down the connection after read timeout has been reached with no initial data sent",
          context do
+      context = https_server(context, thousand_island_options: [read_timeout: 100])
       socket = SimpleH2Client.tls_client(context)
-      Process.sleep(1500)
+      Process.sleep(110)
       assert Transport.recv(socket, 0) == {:error, :closed}
     end
 
     test "it should shut down the connection after read timeout has been reached with no data sent",
          context do
+      context = https_server(context, thousand_island_options: [read_timeout: 100])
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
-      Process.sleep(1500)
+      Process.sleep(110)
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
 
+    @tag :capture_log
     test "returns a connection error if too many requests are sent", context do
-      output =
-        capture_log(fn ->
-          context = https_server(context, http_2_options: [max_requests: 3])
-          socket = SimpleH2Client.setup_connection(context)
-          port = context[:port]
+      context = https_server(context, http_2_options: [max_requests: 3])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
 
-          {:ok, send_ctx} =
-            SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
 
-          {:ok, 1, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket)
-          assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      {:ok, 1, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
-          {:ok, send_ctx} =
-            SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", port, send_ctx)
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", port, send_ctx)
 
-          {:ok, 3, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
-          assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+      {:ok, 3, false, _, recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
 
-          {:ok, send_ctx} =
-            SimpleH2Client.send_simple_headers(socket, 5, :get, "/body_response", port, send_ctx)
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 5, :get, "/body_response", port, send_ctx)
 
-          {:ok, 5, false, _, _recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
-          assert SimpleH2Client.recv_body(socket) == {:ok, 5, true, "OK"}
+      {:ok, 5, false, _, _recv_ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 5, true, "OK"}
 
-          {:ok, _send_ctx} =
-            SimpleH2Client.send_simple_headers(socket, 7, :get, "/body_response", port, send_ctx)
+      {:ok, _send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 7, :get, "/body_response", port, send_ctx)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 5, 7}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 5, 7}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Connection count exceeded"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Connection count exceeded"
     end
   end
 
@@ -238,7 +217,7 @@ defmodule HTTP2ProtocolTest do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert SimpleH2Client.recv_frame(socket) == {:ok, 4, 0, 0, <<>>}
+      assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<>>}
     end
 
     test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
@@ -249,10 +228,10 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.recv_headers(socket)
 
       expected = String.duplicate("a", 20_000)
-      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
-      assert {:ok, 0, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
       expected = String.duplicate("a", 10_000)
-      assert {:ok, 0, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
     end
 
     def send_50k(conn) do
@@ -1046,19 +1025,17 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, body)
     end
 
+    @tag :capture_log
     test "rejects DATA frames received on an idle stream", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_body(socket, 1, true, "OK")
-          {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      SimpleH2Client.send_body(socket, 1, true, "OK")
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Received DATA in idle state"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received DATA in idle state"
     end
 
     test "reads a one frame body if one frame is sent", context do
@@ -1118,131 +1095,124 @@ defmodule HTTP2ProtocolTest do
     end
 
     # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    @tag :capture_log
     test "returns a stream error if content length contains non-matching values", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "POST"},
-            {":path", "/expect_body_with_multiple_content_length"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"content-length", "8000,8001,8000"}
-          ]
+      headers = [
+        {":method", "POST"},
+        {":path", "/expect_body_with_multiple_content_length"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "8000,8001,8000"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, false, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent content-length is negative", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "POST"},
-            {":path", "/echo"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"content-length", "-321"}
-          ]
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "-321"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, false, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent content length is non-integer", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "POST"},
-            {":path", "/echo"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"content-length", "foo"}
-          ]
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "foo"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, false, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) invalid content-length header (RFC9112§6.3.5)"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent content-length doesn't match sent data", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "POST"},
-            {":path", "/echo"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"content-length", "3"}
-          ]
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "3"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, false, headers)
-          SimpleH2Client.send_body(socket, 1, false, "OK")
-          SimpleH2Client.send_body(socket, 1, true, "OK")
+      SimpleH2Client.send_headers(socket, 1, false, headers)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+      SimpleH2Client.send_body(socket, 1, true, "OK")
 
-          {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-          {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.StreamError) Received END_STREAM with byte still pending"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Received END_STREAM with byte still pending"
     end
 
+    @tag :capture_log
     test "rejects DATA frames received on a zero stream id", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_body(socket, 0, true, "OK")
+      SimpleH2Client.send_body(socket, 0, true, "OK")
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) DATA frame with zero stream_id (RFC9113§6.1)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) DATA frame with zero stream_id (RFC9113§6.1)"
     end
 
+    @tag :capture_log
     test "rejects DATA frames received on an invalid stream id", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_body(socket, 2, true, "OK")
+      SimpleH2Client.send_body(socket, 2, true, "OK")
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
     end
   end
 
@@ -1288,10 +1258,10 @@ defmodule HTTP2ProtocolTest do
       # We assume that 60k of random data will get hpacked down into somewhere
       # between 49152 and 65536 bytes, so we'll need 3 packets total
 
-      {:ok, 1, 0, 1, fragment_1} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 0, 1, fragment_2} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 0, 1, fragment_3} = SimpleH2Client.recv_frame(socket)
-      {:ok, 9, 4, 1, fragment_4} = SimpleH2Client.recv_frame(socket)
+      {:ok, :headers, 0, 1, fragment_1} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 0, 1, fragment_2} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 0, 1, fragment_3} = SimpleH2Client.recv_frame(socket)
+      {:ok, :continuation, 4, 1, fragment_4} = SimpleH2Client.recv_frame(socket)
 
       {:ok, headers, _ctx} =
         [fragment_1, fragment_2, fragment_3, fragment_4]
@@ -1411,201 +1381,177 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
     end
 
+    @tag :capture_log
     test "accepts HEADER frames sent as trailers", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_body(socket, 1, false, "OK")
-          SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "trailer"}], ctx)
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "trailer"}], ctx)
 
-          {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-          {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
-          assert SimpleH2Client.successful_response?(socket, 1, false)
-          assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
-
-      assert output =~ "Ignoring trailers [{\"x-trailer\", \"trailer\"}]"
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
+    @tag :capture_log
     test "rejects HEADER frames sent as trailers that contain pseudo headers", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
-          SimpleH2Client.send_body(socket, 1, false, "OK")
-          Process.sleep(100)
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
 
-          {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-          {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
-          SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
+      SimpleH2Client.send_headers(socket, 1, true, [{":path", "/foo"}], ctx)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          assert SimpleH2Client.connection_alive?(socket)
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received trailers with pseudo headers"
     end
 
-    test "closes with an error when receiving a zero stream ID",
-         context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+    @tag :capture_log
+    test "closes with an error when receiving a zero stream ID", context do
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_simple_headers(socket, 0, :get, "/echo", context.port)
+      SimpleH2Client.send_simple_headers(socket, 0, :get, "/echo", context.port)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) HEADERS frame with zero stream_id (RFC9113§6.2)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) HEADERS frame with zero stream_id (RFC9113§6.2)"
     end
 
-    test "closes with an error when receiving an even stream ID",
-         context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+    @tag :capture_log
+    test "closes with an error when receiving an even stream ID", context do
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_simple_headers(socket, 2, :get, "/echo", context.port)
+      SimpleH2Client.send_simple_headers(socket, 2, :get, "/echo", context.port)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
     end
 
+    @tag :capture_log
     test "closes with an error on a header frame with undecompressable header block", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_frame(socket, 1, 0x2C, 1, <<2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
+      SimpleH2Client.send_frame(socket, 1, 0x2C, 1, <<2, 1::1, 12::31, 34, 1, 2, 3, 4, 5>>)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Header decode error"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Header decode error"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent headers with uppercase names", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          # Take example from H2Spec
-          headers =
-            <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92,
-              11, 129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
+      # Take example from H2Spec
+      headers =
+        <<130, 135, 68, 137, 98, 114, 209, 65, 226, 240, 123, 40, 147, 65, 139, 8, 157, 92, 11,
+          129, 112, 220, 109, 199, 26, 127, 64, 6, 88, 45, 84, 69, 83, 84, 2, 111, 107>>
 
-          SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
+      SimpleH2Client.send_frame(socket, 1, 5, 1, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received uppercase header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received uppercase header"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent headers with invalid pseudo headers", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {":bogus", "bogus"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":bogus", "bogus"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
     end
 
+    @tag :capture_log
     test "returns a stream error if sent headers with response pseudo headers", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {":status", "200"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":status", "200"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid pseudo header"
     end
 
+    @tag :capture_log
     test "returns a stream error if pseudo headers appear after regular ones", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {"regular-header", "boring"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {"regular-header", "boring"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.StreamError) Received pseudo headers after regular one"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Received pseudo headers after regular one"
     end
 
+    @tag :capture_log
     test "returns an error if (almost) any hop-by-hop headers are present", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"connection", "close"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"connection", "close"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
     end
 
     test "accepts TE header with a value of trailer", context do
@@ -1624,173 +1570,157 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, true)
     end
 
+    @tag :capture_log
     test "returns an error if TE header is present with a value other than trailers", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"},
-            {"te", "trailers, deflate"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"te", "trailers, deflate"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received invalid TE header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid TE header"
     end
 
+    @tag :capture_log
     test "returns a stream error if :method pseudo header is missing", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
     end
 
+    @tag :capture_log
     test "returns a stream error if multiple :method pseudo headers are received", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :method headers"
     end
 
+    @tag :capture_log
     test "returns a stream error if :scheme pseudo header is missing", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
     end
 
+    @tag :capture_log
     test "returns a stream error if multiple :scheme pseudo headers are received", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :scheme headers"
     end
 
+    @tag :capture_log
     test "returns a stream error if :path pseudo header is missing", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Received empty :path"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received empty :path"
     end
 
+    @tag :capture_log
     test "returns a stream error if multiple :path pseudo headers are received", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", "/"},
-            {":path", "/"},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Expected 1 :path headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected 1 :path headers"
     end
 
+    @tag :capture_log
     test "returns a stream error if :path pseudo headers is empty", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "HEAD"},
-            {":path", ""},
-            {":scheme", "https"},
-            {":authority", "localhost:#{context.port}"}
-          ]
+      headers = [
+        {":method", "HEAD"},
+        {":path", ""},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Path does not start with /"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
 
     test "combines Cookie headers per RFC9113§8.2.3", context do
@@ -1884,27 +1814,25 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
+    @tag :capture_log
     test "returns a stream error if sent header block is too large", context do
-      output =
-        capture_log(fn ->
-          context = https_server(context, http_2_options: [max_header_block_size: 40])
-          socket = SimpleH2Client.setup_connection(context)
+      context = https_server(context, http_2_options: [max_header_block_size: 40])
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers =
-            [
-              {":method", "HEAD"},
-              {":path", "/"},
-              {":scheme", "https"},
-              {":authority", "localhost:#{context[:port]}"}
-            ] ++ for i <- 1..37, do: {"header#{i}", "foo"}
+      headers =
+        [
+          {":method", "HEAD"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context[:port]}"}
+        ] ++ for i <- 1..37, do: {"header#{i}", "foo"}
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Received overlong headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received overlong headers"
     end
   end
 
@@ -1941,19 +1869,18 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
     end
 
+    @tag :capture_log
     test "sends RST_FRAME with internal error if we don't set a response with a closed client",
          context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_response_get", context.port)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/no_response_get", context.port)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTP2.Errors.StreamError) Terminating stream in remote_closed state"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Terminating stream in remote_closed state"
     end
 
     def no_response_get(conn) do
@@ -1964,19 +1891,16 @@ defmodule HTTP2ProtocolTest do
       %{conn | state: :sent}
     end
 
+    @tag :capture_log
     test "sends RST_FRAME with internal error if we don't set a response with an open client",
          context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_response_post", context.port)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_response_post", context.port)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 2}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTP2.Errors.StreamError) Terminating stream in open state"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Terminating stream in open state"
     end
 
     def no_response_post(conn) do
@@ -1985,54 +1909,46 @@ defmodule HTTP2ProtocolTest do
       %{conn | state: :sent}
     end
 
+    @tag :capture_log
     test "rejects RST_STREAM frames received on an idle stream", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          SimpleH2Client.send_rst_stream(socket, 1, 0)
+      SimpleH2Client.send_rst_stream(socket, 1, 0)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.ConnectionError) Received RST_STREAM in idle state"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received RST_STREAM in idle state"
     end
 
+    @tag :capture_log
     test "raises an error upon receipt of an RST_STREAM frame during reading", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
-          SimpleH2Client.send_rst_stream(socket, 1, 99)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
+      SimpleH2Client.send_rst_stream(socket, 1, 99)
 
-      assert errors =~
-               "[error] ** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
     def expect_reset(conn) do
       read_body(conn)
     end
 
+    @tag :capture_log
     test "raises an error upon receipt of an RST_STREAM frame during writing", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :get, "/write_after_delay", context.port)
-          SimpleH2Client.send_rst_stream(socket, 1, 99)
-          Process.sleep(200)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/write_after_delay", context.port)
+      SimpleH2Client.send_rst_stream(socket, 1, 99)
 
-      assert errors =~
-               "[error] ** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
     end
 
     def write_after_delay(conn) do
-      Process.sleep(100)
+      Process.sleep(10)
       send_resp(conn, 200, "OK")
     end
 
@@ -2040,28 +1956,20 @@ defmodule HTTP2ProtocolTest do
          context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :get, "/expect_chunk_error", context.port)
-          SimpleH2Client.send_rst_stream(socket, 1, 0)
-          Process.sleep(200)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/expect_chunk_error", context.port)
+      SimpleH2Client.send_rst_stream(socket, 1, 0)
 
-      assert errors == ""
+      refute_receive {:log, %{level: :error}}
     end
 
     test "considers :cancel RST_STREAM frame as a normal closure during chunk writing",
          context do
       socket = SimpleH2Client.setup_connection(context)
 
-      errors =
-        capture_log(fn ->
-          SimpleH2Client.send_simple_headers(socket, 1, :get, "/expect_chunk_error", context.port)
-          SimpleH2Client.send_rst_stream(socket, 1, 8)
-          Process.sleep(200)
-        end)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/expect_chunk_error", context.port)
+      SimpleH2Client.send_rst_stream(socket, 1, 8)
 
-      assert errors == ""
+      refute_receive {:log, %{level: :error}}
     end
 
     def expect_chunk_error(conn) do
@@ -2077,24 +1985,23 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
       SimpleH2Client.send_frame(socket, 4, 0, 0, <<>>)
-      assert {:ok, 4, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
   describe "PUSH_PROMISE frames" do
+    @tag :capture_log
     test "the server should reject any received PUSH_PROMISE frames", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.tls_client(context)
-          SimpleH2Client.exchange_prefaces(socket)
-          SimpleH2Client.send_frame(socket, 5, 0, 1, <<0, 0, 0, 3, 1, 2, 3>>)
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      SimpleH2Client.send_frame(socket, 5, 0, 1, <<0, 0, 0, 3, 1, 2, 3>>)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) PUSH_PROMISE frame received (RFC9113§8.4)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) PUSH_PROMISE frame received (RFC9113§8.4)"
     end
   end
 
@@ -2103,7 +2010,7 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
-      assert {:ok, 6, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
   end
 
@@ -2112,8 +2019,6 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       assert SimpleH2Client.connection_alive?(socket)
-
-      Process.sleep(100)
 
       ThousandIsland.stop(context.server_pid)
 
@@ -2182,6 +2087,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
+    @tag :slow
     test "does not issue a subsequent update until receive window goes below 2^30", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -2434,59 +2340,56 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "CONTINUATION frames" do
+    @tag :capture_log
     test "rejects non-CONTINUATION frames received when end_headers is false", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
-            headers_for_header_read_test(context)
+      <<header1::binary-size(20), _header2::binary-size(20), _header3::binary>> =
+        headers_for_header_read_test(context)
 
-          SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
-          SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+      SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
     end
 
+    @tag :capture_log
     test "rejects non-CONTINUATION frames received when from other streams", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
-            headers_for_header_read_test(context)
+      <<header1::binary-size(20), header2::binary-size(20), _header3::binary>> =
+        headers_for_header_read_test(context)
 
-          SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
-          SimpleH2Client.send_frame(socket, 9, 0, 2, header2)
+      SimpleH2Client.send_frame(socket, 1, 1, 1, header1)
+      SimpleH2Client.send_frame(socket, 9, 0, 2, header2)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Expected CONTINUATION frame (RFC9113§6.10)"
     end
 
+    @tag :capture_log
     test "rejects CONTINUATION frames received when not expected", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = headers_for_header_read_test(context)
+      headers = headers_for_header_read_test(context)
 
-          SimpleH2Client.send_frame(socket, 9, 4, 1, headers)
+      SimpleH2Client.send_frame(socket, 9, 4, 1, headers)
 
-          assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
-          Process.sleep(100)
-        end)
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
-      assert output =~
-               "(Bandit.HTTP2.Errors.ConnectionError) Received unexpected CONTINUATION frame (RFC9113§6.10)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Received unexpected CONTINUATION frame (RFC9113§6.10)"
     end
   end
 
@@ -2542,23 +2445,21 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
+    @tag :capture_log
     test "sends 400 if no host header set", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "/echo_components"},
-            {":scheme", "https"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
 
-      assert output =~ "(Bandit.HTTPError) Unable to obtain host and port: No host header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to obtain host and port: No host header"
     end
 
     test "derives port from host header", context do
@@ -2613,24 +2514,22 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
+    @tag :capture_log
     test "sends 400 if port cannot be parsed from host header", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "/echo_components"},
-            {":scheme", "https"},
-            {"host", "banana:-1234"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "/echo_components"},
+        {":scheme", "https"},
+        {"host", "banana:-1234"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert {:ok, 1, true, [{":status", "400"} | _], _} = SimpleH2Client.recv_headers(socket)
 
-      assert output =~ "(Bandit.HTTPError) Header contains invalid port"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Header contains invalid port"
     end
 
     test "derives port from schema default if no port specified in host header", context do
@@ -2748,44 +2647,40 @@ defmodule HTTP2ProtocolTest do
       )
     end
 
+    @tag :capture_log
     test "returns stream error if a non-absolute path is send", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "/../non_absolute_path"},
-            {":scheme", "https"},
-            {"host", "banana:#{context.port}"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "/../non_absolute_path"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
     end
 
+    @tag :capture_log
     test "returns stream error if path has no leading slash", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "path_without_leading_slash"},
-            {":scheme", "https"},
-            {"host", "banana:#{context.port}"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "path_without_leading_slash"},
+        {":scheme", "https"},
+        {"host", "banana:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Path does not start with /"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
   end
 
@@ -2985,44 +2880,40 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["query_string"] == "a=b?c=d"
     end
 
+    @tag :capture_log
     test "returns stream error if a non-absolute path is send", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "/../non_absolute_path"},
-            {":scheme", "https"},
-            {":authority", "banana:#{context.port}"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "/../non_absolute_path"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
     end
 
+    @tag :capture_log
     test "returns stream error if path has no leading slash", context do
-      output =
-        capture_log(fn ->
-          socket = SimpleH2Client.setup_connection(context)
+      socket = SimpleH2Client.setup_connection(context)
 
-          headers = [
-            {":method", "GET"},
-            {":path", "path_without_leading_slash"},
-            {":scheme", "https"},
-            {":authority", "banana:#{context.port}"}
-          ]
+      headers = [
+        {":method", "GET"},
+        {":path", "path_without_leading_slash"},
+        {":scheme", "https"},
+        {":authority", "banana:#{context.port}"}
+      ]
 
-          SimpleH2Client.send_headers(socket, 1, true, headers)
-          assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-          Process.sleep(100)
-        end)
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
 
-      assert output =~ "(Bandit.HTTP2.Errors.StreamError) Path does not start with /"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
   end
 

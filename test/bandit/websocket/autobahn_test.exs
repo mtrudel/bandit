@@ -1,7 +1,7 @@
 defmodule WebsocketAutobahnTest do
   use ExUnit.Case, async: true
 
-  @moduletag :external_conformance
+  @moduletag :slow
   @moduletag timeout: 3_600_000
 
   defmodule EchoWebSock do
@@ -19,7 +19,7 @@ defmodule WebsocketAutobahnTest do
     Plug.Conn.upgrade_adapter(conn, :websocket, {EchoWebSock, :ok, compress: true})
   end
 
-  @tag capture_log: true
+  @tag :capture_log
   test "autobahn test suite" do
     # We can't use ServerHelpers since we need to bind on all interfaces
     {:ok, server_pid} = start_supervised({Bandit, plug: __MODULE__, port: 0})
