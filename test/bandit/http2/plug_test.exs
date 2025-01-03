@@ -250,7 +250,7 @@ defmodule HTTP2PlugTest do
              "X-Response-Header" => ["Response"]
            } = response.headers
 
-    assert TestHelpers.valid_date_header?(date)
+    assert DateHelpers.valid_date_header?(date)
   end
 
   def header_write_test(conn) do
@@ -693,7 +693,7 @@ defmodule HTTP2PlugTest do
     assert {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket, ctx)
     assert {:ok, 1, true, "Informer"} = SimpleH2Client.recv_body(socket)
 
-    assert TestHelpers.valid_date_header?(date)
+    assert DateHelpers.valid_date_header?(date)
 
     assert SimpleH2Client.connection_alive?(socket)
   end

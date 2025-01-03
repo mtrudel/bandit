@@ -1293,7 +1293,7 @@ defmodule HTTP1RequestTest do
       assert response.status == 200
 
       [date] = response.headers["date"]
-      assert TestHelpers.valid_date_header?(date)
+      assert DateHelpers.valid_date_header?(date)
     end
 
     test "returns user-defined date header instead of internal version", context do
