@@ -5,8 +5,6 @@ defmodule HTTP1RequestTest do
   use ReqHelpers
   use Machete
 
-  import ExUnit.CaptureLog
-
   require Logger
 
   setup :http_server
@@ -35,146 +33,138 @@ defmodule HTTP1RequestTest do
     end
   end
 
-  describe "suppressing protocol error logging" do
+  describe "protocol error logging" do
+    @tag :capture_log
     test "errors are short logged by default", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "[error] ** (Bandit.HTTPError) Header read HTTP error"
-
-      # Make sure we don't log a stacktrace
-      refute output =~ "lib/bandit/pipeline.ex:"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
     end
 
+    @tag :capture_log
     test "errors are verbosely logged if so configured", context do
-      context = http_server(context, http_options: [log_protocol_errors: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_protocol_errors: :verbose])
+        |> Enum.into(context)
 
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "[error] ** (Bandit.HTTPError) Header read HTTP error"
-
-      # Make sure we log a stacktrace
-      assert output =~ "lib/bandit/pipeline.ex:"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
+      assert msg =~ "lib/bandit/pipeline.ex:"
     end
 
     test "errors are not logged if so configured", context do
-      context = http_server(context, http_options: [log_protocol_errors: false])
+      context =
+        context
+        |> http_server(http_options: [log_protocol_errors: false])
+        |> Enum.into(context)
 
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output == ""
+      refute_receive {:log, %{level: :error}}
     end
 
     test "client closure protocol errors are not logged by default", context do
-      context = http_server(context, http_options: [log_protocol_errors: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_protocol_errors: :verbose])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
-
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(20)
+      Transport.close(client)
 
-      output =
-        capture_log(fn ->
-          Transport.close(client)
-          Process.sleep(500)
-        end)
-
-      assert output == ""
+      refute_receive {:log, %{level: :error}}
     end
 
+    @tag :capture_log
     test "client closure protocol errors are short logged if so configured", context do
-      context = http_server(context, http_options: [log_client_closures: :short])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
-
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(20)
+      Transport.close(client)
 
-      output =
-        capture_log(fn ->
-          Transport.close(client)
-          Process.sleep(500)
-        end)
-
-      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
-
-      # Make sure we don't log a stacktrace
-      refute output =~ "lib/bandit/pipeline.ex:"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
+    @tag :capture_log
     test "client closure protocol errors are verbosely logged if so configured", context do
-      context = http_server(context, http_options: [log_client_closures: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :verbose])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
-
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(20)
+      Transport.close(client)
 
-      output =
-        capture_log(fn ->
-          Transport.close(client)
-          Process.sleep(500)
-        end)
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (Bandit.TransportError) Unrecoverable error: closed"
+      assert msg =~ "lib/bandit/pipeline.ex:"
+    end
 
-      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
+    @tag :capture_log
+    test "it should provide useful metadata to logger handler", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      # Make sure we log a stacktrace
-      assert output =~ "lib/bandit/pipeline.ex:"
+      assert_receive {:log, log_event}
+
+      assert %{
+               meta: %{
+                 domain: [:elixir, :bandit],
+                 crash_reason:
+                   {%Bandit.HTTPError{message: "Header read HTTP error: \"GARBAGE\\r\\n\""},
+                    [_ | _] = _stacktrace},
+                 plug: {__MODULE__, []}
+               }
+             } = log_event
     end
   end
 
   describe "plug error logging" do
-    test "it should return 500 and log when unknown exceptions are raised", context do
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
-
-      assert output =~ "(RuntimeError) boom"
-    end
-
-    @tag capture_log: true
-    test "it should provide useful metadata to logger handlers when unknown exceptions are raised",
-         context do
-      defmodule TestLoggerHandler do
-        def log(log_event, %{config: %{test_pid: test_pid}}) do
-          send(test_pid, {:log_event, log_event})
-        end
-      end
-
-      :logger.add_handler(
-        TestLoggerHandler,
-        TestLoggerHandler,
-        %{level: :error, config: %{test_pid: self()}}
-      )
-
+    @tag :capture_log
+    test "it should return 500 and log verbosely when unknown exceptions are raised", context do
       {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
       assert response.status == 500
 
-      assert_receive {:log_event, log_event}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(RuntimeError) boom"
+      assert msg =~ "lib/bandit/pipeline.ex:"
+    end
+
+    @tag :capture_log
+    test "it should provide useful metadata to logger handlers when unknown exceptions are raised",
+         context do
+      {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
+      assert response.status == 500
+
+      assert_receive {:log, log_event}
 
       assert %{
-               level: :error,
-               msg: _msg,
                meta: %{
+                 domain: [:elixir, :bandit],
                  crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
-                 conn: %Plug.Conn{}
+                 conn: %Plug.Conn{},
+                 plug: {__MODULE__, []}
                }
              } = log_event
     end
@@ -183,31 +173,27 @@ defmodule HTTP1RequestTest do
       raise "boom"
     end
 
+    @tag :capture_log
     test "it should return the code and not log when known exceptions are raised", context do
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/known_crasher")
-          assert response.status == 418
-          Process.sleep(100)
-        end)
+      {:ok, response} = Req.get(context.req, url: "/known_crasher")
+      assert response.status == 418
 
-      assert output == ""
+      refute_receive {:log, _}
     end
 
-    test "it should log known exceptions if so configured", context do
+    @tag :capture_log
+    test "it should verbosely log known exceptions if so configured", context do
       context =
         context
         |> http_server(http_options: [log_exceptions_with_status_codes: 100..599])
         |> Enum.into(context)
 
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
-          assert response.status == 418
-          Process.sleep(100)
-        end)
+      {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
+      assert response.status == 418
 
-      assert output =~ "(SafeError) boom"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(SafeError) boom"
+      assert msg =~ "lib/bandit/pipeline.ex:"
     end
 
     def known_crasher(_conn) do
@@ -227,47 +213,43 @@ defmodule HTTP1RequestTest do
       end
     end
 
+    @tag :capture_log
     test "it should unwrap Plug.Conn.WrapperErrors and handle the inner error", context do
       context =
         context
         |> http_server(plug: Router)
         |> Enum.into(context)
 
-      output =
-        capture_log(fn ->
-          {:ok, response} = Req.get(context.req, url: "/", base_url: context.base)
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      LoggerHelpers.receive_all_log_events(Router)
 
-      refute output =~ "(Plug.Conn.WrapperError)"
-      assert output =~ "[error] ** (RuntimeError) boom"
+      {:ok, response} = Req.get(context.req, url: "/", base_url: context.base)
+      assert response.status == 500
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      refute msg =~ "(Plug.Conn.WrapperError)"
+      assert msg =~ "** (RuntimeError) boom"
     end
   end
 
   describe "invalid requests" do
+    @tag :capture_log
     test "returns a 400 if the request cannot be parsed", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "Header read HTTP error: \"GARBAGE\\r\\n\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
     end
 
+    @tag :capture_log
     test "returns a 400 if the request has an invalid http version", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "0.9")
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "0.9")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Invalid HTTP version: {0, 9}"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Invalid HTTP version: {0, 9}"
     end
   end
 
@@ -312,7 +294,11 @@ defmodule HTTP1RequestTest do
     end
 
     test "closes connection after max_requests is reached", context do
-      context = http_server(context, http_1_options: [max_requests: 3])
+      context =
+        context
+        |> http_server(http_1_options: [max_requests: 3])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
@@ -337,10 +323,15 @@ defmodule HTTP1RequestTest do
     end
 
     test "idle keepalive connections are closed after read_timeout", context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 100])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"])
       assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      Process.sleep(1100)
+      Process.sleep(110)
 
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
@@ -454,7 +445,11 @@ defmodule HTTP1RequestTest do
     end
 
     test "gc_every_n_keepalive_requests is respected", context do
-      context = http_server(context, http_1_options: [gc_every_n_keepalive_requests: 3])
+      context =
+        context
+        |> http_server(http_1_options: [gc_every_n_keepalive_requests: 3])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/do_gc", ["host: localhost"])
@@ -502,16 +497,14 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
+    @tag :capture_log
     test "returns 400 if no host header set in HTTP/1.1", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "/echo_components")
-          assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components")
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Unable to obtain host and port: No host header"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Unable to obtain host and port: No host header"
     end
 
     test "sets a blank host if no host header set in HTTP/1.0", context do
@@ -547,16 +540,14 @@ defmodule HTTP1RequestTest do
       assert Jason.decode!(body)["port"] == 1234
     end
 
+    @tag :capture_log
     test "returns 400 if port cannot be parsed from host header", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:-1234"])
-          assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:-1234"])
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Header contains invalid port"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Header contains invalid port"
     end
 
     test "derives port from schema default if no port specified in host header", context do
@@ -621,28 +612,24 @@ defmodule HTTP1RequestTest do
       )
     end
 
+    @tag :capture_log
     test "returns 400 if a non-absolute path is send", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
 
+    @tag :capture_log
     test "returns 400 if path has no leading slash", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
   end
 
@@ -756,16 +743,14 @@ defmodule HTTP1RequestTest do
   end
 
   describe "authority-form request target (RFC9112§3.2.3)" do
+    @tag :capture_log
     test "returns 400 for authority-form / CONNECT requests", context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
-          assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) schemeURI is not supported"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) schemeURI is not supported"
     end
   end
 
@@ -783,21 +768,22 @@ defmodule HTTP1RequestTest do
   end
 
   describe "request line limits" do
+    @tag :capture_log
     test "returns 414 for request lines that are too long", context do
-      output =
-        capture_log(fn ->
-          context = http_server(context, http_1_options: [max_request_line_length: 5000])
-          client = SimpleHTTP1Client.tcp_client(context)
+      context =
+        context
+        |> http_server(http_1_options: [max_request_line_length: 5000])
+        |> Enum.into(context)
 
-          SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
-                   SimpleHTTP1Client.recv_reply(client)
+      SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
 
-          Process.sleep(100)
-        end)
+      assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Request URI is too long"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Request URI is too long"
     end
   end
 
@@ -824,48 +810,50 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, ["O", "K"])
     end
 
+    @tag :capture_log
     test "returns 431 for header lines that are too long", context do
-      output =
-        capture_log(fn ->
-          context = http_server(context, http_1_options: [max_header_length: 5000])
-          client = SimpleHTTP1Client.tcp_client(context)
+      context =
+        context
+        |> http_server(http_1_options: [max_header_length: 5000])
+        |> Enum.into(context)
 
-          SimpleHTTP1Client.send(client, "GET", "/echo_components", [
-            "host: localhost",
-            "foo: " <> String.duplicate("a", 5000 - 6)
-          ])
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
-                   SimpleHTTP1Client.recv_reply(client)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: localhost",
+        "foo: " <> String.duplicate("a", 5000 - 6)
+      ])
 
-          Process.sleep(100)
-        end)
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Header too long"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Header too long"
     end
 
+    @tag :capture_log
     test "returns 431 for too many header lines", context do
-      output =
-        capture_log(fn ->
-          context = http_server(context, http_1_options: [max_header_count: 40])
-          client = SimpleHTTP1Client.tcp_client(context)
+      context =
+        context
+        |> http_server(http_1_options: [max_header_count: 40])
+        |> Enum.into(context)
 
-          headers = for i <- 1..40, do: "header#{i}: foo"
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "GET",
-            "/echo_components",
-            headers ++ ["host: localhost"]
-          )
+      headers = for i <- 1..40, do: "header#{i}: foo"
 
-          assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
-                   SimpleHTTP1Client.recv_reply(client)
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        headers ++ ["host: localhost"]
+      )
 
-          Process.sleep(100)
-        end)
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
 
-      assert output =~ "(Bandit.HTTPError) Too many headers"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Too many headers"
     end
   end
 
@@ -919,59 +907,56 @@ defmodule HTTP1RequestTest do
     end
 
     # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    @tag :capture_log
     test "rejects a request with non-matching multiple content lengths", context do
-      output =
-        capture_log(fn ->
-          # Use a smaller body size to avoid raciness in reading the response
-          response =
-            Req.post!(context.req,
-              url: "/expect_body_with_multiple_content_length",
-              headers: [{"content-length", "8000,8001,8000"}],
-              body: String.duplicate("a", 8_000)
-            )
+      # Use a smaller body size to avoid raciness in reading the response
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "8000,8001,8000"}],
+          body: String.duplicate("a", 8_000)
+        )
 
-          assert response.status == 400
-          Process.sleep(100)
-        end)
+      assert response.status == 400
 
-      assert output =~
-               "(Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
     end
 
+    @tag :capture_log
     test "rejects a request with negative content-length", context do
-      output =
-        capture_log(fn ->
-          response =
-            Req.post!(context.req,
-              url: "/negative_content_length",
-              headers: [{"content-length", "-321"}],
-              body: String.duplicate("a", 1_000)
-            )
+      response =
+        Req.post!(context.req,
+          url: "/negative_content_length",
+          headers: [{"content-length", "-321"}],
+          body: String.duplicate("a", 1_000)
+        )
 
-          assert response.status == 400
-          Process.sleep(100)
-        end)
+      assert response.status == 400
 
-      assert output =~
-               "(Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
     end
 
+    @tag :capture_log
     test "rejects a request with non-integer content length", context do
-      output =
-        capture_log(fn ->
-          response =
-            Req.post!(context.req,
-              url: "/expect_body_with_multiple_content_length",
-              headers: [{"content-length", "foo"}],
-              body: String.duplicate("a", 8_000)
-            )
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "foo"}],
+          body: String.duplicate("a", 8_000)
+        )
 
-          assert response.status == 400
-          Process.sleep(100)
-        end)
+      assert response.status == 400
 
-      assert output =~
-               "(Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
     end
 
     test "handles the case where we ask for less than is already in the buffer", context do
@@ -999,7 +984,7 @@ defmodule HTTP1RequestTest do
         "POST /beyond_buffer_read HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nAB"
       )
 
-      Process.sleep(100)
+      Process.sleep(10)
       Transport.send(client, "CDE")
 
       assert {:ok, "200 OK", _, "ABC,D,E"} = SimpleHTTP1Client.recv_reply(client)
@@ -1021,7 +1006,7 @@ defmodule HTTP1RequestTest do
         "POST /read_one_byte_at_a_time HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\n"
       )
 
-      Process.sleep(100)
+      Process.sleep(10)
       Transport.send(client, "ABCDE")
 
       assert {:ok, "200 OK", _, "ABCDE"} = SimpleHTTP1Client.recv_reply(client)
@@ -1032,22 +1017,25 @@ defmodule HTTP1RequestTest do
       send_resp(conn, 200, body)
     end
 
+    @tag :capture_log
     test "handles the case where the declared content length is longer than what is sent",
          context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 100])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
-      errors =
-        capture_log(fn ->
-          Transport.send(
-            client,
-            "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
-          )
+      Transport.send(
+        client,
+        "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nABC"
+      )
 
-          assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
-          Process.sleep(1100)
-        end)
+      assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
 
-      assert errors =~ "[error] ** (Bandit.HTTPError) Body read timeout"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Body read timeout"
     end
 
     def short_body(conn) do
@@ -1090,18 +1078,14 @@ defmodule HTTP1RequestTest do
   end
 
   describe "upgrade handling" do
+    @tag :capture_log
     test "raises an ArgumentError on unsupported upgrades", context do
-      errors =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/upgrade_unsupported")
+      response = Req.get!(context.req, url: "/upgrade_unsupported")
 
-          assert response.status == 500
+      assert response.status == 500
 
-          Process.sleep(100)
-        end)
-
-      assert errors =~
-               "[error] ** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
     def upgrade_unsupported(conn) do
@@ -1110,140 +1094,137 @@ defmodule HTTP1RequestTest do
       |> send_resp(200, "Not supported")
     end
 
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a GET",
          context do
-      errors =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "POST",
-            "/upgrade_websocket",
-            [
-              "Host: server.example.com",
-              "Upgrade: WebSocket",
-              "Connection: Upgrade",
-              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-              "Sec-WebSocket-Version: 13"
-            ]
-          )
+      SimpleHTTP1Client.send(
+        client,
+        "POST",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
 
-          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-          Process.sleep(100)
-        end)
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert errors =~ "[error] ** (Bandit.HTTPError) HTTP method POST unsupported"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) HTTP method POST unsupported"
     end
 
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
          context do
-      errors =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "GET",
-            "/upgrade_websocket",
-            [
-              "Host: server.example.com",
-              "Upgrade: NOPE",
-              "Connection: Upgrade",
-              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-              "Sec-WebSocket-Version: 13"
-            ]
-          )
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: NOPE",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
 
-          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-          Process.sleep(100)
-        end)
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
     end
 
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
          context do
-      errors =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "GET",
-            "/upgrade_websocket",
-            [
-              "Host: server.example.com",
-              "Upgrade: WebSocket",
-              "Connection: NOPE",
-              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-              "Sec-WebSocket-Version: 13"
-            ]
-          )
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: NOPE",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
 
-          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-          Process.sleep(100)
-        end)
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
     end
 
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
          context do
-      errors =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "GET",
-            "/upgrade_websocket",
-            [
-              "Host: server.example.com",
-              "Upgrade: WebSocket",
-              "Connection: Upgrade",
-              "Sec-WebSocket-Version: 13"
-            ]
-          )
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
 
-          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-          Process.sleep(100)
-        end)
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert errors =~ "[error] ** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
     end
 
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
          context do
-      errors =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
+      client = SimpleHTTP1Client.tcp_client(context)
 
-          SimpleHTTP1Client.send(
-            client,
-            "GET",
-            "/upgrade_websocket",
-            [
-              "Host: server.example.com",
-              "Upgrade: WebSocket",
-              "Connection: Upgrade",
-              "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-              "Sec-WebSocket-Version: 99"
-            ]
-          )
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 99"
+        ]
+      )
 
-          assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-          Process.sleep(100)
-        end)
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert errors =~
-               "[error] ** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
     end
 
     test "returns a 400 and errors loudly if websocket support is not enabled", context do
-      context = http_server(context, websocket_options: [enabled: false])
+      context =
+        context
+        |> http_server(websocket_options: [enabled: false])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(
@@ -1532,7 +1513,8 @@ defmodule HTTP1RequestTest do
 
     test "falls back to no encoding if compression is disabled", context do
       context =
-        http_server(context, http_options: [compress: false])
+        context
+        |> http_server(http_options: [compress: false])
         |> Enum.into(context)
 
       response =
@@ -1914,7 +1896,7 @@ defmodule HTTP1RequestTest do
     client = SimpleHTTP1Client.tcp_client(context)
     SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
 
-    Process.sleep(100)
+    Process.sleep(10)
     assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
     assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
     assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.parse_response(client, rest)
@@ -1958,63 +1940,55 @@ defmodule HTTP1RequestTest do
   end
 
   describe "abnormal handler processes" do
+    @tag :capture_log
     test "returns a 500 if the plug raises an exception", context do
-      output =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/raise_error")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      response = Req.get!(context.req, url: "/raise_error")
+      assert response.status == 500
 
-      assert output =~ "(RuntimeError) boom"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(RuntimeError) boom"
     end
 
     def raise_error(_conn) do
       raise "boom"
     end
 
+    @tag :capture_log
     test "returns a 500 if the plug throws", context do
-      output =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/throws")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      response = Req.get!(context.req, url: "/throws")
+      assert response.status == 500
 
-      assert output =~ "(throw) \"something\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(throw) \"something\""
     end
 
     def throws(_conn) do
       throw("something")
     end
 
+    @tag :capture_log
     test "returns a 500 if the plug exits", context do
-      output =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/exits")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      response = Req.get!(context.req, url: "/exits")
+      assert response.status == 500
 
-      assert output =~ "(exit) \"something\""
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(exit) \"something\""
     end
 
     def exits(_conn) do
       exit("something")
     end
 
+    @tag :capture_log
     test "does not send an error response if the plug has already sent one before raising",
          context do
-      output =
-        capture_log(fn ->
-          client = SimpleHTTP1Client.tcp_client(context)
-          SimpleHTTP1Client.send(client, "GET", "/send_and_raise_error", ["host: banana"])
-          assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
-          assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-          Process.sleep(100)
-        end)
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_and_raise_error", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
-      assert output =~ "(RuntimeError) boom"
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg =~ "(RuntimeError) boom"
     end
 
     def send_and_raise_error(conn) do
@@ -2022,15 +1996,14 @@ defmodule HTTP1RequestTest do
       raise "boom"
     end
 
+    @tag :capture_log
     test "returns a 500 if the plug does not return anything", context do
-      output =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/noop")
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      response = Req.get!(context.req, url: "/noop")
+      assert response.status == 500
 
-      assert output =~
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg =~
                "(Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
     end
 
@@ -2038,16 +2011,15 @@ defmodule HTTP1RequestTest do
       conn
     end
 
+    @tag :capture_log
     test "returns a 500 if the plug does not return a conn", context do
-      output =
-        capture_log(fn ->
-          response = Req.get!(context.req, url: "/return_garbage")
+      response = Req.get!(context.req, url: "/return_garbage")
 
-          assert response.status == 500
-          Process.sleep(100)
-        end)
+      assert response.status == 500
 
-      assert output =~
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+
+      assert msg =~
                "(RuntimeError) Expected Elixir.HTTP1RequestTest.call/2 to return %Plug.Conn{} but got: :nope"
     end
 
@@ -2055,50 +2027,32 @@ defmodule HTTP1RequestTest do
       :nope
     end
 
-    test "silently accepts EXIT messages from normally terminating spawned processes", context do
-      errors =
-        capture_log(fn ->
-          Req.get!(context.req, url: "/spawn_child")
+    test "survives EXIT messages from normally terminating spawned processes", context do
+      response = Req.get!(context.req, url: "/spawn_child")
+      assert response.status == 204
 
-          # Let the backing process see & handle the handle_info EXIT message
-          Process.sleep(100)
-        end)
-
-      # The return value here isn't relevant, since the HTTP call is done within
-      # a single GenServer call & will complete before the handler process handles
-      # the handle_info call returned by the spawned process. Look at the logged
-      # errors instead
-      assert errors == ""
+      refute_receive {:log, _}
     end
 
     def spawn_child(conn) do
       spawn_link(fn -> exit(:normal) end)
+      Process.sleep(10)
       send_resp(conn, 204, "")
     end
-  end
 
-  test "does not do anything special with EXIT messages from abnormally terminating spawned processes",
-       context do
-    context = http_server(context, http_1_options: [log_unknown_messages: true])
+    @tag :capture_log
+    test "survives EXIT messages from abnormally terminating spawned processes", context do
+      response = Req.get!(context.req, url: "/spawn_abnormal_child")
+      assert response.status == 204
 
-    errors =
-      capture_log(fn ->
-        Req.get!(url: "/spawn_abnormal_child", base_url: context[:base])
+      refute_receive {:log, _}
+    end
 
-        # Let the backing process see & handle the handle_info EXIT message
-        Process.sleep(100)
-      end)
-
-    # The return value here isn't relevant, since the HTTP call is done within
-    # a single GenServer call & will complete before the handler process handles
-    # the handle_info call returned by the spawned process. Look at the logged
-    # errors instead
-    assert errors =~ ~r[received unexpected message in handle_info/2]
-  end
-
-  def spawn_abnormal_child(conn) do
-    spawn_link(fn -> exit(:abnormal) end)
-    send_resp(conn, 204, "")
+    def spawn_abnormal_child(conn) do
+      spawn_link(fn -> exit(:abnormal) end)
+      Process.sleep(10)
+      send_resp(conn, 204, "")
+    end
   end
 
   describe "telemetry" do
@@ -2401,16 +2355,30 @@ defmodule HTTP1RequestTest do
   end
 
   describe "connection closure / error handling" do
+    @tag :capture_log
     test "raises an error if client closes while headers are being read", context do
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nHost:")
+
+      Transport.send(client, "GET / HTTP/1.1\r\nHost: localhost\r\nFoo: ")
+      Process.sleep(10)
       Transport.close(client)
-      Process.sleep(100)
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.HTTPError) Header read socket error: :closed"
     end
 
+    @tag :capture_log
     test "raises an error if client closes while body is being read", context do
-      context = http_server(context, http_options: [log_client_closures: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
@@ -2419,16 +2387,11 @@ defmodule HTTP1RequestTest do
       ])
 
       Transport.send(client, "ABC")
+      Process.sleep(10)
+      Transport.close(client)
 
-      output =
-        capture_log(fn ->
-          Transport.close(client)
-          Process.sleep(500)
-        end)
-
-      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
-      refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
     def expect_incomplete_body(conn) do
@@ -2436,22 +2399,25 @@ defmodule HTTP1RequestTest do
       Logger.error("IMPOSSIBLE")
     end
 
+    @tag :capture_log
     test "raises an error if client closes while body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(10)
       Transport.close(client)
 
-      output = capture_log(fn -> Process.sleep(500) end)
-      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
-      refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
     def sleep_and_send(conn) do
-      Process.sleep(200)
+      Process.sleep(100)
 
       conn = send_resp(conn, 200, "IMPOSSIBLE")
 
@@ -2460,46 +2426,45 @@ defmodule HTTP1RequestTest do
     end
 
     test "returns an error if client closes while chunked body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :verbose])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send_chunked", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(20)
       Transport.close(client)
-
-      output = capture_log(fn -> Process.sleep(500) end)
-      assert output == ""
-      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
     end
 
     def sleep_and_send_chunked(conn) do
       conn = send_chunked(conn, 200)
-
-      Process.sleep(200)
+      Process.sleep(100)
       assert chunk(conn, "IMPOSSIBLE") == {:error, :closed}
-
       conn
     end
 
+    @tag :capture_log
     test "raises an error if client closes before sendfile body is being written", context do
-      context = http_server(context, http_options: [log_client_closures: :verbose])
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_sendfile", ["host: localhost"])
-      Process.sleep(100)
+      Process.sleep(10)
       Transport.close(client)
 
-      output = capture_log(fn -> Process.sleep(500) end)
-      assert output =~ "[error] ** (Bandit.TransportError) Unrecoverable error: closed"
-      refute output =~ "IMPOSSIBLE"
-      assert ThousandIsland.connection_pids(context[:server_pid]) == {:ok, []}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
     def sleep_and_sendfile(conn) do
-      Process.sleep(200)
-
+      Process.sleep(100)
       conn = send_file(conn, 204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-
       Logger.error("IMPOSSIBLE")
       conn
     end
@@ -2508,12 +2473,10 @@ defmodule HTTP1RequestTest do
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: localhost"])
-      Process.sleep(100)
       SimpleHTTP1Client.recv_reply(client)
       Transport.close(client)
-      Process.sleep(500)
 
-      assert ThousandIsland.connection_pids(context.server_pid) == {:ok, []}
+      refute_receive {:log, _}
     end
   end
 end
