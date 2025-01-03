@@ -2,7 +2,7 @@ defmodule H2SpecTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  @moduletag :external_conformance
+  @moduletag :slow
   @moduletag timeout: 600_000
 
   setup :https_server

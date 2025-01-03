@@ -21,7 +21,7 @@ jobs:
       matrix:
         elixir: ${{ fromJSON(inputs.elixirs) }}
         otp: ${{ fromJSON(inputs.erlangs) }}
-        case: 
+        case:
           - "1.*,2.*,3.*,4.*,5.*,6.*,7.*,8.*,10.*"
           - "9.1.*"
           - "9.2.*"
@@ -69,4 +69,4 @@ jobs:
       run: |
         mix deps.get
     - name: Run Autobahn test
-      run: mix test --only external_conformance test/bandit/websocket/autobahn_test.exs
+      run: mix test --only slow test/bandit/websocket/autobahn_test.exs
