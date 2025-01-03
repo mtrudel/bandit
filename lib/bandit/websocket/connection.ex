@@ -36,7 +36,8 @@ defmodule Bandit.WebSocket.Connection do
 
     span =
       Bandit.Telemetry.start_span(:websocket, %{compress: compress}, %{
-        connection_telemetry_span_context: connection_telemetry_span_context
+        connection_telemetry_span_context: connection_telemetry_span_context,
+        websock: websock
       })
 
     instance = %__MODULE__{

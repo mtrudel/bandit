@@ -103,6 +103,7 @@ defmodule Bandit.Telemetry do
       * `telemetry_span_context`: A unique identifier for this span
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
+      * `websock`: The WebSock which is being used to serve this request. Specified as `websock_module`
 
   This span is ended by the following event:
 
@@ -146,6 +147,7 @@ defmodule Bandit.Telemetry do
         this connection originated
       * `connection_telemetry_span_context`: The span context of the Thousand Island `:connection`
         span which contains this request
+      * `websock`: The WebSock which is being used to serve this request. Specified as `websock_module`
       * `error`: The error that caused the span to end, if it ended in error
   """
 
