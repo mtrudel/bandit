@@ -100,34 +100,45 @@ defmodule SimpleH2Client do
   end
 
   def recv_body(socket) do
-    with {:ok, 0, flags, stream_id, body} <- recv_frame(socket) do
-      {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
+    case recv_frame(socket) do
+      {:ok, :data, flags, stream_id, body} -> {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
+      other -> unexpected_frame!(other)
     end
   end
 
   def recv_headers(socket, ctx \\ HPAX.new(4096)) do
-    with {:ok, 1, flags, stream_id, header_block} <- recv_frame(socket) do
-      {:ok, headers, ctx} = HPAX.decode(header_block, ctx)
-      {:ok, stream_id, (flags &&& 0x01) == 0x01, headers, ctx}
+    case recv_frame(socket) do
+      {:ok, :headers, flags, stream_id, header_block} ->
+        {:ok, headers, ctx} = HPAX.decode(header_block, ctx)
+        {:ok, stream_id, (flags &&& 0x01) == 0x01, headers, ctx}
+
+      other ->
+        unexpected_frame!(other)
     end
   end
 
   def recv_rst_stream(socket) do
-    with {:ok, 3, 0, stream_id, <<error_code::32>>} <- recv_frame(socket) do
-      {:ok, stream_id, error_code}
+    case recv_frame(socket) do
+      {:ok, :rst_stream, 0, stream_id, <<error_code::32>>} -> {:ok, stream_id, error_code}
+      other -> unexpected_frame!(other)
     end
   end
 
   def recv_goaway_and_close(socket) do
-    with {:ok, 7, 0, 0, <<last_stream_id::32, error_code::32>>} <- recv_frame(socket) do
-      {:error, :closed} = Transport.recv(socket, 0)
-      {:ok, last_stream_id, error_code}
+    case recv_frame(socket) do
+      {:ok, :goaway, 0, 0, <<last_stream_id::32, error_code::32>>} ->
+        {:error, :closed} = Transport.recv(socket, 0)
+        {:ok, last_stream_id, error_code}
+
+      other ->
+        unexpected_frame!(other)
     end
   end
 
   def recv_window_update(socket) do
-    with {:ok, 8, 0, stream_id, <<0::1, update::31>>} <- recv_frame(socket) do
-      {:ok, stream_id, update}
+    case recv_frame(socket) do
+      {:ok, :window_update, 0, stream_id, <<0::1, update::31>>} -> {:ok, stream_id, update}
+      other -> unexpected_frame!(other)
     end
   end
 
@@ -136,11 +147,27 @@ defmodule SimpleH2Client do
            Transport.recv(socket, 9) do
       if body_length > 0 do
         with {:ok, body} <- Transport.recv(socket, body_length) do
-          {:ok, type, flags, stream_id, body}
+          {:ok, map_type(type), flags, stream_id, body}
         end
       else
-        {:ok, type, flags, stream_id, <<>>}
+        {:ok, map_type(type), flags, stream_id, <<>>}
       end
     end
+  end
+
+  def map_type(0), do: :data
+  def map_type(1), do: :headers
+  def map_type(2), do: :priority
+  def map_type(3), do: :rst_stream
+  def map_type(4), do: :settings
+  def map_type(5), do: :push_promise
+  def map_type(6), do: :ping
+  def map_type(7), do: :goaway
+  def map_type(8), do: :window_update
+  def map_type(9), do: :continuation
+
+  @spec unexpected_frame!(term()) :: no_return()
+  def unexpected_frame!({:ok, type, _flags, _stream_id, _body}) do
+    raise "Received unexpected frame #{type}"
   end
 end
