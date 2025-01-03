@@ -140,17 +140,21 @@ defmodule HTTP2PlugTest do
   end
 
   def other_process_body_read(conn) do
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        read_body(conn)
-      end)
+    {:ok, "OK", conn} = read_body(conn)
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok -> send_resp(conn, 200, "OK")
-    end
+    error =
+      Task.async(fn ->
+        try do
+          read_body(conn)
+        rescue
+          error -> error
+        end
+      end)
+      |> Task.await()
+
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    send_resp(conn, 200, "OK")
   end
 
   test "reading request body respects length option", context do
@@ -190,6 +194,8 @@ defmodule HTTP2PlugTest do
 
     assert SimpleH2Client.successful_response?(socket, 1, false)
     assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+
+    Process.sleep(100)
   end
 
   def timeout_body_read(conn) do
@@ -352,23 +358,25 @@ defmodule HTTP2PlugTest do
 
   @tag :capture_log
   test "sending a body from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_send_body", body: "OK")
+    response = Req.get!(context.req, url: "/other_process_send_body")
 
     assert response.status == 200
   end
 
   def other_process_send_body(conn) do
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        conn |> send_resp(200, "NOT OK")
+    error =
+      Task.async(fn ->
+        try do
+          send_resp(conn, 200, "NOT OK")
+        rescue
+          error -> error
+        end
       end)
+      |> Task.await()
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok -> send_resp(conn, 200, "OK")
-    end
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    send_resp(conn, 200, "OK")
   end
 
   test "sending a chunk", context do
@@ -389,28 +397,30 @@ defmodule HTTP2PlugTest do
 
   @tag :capture_log
   test "setting a chunked response from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_set_chunk", body: "OK")
+    response = Req.get!(context.req, url: "/other_process_set_chunk")
 
     assert response.status == 200
   end
 
   def other_process_set_chunk(conn) do
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        conn |> send_chunked(200)
+    error =
+      Task.async(fn ->
+        try do
+          send_chunked(conn, 200)
+        rescue
+          error -> error
+        end
       end)
+      |> Task.await()
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok -> send_resp(conn, 200, "OK")
-    end
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    send_resp(conn, 200, "OK")
   end
 
   @tag :capture_log
   test "sending a chunk from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_send_chunk", body: "OK")
+    response = Req.get!(context.req, url: "/other_process_send_chunk")
 
     assert response.status == 200
   end
@@ -418,19 +428,20 @@ defmodule HTTP2PlugTest do
   def other_process_send_chunk(conn) do
     conn = conn |> send_chunked(200)
 
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        conn |> chunk("NOT OK")
+    error =
+      Task.async(fn ->
+        try do
+          chunk(conn, "NOT OK")
+        rescue
+          error -> error
+        end
       end)
+      |> Task.await()
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok ->
-        {:ok, conn} = chunk(conn, "OK")
-        conn
-    end
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    {:ok, conn} = chunk(conn, "OK")
+    conn
   end
 
   describe "upgrade handling" do
@@ -533,24 +544,25 @@ defmodule HTTP2PlugTest do
 
   @tag :capture_log
   test "sending a file from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_send_file", body: "OK")
+    response = Req.get!(context.req, url: "/other_process_send_file")
 
     assert response.status == 200
   end
 
   def other_process_send_file(conn) do
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        conn
-        |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    error =
+      Task.async(fn ->
+        try do
+          send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+        rescue
+          error -> error
+        end
       end)
+      |> Task.await()
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok -> send_resp(conn, 200, "OK")
-    end
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    send_resp(conn, 200, "OK")
   end
 
   test "sending a body blocks on connection flow control", context do
@@ -700,23 +712,25 @@ defmodule HTTP2PlugTest do
 
   @tag :capture_log
   test "sending an inform response from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_send_inform", body: "OK")
+    response = Req.get!(context.req, url: "/other_process_send_inform")
 
     assert response.status == 200
   end
 
   def other_process_send_inform(conn) do
-    Task.async(fn ->
-      assert_raise(RuntimeError, "Adapter functions must be called by stream owner", fn ->
-        conn |> inform(100, [])
+    error =
+      Task.async(fn ->
+        try do
+          inform(conn, 100, [])
+        rescue
+          error -> error
+        end
       end)
+      |> Task.await()
 
-      :ok
-    end)
-    |> Task.await()
-    |> case do
-      :ok -> send_resp(conn, 200, "OK")
-    end
+    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+    send_resp(conn, 200, "OK")
   end
 
   test "reading HTTP version", context do
