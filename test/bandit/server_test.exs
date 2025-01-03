@@ -8,7 +8,7 @@ defmodule ServerTest do
     LoggerHelpers.receive_all_log_events(__MODULE__)
     start_supervised({Bandit, plug: __MODULE__, port: 0, ip: :loopback})
 
-    assert_receive {:log, %{level: :info, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
     assert msg =~ "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 127.0.0.1"
   end
 
@@ -29,7 +29,7 @@ defmodule ServerTest do
 
     assert {:error, _} = start_supervised({Bandit, plug: __MODULE__, port: port, ip: address})
 
-    assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
     assert IO.iodata_to_binary(msg) =~
              "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at http failed, port #{port} already in use"
@@ -39,7 +39,7 @@ defmodule ServerTest do
     LoggerHelpers.receive_all_log_events(__MODULE__)
     start_supervised({Bandit, [{:plug, __MODULE__}, :inet, {:port, 0}, {:ip, :loopback}]})
 
-    assert_receive {:log, %{level: :info, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
     assert msg =~ "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at 127.0.0.1"
   end
 
@@ -47,7 +47,7 @@ defmodule ServerTest do
     LoggerHelpers.receive_all_log_events(__MODULE__)
     start_supervised({Bandit, [{:plug, __MODULE__}, :inet6, {:port, 0}, {:ip, :loopback}]})
 
-    assert_receive {:log, %{level: :info, msg: {:string, msg}}}
+    assert_receive {:log, %{level: :info, msg: {:string, msg}}}, 500
     assert msg =~ "Running ServerTest with Bandit #{Application.spec(:bandit)[:vsn]} at ::1"
   end
 

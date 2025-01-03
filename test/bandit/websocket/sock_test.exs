@@ -1230,7 +1230,7 @@ defmodule WebSocketWebSockTest do
       # Get the websock to tell bandit to shut down
       SimpleWebSocketClient.send_text_frame(client, "normal")
 
-      assert_receive :normal
+      assert_receive :normal, 500
     end
 
     test "is called with {:error, reason} on an error connection shutdown", context do
@@ -1242,7 +1242,7 @@ defmodule WebSocketWebSockTest do
           # Get the websock to tell bandit to shut down
           SimpleWebSocketClient.send_text_frame(client, "boom")
 
-          assert_receive {:error, :boom}
+          assert_receive {:error, :boom}, 500
           Process.sleep(100)
         end)
 
@@ -1256,7 +1256,7 @@ defmodule WebSocketWebSockTest do
       # Shut the server down in an orderly manner
       ThousandIsland.stop(context.server_pid)
 
-      assert_receive :shutdown
+      assert_receive :shutdown, 500
     end
 
     test "is called with :remote on a normal remote shutdown", context do
@@ -1265,7 +1265,7 @@ defmodule WebSocketWebSockTest do
 
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
 
-      assert_receive :remote
+      assert_receive :remote, 500
     end
 
     test "is called with {:error, reason} on a protocol error", context do
@@ -1274,7 +1274,7 @@ defmodule WebSocketWebSockTest do
 
       Transport.close(client)
 
-      assert_receive {:error, :closed}
+      assert_receive {:error, :closed}, 500
     end
 
     test "is called with :timeout on a timeout", context do
@@ -1299,7 +1299,7 @@ defmodule WebSocketWebSockTest do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
 
-      assert_receive {:telemetry, [:bandit, :websocket, :start], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :start], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer(), compress: maybe(boolean())}
 
@@ -1322,7 +1322,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.send_pong_frame(client, "1234567")
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
 
-      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -1361,7 +1361,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
 
-      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -1386,7 +1386,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
       SimpleWebSocketClient.send_text_frame(client, "close")
 
-      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -1411,7 +1411,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
       ThousandIsland.stop(context.server_pid)
 
-      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer(), duration: integer()}
 
@@ -1432,7 +1432,7 @@ defmodule WebSocketWebSockTest do
           SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
           SimpleWebSocketClient.send_text_frame(client, "abnormal_close")
 
-          assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+          assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
           assert measurements
                  ~> %{
@@ -1464,7 +1464,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
       Process.sleep(110)
 
-      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
       assert measurements ~> %{monotonic_time: integer(), duration: integer()}
 

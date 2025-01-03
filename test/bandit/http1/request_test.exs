@@ -39,7 +39,7 @@ defmodule HTTP1RequestTest do
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
     end
 
@@ -54,7 +54,7 @@ defmodule HTTP1RequestTest do
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
@@ -98,7 +98,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(20)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
@@ -114,7 +114,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(20)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (Bandit.TransportError) Unrecoverable error: closed"
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
@@ -125,7 +125,7 @@ defmodule HTTP1RequestTest do
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, log_event}
+      assert_receive {:log, log_event}, 500
 
       assert %{
                meta: %{
@@ -145,7 +145,7 @@ defmodule HTTP1RequestTest do
       {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(RuntimeError) boom"
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
@@ -156,7 +156,7 @@ defmodule HTTP1RequestTest do
       {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
       assert response.status == 500
 
-      assert_receive {:log, log_event}
+      assert_receive {:log, log_event}, 500
 
       assert %{
                meta: %{
@@ -190,7 +190,7 @@ defmodule HTTP1RequestTest do
       {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
       assert response.status == 418
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(SafeError) boom"
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
@@ -224,7 +224,7 @@ defmodule HTTP1RequestTest do
       {:ok, response} = Req.get(context.req, url: "/", base_url: context.base)
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       refute msg =~ "(Plug.Conn.WrapperError)"
       assert msg =~ "** (RuntimeError) boom"
     end
@@ -237,7 +237,7 @@ defmodule HTTP1RequestTest do
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
     end
 
@@ -247,7 +247,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "0.9")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Invalid HTTP version: {0, 9}"
     end
   end
@@ -502,7 +502,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "/echo_components")
       assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unable to obtain host and port: No host header"
     end
 
@@ -545,7 +545,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:-1234"])
       assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header contains invalid port"
     end
 
@@ -617,7 +617,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
 
@@ -627,7 +627,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
   end
@@ -748,7 +748,7 @@ defmodule HTTP1RequestTest do
       SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) schemeURI is not supported"
     end
   end
@@ -781,7 +781,7 @@ defmodule HTTP1RequestTest do
       assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
                SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Request URI is too long"
     end
   end
@@ -826,7 +826,7 @@ defmodule HTTP1RequestTest do
       assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
                SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header too long"
     end
 
@@ -851,7 +851,7 @@ defmodule HTTP1RequestTest do
       assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
                SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Too many headers"
     end
   end
@@ -918,7 +918,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 400
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
@@ -935,7 +935,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 400
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
@@ -952,7 +952,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 400
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
@@ -1033,7 +1033,7 @@ defmodule HTTP1RequestTest do
 
       assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Body read timeout"
     end
 
@@ -1083,7 +1083,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (ArgumentError) upgrade to unsupported not supported by Bandit.Adapter"
     end
 
@@ -1113,7 +1113,7 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) HTTP method POST unsupported"
     end
 
@@ -1137,7 +1137,7 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
@@ -1163,7 +1163,7 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
@@ -1188,7 +1188,7 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
     end
 
@@ -1212,7 +1212,7 @@ defmodule HTTP1RequestTest do
 
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg ==
                "** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
@@ -1944,7 +1944,7 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/raise_error")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(RuntimeError) boom"
     end
 
@@ -1957,7 +1957,7 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/throws")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(throw) \"something\""
     end
 
@@ -1970,7 +1970,7 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/exits")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(exit) \"something\""
     end
 
@@ -1986,7 +1986,7 @@ defmodule HTTP1RequestTest do
       assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(RuntimeError) boom"
     end
 
@@ -2000,7 +2000,7 @@ defmodule HTTP1RequestTest do
       response = Req.get!(context.req, url: "/noop")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg =~
                "(Plug.Conn.NotSentError) a response was neither set nor sent from the connection"
@@ -2016,7 +2016,7 @@ defmodule HTTP1RequestTest do
 
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
       assert msg =~
                "(RuntimeError) Expected Elixir.HTTP1RequestTest.call/2 to return %Plug.Conn{} but got: :nope"
@@ -2058,7 +2058,7 @@ defmodule HTTP1RequestTest do
     test "it should send `start` events for normally completing requests", context do
       Req.get!(context.req, url: "/send_200")
 
-      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2077,7 +2077,7 @@ defmodule HTTP1RequestTest do
     test "it should send `stop` events for normally completing requests", context do
       Req.get!(context.req, url: "/send_200")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2102,7 +2102,7 @@ defmodule HTTP1RequestTest do
          context do
       Req.post!(context.req, url: "/do_read_body", body: <<>>)
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2134,7 +2134,7 @@ defmodule HTTP1RequestTest do
     test "it should add req metrics to `stop` events for requests with request body", context do
       Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2162,7 +2162,7 @@ defmodule HTTP1RequestTest do
       stream = Stream.repeatedly(fn -> "a" end) |> Stream.take(80)
       Req.post!(context.req, url: "/do_read_body", body: stream)
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2194,7 +2194,7 @@ defmodule HTTP1RequestTest do
         headers: [{"accept-encoding", "gzip"}]
       )
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2223,7 +2223,7 @@ defmodule HTTP1RequestTest do
     test "it should add (some) resp metrics to `stop` events for chunked responses", context do
       Req.get!(context.req, url: "/send_chunked_200")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2247,7 +2247,7 @@ defmodule HTTP1RequestTest do
     test "it should add resp metrics to `stop` events for sendfile responses", context do
       Req.get!(context.req, url: "/send_full_file")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{
@@ -2273,7 +2273,7 @@ defmodule HTTP1RequestTest do
       client = SimpleHTTP1Client.tcp_client(context)
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{monotonic_time: integer(), duration: integer()}
@@ -2292,8 +2292,7 @@ defmodule HTTP1RequestTest do
       client = SimpleHTTP1Client.tcp_client(context)
       Transport.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
 
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata},
-                     2000
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
       assert measurements
              ~> %{monotonic_time: integer(), duration: integer()}
@@ -2313,7 +2312,7 @@ defmodule HTTP1RequestTest do
     test "it should send `exception` events for raising requests", context do
       Req.get!(context.req, url: "/raise_error")
 
-      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}
+      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
 
       assert measurements
              ~> %{monotonic_time: integer()}
@@ -2367,7 +2366,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(10)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Header read socket error: :closed"
     end
 
@@ -2389,7 +2388,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(10)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
@@ -2411,7 +2410,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(10)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
@@ -2457,7 +2456,7 @@ defmodule HTTP1RequestTest do
       Process.sleep(10)
       Transport.close(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
