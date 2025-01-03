@@ -289,12 +289,12 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
 
       # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
+      Process.sleep(10)
       assert Process.alive?(pid)
 
       # Now send our half of the handshake and verify that the server has shut down
       SimpleWebSocketClient.send_connection_close_frame(client, 1000)
-      Process.sleep(100)
+      Process.sleep(10)
       refute Process.alive?(pid)
 
       # Verify that the server didn't send any extraneous frames
@@ -597,11 +597,11 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
 
       # Wait a bit and validate that the server is still very much alive
-      Process.sleep(100)
+      Process.sleep(10)
       assert Process.alive?(pid)
 
       # Now wait for the server to timeout
-      Process.sleep(1500)
+      Process.sleep(110)
 
       # Verify that the server has shut down
       refute Process.alive?(pid)
