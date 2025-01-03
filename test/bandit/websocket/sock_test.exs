@@ -1,6 +1,5 @@
 defmodule WebSocketWebSockTest do
-  # False due to telemetry tests
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use ServerHelpers
   use Machete
 

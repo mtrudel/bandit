@@ -1,6 +1,5 @@
 defmodule HTTP2PlugTest do
-  # False due to capture log emptiness check
-  use ExUnit.Case, async: false
+  use ExUnit.Case, async: true
   use ServerHelpers
   use ReqHelpers
   use Machete
