@@ -1294,7 +1294,7 @@ defmodule WebSocketWebSockTest do
     end
 
     test "it should send `start` events on websocket connection", context do
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1312,7 +1312,7 @@ defmodule WebSocketWebSockTest do
     end
 
     test "it should gather send and recv metrics for inclusion in `stop` events", context do
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1355,7 +1355,7 @@ defmodule WebSocketWebSockTest do
     end
 
     test "it should send `stop` events on normal websocket client disconnection", context do
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1380,7 +1380,7 @@ defmodule WebSocketWebSockTest do
     end
 
     test "it should send `stop` events on normal websocket server disconnection", context do
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1405,7 +1405,7 @@ defmodule WebSocketWebSockTest do
     end
 
     test "it should send `stop` events on normal server shutdown", context do
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1426,7 +1426,7 @@ defmodule WebSocketWebSockTest do
     test "it should send `stop` events on abnormal websocket server disconnection", context do
       output =
         capture_log(fn ->
-          TelemetryHelpers.attach_all_events(TelemetrySock)
+          TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
           client = SimpleWebSocketClient.tcp_client(context)
           SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
@@ -1458,7 +1458,7 @@ defmodule WebSocketWebSockTest do
 
     test "it should send `stop` events on timeout", context do
       context = http_server(context, thousand_island_options: [read_timeout: 100])
-      TelemetryHelpers.attach_all_events(TelemetrySock)
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TelemetrySock)

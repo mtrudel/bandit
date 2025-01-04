@@ -39,7 +39,7 @@ defmodule ServerHelpers do
           |> Bandit.child_spec()
           |> start_supervised()
 
-        TelemetryHelpers.attach_all_events(__MODULE__)
+        TelemetryHelpers.attach_all_events(__MODULE__) |> on_exit()
         LoggerHelpers.receive_all_log_events(__MODULE__)
 
         {:ok, {_ip, port}} = ThousandIsland.listener_info(server_pid)
