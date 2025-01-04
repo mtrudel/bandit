@@ -1,3 +1,24 @@
+## 1.6.2 (4 Jan 2025)
+
+### Enhancements
+
+* Send telemetry events on Plugs that throw or exit (#443)
+* Improve test robustness & speed (#446)
+* Read a minimal number of bytes when sniffing for protocol (#449)
+* Add `plug` and `websock` to logging metadata whenever possible (#448)
+* Add `plug` and `websock` to telemetry metadata whenever possible (#447)
+* Silently eat Bandit.TransportError errors during HTTP/1 error fallback handling
+
+### Fixes
+
+* Bump hpax to 1.0.2, fixes https://github.com/phoenixframework/phoenix/issues/6020 (thanks @krainboltgreene!)
+* Fix cases where we would desync on pipelined POST requests (#442)
+
+### Changes
+
+* Unwrap Plug.Conn.WrapperErrors raised by Plug and handle the wrapped error per policy
+* Surface socket setup errors as Bandit.TransportError for consistency in logging
+
 ## 1.6.1 (6 Dec 2024)
 
 ### Enhancements
