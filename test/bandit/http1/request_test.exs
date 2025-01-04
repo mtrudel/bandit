@@ -2330,10 +2330,24 @@ defmodule HTTP1RequestTest do
     end
 
     @tag :capture_log
-    test "it should not send `exception` events for throwing requests", context do
+    test "it should send `exception` events for throwing requests", context do
       Req.get!(context.req, url: "/uncaught_throw")
 
-      refute_receive {:telemetry, [:bandit, :request, :stop], _, _}
+      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
+
+      assert measurements
+             ~> %{monotonic_time: integer()}
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []},
+               kind: :throw,
+               exception: "thrown",
+               stacktrace: list()
+             }
     end
 
     def uncaught_throw(_conn) do
@@ -2341,10 +2355,24 @@ defmodule HTTP1RequestTest do
     end
 
     @tag :capture_log
-    test "it should not send `exception` events for exiting requests", context do
+    test "it should send `exception` events for exiting requests", context do
       Req.get!(context.req, url: "/uncaught_exit")
 
-      refute_receive {:telemetry, [:bandit, :request, :exception], _, _}
+      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
+
+      assert measurements
+             ~> %{monotonic_time: integer()}
+
+      assert metadata
+             ~> %{
+               connection_telemetry_span_context: reference(),
+               telemetry_span_context: reference(),
+               conn: struct_like(Plug.Conn, []),
+               plug: {__MODULE__, []},
+               kind: :exit,
+               exception: "exited",
+               stacktrace: list()
+             }
     end
 
     def uncaught_exit(_conn) do
