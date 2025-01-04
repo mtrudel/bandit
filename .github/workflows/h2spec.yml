@@ -50,4 +50,4 @@ jobs:
       run: |
         mix deps.get
     - name: Run h2spec test
-      run: mix test --only external_conformance test/bandit/http2/h2spec_test.exs
+      run: mix test --only slow test/bandit/http2/h2spec_test.exs

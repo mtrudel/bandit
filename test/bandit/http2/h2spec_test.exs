@@ -2,7 +2,7 @@ defmodule H2SpecTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  @moduletag :external_conformance
+  @moduletag :slow
   @moduletag timeout: 600_000
 
   setup :https_server
@@ -11,7 +11,7 @@ defmodule H2SpecTest do
     conn |> send_resp(200, "OK")
   end
 
-  @tag capture_log: true
+  @tag :capture_log
   test "passes h2spec", context do
     {cmd, opts} =
       case System.find_executable("h2spec") do

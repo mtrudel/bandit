@@ -1,4 +1,4 @@
-ExUnit.start(exclude: :external_conformance)
+ExUnit.start(exclude: :slow)
 
 # Capture all logs so we're able to assert on logging done at info level in tests
 Logger.configure(level: :debug)
