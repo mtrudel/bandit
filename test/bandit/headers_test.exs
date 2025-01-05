@@ -70,9 +70,6 @@ defmodule Bandit.HeadersTest do
       end
     end
 
-    # Skipping this until a release of Plug is available with this PR:
-    # https://github.com/elixir-plug/plug/pull/1155
-    @tag :skip
     test "parses repeat integers with optional whitespace" do
       for integer <- @repeat_ints_ows do
         [num, _] = String.split(integer, ~r/[^\d]/, parts: 2)
