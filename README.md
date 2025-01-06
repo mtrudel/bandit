@@ -10,7 +10,8 @@ Bandit is an HTTP server for Plug and WebSock apps.
 Bandit is written entirely in Elixir and is built atop [Thousand
 Island](https://github.com/mtrudel/thousand_island). It can serve HTTP/1.x,
 HTTP/2 and WebSocket clients over both HTTP and HTTPS. It is written with
-correctness, clarity & performance as fundamental goals.
+correctness, clarity & performance as fundamental goals. It is the default HTTP
+server for [Phoenix](https://github.com/phoenixframework/phoenix) since release 1.7.11 of the framework.
 
 In [ongoing automated performance
 tests](https://github.com/mtrudel/bandit/actions/workflows/manual_benchmark.yml),
