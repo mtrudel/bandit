@@ -38,27 +38,16 @@ defmodule HTTP1PlugTest do
       {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
       assert response.status == 500
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
       assert msg =~ "(RuntimeError) boom"
       assert msg =~ "lib/bandit/pipeline.ex:"
-    end
-
-    @tag :capture_log
-    test "it should provide useful metadata to logger handlers when unknown exceptions are raised",
-         context do
-      {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
-      assert response.status == 500
-
-      assert_receive {:log, log_event}, 500
 
       assert %{
-               meta: %{
-                 domain: [:elixir, :bandit],
-                 crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
-                 conn: %Plug.Conn{},
-                 plug: {__MODULE__, []}
-               }
-             } = log_event
+               domain: [:elixir, :bandit],
+               crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
+               conn: %Plug.Conn{},
+               plug: {__MODULE__, []}
+             } = meta
     end
 
     def unknown_crasher(_conn) do
