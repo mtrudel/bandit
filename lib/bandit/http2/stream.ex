@@ -102,9 +102,9 @@ defmodule Bandit.HTTP2.Stream do
   def deliver_rst_stream(pid, error_code), do: send(pid, {:rst_stream, error_code})
 
   defimpl Bandit.HTTPTransport do
-    def transport_info(stream), do: stream.transport_info
+    def transport_info(%@for{} = stream), do: stream.transport_info
 
-    def version(%{}), do: :"HTTP/2"
+    def version(%@for{}), do: :"HTTP/2"
 
     def read_headers(%@for{state: :idle} = stream) do
       case do_recv(stream, stream.read_timeout) do
@@ -232,7 +232,7 @@ defmodule Bandit.HTTP2.Stream do
       [{"cookie", combined_cookie} | other_headers]
     end
 
-    def read_data(stream, opts) do
+    def read_data(%@for{} = stream, opts) do
       max_bytes = Keyword.get(opts, :length, 8_000_000)
       timeout = Keyword.get(opts, :read_timeout, 15_000)
       do_read_data(stream, max_bytes, timeout, [])
@@ -517,7 +517,7 @@ defmodule Bandit.HTTP2.Stream do
       stream_error!("Terminating stream in #{state} state", Bandit.HTTP2.Errors.internal_error())
     end
 
-    def supported_upgrade?(_stream, _protocol), do: false
+    def supported_upgrade?(%@for{} = _stream, _protocol), do: false
 
     def send_on_error(%@for{} = stream, %Bandit.HTTP2.Errors.StreamError{} = error) do
       do_send(stream, {:send_rst_stream, error.error_code})

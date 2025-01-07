@@ -411,7 +411,7 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    def supported_upgrade?(_socket, protocol), do: protocol == :websocket
+    def supported_upgrade?(%@for{} = _socket, protocol), do: protocol == :websocket
 
     def send_on_error(%@for{}, %Bandit.TransportError{}), do: :ok
 
