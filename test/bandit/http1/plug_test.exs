@@ -32,11 +32,18 @@ defmodule HTTP1PlugTest do
     end
   end
 
-  describe "plug error logging" do
+  describe "plug error handling" do
     @tag :capture_log
-    test "it should return 500 and log verbosely when unknown exceptions are raised", context do
-      {:ok, response} = Req.get(context.req, url: "/unknown_crasher")
-      assert response.status == 500
+    test "it should return 500, close the connection and log verbosely when unknown exceptions are raised",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/unknown_crasher", ["host: banana"])
+
+      assert {:ok, "500 Internal Server Error", _headers, _} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: banana"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
       assert msg =~ "(RuntimeError) boom"
@@ -55,9 +62,15 @@ defmodule HTTP1PlugTest do
     end
 
     @tag :capture_log
-    test "it should return the code and not log when known exceptions are raised", context do
-      {:ok, response} = Req.get(context.req, url: "/known_crasher")
-      assert response.status == 418
+    test "it should return the code, close the connection and not log when known exceptions are raised",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/known_crasher", ["host: banana"])
+
+      assert {:ok, "418 I'm a teapot", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: banana"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       refute_receive {:log, _}
     end
@@ -69,8 +82,13 @@ defmodule HTTP1PlugTest do
         |> http_server(http_options: [log_exceptions_with_status_codes: 100..599])
         |> Enum.into(context)
 
-      {:ok, response} = Req.get(context.req, url: "/known_crasher", base_url: context.base)
-      assert response.status == 418
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/known_crasher", ["host: banana"])
+
+      assert {:ok, "418 I'm a teapot", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: banana"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "(SafeError) boom"
@@ -86,6 +104,10 @@ defmodule HTTP1PlugTest do
       plug(Plug.Logger)
       plug(:match)
       plug(:dispatch)
+
+      get "/hello_world" do
+        send_resp(conn, 200, "hello")
+      end
 
       get "/" do
         # Quiet the compiler
@@ -103,8 +125,14 @@ defmodule HTTP1PlugTest do
 
       LoggerHelpers.receive_all_log_events(Router)
 
-      {:ok, response} = Req.get(context.req, url: "/", base_url: context.base)
-      assert response.status == 500
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/", ["host: banana"])
+
+      assert {:ok, "500 Internal Server Error", _headers, _} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: banana"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       refute msg =~ "(Plug.Conn.WrapperError)"
