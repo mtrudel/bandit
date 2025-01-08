@@ -236,12 +236,9 @@ defmodule Bandit.Pipeline do
     if status in Keyword.get(opts.http, :log_exceptions_with_status_codes, 500..599) do
       logger_metadata = Bandit.Logger.logger_metadata_for(kind, reason, stacktrace, metadata)
       Logger.error(Exception.format(kind, reason, stacktrace), logger_metadata)
-
-      Bandit.HTTPTransport.send_on_error(transport, reason)
-      {:error, reason}
-    else
-      Bandit.HTTPTransport.send_on_error(transport, reason)
-      {:ok, transport}
     end
+
+    Bandit.HTTPTransport.send_on_error(transport, reason)
+    {:error, reason}
   end
 end
