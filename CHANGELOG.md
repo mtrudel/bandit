@@ -1,3 +1,10 @@
+## 1.6.3 (8 Jan 2025)
+
+### Fixes
+
+* Always close HTTP/1 connection in any case where an error comes out of the plug (#452, thanks @zookzook!)
+* Fix dialyzer warning introduced by Thousand Island 1.3.9
+
 ## 1.6.2 (4 Jan 2025)
 
 ### Enhancements
