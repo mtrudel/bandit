@@ -24,7 +24,7 @@ defmodule Bandit.TransportInfo do
       }
     else
       {:error, reason} ->
-        raise Bandit.TransportError, message: "Unable to obtain transport_info", reason: reason
+        raise Bandit.TransportError, message: "Unable to obtain transport_info", error: reason
     end
   end
 
