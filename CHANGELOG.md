@@ -1,3 +1,9 @@
+## 1.6.4 (11 Jan 2025)
+
+### Fixes
+
+* Fix error in socket setup error handling introduced in 1.6.2 (thanks @danielspofford!)
+
 ## 1.6.3 (8 Jan 2025)
 
 ### Fixes
