@@ -209,7 +209,15 @@ defmodule Bandit.Pipeline do
         ) :: {:ok, Bandit.HTTPTransport.t()} | {:error, term()}
   defp handle_error(:error, %Plug.Conn.WrapperError{} = error, _, transport, span, opts, metadata) do
     # Unwrap the inner error and handle it
-    handle_error(error.kind, error.reason, error.stack, transport, span, opts, metadata)
+    handle_error(
+      error.kind,
+      Exception.normalize(:error, error.reason, error.stack),
+      error.stack,
+      transport,
+      span,
+      opts,
+      metadata
+    )
   end
 
   defp handle_error(:error, %type{} = error, stacktrace, transport, span, opts, metadata)
