@@ -46,19 +46,19 @@ defmodule HTTP1PlugTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
-      assert msg =~ "(RuntimeError) boom"
+      assert msg =~ "(ArithmeticError)"
       assert msg =~ "lib/bandit/pipeline.ex:"
 
       assert %{
                domain: [:elixir, :bandit],
-               crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
+               crash_reason: {%ArithmeticError{}, [_ | _] = _stacktrace},
                conn: %Plug.Conn{},
                plug: {__MODULE__, []}
              } = meta
     end
 
     def unknown_crasher(_conn) do
-      raise "boom"
+      1 / 0
     end
 
     @tag :capture_log
