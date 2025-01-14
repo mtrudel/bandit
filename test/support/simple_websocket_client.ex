@@ -23,25 +23,32 @@ defmodule SimpleWebSocketClient do
       ] ++ extension_header
     )
 
-    # Because we don't want to consume any more than our headers, we can't use SimpleHTTP1Client
-    {:ok, response} = Transport.recv(client, 164)
+    headers = read_headers(client, [])
 
-    [
-      "HTTP/1.1 101 Switching Protocols",
-      "date: " <> _date,
-      "upgrade: websocket",
-      "connection: Upgrade",
-      "sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=",
-      ""
-    ] = String.split(response, "\r\n")
+    ["HTTP/1.1 101 Switching Protocols" | headers] = headers
+    ["date: " <> _date | headers] = headers
+    ["upgrade: websocket" | headers] = headers
+    ["connection: Upgrade" | headers] = headers
+    ["sec-websocket-accept: s3pPLMBiTxaQ9kYGzzhZRbK\+xOo=" | headers] = headers
+    {:ok, headers}
+  end
 
-    case Transport.recv(client, 2) do
-      {:ok, "\r\n"} ->
-        {:ok, false}
+  # Read one line at a time so as to not consume any body
+  defp read_headers(socket, headers) do
+    case read_line(socket, <<>>) do
+      "" -> headers
+      header -> read_headers(socket, headers ++ [header])
+    end
+  end
 
-      {:ok, "se"} when deflate ->
-        {:ok, "c-websocket-extensions: permessage-deflate\r\n\r\n"} = Transport.recv(client, 46)
-        {:ok, true}
+  defp read_line(socket, buffer) do
+    case Transport.recv(socket, 1) do
+      {:ok, "\r"} ->
+        {:ok, "\n"} = Transport.recv(socket, 1)
+        buffer
+
+      {:ok, byte} ->
+        read_line(socket, buffer <> byte)
     end
   end
 

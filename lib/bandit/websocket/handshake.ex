@@ -75,7 +75,8 @@ defmodule Bandit.WebSocket.Handshake do
         {:connection, "Upgrade"},
         {:"sec-websocket-accept", server_key}
       ] ++
-        websocket_extension_header(extensions)
+        websocket_extension_header(extensions) ++
+        conn.resp_headers
 
     inform(conn, 101, headers)
   end

@@ -153,6 +153,33 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "compressed frames" do
+    test "negotiates compression if globally configured to", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      assert {:ok,
+              [
+                "sec-websocket-extensions: permessage-deflate",
+                "cache-control: max-age=0, private, must-revalidate"
+              ]} =
+               SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "does not negotiate compression if not globally configured to", context do
+      context = http_server(context, websocket_options: [compress: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      assert {:ok, ["cache-control: max-age=0, private, must-revalidate"]} =
+               SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+    end
+
     test "correctly decompresses text frames and sends compressed frames back", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
@@ -211,15 +238,6 @@ defmodule WebSocketProtocolTest do
 
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
       assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
-    end
-
-    test "does not negotiate compression if not globally configured to", context do
-      context = http_server(context, websocket_options: [compress: false])
-      client = SimpleWebSocketClient.tcp_client(context)
-      assert {:ok, false} = SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
-
-      SimpleWebSocketClient.send_text_frame(client, "OK")
-      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
     end
   end
 
