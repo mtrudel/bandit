@@ -230,6 +230,8 @@ defmodule Bandit.Pipeline do
   end
 
   defp handle_error(kind, reason, stacktrace, transport, span, opts, metadata) do
+    reason = Exception.normalize(kind, reason, stacktrace)
+
     Bandit.Telemetry.span_exception(span, kind, reason, stacktrace)
     status = reason |> Plug.Exception.status() |> Plug.Conn.Status.code()
 

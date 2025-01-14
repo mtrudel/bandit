@@ -46,19 +46,19 @@ defmodule HTTP1PlugTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
-      assert msg =~ "(RuntimeError) boom"
+      assert msg =~ "(ArithmeticError)"
       assert msg =~ "lib/bandit/pipeline.ex:"
 
       assert %{
                domain: [:elixir, :bandit],
-               crash_reason: {%RuntimeError{message: "boom"}, [_ | _] = _stacktrace},
+               crash_reason: {%ArithmeticError{}, [_ | _] = _stacktrace},
                conn: %Plug.Conn{},
                plug: {__MODULE__, []}
              } = meta
     end
 
     def unknown_crasher(_conn) do
-      raise "boom"
+      1 / 0
     end
 
     @tag :capture_log
@@ -112,7 +112,7 @@ defmodule HTTP1PlugTest do
       get "/" do
         # Quiet the compiler
         _ = conn
-        raise "boom"
+        1 = 0
       end
     end
 
@@ -134,9 +134,15 @@ defmodule HTTP1PlugTest do
       SimpleHTTP1Client.send(client, "GET", "/hello_world", ["host: banana"])
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
 
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
       refute msg =~ "(Plug.Conn.WrapperError)"
-      assert msg =~ "** (RuntimeError) boom"
+      assert msg =~ "** (MatchError)"
+
+      assert %{
+               domain: [:elixir, :bandit],
+               crash_reason: {%MatchError{}, [_ | _] = _stacktrace},
+               conn: %Plug.Conn{}
+             } = meta
     end
   end
 
