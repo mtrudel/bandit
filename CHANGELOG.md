@@ -1,3 +1,13 @@
+## 1.6.5 (15 Jan 2025)
+
+### Fixes
+
+* Fix regression introduced in 1.6.1 where we would not send headers set by the Plug during WebSocket upgrades (#458)
+
+### Enhancements
+
+* Properly normalize Erlang errors before emitting telemetry and logged crash_reason (#455, thanks @grzuy!)
+
 ## 1.6.4 (11 Jan 2025)
 
 ### Fixes
