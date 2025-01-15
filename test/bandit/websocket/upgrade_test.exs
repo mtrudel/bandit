@@ -16,10 +16,17 @@ defmodule WebSocketUpgradeTest do
         timeout -> [timeout: String.to_integer(timeout)]
       end
 
-    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, :upgrade, connection_opts})
+    conn
+    |> put_resp_header("x-plug-set-header", "itsaheader")
+    |> Plug.Conn.upgrade_adapter(:websocket, {websock, :upgrade, connection_opts})
   end
 
   defmodule UpgradeWebSock do
+    use NoopWebSock
+    def init(opts), do: {:ok, opts}
+  end
+
+  defmodule UpgradeSendOnTerminateWebSock do
     use NoopWebSock
     def init(opts), do: {:ok, [opts, :init]}
     def handle_in(_data, state), do: {:push, {:text, inspect(state)}, state}
@@ -36,7 +43,7 @@ defmodule WebSocketUpgradeTest do
   describe "upgrade support" do
     test "upgrades to a {websock, websock_opts, conn_opts} tuple, respecting options", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock, timeout: "250")
+      SimpleWebSocketClient.http1_handshake(client, UpgradeSendOnTerminateWebSock, timeout: "250")
 
       SimpleWebSocketClient.send_text_frame(client, "")
       {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
@@ -49,19 +56,14 @@ defmodule WebSocketUpgradeTest do
       assert_in_delta now, then + 250, 50
     end
 
-    test "upgrade responses do not include content-encoding headers", context do
+    test "upgrade responses include headers set from the plug", context do
       client = SimpleWebSocketClient.tcp_client(context)
-      SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock, timeout: "250")
 
-      SimpleWebSocketClient.send_text_frame(client, "")
-      {:ok, result} = SimpleWebSocketClient.recv_text_frame(client)
-      assert result == inspect([:upgrade, :init])
-
-      # Ensure that the passed timeout was recognized
-      then = System.monotonic_time(:millisecond)
-      assert_receive :timeout, 500
-      now = System.monotonic_time(:millisecond)
-      assert_in_delta now, then + 250, 50
+      assert {:ok,
+              [
+                "cache-control: max-age=0, private, must-revalidate",
+                "x-plug-set-header: itsaheader"
+              ]} = SimpleWebSocketClient.http1_handshake(client, UpgradeWebSock)
     end
 
     defmodule MyNoopWebSock do
