@@ -423,7 +423,7 @@ defmodule Bandit.HTTP1.Socket do
           status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
           try do
-            send_headers(socket, status, [], :no_body)
+            send_headers(socket, status, [{"connection", "close"}], :no_body)
           rescue
             _e in [Bandit.TransportError, Bandit.HTTPError] -> :ok
           end

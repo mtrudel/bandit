@@ -203,7 +203,9 @@ defmodule HTTP1ProtocolTest do
 
       SimpleHTTP1Client.send(client, "GET", "/known_crasher", ["host: banana"])
 
-      assert {:ok, "418 I'm a teapot", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "418 I'm a teapot", [connection: "close"], _} =
+               SimpleHTTP1Client.recv_reply(client)
+
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
