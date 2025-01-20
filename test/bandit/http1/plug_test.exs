@@ -112,7 +112,7 @@ defmodule HTTP1PlugTest do
       get "/" do
         # Quiet the compiler
         _ = conn
-        1 = 0
+        1 = self()
       end
     end
 
