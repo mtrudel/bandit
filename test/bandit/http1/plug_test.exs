@@ -58,7 +58,7 @@ defmodule HTTP1PlugTest do
     end
 
     def unknown_crasher(_conn) do
-      1 / 0
+      1 + self()
     end
 
     @tag :capture_log
@@ -112,7 +112,7 @@ defmodule HTTP1PlugTest do
       get "/" do
         # Quiet the compiler
         _ = conn
-        1 = 0
+        1 = self()
       end
     end
 
