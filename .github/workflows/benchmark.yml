@@ -1,6 +1,6 @@
 name: Benchmark
 
-on: 
+on:
   pull_request:
     types: [ opened, reopened, synchronize, labeled ]
 
@@ -16,13 +16,13 @@ jobs:
       run: sudo apt-get install nghttp2
     - name: Checkout code
       uses: actions/checkout@v4
-      with: 
+      with:
         repository: mtrudel/benchmark
     - name: Setup Elixir
       uses: erlef/setup-beam@v1
       with:
-        elixir-version: 1.14.x
-        otp-version: 25.1
+        elixir-version: 1.18.x
+        otp-version: 27.1
     - name: Install mix dependencies
       run: mix deps.get
     - name: Compile code

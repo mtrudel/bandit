@@ -5,10 +5,10 @@ on:
     inputs:
       elixirs:
         type: string
-        default: "[\"1.14.x\"]"
+        default: "[\"1.18.x\"]"
       erlangs:
         type: string
-        default: "[\"25.x\"]"
+        default: "[\"27.x\"]"
 
 env:
   MIX_ENV: test
@@ -21,11 +21,6 @@ jobs:
       matrix:
         elixir: ${{ fromJSON(inputs.elixirs) }}
         otp: ${{ fromJSON(inputs.erlangs) }}
-        exclude:
-          - elixir: 1.12.x
-            otp: 25.x
-          - elixir: 1.14.x
-            otp: 23.x
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
