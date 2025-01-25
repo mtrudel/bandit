@@ -58,7 +58,7 @@ defmodule HTTP1PlugTest do
     end
 
     def unknown_crasher(_conn) do
-      1 + self()
+      apply(:erlang, :+, [1, self()])
     end
 
     @tag :capture_log
@@ -112,7 +112,7 @@ defmodule HTTP1PlugTest do
       get "/" do
         # Quiet the compiler
         _ = conn
-        1 = self()
+        apply(:erlang, :+, [1, self()])
       end
     end
 
@@ -136,11 +136,11 @@ defmodule HTTP1PlugTest do
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: meta}}, 500
       refute msg =~ "(Plug.Conn.WrapperError)"
-      assert msg =~ "** (MatchError)"
+      assert msg =~ "** (ArithmeticError)"
 
       assert %{
                domain: [:elixir, :bandit],
-               crash_reason: {%MatchError{}, [_ | _] = _stacktrace},
+               crash_reason: {%ArithmeticError{}, [_ | _] = _stacktrace},
                conn: %Plug.Conn{}
              } = meta
     end
