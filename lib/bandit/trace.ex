@@ -113,9 +113,9 @@ defmodule Bandit.Trace do
        ) do
     connection_span_context = Map.get(metadata, :connection_telemetry_span_context)
 
-    IO.puts("=====================================")
+    IO.puts("======================================")
     IO.puts("Starting telemetry trace for exception")
-    IO.puts("=====================================")
+    IO.puts("======================================")
 
     :queue.to_list(state.queue)
     |> Enum.filter(fn {_, _, metadata, _} ->
@@ -126,9 +126,9 @@ defmodule Bandit.Trace do
     |> inspect(limit: :infinity, pretty: true, printable_limit: :infinity)
     |> IO.puts()
 
-    IO.puts("======================================")
+    IO.puts("=======================================")
     IO.puts("Completed telemetry trace for exception")
-    IO.puts("======================================")
+    IO.puts("=======================================")
 
     :ok
   end
