@@ -1693,7 +1693,7 @@ defmodule HTTP1ProtocolTest do
       Transport.close(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) Header read socket error: :closed"
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
     @tag :capture_log
