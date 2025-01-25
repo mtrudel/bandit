@@ -1,8 +1,10 @@
 defmodule Bandit.Trace do
   @moduledoc """
-  Helper functions to provide visibility into a running Bandit instance
+  **THIS MODULE IS EXPERIMENTAL AND SUBJECT TO CHANGE**
 
-  Intended to be used within an IEx session attached to a running Bandit instance, as follows:
+  Helper functions to provide visibility into runtime errors within a running Bandit instance
+
+  Can be used within an IEx session attached to a running Bandit instance, as follows:
 
   ```
   iex> Bandit.Trace.start_tracing()
@@ -10,9 +12,11 @@ defmodule Bandit.Trace do
   iex> Bandit.Trace.stop_tracing()
   ```
 
-  By default, `Bandit.Trace` will emit a trace on every exception that is Bandit sees (both those
-  emitted from within your Plug and also those that are internal to Bandit). These traces consist
-  of a complete dump of all telemetry events that occur in the offending request's parent
+  It can also be started within your application by adding `Bandit.Trace` to your process tree.
+
+  `Bandit.Trace` will emit a trace on every exception that Bandit sees (both those emitted from
+  within your Plug as well as internal ones due to protocol violations and the like). These traces
+  consist of a complete dump of all telemetry events that occur in the offending request's parent
   connection.
 
   Tracing imposes a modest but non-zero load; it *should* be safe to run in most production
