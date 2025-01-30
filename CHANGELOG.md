@@ -1,3 +1,10 @@
+## 1.6.7 (30 Jan 2025)
+
+### Changes
+
+* Consider timeouts when reading HTTP/1 headers as a connection error and not an HTTP error
+* Enhance logging for WebSocket deflation errors
+
 ## 1.6.6 (25 Jan 2025)
 
 ### Fixes
