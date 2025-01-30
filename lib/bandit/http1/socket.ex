@@ -284,7 +284,6 @@ defmodule Bandit.HTTP1.Socket do
     defp read_available_for_header!(socket) do
       case ThousandIsland.Socket.recv(socket, 0) do
         {:ok, chunk} -> chunk
-        {:error, :timeout} -> request_error!("Header read timeout", :request_timeout)
         {:error, reason} -> socket_error!(reason)
       end
     end
