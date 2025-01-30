@@ -78,9 +78,9 @@ defmodule WebSocketUpgradeTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer()
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
