@@ -282,8 +282,8 @@ defmodule Bandit.WebSocket.Connection do
 
         {:continue, connection}
 
-      {:error, _reason} ->
-        do_error(1007, "Deflation error", socket, connection)
+      {:error, reason} ->
+        do_error(1007, "Deflation error: #{inspect(reason)}", socket, connection)
     end
   end
 
