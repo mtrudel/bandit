@@ -788,7 +788,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -816,7 +816,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -844,7 +844,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -876,7 +876,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -910,7 +910,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -934,7 +934,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["chunk_test"]),
                plug: {__MODULE__, []}
              }
     end
@@ -958,7 +958,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_full_file"]),
                plug: {__MODULE__, []}
              }
     end
@@ -1003,7 +1003,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["raise_error"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: %RuntimeError{message: "boom"},
@@ -1027,7 +1027,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_throw"]),
                plug: {__MODULE__, []},
                kind: :throw,
                exception: "thrown",
@@ -1051,7 +1051,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_exit"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: "exited",

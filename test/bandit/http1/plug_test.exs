@@ -404,7 +404,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -428,7 +428,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -456,7 +456,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -488,7 +488,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -516,7 +516,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -550,7 +550,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -574,7 +574,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_chunked_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -607,7 +607,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_full_file"]),
                plug: {__MODULE__, []}
              }
     end
@@ -676,7 +676,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["raise_error"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: %RuntimeError{message: "boom"},
@@ -701,7 +701,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_throw"]),
                plug: {__MODULE__, []},
                kind: :throw,
                exception: "thrown",
@@ -726,7 +726,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_exit"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: "exited",
