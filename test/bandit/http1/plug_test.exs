@@ -404,7 +404,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -428,7 +428,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -456,7 +456,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -488,7 +488,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -516,7 +516,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -550,7 +550,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -574,7 +574,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -607,7 +607,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []}
              }
     end
@@ -670,7 +670,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: %RuntimeError{message: "boom"},
@@ -695,7 +695,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []},
                kind: :throw,
                exception: "thrown",
@@ -720,7 +720,7 @@ defmodule HTTP1PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, []),
+               conn: struct_like(Plug.Conn),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: "exited",
