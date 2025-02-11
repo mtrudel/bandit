@@ -87,7 +87,7 @@ defmodule WebSocketUpgradeTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: []),
+               conn: struct_like(Plug.Conn, path_info: [], status: 101),
                plug: {__MODULE__, []}
              }
     end
