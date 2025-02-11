@@ -782,13 +782,13 @@ defmodule HTTP2PlugTest do
 
       assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer()}
+      assert measurements ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -804,19 +804,19 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
                resp_body_bytes: 0,
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
                plug: {__MODULE__, []}
              }
     end
@@ -829,22 +829,22 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
-               req_body_start_time: integer(),
-               req_body_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
+               req_body_start_time: integer(roughly: System.monotonic_time()),
+               req_body_end_time: integer(roughly: System.monotonic_time()),
                req_body_bytes: 0,
                resp_body_bytes: 2,
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -861,22 +861,22 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
-               req_body_start_time: integer(),
-               req_body_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
+               req_body_start_time: integer(roughly: System.monotonic_time()),
+               req_body_end_time: integer(roughly: System.monotonic_time()),
                req_body_bytes: 80,
                resp_body_bytes: 2,
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -893,24 +893,24 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
-               req_body_start_time: integer(),
-               req_body_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
+               req_body_start_time: integer(roughly: System.monotonic_time()),
+               req_body_end_time: integer(roughly: System.monotonic_time()),
                req_body_bytes: 80,
                resp_uncompressed_body_bytes: 2,
                resp_body_bytes: 22,
                resp_compression_method: "gzip",
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
                plug: {__MODULE__, []}
              }
     end
@@ -922,19 +922,19 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
                resp_body_bytes: 4,
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["chunk_test"]),
                plug: {__MODULE__, []}
              }
     end
@@ -946,19 +946,19 @@ defmodule HTTP2PlugTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
                resp_body_bytes: 6,
-               resp_start_time: integer(),
-               resp_end_time: integer()
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["send_full_file"]),
                plug: {__MODULE__, []}
              }
     end
@@ -976,7 +976,11 @@ defmodule HTTP2PlugTest do
 
       assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer(), duration: integer()}
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native))
+             }
 
       assert metadata
              ~> %{
@@ -993,13 +997,13 @@ defmodule HTTP2PlugTest do
 
       assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer()}
+      assert measurements ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["raise_error"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: %RuntimeError{message: "boom"},
@@ -1017,13 +1021,13 @@ defmodule HTTP2PlugTest do
 
       assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer()}
+      assert measurements ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_throw"]),
                plug: {__MODULE__, []},
                kind: :throw,
                exception: "thrown",
@@ -1041,13 +1045,13 @@ defmodule HTTP2PlugTest do
 
       assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer()}
+      assert measurements ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: ["uncaught_exit"]),
                plug: {__MODULE__, []},
                kind: :exit,
                exception: "exited",

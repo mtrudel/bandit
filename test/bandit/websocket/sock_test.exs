@@ -1301,7 +1301,11 @@ defmodule WebSocketWebSockTest do
 
       assert_receive {:telemetry, [:bandit, :websocket, :start], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer(), compress: maybe(boolean())}
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               compress: maybe(boolean())
+             }
 
       assert metadata
              ~> %{
@@ -1326,8 +1330,8 @@ defmodule WebSocketWebSockTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
                recv_text_frame_count: 1,
                recv_text_frame_bytes: 4,
                recv_binary_frame_count: 1,
@@ -1365,8 +1369,8 @@ defmodule WebSocketWebSockTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
                recv_connection_close_frame_count: 1,
                recv_connection_close_frame_bytes: 0
              }
@@ -1390,8 +1394,8 @@ defmodule WebSocketWebSockTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
                recv_text_frame_count: 1,
                recv_text_frame_bytes: 5
              }
@@ -1413,7 +1417,11 @@ defmodule WebSocketWebSockTest do
 
       assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer(), duration: integer()}
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native))
+             }
 
       assert metadata
              ~> %{
@@ -1436,8 +1444,8 @@ defmodule WebSocketWebSockTest do
 
           assert measurements
                  ~> %{
-                   monotonic_time: integer(),
-                   duration: integer(),
+                   monotonic_time: integer(roughly: System.monotonic_time()),
+                   duration: integer(max: System.convert_time_unit(1, :second, :native)),
                    recv_text_frame_count: 1,
                    recv_text_frame_bytes: 14
                  }
@@ -1466,7 +1474,11 @@ defmodule WebSocketWebSockTest do
 
       assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, metadata}, 500
 
-      assert measurements ~> %{monotonic_time: integer(), duration: integer()}
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native))
+             }
 
       assert metadata
              ~> %{

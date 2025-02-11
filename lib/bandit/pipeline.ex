@@ -46,6 +46,7 @@ defmodule Bandit.Pipeline do
             {:ok, adapter.transport}
 
           {:upgrade, %Plug.Conn{adapter: {_mod, adapter}} = conn, protocol, opts} ->
+            conn = Plug.Conn.put_status(conn, 101)
             Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
             {:upgrade, adapter.transport, protocol, opts}
         end

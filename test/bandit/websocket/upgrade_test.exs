@@ -78,16 +78,16 @@ defmodule WebSocketUpgradeTest do
 
       assert measurements
              ~> %{
-               monotonic_time: integer(),
-               duration: integer(),
-               req_header_end_time: integer()
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time())
              }
 
       assert metadata
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn),
+               conn: struct_like(Plug.Conn, path_info: [], status: 101),
                plug: {__MODULE__, []}
              }
     end
