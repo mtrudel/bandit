@@ -298,7 +298,8 @@ defmodule Bandit.HTTP2.Stream do
           {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
 
         {:data, data, end_stream} ->
-          {:data, data, stream |> do_recv_data(data) |> do_recv_end_stream(end_stream)}
+          {:data, data,
+           stream |> do_recv_data(data, end_stream) |> do_recv_end_stream(end_stream)}
 
         {:send_window_update, delta} ->
           do_recv_send_window_update(stream, delta)
@@ -342,11 +343,11 @@ defmodule Bandit.HTTP2.Stream do
     defp do_recv_headers(%@for{state: :idle} = stream), do: %{stream | state: :open}
     defp do_recv_headers(stream), do: stream
 
-    defp do_recv_data(stream, data) do
+    defp do_recv_data(stream, data, end_stream) do
       {new_window, increment} =
         Bandit.HTTP2.FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
 
-      if increment > 0, do: do_send(stream, {:send_recv_window_update, increment})
+      if increment > 0 && !end_stream, do: do_send(stream, {:send_recv_window_update, increment})
 
       bytes_remaining =
         case stream.bytes_remaining do
@@ -506,7 +507,7 @@ defmodule Bandit.HTTP2.Stream do
     def ensure_completed(%@for{state: :local_closed} = stream) do
       receive do
         {:headers, _headers, true} -> do_recv_end_stream(stream, true)
-        {:data, data, true} -> do_recv_data(stream, data) |> do_recv_end_stream(true)
+        {:data, data, true} -> do_recv_data(stream, data, true) |> do_recv_end_stream(true)
       after
         # RFC9113§8.1 - hint the client to stop sending data
         0 -> do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})

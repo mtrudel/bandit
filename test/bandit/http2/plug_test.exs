@@ -693,6 +693,48 @@ defmodule HTTP2PlugTest do
     conn
   end
 
+  test "sending zero byte bodies does not block on connection or stream flow control", context do
+    context =
+      context
+      |> https_server(thousand_island_options: [read_timeout: 500])
+      |> Enum.into(context)
+
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_empty_body", context.port)
+    assert {:ok, 1, false, _headers, ctx} = SimpleH2Client.recv_headers(socket)
+    {:ok, 1, true, ""} = SimpleH2Client.recv_body(socket)
+
+    SimpleH2Client.send_simple_headers(socket, 3, :get, "/send_empty_body", context.port)
+    assert {:ok, 3, false, _headers, ctx} = SimpleH2Client.recv_headers(socket, ctx)
+    {:ok, 3, true, ""} = SimpleH2Client.recv_body(socket)
+
+    SimpleH2Client.send_simple_headers(socket, 5, :get, "/send_empty_body", context.port)
+    assert {:ok, 5, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket, ctx)
+    {:ok, 5, true, ""} = SimpleH2Client.recv_body(socket)
+  end
+
+  def send_empty_body(conn) do
+    send_resp(conn, 200, "")
+  end
+
+  test "does not send window updates on closed streams that are never read", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_read", context.port)
+    SimpleH2Client.send_body(socket, 1, true, "ABCDEF")
+
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+    {:ok, 1, true, ""} = SimpleH2Client.recv_body(socket)
+
+    assert SimpleH2Client.connection_alive?(socket)
+  end
+
+  def no_read(conn) do
+    conn |> send_resp(200, <<>>)
+  end
+
   test "sending informational responses", context do
     socket = SimpleH2Client.setup_connection(context)
 
