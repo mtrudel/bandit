@@ -1,3 +1,13 @@
+## 1.6.8 (5 Mar 2025)
+
+### Fixes
+
+* Do not send stream WINDOW_UPDATEs on the last data frame of a stream
+
+### Enhancements
+
+* Add `status` to the telemetry metadata emitted on WebSocket upgrades (#466)
+
 ## 1.6.7 (30 Jan 2025)
 
 ### Changes
