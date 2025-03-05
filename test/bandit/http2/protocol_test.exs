@@ -1045,7 +1045,6 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -1081,7 +1080,6 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 8_000))
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -2055,7 +2053,6 @@ defmodule HTTP2ProtocolTest do
       expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
@@ -2070,13 +2067,13 @@ defmodule HTTP2ProtocolTest do
       expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
       assert {:ok, 1, false, [{":status", "200"} | _], ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
-      SimpleH2Client.send_body(socket, 3, true, "OK")
+      SimpleH2Client.send_body(socket, 3, false, "OK")
+      SimpleH2Client.send_body(socket, 3, true, "")
 
       expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
 
@@ -2291,7 +2288,6 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 16_384))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 100 bytes as that is our initial stream window
@@ -2316,7 +2312,6 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 16_384))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-      assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 100 bytes as that is our initial stream window
