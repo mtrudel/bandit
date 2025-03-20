@@ -7,7 +7,7 @@ defmodule Bandit.Adapter do
   # concerns, which are managed by the underlying `Bandit.HTTPTransport` implementation
 
   @behaviour Plug.Conn.Adapter
-  @already_sent {:plug_conn, :already_sent}
+  @already_sent {:plug_conn, :sent}
 
   defstruct transport: nil,
             owner_pid: nil,
