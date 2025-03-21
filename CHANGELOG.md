@@ -1,3 +1,10 @@
+## 1.6.9 (21 Mar 2025)
+
+### Fixes
+
+* Do not close compression context before calling websock close callback (#462,
+  thanks @thiagopromano!)
+
 ## 1.6.8 (5 Mar 2025)
 
 ### Fixes
