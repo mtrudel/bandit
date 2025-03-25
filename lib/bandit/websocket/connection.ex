@@ -123,8 +123,7 @@ defmodule Bandit.WebSocket.Connection do
             _code -> 1002
           end
 
-        _ = do_stop(reply_code, :remote, socket, connection)
-        if connection.compress, do: PerMessageDeflate.close(connection.compress)
+        {:continue, connection} = do_stop(reply_code, :remote, socket, connection)
         {:close, %{connection | state: :closed, compress: nil}}
 
       %Frame.Ping{} = frame ->
