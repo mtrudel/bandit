@@ -182,6 +182,21 @@ provides a generic abstraction for WebSockets (very similar to how Plug is
 a generic abstraction on top of HTTP). Bandit fully supports all aspects of
 these libraries.
 
+## Receiving messages in your Plug process: A word of warning
+
+The Plug specification is concerned only with the shape of the `c:Plug.init/1`
+and `c:Plug.call/2` functions; it says nothing about the process model that
+underlies the call, nor about how the Plug function should respond to any
+messages it may receive. Although it is occasionally necessary to receive
+messages from within your Plug call, this must be done with caution as Bandit
+makes extensive use of messaging internally, especially with HTTP/2 based
+requests.
+
+In particular, you must ensure that your code *never* receives messages that
+match the patterns `{:bandit, _}` or `{:plug_conn, :sent}`. Any `receive` calls
+you make should be appropriately guarded to ensure that these messages remain in
+the process' mailbox for Bandit to process them when required.
+
 <!-- MDOC -->
 
 ## Implementation Details
