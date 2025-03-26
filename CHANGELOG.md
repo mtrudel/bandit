@@ -1,3 +1,13 @@
+## 1.6.10 (25 Mar 2025)
+
+### Fixes
+
+* Fix bug introduced when closing compressed websock connections in certain circumstances (#478)
+
+### Enhancements
+
+* Standardize & document the format of messages sent to HTTP/2 Stream processes (#481)
+
 ## 1.6.9 (21 Mar 2025)
 
 ### Fixes
