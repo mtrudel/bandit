@@ -1,3 +1,12 @@
+## 1.6.11 (31 Mar 2025)
+
+### Changes
+
+* Ensure that HTTP/1 request headers are sent to the Plug in the order they're
+sent (#482)
+* Do not populate the `cookies` header with an empty string if no cookies were
+sent in HTTP/2 (#483)
+
 ## 1.6.10 (25 Mar 2025)
 
 ### Fixes
