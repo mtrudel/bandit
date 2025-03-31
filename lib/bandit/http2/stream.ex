@@ -232,8 +232,10 @@ defmodule Bandit.HTTP2.Stream do
       {crumbs, other_headers} =
         headers |> Enum.split_with(fn {header, _} -> header == "cookie" end)
 
-      combined_cookie = Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end)
-      [{"cookie", combined_cookie} | other_headers]
+      case Enum.map_join(crumbs, "; ", fn {"cookie", crumb} -> crumb end) do
+        "" -> other_headers
+        combined_cookie -> [{"cookie", combined_cookie} | other_headers]
+      end
     end
 
     def read_data(%@for{} = stream, opts) do
