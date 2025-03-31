@@ -143,7 +143,7 @@ defmodule Bandit.HTTP1.Socket do
 
         {:ok, :http_eoh, rest} ->
           socket = %{socket | read_state: :headers_read, buffer: rest}
-          {headers, socket}
+          {Enum.reverse(headers), socket}
 
         {:ok, {:http_error, reason}, _rest} ->
           request_error!("Header read HTTP error: #{inspect(reason)}")

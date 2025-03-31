@@ -1379,6 +1379,36 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
     end
 
+    test "receives header fields in order", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/header_order_test"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"x-request-fruit", "banana"},
+        {"x-request-fruit", "mango"}
+      ]
+
+      ctx = HPAX.new(4096)
+      {headers, _} = headers |> Enum.map(fn {k, v} -> {:store, k, v} end) |> HPAX.encode(ctx)
+      headers = IO.iodata_to_binary(headers)
+
+      # Send headers with padding
+      SimpleH2Client.send_frame(socket, 1, 0x0D, 1, [<<4>>, headers, <<1, 2, 3, 4>>])
+
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def header_order_test(conn) do
+      assert conn.req_headers == [{"x-request-fruit", "banana"}, {"x-request-fruit", "mango"}]
+      assert get_req_header(conn, "x-request-fruit") == ["banana", "mango"]
+
+      conn |> send_resp(200, "OK")
+    end
+
     @tag :capture_log
     test "accepts HEADER frames sent as trailers", context do
       socket = SimpleH2Client.setup_connection(context)

@@ -611,7 +611,7 @@ defmodule HTTP1ProtocolTest do
       response =
         Req.get!(context.req,
           url: "/expect_headers/a//b/c?abc=def",
-          headers: [{"x-fruit", "banana"}]
+          headers: [{"x-fruit", "banana"}, {"x-fruit", "mango"}]
         )
 
       assert response.status == 200
@@ -624,7 +624,17 @@ defmodule HTTP1ProtocolTest do
       assert conn.query_string == "abc=def"
       assert conn.method == "GET"
       assert conn.remote_ip == {127, 0, 0, 1}
-      assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana"]
+      assert Plug.Conn.get_req_header(conn, "x-fruit") == ["banana", "mango"]
+
+      # Ensure header order is correct
+      assert conn.req_headers
+             ~> [
+               {"host", string(starts_with: "localhost:")},
+               {"user-agent", string(starts_with: "mint/")},
+               {"x-fruit", "banana"},
+               {"x-fruit", "mango"}
+             ]
+
       # make iodata explicit
       send_resp(conn, 200, ["O", "K"])
     end
