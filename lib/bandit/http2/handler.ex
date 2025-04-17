@@ -148,12 +148,12 @@ defmodule Bandit.HTTP2.Handler do
 
   defp do_rescue_error(error, stacktrace, socket, state) do
     _ =
-      if state.connection do
+      if state[:connection] do
         Bandit.HTTP2.Connection.close_connection(
           error.error_code,
           error.message,
           socket,
-          state.connection
+          state[:connection]
         )
       end
 
