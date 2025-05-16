@@ -104,6 +104,8 @@ defmodule Bandit.HTTP2.Connection do
     Bandit.HTTP2.StreamCollection.get_pids(connection.streams)
     |> Enum.each(&Bandit.HTTP2.Stream.deliver_send_window_update(&1, delta))
 
+    IO.inspect(frame.settings, label: "XXX-492 recv Settings")
+
     do_pending_sends(socket, %{
       connection
       | remote_settings: frame.settings,
@@ -137,6 +139,7 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Bandit.HTTP2.Frame.WindowUpdate{} = frame, _socket, connection) do
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
+        IO.inspect(frame, label: "XXX-492 recv WindowUpdate")
         Bandit.HTTP2.Stream.deliver_send_window_update(stream, frame.size_increment)
       end)
 
@@ -312,6 +315,8 @@ defmodule Bandit.HTTP2.Connection do
           t()
         ) :: t()
   def send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
+    IO.inspect({stream_id, IO.iodata_length(data)}, label: "XXX-492 send data (conn)")
+
     with connection_window_size <- connection.send_window_size,
          max_bytes_to_send <- max(connection_window_size, 0),
          {data_to_send, bytes_to_send, rest} <- split_data(data, max_bytes_to_send),

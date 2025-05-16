@@ -72,6 +72,8 @@ defmodule Bandit.HTTP2.Stream do
         }
 
   def init(connection_pid, stream_id, initial_send_window_size, transport_info) do
+    IO.inspect({stream_id, initial_send_window_size}, label: "XXX-492 steam init")
+
     %__MODULE__{
       connection_pid: connection_pid,
       stream_id: stream_id,
@@ -308,7 +310,7 @@ defmodule Bandit.HTTP2.Stream do
            stream |> do_recv_data(data, end_stream) |> do_recv_end_stream(end_stream)}
 
         {:bandit, {:send_window_update, delta}} ->
-          do_recv_send_window_update(stream, delta)
+          do_recv_send_window_update(stream, delta, "do_recv 1")
 
         {:bandit, {:rst_stream, error_code}} ->
           do_recv_rst_stream!(stream, error_code)
@@ -326,7 +328,7 @@ defmodule Bandit.HTTP2.Stream do
           do_stream_closed_error!("Received DATA in remote_closed state")
 
         {:bandit, {:send_window_update, delta}} ->
-          do_recv_send_window_update(stream, delta)
+          do_recv_send_window_update(stream, delta, "do_recv 2")
 
         {:bandit, {:rst_stream, error_code}} ->
           do_recv_rst_stream!(stream, error_code)
@@ -379,11 +381,17 @@ defmodule Bandit.HTTP2.Stream do
       %{stream | state: next_state}
     end
 
-    defp do_recv_send_window_update(stream, delta) do
-      case Bandit.HTTP2.FlowControl.update_send_window(stream.send_window_size, delta) do
-        {:ok, new_window} -> %{stream | send_window_size: new_window}
-        {:error, reason} -> stream_error!(reason, Bandit.HTTP2.Errors.flow_control_error())
-      end
+    defp do_recv_send_window_update(stream, delta, src) do
+      res =
+        case Bandit.HTTP2.FlowControl.update_send_window(stream.send_window_size, delta) do
+          {:ok, new_window} -> %{stream | send_window_size: new_window}
+          {:error, reason} -> stream_error!(reason, Bandit.HTTP2.Errors.flow_control_error())
+        end
+
+      IO.inspect(res, label: "XXX-492 recv send_window_update (#{src})")
+      IO.inspect(delta, label: "XXX-492 recv send_window_update (#{src})")
+
+      res
     end
 
     @spec do_recv_rst_stream!(term(), term()) :: no_return()
@@ -434,8 +442,11 @@ defmodule Bandit.HTTP2.Stream do
         when state in [:open, :remote_closed] do
       stream =
         receive do
-          {:bandit, {:send_window_update, delta}} -> do_recv_send_window_update(stream, delta)
-          {:bandit, {:rst_stream, error_code}} -> do_recv_rst_stream!(stream, error_code)
+          {:bandit, {:send_window_update, delta}} ->
+            do_recv_send_window_update(stream, delta, "send_data 1")
+
+          {:bandit, {:rst_stream, error_code}} ->
+            do_recv_rst_stream!(stream, error_code)
         after
           0 -> stream
         end
@@ -452,13 +463,16 @@ defmodule Bandit.HTTP2.Stream do
           stream
         end
 
+      IO.inspect(stream, label: "XXX-492 in send data")
+      IO.inspect(byte_size(rest), label: "XXX-492 in send data")
+
       if byte_size(rest) == 0 do
         set_state_on_send_end_stream(stream, end_stream)
       else
         receive do
           {:bandit, {:send_window_update, delta}} ->
             stream
-            |> do_recv_send_window_update(delta)
+            |> do_recv_send_window_update(delta, "send_data 2")
             |> send_data(rest, end_stream)
         after
           stream.read_timeout ->
