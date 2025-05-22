@@ -44,7 +44,8 @@ defmodule Bandit.HTTP2.Connection do
   def init(socket, plug, opts) do
     connection = %__MODULE__{
       local_settings:
-        struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
+        struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, []))
+        |> Bandit.HTTP2.Settings.to_default(),
       transport_info: Bandit.TransportInfo.init(socket),
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
@@ -94,19 +95,28 @@ defmodule Bandit.HTTP2.Connection do
   # Connection-level receiving
   #
 
-  def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: true}, _socket, connection), do: connection
+  def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: true} = frame, _socket, connection) do
+    %{
+      connection
+      | remote_settings: Bandit.HTTP2.Settings.merge(frame.settings, connection.remote_settings)
+    }
+  end
 
   def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, socket, connection) do
+    default = Bandit.HTTP2.Settings.default()
     %Bandit.HTTP2.Frame.Settings{ack: true} |> send_frame(socket, connection)
     send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
-    delta = frame.settings.initial_window_size - connection.remote_settings.initial_window_size
+
+    delta =
+      (frame.settings.initial_window_size || default.initial_window_size) -
+        (connection.remote_settings.initial_window_size || default.initial_window_size)
 
     Bandit.HTTP2.StreamCollection.get_pids(connection.streams)
     |> Enum.each(&Bandit.HTTP2.Stream.deliver_send_window_update(&1, delta))
 
     do_pending_sends(socket, %{
       connection
-      | remote_settings: frame.settings,
+      | remote_settings: Bandit.HTTP2.Settings.merge(frame.settings, connection.remote_settings),
         send_hpack_state: send_hpack_state
     })
   end

@@ -106,14 +106,19 @@ defmodule Bandit.HTTP2.Frame.Settings do
         |> Map.from_struct()
         |> Enum.map(fn
           {:header_table_size, 4_096} -> <<>>
+          {:header_table_size, nil} -> <<>>
           {:header_table_size, value} -> <<0x01::16, value::32>>
           {:max_concurrent_streams, :infinity} -> <<>>
+          {:max_concurrent_streams, nil} -> <<>>
           {:max_concurrent_streams, value} -> <<0x03::16, value::32>>
           {:initial_window_size, 65_535} -> <<>>
+          {:initial_window_size, nil} -> <<>>
           {:initial_window_size, value} -> <<0x04::16, value::32>>
           {:max_frame_size, 16_384} -> <<>>
+          {:max_frame_size, nil} -> <<>>
           {:max_frame_size, value} -> <<0x05::16, value::32>>
           {:max_header_list_size, :infinity} -> <<>>
+          {:max_header_list_size, nil} -> <<>>
           {:max_header_list_size, value} -> <<0x06::16, value::32>>
         end)
 
