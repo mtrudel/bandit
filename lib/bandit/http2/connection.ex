@@ -52,7 +52,7 @@ defmodule Bandit.HTTP2.Connection do
     }
 
     # Send SETTINGS frame per RFC9113§3.4
-    %Bandit.HTTP2.Frame.Settings{ack: false, settings: connection.local_settings}
+    %Bandit.HTTP2.Frame.Settings{ack: false, settings: Map.from_struct(connection.local_settings)}
     |> send_frame(socket, connection)
 
     connection
@@ -98,15 +98,19 @@ defmodule Bandit.HTTP2.Connection do
 
   def handle_frame(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, socket, connection) do
     %Bandit.HTTP2.Frame.Settings{ack: true} |> send_frame(socket, connection)
-    send_hpack_state = HPAX.resize(connection.send_hpack_state, frame.settings.header_table_size)
-    delta = frame.settings.initial_window_size - connection.remote_settings.initial_window_size
+
+    # Merge whatever new settings were sent with our existing remote settings
+    remote_settings = struct(connection.remote_settings, frame.settings)
+
+    send_hpack_state = HPAX.resize(connection.send_hpack_state, remote_settings.header_table_size)
+    delta = remote_settings.initial_window_size - connection.remote_settings.initial_window_size
 
     Bandit.HTTP2.StreamCollection.get_pids(connection.streams)
     |> Enum.each(&Bandit.HTTP2.Stream.deliver_send_window_update(&1, delta))
 
     do_pending_sends(socket, %{
       connection
-      | remote_settings: frame.settings,
+      | remote_settings: remote_settings,
         send_hpack_state: send_hpack_state
     })
   end

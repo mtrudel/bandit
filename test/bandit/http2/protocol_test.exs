@@ -237,6 +237,29 @@ defmodule HTTP2ProtocolTest do
     def send_50k(conn) do
       conn |> send_resp(200, String.duplicate("a", 50_000))
     end
+
+    test "the server preserves existing settings which are NOT sent by the client", context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      # Send a 20k max frame size setting change
+      SimpleH2Client.exchange_client_settings(socket, <<5::16, 20_000::32>>)
+
+      # Now send a 20 max concurrent streams setting change (this doesn't change any
+      # of our behaviour since we don't respect this setting, but it demonstrates that
+      # we do not overwrite existing settings)
+      SimpleH2Client.exchange_client_settings(socket, <<3::16, 20::32>>)
+
+      # We expect to see the 20k max frame setting stick around
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_50k", context.port)
+      SimpleH2Client.recv_headers(socket)
+
+      expected = String.duplicate("a", 20_000)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      assert {:ok, :data, 0, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+      expected = String.duplicate("a", 10_000)
+      assert {:ok, :data, 1, 1, ^expected} = SimpleH2Client.recv_frame(socket)
+    end
   end
 
   describe "DATA frames" do

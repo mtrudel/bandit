@@ -11,9 +11,7 @@ defmodule Bandit.HTTP2.Frame.Settings do
   defstruct ack: false, settings: nil
 
   @typedoc "An HTTP/2 SETTINGS frame"
-  @type t ::
-          %__MODULE__{ack: true, settings: nil}
-          | %__MODULE__{ack: false, settings: Bandit.HTTP2.Settings.t()}
+  @type t :: %__MODULE__{ack: true, settings: nil} | %__MODULE__{ack: false, settings: map()}
 
   @ack_bit 0
 
@@ -26,9 +24,9 @@ defmodule Bandit.HTTP2.Frame.Settings do
       <<setting::16, value::32, rest::binary>> -> {{:ok, {setting, value}}, rest}
       <<rest::binary>> -> {{:error, rest}, <<>>}
     end)
-    |> Enum.reduce_while({:ok, %Bandit.HTTP2.Settings{}}, fn
+    |> Enum.reduce_while({:ok, %{}}, fn
       {:ok, {0x01, value}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | header_table_size: value}}}
+        {:cont, {:ok, Map.put(acc, :header_table_size, value)}}
 
       {:ok, {0x02, val}}, {:ok, acc} when val in [0x00, 0x01] ->
         {:cont, {:ok, acc}}
@@ -38,14 +36,14 @@ defmodule Bandit.HTTP2.Frame.Settings do
          {:error, Bandit.HTTP2.Errors.protocol_error(), "Invalid enable_push value (RFC9113§6.5)"}}
 
       {:ok, {0x03, value}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | max_concurrent_streams: value}}}
+        {:cont, {:ok, Map.put(acc, :max_concurrent_streams, value)}}
 
       {:ok, {0x04, value}}, {:ok, _acc} when value > @max_window_size ->
         {:halt,
          {:error, Bandit.HTTP2.Errors.flow_control_error(), "Invalid window_size (RFC9113§6.5)"}}
 
       {:ok, {0x04, value}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | initial_window_size: value}}}
+        {:cont, {:ok, Map.put(acc, :initial_window_size, value)}}
 
       {:ok, {0x05, value}}, {:ok, _acc} when value < @min_frame_size ->
         {:halt,
@@ -56,10 +54,10 @@ defmodule Bandit.HTTP2.Frame.Settings do
          {:error, Bandit.HTTP2.Errors.frame_size_error(), "Invalid max_frame_size (RFC9113§6.5)"}}
 
       {:ok, {0x05, value}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | max_frame_size: value}}}
+        {:cont, {:ok, Map.put(acc, :max_frame_size, value)}}
 
       {:ok, {0x06, value}}, {:ok, acc} ->
-        {:cont, {:ok, %{acc | max_header_list_size: value}}}
+        {:cont, {:ok, Map.put(acc, :max_header_list_size, value)}}
 
       {:ok, {_setting, _value}}, {:ok, acc} ->
         {:cont, {:ok, acc}}
@@ -94,16 +92,12 @@ defmodule Bandit.HTTP2.Frame.Settings do
       do: [{0x4, set([@ack_bit]), 0, <<>>}]
 
     def serialize(%Bandit.HTTP2.Frame.Settings{ack: false} = frame, _max_frame_size) do
-      # Note that the ordering here corresponds to the keys' alphabetical
-      # ordering on the Setting struct. However, we know there are no duplicates
-      # in this list so this is not a problem per RFC9113§6.5
-      #
       # Encode default settings values as empty binaries so that we do not send
       # them. This means we can't restore settings back to default values if we
       # change them, but since we don't ever change our settings this is fine
       payload =
         frame.settings
-        |> Map.from_struct()
+        |> Enum.uniq_by(fn {setting, _} -> setting end)
         |> Enum.map(fn
           {:header_table_size, 4_096} -> <<>>
           {:header_table_size, value} -> <<0x01::16, value::32>>
