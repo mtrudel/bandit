@@ -227,6 +227,21 @@ defmodule HTTP1ProtocolTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
+    test "responses which contain a connection: close header close the connection", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/close_connection", ["host: localhost"])
+
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def close_connection(conn) do
+      conn
+      |> put_resp_header("connection", "close")
+      |> send_resp(200, "OK")
+    end
+
     test "keepalive mixed-case header connections are respected in HTTP/1.0", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
