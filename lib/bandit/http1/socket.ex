@@ -16,7 +16,8 @@ defmodule Bandit.HTTP1.Socket do
             body_encoding: nil,
             version: :"HTTP/1.0",
             send_buffer: nil,
-            keepalive: false,
+            request_connection_header: nil,
+            keepalive: nil,
             opts: %{}
 
   @typedoc "An HTTP/1 read state"
@@ -35,6 +36,7 @@ defmodule Bandit.HTTP1.Socket do
           body_encoding: nil | binary(),
           version: nil | :"HTTP/1.1" | :"HTTP/1.0",
           send_buffer: iolist(),
+          request_connection_header: binary(),
           keepalive: boolean(),
           opts: %{
             required(:http_1) => Bandit.http_1_options()
@@ -51,9 +53,8 @@ defmodule Bandit.HTTP1.Socket do
       {headers, socket} = do_read_headers!(socket)
       content_length = get_content_length!(headers)
       body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
-      connection = Bandit.Headers.get_header(headers, "connection")
-      keepalive = should_keepalive?(socket.version, connection)
-      socket = %{socket | keepalive: keepalive}
+      request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
+      socket = %{socket | request_connection_header: request_connection_header}
 
       case {content_length, body_encoding} do
         {nil, nil} ->
@@ -162,14 +163,6 @@ defmodule Bandit.HTTP1.Socket do
         {:error, reason} -> request_error!("Content length unknown error: #{inspect(reason)}")
       end
     end
-
-    # `close` & `keep-alive` always means what they say, otherwise keepalive if we're on HTTP/1.1
-    # Case insensitivity per RFC9110§7.6.1
-    defp should_keepalive?(_, "close"), do: false
-    defp should_keepalive?(_, "keep-alive"), do: true
-    defp should_keepalive?(_, "Keep-Alive"), do: true
-    defp should_keepalive?(:"HTTP/1.1", _), do: true
-    defp should_keepalive?(_, _), do: false
 
     def read_data(
           %@for{read_state: :headers_read, unread_content_length: unread_content_length} = socket,
@@ -329,7 +322,7 @@ defmodule Bandit.HTTP1.Socket do
     def send_headers(%@for{write_state: :unsent} = socket, status, headers, body_disposition) do
       resp_line = "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n"
 
-      headers = maybe_add_keepalive_header(status, headers, socket)
+      {headers, socket} = handle_keepalive(status, headers, socket)
 
       case body_disposition do
         :raw ->
@@ -353,12 +346,30 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    # RFC 9112§9.3
-    defp maybe_add_keepalive_header(status, headers, %@for{version: :"HTTP/1.0", keepalive: true})
-         when status not in 100..199,
-         do: [{"connection", "keep-alive"} | headers]
+    defp handle_keepalive(status, headers, socket) do
+      response_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
 
-    defp maybe_add_keepalive_header(_status, headers, _socket), do: headers
+      # Per RFC9112§9.3
+      cond do
+        status in 100..199 ->
+          {headers, socket}
+
+        socket.request_connection_header == "close" || response_connection_header == "close" ->
+          {headers, %{socket | keepalive: false}}
+
+        socket.version == :"HTTP/1.1" ->
+          {headers, %{socket | keepalive: true}}
+
+        socket.version == :"HTTP/1.0" && socket.request_connection_header == "keep-alive" ->
+          {[{"connection", "keep-alive"} | headers], %{socket | keepalive: true}}
+
+        true ->
+          {[{"connection", "close"} | headers], %{socket | keepalive: false}}
+      end
+    end
+
+    defp safe_downcase(str) when is_binary(str), do: String.downcase(str, :ascii)
+    defp safe_downcase(str), do: str
 
     defp encode_headers(headers) do
       headers
