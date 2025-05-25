@@ -17,6 +17,9 @@ defprotocol Bandit.HTTPTransport do
   @spec sock_data(t()) :: Plug.Conn.Adapter.sock_data()
   def sock_data(transport)
 
+  @spec ssl_data(t()) :: Plug.Conn.Adapter.ssl_data()
+  def ssl_data(transport)
+
   @spec version(t()) :: Plug.Conn.Adapter.http_protocol()
   def version(transport)
 

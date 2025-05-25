@@ -322,6 +322,16 @@ defmodule HTTP1PlugTest do
     def sock_data(conn) do
       send_resp(conn, 200, conn |> get_sock_data() |> inspect())
     end
+
+    test "reading ssl data", context do
+      response = Req.get!(context.req, url: "/ssl_data")
+      assert response.status == 200
+      assert response.body == inspect(nil)
+    end
+
+    def ssl_data(conn) do
+      send_resp(conn, 200, conn |> get_ssl_data() |> inspect())
+    end
   end
 
   describe "plug return values" do

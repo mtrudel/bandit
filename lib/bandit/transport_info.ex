@@ -35,6 +35,15 @@ defmodule Bandit.TransportInfo do
     end
   end
 
+  @spec ssl_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.ssl_data()
+  def ssl_data(socket) do
+    case ThousandIsland.Socket.connection_information(socket) do
+      {:ok, connection_information} -> connection_information
+      {:error, :not_secure} -> nil
+      {:error, reason} -> transport_error!("Unable to obtain ssl_data", reason)
+    end
+  end
+
   defp map_address(address) do
     case address do
       {:local, path} -> {{:local, path}, 0}
