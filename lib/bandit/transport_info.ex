@@ -14,6 +14,17 @@ defmodule Bandit.TransportInfo do
     {secure?, peer_address}
   end
 
+  @spec peer_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.peer_data()
+  def peer_data(socket) do
+    with {:ok, peername} <- ThousandIsland.Socket.peername(socket),
+         {address, port} <- map_address(peername),
+         {:ok, ssl_cert} <- peercert(socket) do
+      %{address: address, port: port, ssl_cert: ssl_cert}
+    else
+      {:error, reason} -> transport_error!("Unable to obtain peer_data", reason)
+    end
+  end
+
   defstruct secure?: nil, sockname: nil, peername: nil, peercert: nil
 
   @typedoc "A struct for defining details of a transport"

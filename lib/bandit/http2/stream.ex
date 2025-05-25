@@ -111,6 +111,8 @@ defmodule Bandit.HTTP2.Stream do
   defimpl Bandit.HTTPTransport do
     def conn_info(%@for{} = stream), do: stream.conn_info
 
+    def peer_data(%@for{} = stream), do: call(stream, :peer_data, :infinity)
+
     def transport_info(%@for{} = stream), do: stream.transport_info
 
     def version(%@for{}), do: :"HTTP/2"
