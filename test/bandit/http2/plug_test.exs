@@ -805,6 +805,21 @@ defmodule HTTP2PlugTest do
     send_resp(conn, 200, conn |> get_peer_data() |> inspect())
   end
 
+  test "reading sock data", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :get, "/sock_data", context.port)
+    SimpleH2Client.recv_headers(socket)
+    {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+    {:ok, {ip, port}} = Transport.peername(socket)
+
+    assert body == inspect(%{address: ip, port: port})
+  end
+
+  def sock_data(conn) do
+    send_resp(conn, 200, conn |> get_sock_data() |> inspect())
+  end
+
   test "silently accepts EXIT messages from normally terminating spawned processes", context do
     response = Req.get!(context.req, url: "/spawn_child")
     assert response.status == 204

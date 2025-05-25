@@ -65,6 +65,10 @@ defmodule Bandit.HTTP2.Handler do
     {:reply, Bandit.TransportInfo.peer_data(socket), {socket, state}, socket.read_timeout}
   end
 
+  def handle_call({:sock_data, _stream_id}, _from, {socket, state}) do
+    {:reply, Bandit.TransportInfo.sock_data(socket), {socket, state}, socket.read_timeout}
+  end
+
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.

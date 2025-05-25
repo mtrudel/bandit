@@ -110,6 +110,8 @@ defmodule Bandit.HTTP2.Stream do
 
     def peer_data(%@for{} = stream), do: call(stream, :peer_data, :infinity)
 
+    def sock_data(%@for{} = stream), do: call(stream, :sock_data, :infinity)
+
     def version(%@for{}), do: :"HTTP/2"
 
     def read_headers(%@for{state: :idle} = stream) do

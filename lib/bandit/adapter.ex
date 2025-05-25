@@ -266,6 +266,10 @@ defmodule Bandit.Adapter do
     do: Bandit.HTTPTransport.peer_data(adapter.transport)
 
   @impl Plug.Conn.Adapter
+  def get_sock_data(%__MODULE__{} = adapter),
+    do: Bandit.HTTPTransport.sock_data(adapter.transport)
+
+  @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{} = adapter),
     do: Bandit.HTTPTransport.version(adapter.transport)
 

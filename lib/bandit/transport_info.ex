@@ -25,6 +25,16 @@ defmodule Bandit.TransportInfo do
     end
   end
 
+  @spec sock_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.sock_data()
+  def sock_data(socket) do
+    with {:ok, sockname} <- ThousandIsland.Socket.sockname(socket),
+         {address, port} <- map_address(sockname) do
+      %{address: address, port: port}
+    else
+      {:error, reason} -> transport_error!("Unable to obtain sock_data", reason)
+    end
+  end
+
   defp map_address(address) do
     case address do
       {:local, path} -> {{:local, path}, 0}

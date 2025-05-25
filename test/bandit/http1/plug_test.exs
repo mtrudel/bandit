@@ -308,6 +308,20 @@ defmodule HTTP1PlugTest do
     def peer_data(conn) do
       send_resp(conn, 200, conn |> get_peer_data() |> inspect())
     end
+
+    test "reading sock data", context do
+      # Use a manually built request so we can read the local port
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/sock_data", ["host: localhost"])
+      {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      {:ok, {ip, port}} = Transport.peername(client)
+
+      assert body == inspect(%{address: ip, port: port})
+    end
+
+    def sock_data(conn) do
+      send_resp(conn, 200, conn |> get_sock_data() |> inspect())
+    end
   end
 
   describe "plug return values" do

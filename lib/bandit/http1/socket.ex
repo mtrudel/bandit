@@ -46,6 +46,8 @@ defmodule Bandit.HTTP1.Socket do
 
     def peer_data(%@for{} = socket), do: Bandit.TransportInfo.peer_data(socket.socket)
 
+    def sock_data(%@for{} = socket), do: Bandit.TransportInfo.sock_data(socket.socket)
+
     def version(%@for{} = socket), do: socket.version
 
     def read_headers(%@for{read_state: :unread} = socket) do
