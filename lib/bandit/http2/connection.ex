@@ -45,7 +45,7 @@ defmodule Bandit.HTTP2.Connection do
     connection = %__MODULE__{
       local_settings:
         struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
-      conn_info: Bandit.TransportInfo.conn_info(socket),
+      conn_info: Bandit.SocketHelpers.conn_info(socket),
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
       opts: opts

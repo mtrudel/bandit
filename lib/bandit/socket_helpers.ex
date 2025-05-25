@@ -1,4 +1,4 @@
-defmodule Bandit.TransportInfo do
+defmodule Bandit.SocketHelpers do
   @moduledoc false
 
   @spec conn_info(ThousandIsland.Socket.t()) :: Bandit.Pipeline.conn_info()

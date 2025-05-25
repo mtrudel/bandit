@@ -62,15 +62,15 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_call({:peer_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.TransportInfo.peer_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.peer_data(socket), {socket, state}, socket.read_timeout}
   end
 
   def handle_call({:sock_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.TransportInfo.sock_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.sock_data(socket), {socket, state}, socket.read_timeout}
   end
 
   def handle_call({:ssl_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.TransportInfo.ssl_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.ssl_data(socket), {socket, state}, socket.read_timeout}
   end
 
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do

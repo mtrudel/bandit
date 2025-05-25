@@ -42,13 +42,13 @@ defmodule Bandit.HTTP1.Socket do
         }
 
   defimpl Bandit.HTTPTransport do
-    def conn_info(%@for{} = socket), do: Bandit.TransportInfo.conn_info(socket.socket)
+    def conn_info(%@for{} = socket), do: Bandit.SocketHelpers.conn_info(socket.socket)
 
-    def peer_data(%@for{} = socket), do: Bandit.TransportInfo.peer_data(socket.socket)
+    def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 
-    def sock_data(%@for{} = socket), do: Bandit.TransportInfo.sock_data(socket.socket)
+    def sock_data(%@for{} = socket), do: Bandit.SocketHelpers.sock_data(socket.socket)
 
-    def ssl_data(%@for{} = socket), do: Bandit.TransportInfo.ssl_data(socket.socket)
+    def ssl_data(%@for{} = socket), do: Bandit.SocketHelpers.ssl_data(socket.socket)
 
     def version(%@for{} = socket), do: socket.version
 
