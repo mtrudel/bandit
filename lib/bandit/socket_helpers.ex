@@ -62,6 +62,7 @@ defmodule Bandit.SocketHelpers do
     end
   end
 
+  @spec transport_error!(term(), term()) :: no_return()
   defp transport_error!(message, error) do
     raise Bandit.TransportError, message: message, error: error
   end

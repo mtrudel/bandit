@@ -80,7 +80,7 @@ defmodule Bandit.Pipeline do
     Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_address, headers)
   end
 
-  @spec determine_scheme(boolean(), request_target()) :: String.t() | nil
+  @spec determine_scheme(boolean(), request_target()) :: String.t()
   defp determine_scheme(secure?, {scheme, _, _, _}) do
     case {secure?, scheme} do
       {true, nil} -> "https"
