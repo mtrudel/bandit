@@ -15,7 +15,7 @@ defmodule Bandit.HTTP2.Connection do
             recv_window_size: 65_535,
             streams: %Bandit.HTTP2.StreamCollection{},
             pending_sends: [],
-            conn_info: nil,
+            conn_data: nil,
             telemetry_span: nil,
             plug: nil,
             opts: %{}
@@ -31,7 +31,7 @@ defmodule Bandit.HTTP2.Connection do
           recv_window_size: non_neg_integer(),
           streams: Bandit.HTTP2.StreamCollection.t(),
           pending_sends: [{Bandit.HTTP2.Stream.stream_id(), iodata(), boolean(), fun()}],
-          conn_info: Bandit.Pipeline.conn_info(),
+          conn_data: Bandit.Pipeline.conn_data(),
           telemetry_span: ThousandIsland.Telemetry.t(),
           plug: Bandit.Pipeline.plug_def(),
           opts: %{
@@ -45,7 +45,7 @@ defmodule Bandit.HTTP2.Connection do
     connection = %__MODULE__{
       local_settings:
         struct!(Bandit.HTTP2.Settings, Keyword.get(opts.http_2, :default_local_settings, [])),
-      conn_info: Bandit.SocketHelpers.conn_info(socket),
+      conn_data: Bandit.SocketHelpers.conn_data(socket),
       telemetry_span: ThousandIsland.Socket.telemetry_span(socket),
       plug: plug,
       opts: opts
@@ -228,7 +228,7 @@ defmodule Bandit.HTTP2.Connection do
               self(),
               stream_id,
               connection.remote_settings.initial_window_size,
-              connection.conn_info
+              connection.conn_data
             )
 
           case Bandit.HTTP2.StreamProcess.start_link(

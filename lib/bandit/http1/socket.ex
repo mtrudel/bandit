@@ -42,7 +42,7 @@ defmodule Bandit.HTTP1.Socket do
         }
 
   defimpl Bandit.HTTPTransport do
-    def conn_info(%@for{} = socket), do: Bandit.SocketHelpers.conn_info(socket.socket)
+    def conn_data(%@for{} = socket), do: Bandit.SocketHelpers.conn_data(socket.socket)
 
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 

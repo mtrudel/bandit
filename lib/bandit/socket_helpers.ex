@@ -1,14 +1,14 @@
 defmodule Bandit.SocketHelpers do
   @moduledoc false
 
-  @spec conn_info(ThousandIsland.Socket.t()) :: Bandit.Pipeline.conn_info()
-  def conn_info(socket) do
+  @spec conn_data(ThousandIsland.Socket.t()) :: Bandit.Pipeline.conn_data()
+  def conn_data(socket) do
     secure? = ThousandIsland.Socket.secure?(socket)
 
     {peer_address, _port} =
       case ThousandIsland.Socket.peername(socket) do
         {:ok, peername} -> map_address(peername)
-        {:error, reason} -> transport_error!("Unable to obtain conn_info", reason)
+        {:error, reason} -> transport_error!("Unable to obtain conn_data", reason)
       end
 
     {secure?, peer_address}

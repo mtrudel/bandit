@@ -47,7 +47,7 @@ defmodule Bandit.HTTP2.Stream do
             recv_window_size: 65_535,
             send_window_size: nil,
             bytes_remaining: nil,
-            conn_info: nil,
+            conn_data: nil,
             read_timeout: 15_000
 
   @typedoc "An HTTP/2 stream identifier"
@@ -67,16 +67,16 @@ defmodule Bandit.HTTP2.Stream do
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
           bytes_remaining: non_neg_integer() | nil,
-          conn_info: Bandit.Pipeline.conn_info(),
+          conn_data: Bandit.Pipeline.conn_data(),
           read_timeout: timeout()
         }
 
-  def init(connection_pid, stream_id, initial_send_window_size, conn_info) do
+  def init(connection_pid, stream_id, initial_send_window_size, conn_data) do
     %__MODULE__{
       connection_pid: connection_pid,
       stream_id: stream_id,
       send_window_size: initial_send_window_size,
-      conn_info: conn_info
+      conn_data: conn_data
     }
   end
 
@@ -106,7 +106,7 @@ defmodule Bandit.HTTP2.Stream do
   def deliver_rst_stream(pid, error_code), do: send(pid, {:bandit, {:rst_stream, error_code}})
 
   defimpl Bandit.HTTPTransport do
-    def conn_info(%@for{} = stream), do: stream.conn_info
+    def conn_data(%@for{} = stream), do: stream.conn_data
 
     def peer_data(%@for{} = stream), do: call(stream, :peer_data, :infinity)
 

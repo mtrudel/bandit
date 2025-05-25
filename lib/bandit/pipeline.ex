@@ -4,7 +4,7 @@ defmodule Bandit.Pipeline do
   # functionality relating to `Plug.Conn` management
 
   @type plug_def :: {function() | module(), Plug.opts()}
-  @type conn_info :: {boolean(), :inet.ip_address()}
+  @type conn_data :: {boolean(), :inet.ip_address()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -71,7 +71,7 @@ defmodule Bandit.Pipeline do
         ) :: Plug.Conn.t()
   defp build_conn!(transport, method, request_target, headers, opts) do
     adapter = Bandit.Adapter.init(self(), transport, method, headers, opts)
-    {secure?, peer_address} = Bandit.HTTPTransport.conn_info(transport)
+    {secure?, peer_address} = Bandit.HTTPTransport.conn_data(transport)
     scheme = determine_scheme(secure?, request_target)
     version = Bandit.HTTPTransport.version(transport)
     {host, port} = determine_host_and_port!(scheme, version, request_target, headers)
