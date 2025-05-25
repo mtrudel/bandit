@@ -42,6 +42,8 @@ defmodule Bandit.HTTP1.Socket do
         }
 
   defimpl Bandit.HTTPTransport do
+    def conn_info(%@for{} = socket), do: Bandit.TransportInfo.conn_info(socket.socket)
+
     def transport_info(%@for{} = socket), do: Bandit.TransportInfo.init(socket.socket)
 
     def version(%@for{} = socket), do: socket.version

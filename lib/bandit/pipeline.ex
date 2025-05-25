@@ -4,6 +4,7 @@ defmodule Bandit.Pipeline do
   # functionality relating to `Plug.Conn` management
 
   @type plug_def :: {function() | module(), Plug.opts()}
+  @type conn_info :: {boolean(), :inet.ip_address()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -70,22 +71,21 @@ defmodule Bandit.Pipeline do
         ) :: Plug.Conn.t()
   defp build_conn!(transport, method, request_target, headers, opts) do
     adapter = Bandit.Adapter.init(self(), transport, method, headers, opts)
-    transport_info = Bandit.HTTPTransport.transport_info(transport)
-    scheme = determine_scheme(transport_info, request_target)
+    {secure?, peer_address} = Bandit.HTTPTransport.conn_info(transport)
+    scheme = determine_scheme(secure?, request_target)
     version = Bandit.HTTPTransport.version(transport)
     {host, port} = determine_host_and_port!(scheme, version, request_target, headers)
     {path, query} = determine_path_and_query(request_target)
     uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-    %{address: peer_addr} = Bandit.TransportInfo.peer_data(transport_info)
-    Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_addr, headers)
+    Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_address, headers)
   end
 
-  @spec determine_scheme(Bandit.TransportInfo.t(), request_target()) :: String.t() | nil
-  defp determine_scheme(%Bandit.TransportInfo{secure?: secure?}, {scheme, _, _, _}) do
-    case {scheme, secure?} do
-      {nil, true} -> "https"
-      {nil, false} -> "http"
-      {scheme, _} -> scheme
+  @spec determine_scheme(boolean(), request_target()) :: String.t() | nil
+  defp determine_scheme(secure?, {scheme, _, _, _}) do
+    case {secure?, scheme} do
+      {true, nil} -> "https"
+      {false, nil} -> "http"
+      {_, scheme} -> scheme
     end
   end
 
