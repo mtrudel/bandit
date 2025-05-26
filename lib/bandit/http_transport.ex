@@ -8,9 +8,6 @@ defprotocol Bandit.HTTPTransport do
   @typedoc "How the response body is to be delivered"
   @type body_disposition :: :raw | :chunk_encoded | :no_body | :inform
 
-  @spec conn_data(t()) :: Bandit.Pipeline.conn_data()
-  def conn_data(transport)
-
   @spec peer_data(t()) :: Plug.Conn.Adapter.peer_data()
   def peer_data(transport)
 

@@ -227,14 +227,14 @@ defmodule Bandit.HTTP2.Connection do
             Bandit.HTTP2.Stream.init(
               self(),
               stream_id,
-              connection.remote_settings.initial_window_size,
-              connection.conn_data
+              connection.remote_settings.initial_window_size
             )
 
           case Bandit.HTTP2.StreamProcess.start_link(
                  stream,
                  connection.plug,
                  connection.telemetry_span,
+                 connection.conn_data,
                  connection.opts
                ) do
             {:ok, pid} ->
