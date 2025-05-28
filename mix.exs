@@ -30,7 +30,7 @@ defmodule Bandit.MixProject do
   defp deps do
     [
       {:thousand_island, "~> 1.0"},
-      {:plug, "~> 1.14", github: "elixir-plug/plug", override: true},
+      {:plug, "~> 1.18"},
       {:websock, "~> 0.5"},
       {:hpax, "~> 1.0"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
