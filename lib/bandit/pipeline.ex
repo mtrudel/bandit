@@ -4,6 +4,7 @@ defmodule Bandit.Pipeline do
   # functionality relating to `Plug.Conn` management
 
   @type plug_def :: {function() | module(), Plug.opts()}
+  @type conn_data :: {boolean(), :inet.ip_address()}
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
   @type scheme :: String.t() | nil
@@ -15,12 +16,13 @@ defmodule Bandit.Pipeline do
           Bandit.HTTPTransport.t(),
           plug_def(),
           ThousandIsland.Telemetry.t() | Bandit.Telemetry.t(),
+          conn_data(),
           map()
         ) ::
           {:ok, Bandit.HTTPTransport.t()}
           | {:upgrade, Bandit.HTTPTransport.t(), :websocket, tuple()}
           | {:error, term()}
-  def run(transport, plug, connection_span, opts) do
+  def run(transport, plug, connection_span, conn_data, opts) do
     measurements = %{monotonic_time: Bandit.Telemetry.monotonic_time()}
 
     metadata = %{
@@ -32,7 +34,7 @@ defmodule Bandit.Pipeline do
       {:ok, method, request_target, headers, transport} =
         Bandit.HTTPTransport.read_headers(transport)
 
-      conn = build_conn!(transport, method, request_target, headers, opts)
+      conn = build_conn!(transport, method, request_target, headers, conn_data, opts)
       span = Bandit.Telemetry.start_span(:request, measurements, Map.put(metadata, :conn, conn))
 
       try do
@@ -66,26 +68,25 @@ defmodule Bandit.Pipeline do
           Plug.Conn.method(),
           request_target(),
           Plug.Conn.headers(),
+          conn_data(),
           map()
         ) :: Plug.Conn.t()
-  defp build_conn!(transport, method, request_target, headers, opts) do
+  defp build_conn!(transport, method, request_target, headers, {secure?, peer_address}, opts) do
     adapter = Bandit.Adapter.init(self(), transport, method, headers, opts)
-    transport_info = Bandit.HTTPTransport.transport_info(transport)
-    scheme = determine_scheme(transport_info, request_target)
+    scheme = determine_scheme(secure?, request_target)
     version = Bandit.HTTPTransport.version(transport)
     {host, port} = determine_host_and_port!(scheme, version, request_target, headers)
     {path, query} = determine_path_and_query(request_target)
     uri = %URI{scheme: scheme, host: host, port: port, path: path, query: query}
-    %{address: peer_addr} = Bandit.TransportInfo.peer_data(transport_info)
-    Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_addr, headers)
+    Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_address, headers)
   end
 
-  @spec determine_scheme(Bandit.TransportInfo.t(), request_target()) :: String.t() | nil
-  defp determine_scheme(%Bandit.TransportInfo{secure?: secure?}, {scheme, _, _, _}) do
-    case {scheme, secure?} do
-      {nil, true} -> "https"
-      {nil, false} -> "http"
-      {scheme, _} -> scheme
+  @spec determine_scheme(boolean(), request_target()) :: String.t() | nil
+  defp determine_scheme(secure?, {scheme, _, _, _}) do
+    case {secure?, scheme} do
+      {true, nil} -> "https"
+      {false, nil} -> "http"
+      {_, scheme} -> scheme
     end
   end
 

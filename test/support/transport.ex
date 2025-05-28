@@ -39,6 +39,14 @@ defmodule Transport do
     transport.close(socket)
   end
 
+  def peername({:client, %{transport: :gen_tcp, socket: socket}}) do
+    :inet.peername(socket)
+  end
+
+  def peername({:client, %{transport: :ssl, socket: socket}}) do
+    :ssl.peername(socket)
+  end
+
   def sockname({:client, %{transport: :gen_tcp, socket: socket}}) do
     :inet.sockname(socket)
   end

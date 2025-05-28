@@ -262,11 +262,16 @@ defmodule Bandit.Adapter do
   def push(_adapter, _path, _headers), do: {:error, :not_supported}
 
   @impl Plug.Conn.Adapter
-  def get_peer_data(%__MODULE__{} = adapter) do
-    adapter.transport
-    |> Bandit.HTTPTransport.transport_info()
-    |> Bandit.TransportInfo.peer_data()
-  end
+  def get_peer_data(%__MODULE__{} = adapter),
+    do: Bandit.HTTPTransport.peer_data(adapter.transport)
+
+  @impl Plug.Conn.Adapter
+  def get_sock_data(%__MODULE__{} = adapter),
+    do: Bandit.HTTPTransport.sock_data(adapter.transport)
+
+  @impl Plug.Conn.Adapter
+  def get_ssl_data(%__MODULE__{} = adapter),
+    do: Bandit.HTTPTransport.ssl_data(adapter.transport)
 
   @impl Plug.Conn.Adapter
   def get_http_protocol(%__MODULE__{} = adapter),

@@ -8,8 +8,9 @@ defmodule Bandit.HTTP1.Handler do
   def handle_data(data, socket, state) do
     transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
     connection_span = ThousandIsland.Socket.telemetry_span(socket)
+    conn_data = Bandit.SocketHelpers.conn_data(socket)
 
-    case Bandit.Pipeline.run(transport, state.plug, connection_span, state.opts) do
+    case Bandit.Pipeline.run(transport, state.plug, connection_span, conn_data, state.opts) do
       {:ok, transport} -> maybe_keepalive(transport, state)
       {:error, _reason} -> {:close, state}
       {:upgrade, _transport, :websocket, opts} -> do_websocket_upgrade(opts, state)

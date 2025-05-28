@@ -8,8 +8,14 @@ defprotocol Bandit.HTTPTransport do
   @typedoc "How the response body is to be delivered"
   @type body_disposition :: :raw | :chunk_encoded | :no_body | :inform
 
-  @spec transport_info(t()) :: Bandit.TransportInfo.t()
-  def transport_info(transport)
+  @spec peer_data(t()) :: Plug.Conn.Adapter.peer_data()
+  def peer_data(transport)
+
+  @spec sock_data(t()) :: Plug.Conn.Adapter.sock_data()
+  def sock_data(transport)
+
+  @spec ssl_data(t()) :: Plug.Conn.Adapter.ssl_data()
+  def ssl_data(transport)
 
   @spec version(t()) :: Plug.Conn.Adapter.http_protocol()
   def version(transport)
