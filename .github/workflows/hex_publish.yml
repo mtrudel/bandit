@@ -1,0 +1,24 @@
+name: Publish to Hex
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    - name: Setup Elixir
+      uses: erlef/setup-beam@v1
+      with:
+        elixir-version: 1.18.x
+        otp-version: 27.1
+    - name: Install deps
+      run: mix deps.get
+    - name: Publish Hex package
+      env:
+        HEX_API_KEY: ${{ secrets.HEX_API_KEY }}
+      run: mix hex.publish --yes
