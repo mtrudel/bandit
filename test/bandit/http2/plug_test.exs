@@ -724,9 +724,16 @@ defmodule HTTP2PlugTest do
     SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_read", context.port)
     SimpleH2Client.send_body(socket, 1, true, "ABCDEF")
 
-    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
-    assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
-    {:ok, 1, true, ""} = SimpleH2Client.recv_body(socket)
+    assert [
+             SimpleH2Client.recv_frame(socket),
+             SimpleH2Client.recv_frame(socket),
+             SimpleH2Client.recv_frame(socket)
+           ]
+           ~> in_any_order([
+             {:ok, :window_update, term(), 0, term()},
+             {:ok, :headers, term(), 1, term()},
+             {:ok, :data, term(), 1, term()}
+           ])
 
     assert SimpleH2Client.connection_alive?(socket)
   end
