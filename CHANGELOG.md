@@ -1,3 +1,15 @@
+## 1.7.0 (29 May 2025)
+
+### Enhancements
+
+* Add support for new `get_sock_data/1` and `get_ssl_data/1` callbacks from Plug 1.18 (#497)
+* Honour server-sent `Connection: close` headers (#495, thanks @ruslandoga!)
+
+### Fixes
+
+* Don't overwrite non-default HTTP/2 settings when receiving HTTP/2 settings (#494, thanks @ns-blee!)
+* Fix handling of early-connection error handling in HTTP/2 (#486)
+
 ## 1.6.11 (31 Mar 2025)
 
 ### Changes
