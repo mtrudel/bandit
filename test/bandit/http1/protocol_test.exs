@@ -1564,6 +1564,26 @@ defmodule HTTP1ProtocolTest do
       conn
     end
 
+    test "streams a content-length delimited response if content-length is set before chunking",
+         context do
+      response = Req.get!(context.req, url: "/send_chunked_200_with_content_length")
+
+      assert response.status == 200
+      assert response.body == "OK"
+      assert response.headers["transfer-encoding"] != ["chunked"]
+      assert response.headers["content-length"] == ["2"]
+    end
+
+    def send_chunked_200_with_content_length(conn) do
+      {:ok, conn} =
+        conn
+        |> put_resp_header("content-length", "2")
+        |> send_chunked(200)
+        |> chunk("OK")
+
+      conn
+    end
+
     test "does not add the transfer-encoding header for 204 responses", context do
       response = Req.get!(context.req, url: "/send_chunked_204")
 
