@@ -1575,11 +1575,13 @@ defmodule HTTP1ProtocolTest do
     end
 
     def send_chunked_200_with_content_length(conn) do
-      {:ok, conn} =
+      conn =
         conn
         |> put_resp_header("content-length", "2")
         |> send_chunked(200)
-        |> chunk("OK")
+
+      {:ok, conn} = chunk(conn, "O")
+      {:ok, conn} = chunk(conn, "K")
 
       conn
     end
