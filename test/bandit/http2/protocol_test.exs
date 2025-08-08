@@ -880,7 +880,14 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_simple_headers(socket, 1, :get, "/chunk_response", context.port)
 
-      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "OK"}
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "DOKEE"}
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}

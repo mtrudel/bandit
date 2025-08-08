@@ -24,7 +24,7 @@ defmodule Bandit.HTTP1.Socket do
   @type read_state :: :unread | :headers_read | :read
 
   @typedoc "An HTTP/1 write state"
-  @type write_state :: :unsent | :writing | :chunking | :sent
+  @type write_state :: :unsent | :writing | :chunking | :chunk_streaming | :sent
 
   @typedoc "The information necessary to communicate to/from a socket"
   @type t :: %__MODULE__{
@@ -328,6 +328,8 @@ defmodule Bandit.HTTP1.Socket do
 
       {headers, socket} = handle_keepalive(status, headers, socket)
 
+      has_content_length = Bandit.Headers.get_header(headers, "content-length") != nil
+
       case body_disposition do
         :raw ->
           # This is an optimization for the common case of sending a non-encoded body (or file),
@@ -335,10 +337,14 @@ defmodule Bandit.HTTP1.Socket do
           # call. This makes a _substantial_ difference in practice
           %{socket | write_state: :writing, send_buffer: [resp_line | encode_headers(headers)]}
 
-        :chunk_encoded ->
+        :chunk_encoded when not has_content_length ->
           headers = [{"transfer-encoding", "chunked"} | headers]
           send!(socket.socket, [resp_line | encode_headers(headers)])
           %{socket | write_state: :chunking}
+
+        :chunk_encoded when has_content_length ->
+          send!(socket.socket, [resp_line | encode_headers(headers)])
+          %{socket | write_state: :chunk_streaming}
 
         :no_body ->
           send!(socket.socket, [resp_line | encode_headers(headers)])
@@ -391,6 +397,12 @@ defmodule Bandit.HTTP1.Socket do
       byte_size = data |> IO.iodata_length()
       send!(socket.socket, [Integer.to_string(byte_size, 16), "\r\n", data, "\r\n"])
       write_state = if end_request, do: :sent, else: :chunking
+      %{socket | write_state: write_state}
+    end
+
+    def send_data(%@for{write_state: :chunk_streaming} = socket, data, end_request) do
+      send!(socket.socket, data)
+      write_state = if end_request, do: :sent, else: :chunk_streaming
       %{socket | write_state: write_state}
     end
 
