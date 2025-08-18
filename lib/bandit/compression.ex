@@ -35,9 +35,7 @@ defmodule Bandit.Compression do
          is_nil(response_content_encoding_header) &&
          !response_has_strong_etag(headers) && !response_indicates_no_transform(headers) &&
          !empty_body? do
-      deflate_options = Keyword.get(adapter.opts.http, :deflate_options, [])
-
-      case start_stream(adapter.content_encoding, deflate_options, streamable) do
+      case start_stream(adapter.content_encoding, adapter.opts.http, streamable) do
         {:ok, context} -> {[{"content-encoding", adapter.content_encoding} | headers], context}
         {:error, :unsupported_encoding} -> {headers, %__MODULE__{method: :identity}}
       end
@@ -67,7 +65,8 @@ defmodule Bandit.Compression do
     end
   end
 
-  defp start_stream("deflate", opts, _streamable) do
+  defp start_stream("deflate", http_opts, _streamable) do
+    opts = Keyword.get(http_opts, :deflate_options, [])
     deflate_context = :zlib.open()
 
     :zlib.deflateInit(
@@ -86,7 +85,9 @@ defmodule Bandit.Compression do
   defp start_stream("gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
 
   if Code.ensure_loaded?(:zstd) do
-    defp start_stream("zstd", opts, false) do
+    defp start_stream("zstd", http_opts, false) do
+      opts = Keyword.get(http_opts, :zstd_options, [])
+
       {:ok, zstd_context} =
         :zstd.context(:compress, %{
           strategy: Keyword.get(opts, :strategy, :default)
