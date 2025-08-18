@@ -5,10 +5,16 @@ defmodule Bandit.Compression do
 
   @typedoc "A struct containing the context for response compression"
   @type t :: %__MODULE__{
-          method: :deflate | :gzip | :identity,
+          method: :deflate | :gzip | :identity | :zstd,
           bytes_in: non_neg_integer(),
           lib_context: term()
         }
+
+  @accepted_content_encodings ~w(deflate gzip x-gzip)
+
+  if Code.ensure_loaded?(:zstd) do
+    @accepted_content_encodings @accepted_content_encodings ++ ~w(zstd)
+  end
 
   @spec negotiate_content_encoding(nil | binary(), boolean()) :: String.t() | nil
   def negotiate_content_encoding(nil, _), do: nil
@@ -17,7 +23,7 @@ defmodule Bandit.Compression do
   def negotiate_content_encoding(accept_encoding, true) do
     accept_encoding
     |> Plug.Conn.Utils.list()
-    |> Enum.find(&(&1 in ~w(deflate gzip x-gzip)))
+    |> Enum.find(&(&1 in @accepted_content_encodings))
   end
 
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
@@ -78,10 +84,32 @@ defmodule Bandit.Compression do
 
   defp start_stream("x-gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
   defp start_stream("gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
+
+  if Code.ensure_loaded?(:zstd) do
+    defp start_stream("zstd", opts, false) do
+      {:ok, zstd_context} =
+        :zstd.context(:compress, %{
+          strategy: Keyword.get(opts, :strategy, :default)
+        })
+
+      {:ok, %__MODULE__{method: :zstd, lib_context: zstd_context}}
+    end
+  end
+
   defp start_stream(_encoding, _opts, _streamable), do: {:error, :unsupported_encoding}
 
   def compress_chunk(chunk, %__MODULE__{method: :deflate} = context) do
     result = :zlib.deflate(context.lib_context, chunk, :sync)
+
+    context =
+      context
+      |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
+
+    {result, context}
+  end
+
+  def compress_chunk(chunk, %__MODULE__{method: :zstd} = context) do
+    result = :zstd.compress(chunk, context.lib_context)
 
     context =
       context
@@ -107,6 +135,7 @@ defmodule Bandit.Compression do
 
   def close(%__MODULE__{} = context) do
     if context.method == :deflate, do: :zlib.close(context.lib_context)
+    if context.method == :zstd, do: :zstd.close(context.lib_context)
 
     if context.method == :identity do
       %{}

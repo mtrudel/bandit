@@ -116,6 +116,7 @@ defmodule Bandit do
   @type http_options :: [
           {:compress, boolean()}
           | {:deflate_options, deflate_options()}
+          | {:zstd_options, zstd_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
           | {:log_protocol_errors, :short | :verbose | false}
           | {:log_client_closures, :short | :verbose | false}
@@ -201,6 +202,13 @@ defmodule Bandit do
           | {:window_bits, :zlib.zwindowbits()}
           | {:memory_level, :zlib.zmemlevel()}
           | {:strategy, :zlib.zstrategy()}
+        ]
+
+  @typedoc """
+  Options to configure the zstd library used for HTTP compression
+  """
+  @type zstd_options :: [
+          {:strategy, :zstd.strategy()}
         ]
 
   @typep scheme :: :http | :https
