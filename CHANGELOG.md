@@ -1,3 +1,10 @@
+## 1.8.0 (18 Aug 2025)
+
+### Enhancements
+
+* If the user has set a `content-length` header when calling `send_chunked/3`,
+the response is streamed via content-length delimited framing and not chunked (#510)
+
 ## 1.7.0 (29 May 2025)
 
 ### Enhancements
