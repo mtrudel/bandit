@@ -109,14 +109,16 @@ defmodule Bandit.Compression do
     {result, context}
   end
 
-  def compress_chunk(chunk, %__MODULE__{method: :zstd} = context) do
-    result = :zstd.compress(chunk, context.lib_context)
+  if Code.ensure_loaded?(:zstd) do
+    def compress_chunk(chunk, %__MODULE__{method: :zstd} = context) do
+      result = :zstd.compress(chunk, context.lib_context)
 
-    context =
-      context
-      |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
+      context =
+        context
+        |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
 
-    {result, context}
+      {result, context}
+    end
   end
 
   def compress_chunk(chunk, %__MODULE__{method: :gzip, lib_context: nil} = context) do
