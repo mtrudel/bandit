@@ -5,9 +5,7 @@ defmodule Bandit.HTTP2.StreamProcess do
   #
   # As part of this lifecycle, the execution of a Plug to handle this stream's request
   # takes place here; the entirety of the Plug lifecycle takes place in a single
-  # `c:handle_continue/2` call.
-
-  use GenServer, restart: :temporary
+  # `c:handle_stream/5` call.
 
   @spec start_link(
           Bandit.HTTP2.Stream.t(),
@@ -15,17 +13,13 @@ defmodule Bandit.HTTP2.StreamProcess do
           Bandit.Telemetry.t(),
           Bandit.Pipeline.conn_data(),
           keyword()
-        ) :: GenServer.on_start()
+        ) :: {:ok, pid()}
   def start_link(stream, plug, connection_span, conn_data, opts) do
-    GenServer.start_link(__MODULE__, {stream, plug, connection_span, conn_data, opts})
+    Task.start_link(__MODULE__, :handle_stream, [stream, plug, connection_span, conn_data, opts])
   end
 
-  @impl GenServer
-  def init(state), do: {:ok, state, {:continue, :start_stream}}
-
-  @impl GenServer
-  def handle_continue(:start_stream, {stream, plug, connection_span, conn_data, opts} = state) do
+  def handle_stream(stream, plug, connection_span, conn_data, opts) do
     _ = Bandit.Pipeline.run(stream, plug, connection_span, conn_data, opts)
-    {:stop, :normal, state}
+    :ok
   end
 end
