@@ -86,12 +86,8 @@ defmodule Bandit.Compression do
 
   if Code.ensure_loaded?(:zstd) do
     defp start_stream("zstd", http_opts, false) do
-      opts = Keyword.get(http_opts, :zstd_options, [])
-
-      {:ok, zstd_context} =
-        :zstd.context(:compress, %{
-          strategy: Keyword.get(opts, :strategy, :default)
-        })
+      opts = Keyword.get(http_opts, :zstd_options, %{})
+      {:ok, zstd_context} = :zstd.context(:compress, opts)
 
       {:ok, %__MODULE__{method: :zstd, lib_context: zstd_context}}
     end
