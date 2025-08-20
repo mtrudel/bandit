@@ -10,14 +10,20 @@ defmodule Bandit.Compression do
           lib_context: term()
         }
 
-  @spec negotiate_content_encoding(nil | binary(), boolean(), [String.t()]) :: String.t() | nil
-  def negotiate_content_encoding(nil, _, _), do: nil
-  def negotiate_content_encoding(_, false, _), do: nil
-  def negotiate_content_encoding(_, _, []), do: nil
+  @accepted_encodings ~w(deflate gzip x-gzip)
 
-  def negotiate_content_encoding(accept_encoding, true, accepted_encodings) do
-    encodings = Plug.Conn.Utils.list(accept_encoding)
-    Enum.find(accepted_encodings, &(&1 in encodings))
+  if Code.ensure_loaded?(:zstd) do
+    @accepted_encodings @accepted_encodings ++ ["zstd"]
+  end
+
+  @spec negotiate_content_encoding(nil | binary(), boolean()) :: String.t() | nil
+  def negotiate_content_encoding(nil, _), do: nil
+  def negotiate_content_encoding(_, false), do: nil
+
+  def negotiate_content_encoding(accept_encoding, true) do
+    accept_encoding
+    |> Plug.Conn.Utils.list()
+    |> Enum.find(&(&1 in @accepted_encodings))
   end
 
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
