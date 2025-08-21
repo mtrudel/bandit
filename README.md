@@ -86,7 +86,7 @@ Using Bandit to host your Phoenix application couldn't be simpler:
 1. Add Bandit as a dependency in your Phoenix application's `mix.exs`:
 
     ```elixir
-    {:bandit, "~> 1.0"}
+    {:bandit, "~> 1.8"}
     ```
 2. Add the following `adapter:` line to your endpoint configuration in `config/config.exs`, as in the following example:
 
@@ -233,7 +233,7 @@ by adding `bandit` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:bandit, "~> 1.0"}
+    {:bandit, "~> 1.8"}
   ]
 end
 ```
