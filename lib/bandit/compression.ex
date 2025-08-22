@@ -133,8 +133,7 @@ defmodule Bandit.Compression do
   end
 
   def close(%__MODULE__{} = context) do
-    if context.method == :deflate, do: :zlib.close(context.lib_context)
-    if context.method == :zstd, do: :zstd.close(context.lib_context)
+    close_context(context)
 
     if context.method == :identity do
       %{}
@@ -145,4 +144,16 @@ defmodule Bandit.Compression do
       }
     end
   end
+
+  defp close_context(%__MODULE__{method: :deflate, lib_context: lib_context}) do
+    :zlib.close(lib_context)
+  end
+
+  if Code.ensure_loaded?(:zstd) do
+    defp close_context(%__MODULE__{method: :zstd, lib_context: lib_context}) do
+      :zstd.close(lib_context)
+    end
+  end
+
+  defp close_context(_context), do: :ok
 end
