@@ -103,6 +103,7 @@ defmodule Bandit do
     be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
     'deflate' content encoding; 'gzip' does not have any configurable options (this is a
     limitation of the underlying `:zlib` library)
+  * `zstd_options`: A map of options passed verbatim to :zstd, review the options [here](https://www.erlang.org/doc/apps/stdlib/zstd.html#t:compress_parameters/0)
   * `log_exceptions_with_status_codes`: Which exceptions to log. Bandit will log only those
     exceptions whose status codes (as determined by `Plug.Exception.status/1`) match the specified
     list or range. Defaults to `500..599`
@@ -116,6 +117,7 @@ defmodule Bandit do
   @type http_options :: [
           {:compress, boolean()}
           | {:deflate_options, deflate_options()}
+          | {:zstd_options, zstd_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
           | {:log_protocol_errors, :short | :verbose | false}
           | {:log_client_closures, :short | :verbose | false}
@@ -202,6 +204,11 @@ defmodule Bandit do
           | {:memory_level, :zlib.zmemlevel()}
           | {:strategy, :zlib.zstrategy()}
         ]
+
+  @typedoc """
+  Options to configure the zstd library used for HTTP compression
+  """
+  @type zstd_options :: map
 
   @typep scheme :: :http | :https
 

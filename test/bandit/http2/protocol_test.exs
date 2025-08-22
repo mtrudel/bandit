@@ -372,6 +372,41 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
     end
 
+    # TODO Remove conditional once Erlang v28 is required
+    if Code.ensure_loaded?(:zstd) do
+      test "writes out a response with zstd encoding if so negotiated", context do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", "/send_big_body"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"},
+          {"accept-encoding", "zstd"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert {:ok, 1, false,
+                [
+                  {":status", "200"},
+                  {"date", _date},
+                  {"content-length", "19"},
+                  {"content-encoding", "zstd"},
+                  {"vary", "accept-encoding"},
+                  {"cache-control", "max-age=0, private, must-revalidate"}
+                ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+        expected =
+          "a"
+          |> String.duplicate(10_000)
+          |> :zstd.compress()
+          |> :erlang.iolist_to_binary()
+
+        assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
+      end
+    end
+
     test "uses the first matching encoding in accept-encoding", context do
       socket = SimpleH2Client.setup_connection(context)
 

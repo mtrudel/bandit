@@ -1121,6 +1121,22 @@ defmodule HTTP1ProtocolTest do
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
+    # TODO Remove conditional once Erlang v28 is required
+    if Code.ensure_loaded?(:zstd) do
+      test "writes out a response with zstd encoding if so negotiated", context do
+        response =
+          Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "zstd"}])
+
+        assert response.status == 200
+        assert response.headers["content-length"] == ["19"]
+        assert response.headers["content-encoding"] == ["zstd"]
+        assert response.headers["vary"] == ["accept-encoding"]
+
+        assert response.body ==
+                 :erlang.iolist_to_binary(:zstd.compress(String.duplicate("a", 10_000)))
+      end
+    end
+
     test "uses the first matching encoding in accept-encoding", context do
       response =
         Req.get!(context.req,
