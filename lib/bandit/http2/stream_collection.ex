@@ -70,6 +70,9 @@ defmodule Bandit.HTTP2.StreamCollection do
   @spec stream_count(t()) :: non_neg_integer()
   def stream_count(collection), do: collection.stream_count
 
+  @spec open_stream_count(t()) :: non_neg_integer()
+  def open_stream_count(collection), do: collection.pid_to_id |> map_size()
+
   @spec last_stream_id(t()) :: Bandit.HTTP2.Stream.stream_id()
   def last_stream_id(collection), do: collection.last_stream_id
 end
