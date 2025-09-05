@@ -128,7 +128,8 @@ defmodule Bandit.Adapter do
       ) do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
-    %File.Stat{type: :regular, size: size} = File.stat!(path)
+    {:ok, fileinfo} = :file.read_file_info(path, [:raw, time: :universal])
+    %File.Stat{type: :regular, size: size} = File.Stat.from_record(fileinfo)
     length = if length == :all, do: size - offset, else: length
 
     if offset + length <= size do
