@@ -115,32 +115,32 @@ defmodule Bandit.HTTP2.Stream do
       case do_recv(stream, stream.read_timeout) do
         {:headers, headers, stream} ->
           method = Bandit.Headers.get_header(headers, ":method")
-          request_target = build_request_target!(headers)
-          {pseudo_headers, headers} = split_headers!(headers)
-          pseudo_headers_all_request!(pseudo_headers)
-          exactly_one_instance_of!(pseudo_headers, ":scheme")
-          exactly_one_instance_of!(pseudo_headers, ":method")
-          exactly_one_instance_of!(pseudo_headers, ":path")
-          headers_all_lowercase!(headers)
-          no_connection_headers!(headers)
-          valid_te_header!(headers)
-          content_length = get_content_length!(headers)
+          request_target = build_request_target!(headers, stream)
+          {pseudo_headers, headers} = split_headers!(headers, stream)
+          pseudo_headers_all_request!(pseudo_headers, stream)
+          exactly_one_instance_of!(pseudo_headers, ":scheme", stream)
+          exactly_one_instance_of!(pseudo_headers, ":method", stream)
+          exactly_one_instance_of!(pseudo_headers, ":path", stream)
+          headers_all_lowercase!(headers, stream)
+          no_connection_headers!(headers, stream)
+          valid_te_header!(headers, stream)
+          content_length = get_content_length!(headers, stream)
           headers = combine_cookie_crumbs(headers)
           stream = %{stream | bytes_remaining: content_length}
           {:ok, method, request_target, headers, stream}
 
         :timeout ->
-          stream_error!("Timed out waiting for HEADER")
+          stream_error!("Timed out waiting for HEADER", stream)
 
         %@for{} = stream ->
           read_headers(stream)
       end
     end
 
-    defp build_request_target!(headers) do
+    defp build_request_target!(headers, stream) do
       scheme = Bandit.Headers.get_header(headers, ":scheme")
       {host, port} = get_host_and_port!(headers)
-      path = get_path!(headers)
+      path = get_path!(headers, stream)
       {scheme, host, port, path}
     end
 
@@ -152,52 +152,52 @@ defmodule Bandit.HTTP2.Stream do
     end
 
     # RFC9113§8.3.1 - path should be non-empty and absolute
-    defp get_path!(headers) do
+    defp get_path!(headers, stream) do
       headers
       |> Bandit.Headers.get_header(":path")
       |> case do
-        nil -> stream_error!("Received empty :path")
+        nil -> stream_error!("Received empty :path", stream)
         "*" -> :*
-        "/" <> _ = path -> split_path!(path)
-        _ -> stream_error!("Path does not start with /")
+        "/" <> _ = path -> split_path!(path, stream)
+        _ -> stream_error!("Path does not start with /", stream)
       end
     end
 
     # RFC9113§8.3.1 - path should match the path-absolute production from RFC3986
-    defp split_path!(path) do
+    defp split_path!(path, stream) do
       if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
         do: path,
-        else: stream_error!("Path contains dot segment")
+        else: stream_error!("Path contains dot segment", stream)
     end
 
     # RFC9113§8.3 - pseudo headers must appear first
-    defp split_headers!(headers) do
+    defp split_headers!(headers, stream) do
       {pseudo_headers, headers} =
         Enum.split_while(headers, fn {key, _value} -> String.starts_with?(key, ":") end)
 
       if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
-        do: stream_error!("Received pseudo headers after regular one"),
+        do: stream_error!("Received pseudo headers after regular one", stream),
         else: {pseudo_headers, headers}
     end
 
     # RFC9113§8.3.1 - only request pseudo headers may appear
-    defp pseudo_headers_all_request!(headers) do
+    defp pseudo_headers_all_request!(headers, stream) do
       if Enum.any?(headers, fn {key, _value} ->
            key not in ~w[:method :scheme :authority :path]
          end),
-         do: stream_error!("Received invalid pseudo header")
+         do: stream_error!("Received invalid pseudo header", stream)
     end
 
     # RFC9113§8.3.1 - method, scheme, path pseudo headers must appear exactly once
-    defp exactly_one_instance_of!(headers, header) do
+    defp exactly_one_instance_of!(headers, header, stream) do
       if Enum.count(headers, fn {key, _value} -> key == header end) != 1,
-        do: stream_error!("Expected 1 #{header} headers")
+        do: stream_error!("Expected 1 #{header} headers", stream)
     end
 
     # RFC9113§8.2 - all headers name fields must be lowercsae
-    defp headers_all_lowercase!(headers) do
+    defp headers_all_lowercase!(headers, stream) do
       if !Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
-        do: stream_error!("Received uppercase header")
+        do: stream_error!("Received uppercase header", stream)
     end
 
     defp lowercase?(<<char, _rest::bits>>) when char >= ?A and char <= ?Z, do: false
@@ -207,24 +207,24 @@ defmodule Bandit.HTTP2.Stream do
     # RFC9113§8.2.2 - no hop-by-hop headers
     # Note that we do not filter out the TE header here, since it is allowed in
     # specific cases by RFC9113§8.2.2. We check those cases in a separate filter
-    defp no_connection_headers!(headers) do
+    defp no_connection_headers!(headers, stream) do
       connection_headers =
         ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
 
       if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
-        do: stream_error!("Received connection-specific header")
+        do: stream_error!("Received connection-specific header", stream)
     end
 
     # RFC9113§8.2.2 - TE header may be present if it contains exactly 'trailers'
-    defp valid_te_header!(headers) do
+    defp valid_te_header!(headers, stream) do
       if Bandit.Headers.get_header(headers, "te") not in [nil, "trailers"],
-        do: stream_error!("Received invalid TE header")
+        do: stream_error!("Received invalid TE header", stream)
     end
 
-    defp get_content_length!(headers) do
+    defp get_content_length!(headers, stream) do
       case Bandit.Headers.get_content_length(headers) do
         {:ok, content_length} -> content_length
-        {:error, reason} -> stream_error!(reason)
+        {:error, reason} -> stream_error!(reason, stream)
       end
     end
 
@@ -249,7 +249,7 @@ defmodule Bandit.HTTP2.Stream do
          when state in [:open, :local_closed] do
       case do_recv(stream, timeout) do
         {:headers, trailers, stream} ->
-          no_pseudo_headers!(trailers)
+          no_pseudo_headers!(trailers, stream)
           Logger.warning("Ignoring trailers #{inspect(trailers)}", domain: [:bandit])
           do_read_data(stream, max_bytes, timeout, acc)
 
@@ -275,9 +275,9 @@ defmodule Bandit.HTTP2.Stream do
       {:ok, Enum.reverse(acc), stream}
     end
 
-    defp no_pseudo_headers!(headers) do
+    defp no_pseudo_headers!(headers, stream) do
       if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
-        do: stream_error!("Received trailers with pseudo headers")
+        do: stream_error!("Received trailers with pseudo headers", stream)
     end
 
     defp do_recv(%@for{state: :idle} = stream, timeout) do
@@ -321,10 +321,10 @@ defmodule Bandit.HTTP2.Stream do
     defp do_recv(%@for{state: :remote_closed} = stream, timeout) do
       receive do
         {:bandit, {:headers, _headers, _end_stream}} ->
-          do_stream_closed_error!("Received HEADERS in remote_closed state")
+          do_stream_closed_error!("Received HEADERS in remote_closed state", stream)
 
         {:bandit, {:data, _data, _end_stream}} ->
-          do_stream_closed_error!("Received DATA in remote_closed state")
+          do_stream_closed_error!("Received DATA in remote_closed state", stream)
 
         {:bandit, {:send_window_update, delta}} ->
           do_recv_send_window_update(stream, delta)
@@ -375,15 +375,18 @@ defmodule Bandit.HTTP2.Stream do
         end
 
       if stream.bytes_remaining not in [nil, 0],
-        do: stream_error!("Received END_STREAM with byte still pending")
+        do: stream_error!("Received END_STREAM with byte still pending", stream)
 
       %{stream | state: next_state}
     end
 
     defp do_recv_send_window_update(stream, delta) do
       case Bandit.HTTP2.FlowControl.update_send_window(stream.send_window_size, delta) do
-        {:ok, new_window} -> %{stream | send_window_size: new_window}
-        {:error, reason} -> stream_error!(reason, Bandit.HTTP2.Errors.flow_control_error())
+        {:ok, new_window} ->
+          %{stream | send_window_size: new_window}
+
+        {:error, reason} ->
+          stream_error!(reason, stream, Bandit.HTTP2.Errors.flow_control_error())
       end
     end
 
@@ -401,8 +404,9 @@ defmodule Bandit.HTTP2.Stream do
       end
     end
 
-    @spec do_stream_closed_error!(term()) :: no_return()
-    defp do_stream_closed_error!(msg), do: stream_error!(msg, Bandit.HTTP2.Errors.stream_closed())
+    @spec do_stream_closed_error!(String.t(), Bandit.HTTP2.Stream.t()) :: no_return()
+    defp do_stream_closed_error!(msg, stream),
+      do: stream_error!(msg, stream, Bandit.HTTP2.Errors.stream_closed())
 
     # Stream API - Sending
 
@@ -465,6 +469,7 @@ defmodule Bandit.HTTP2.Stream do
           stream.read_timeout ->
             stream_error!(
               "Timeout waiting for space in the send_window",
+              stream,
               Bandit.HTTP2.Errors.flow_control_error()
             )
         end
@@ -524,8 +529,12 @@ defmodule Bandit.HTTP2.Stream do
       end
     end
 
-    def ensure_completed(%@for{state: state}) do
-      stream_error!("Terminating stream in #{state} state", Bandit.HTTP2.Errors.internal_error())
+    def ensure_completed(%@for{state: state} = stream) do
+      stream_error!(
+        "Terminating stream in #{state} state",
+        stream,
+        Bandit.HTTP2.Errors.internal_error()
+      )
     end
 
     def supported_upgrade?(%@for{} = _stream, _protocol), do: false
@@ -569,10 +578,19 @@ defmodule Bandit.HTTP2.Stream do
     defp call(stream, msg, timeout),
       do: GenServer.call(stream.connection_pid, {msg, stream.stream_id}, timeout)
 
-    @spec stream_error!(term()) :: no_return()
-    @spec stream_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()
-    defp stream_error!(message, error_code \\ Bandit.HTTP2.Errors.protocol_error()),
-      do: raise(Bandit.HTTP2.Errors.StreamError, message: message, error_code: error_code)
+    @spec stream_error!(String.t(), Bandit.HTTP2.Stream.t()) :: no_return()
+    @spec stream_error!(
+            String.t(),
+            Bandit.HTTP2.Stream.t(),
+            Bandit.HTTP2.Errors.error_code()
+          ) :: no_return()
+    defp stream_error!(message, stream, error_code \\ Bandit.HTTP2.Errors.protocol_error()),
+      do:
+        raise(Bandit.HTTP2.Errors.StreamError,
+          message: message,
+          error_code: error_code,
+          stream_id: stream.stream_id
+        )
 
     @spec connection_error!(term()) :: no_return()
     @spec connection_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()
