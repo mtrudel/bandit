@@ -32,7 +32,7 @@ defmodule Bandit.HTTP2.FlowControl do
   end
 
   @spec update_send_window(non_neg_integer(), non_neg_integer()) ::
-          {:ok, non_neg_integer()} | {:error, term()}
+          {:ok, non_neg_integer()} | {:error, String.t()}
   def update_send_window(current_send_window, increment) do
     if current_send_window + increment > @max_window_size do
       {:error, "Invalid WINDOW_UPDATE increment RFC9113§6.9.1"}
