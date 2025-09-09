@@ -222,39 +222,28 @@ defmodule Bandit.HTTP2.Connection do
         connection.streams
 
       :new ->
-        case new_stream(connection) do
-          :new_stream ->
-            stream =
-              Bandit.HTTP2.Stream.init(
-                self(),
-                stream_id,
-                connection.remote_settings.initial_window_size
-              )
+        new_stream!(connection, stream_id)
 
-            case Bandit.HTTP2.StreamProcess.start_link(
-                   stream,
-                   connection.plug,
-                   connection.telemetry_span,
-                   connection.conn_data,
-                   connection.opts
-                 ) do
-              {:ok, pid} ->
-                streams = Bandit.HTTP2.StreamCollection.insert(connection.streams, stream_id, pid)
-                with_stream(%{connection | streams: streams}, stream_id, fun)
+        stream =
+          Bandit.HTTP2.Stream.init(
+            self(),
+            stream_id,
+            connection.remote_settings.initial_window_size
+          )
 
-              _ ->
-                raise "Unable to start stream process"
-            end
+        case Bandit.HTTP2.StreamProcess.start_link(
+               stream,
+               connection.plug,
+               connection.telemetry_span,
+               connection.conn_data,
+               connection.opts
+             ) do
+          {:ok, pid} ->
+            streams = Bandit.HTTP2.StreamCollection.insert(connection.streams, stream_id, pid)
+            with_stream(%{connection | streams: streams}, stream_id, fun)
 
-          :max_concurrent_streams_exceeded ->
-            stream_error!(
-              "Concurrent stream count exceeded",
-              stream_id,
-              Bandit.HTTP2.Errors.refused_stream()
-            )
-
-          :max_requests_exceeded ->
-            connection_error!("Connection count exceeded", Bandit.HTTP2.Errors.refused_stream())
+          _ ->
+            raise "Unable to start stream process"
         end
 
       :invalid ->
@@ -262,22 +251,21 @@ defmodule Bandit.HTTP2.Connection do
     end
   end
 
-  @spec new_stream(t()) :: :new_stream | :max_requests_exceeded | :max_concurrent_streams_exceeded
-  defp new_stream(connection) do
-    max_requests = connection.opts.http_2[:max_requests]
-    max_concurrent_streams = connection.local_settings.max_concurrent_streams
+  defp new_stream!(connection, stream_id) do
+    max_requests = Keyword.get(connection.opts.http_2, :max_requests, 0)
 
-    cond do
-      max_requests != 0 and
-          max_requests <= Bandit.HTTP2.StreamCollection.stream_count(connection.streams) ->
-        :max_requests_exceeded
+    if max_requests != 0 and
+         max_requests <= Bandit.HTTP2.StreamCollection.stream_count(connection.streams) do
+      connection_error!("Connection count exceeded", Bandit.HTTP2.Errors.refused_stream())
+    end
 
-      max_concurrent_streams <=
-          Bandit.HTTP2.StreamCollection.open_stream_count(connection.streams) ->
-        :max_concurrent_streams_exceeded
-
-      true ->
-        :new_stream
+    if connection.local_settings.max_concurrent_streams <=
+         Bandit.HTTP2.StreamCollection.open_stream_count(connection.streams) do
+      stream_error!(
+        "Concurrent stream count exceeded",
+        stream_id,
+        Bandit.HTTP2.Errors.refused_stream()
+      )
     end
   end
 
