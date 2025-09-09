@@ -268,7 +268,8 @@ defmodule Bandit.HTTP2.Connection do
     max_concurrent_streams = connection.local_settings.max_concurrent_streams
 
     cond do
-      max_requests <= Bandit.HTTP2.StreamCollection.stream_count(connection.streams) ->
+      max_requests != 0 and
+          max_requests <= Bandit.HTTP2.StreamCollection.stream_count(connection.streams) ->
         :max_requests_exceeded
 
       max_concurrent_streams <=

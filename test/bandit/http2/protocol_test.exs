@@ -234,6 +234,16 @@ defmodule HTTP2ProtocolTest do
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Connection count exceeded"
     end
+
+    @tag :capture_log
+    test "max_requests zero does not put a limit", context do
+      context = https_server(context, http_2_options: [max_requests: 0])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
+      {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
   end
 
   describe "settings exchange" do
