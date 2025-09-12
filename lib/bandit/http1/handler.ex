@@ -4,11 +4,25 @@ defmodule Bandit.HTTP1.Handler do
 
   use ThousandIsland.Handler
 
+  alias Bandit.Util
+
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
     transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
     connection_span = ThousandIsland.Socket.telemetry_span(socket)
     conn_data = Bandit.SocketHelpers.conn_data(socket)
+
+    label =
+      case Bandit.SocketHelpers.safe_peer_data(socket) do
+        {:ok, peer_data} ->
+          client_info = "#{:inet.ntoa(peer_data.address)}:#{peer_data.port}"
+          {__MODULE__, client_info}
+
+        {:error, _reason} ->
+          __MODULE__
+      end
+
+    Util.set_label(label)
 
     case Bandit.Pipeline.run(transport, state.plug, connection_span, conn_data, state.opts) do
       {:ok, transport} -> maybe_keepalive(transport, state)

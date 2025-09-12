@@ -35,6 +35,7 @@ defmodule Bandit.Trace do
 
   use GenServer
 
+  alias Bandit.Util
   require Logger
 
   @events [
@@ -83,6 +84,7 @@ defmodule Bandit.Trace do
 
   @impl GenServer
   def init(opts) do
+    Util.set_label(__MODULE__)
     _ = :telemetry.attach_many(self(), @events, &__MODULE__.handle_event/4, self())
     {:ok, struct!(%__MODULE__{queue: :queue.new()}, opts)}
   end
