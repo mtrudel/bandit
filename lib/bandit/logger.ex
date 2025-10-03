@@ -15,9 +15,8 @@ defmodule Bandit.Logger do
 
     case logging_verbosity do
       :short ->
-        message = Exception.format_banner(:error, error, [])
         logger_metadata = logger_metadata_for(:error, error, [], metadata)
-        Logger.error(message, logger_metadata)
+        Logger.error(Exception.format_banner(:error, error, []), logger_metadata)
 
       :verbose ->
         logger_metadata = logger_metadata_for(:error, error, stacktrace, metadata)
