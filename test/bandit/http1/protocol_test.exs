@@ -125,7 +125,7 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
-      assert_receive {:log, log_event}, 500
+      assert_receive {:log, %{level: :error} = log_event}, 500
 
       assert %{
                meta: %{
