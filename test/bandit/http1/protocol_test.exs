@@ -97,7 +97,30 @@ defmodule HTTP1ProtocolTest do
     end
 
     @tag :capture_log
-    test "it should provide useful metadata to logger handler", context do
+    test "it provides minimal metadata when short logging", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, log_event}, 500
+
+      assert %{
+               meta: %{
+                 domain: [:elixir, :bandit],
+                 crash_reason:
+                   {%Bandit.HTTPError{message: "Header read HTTP error: \"GARBAGE\\r\\n\""}, []},
+                 plug: {__MODULE__, []}
+               }
+             } = log_event
+    end
+
+    @tag :capture_log
+    test "it provides full metadata when verbose logging", context do
+      context =
+        context
+        |> http_server(http_options: [log_protocol_errors: :verbose])
+        |> Enum.into(context)
+
       client = SimpleHTTP1Client.tcp_client(context)
       Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
