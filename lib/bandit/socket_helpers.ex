@@ -16,22 +16,33 @@ defmodule Bandit.SocketHelpers do
 
   @spec peer_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.peer_data()
   def peer_data(socket) do
+    case safe_peer_data(socket) do
+      {:ok, peer_data} -> peer_data
+      {:error, reason} -> transport_error!("Unable to obtain peer_data", reason)
+    end
+  end
+
+  @spec safe_peer_data(ThousandIsland.Socket.t()) ::
+          {:ok, Plug.Conn.Adapter.peer_data()} | {:error, term()}
+  def safe_peer_data(socket) do
     with {:ok, peername} <- ThousandIsland.Socket.peername(socket),
          {address, port} <- map_address(peername),
          {:ok, ssl_cert} <- peercert(socket) do
-      %{address: address, port: port, ssl_cert: ssl_cert}
+      {:ok, %{address: address, port: port, ssl_cert: ssl_cert}}
     else
-      {:error, reason} -> transport_error!("Unable to obtain peer_data", reason)
+      {:error, reason} -> {:error, reason}
     end
   end
 
   @spec sock_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.sock_data()
   def sock_data(socket) do
-    with {:ok, sockname} <- ThousandIsland.Socket.sockname(socket),
-         {address, port} <- map_address(sockname) do
-      %{address: address, port: port}
-    else
-      {:error, reason} -> transport_error!("Unable to obtain sock_data", reason)
+    case ThousandIsland.Socket.sockname(socket) do
+      {:ok, sockname} ->
+        {address, port} = map_address(sockname)
+        %{address: address, port: port}
+
+      {:error, reason} ->
+        transport_error!("Unable to obtain sock_data", reason)
     end
   end
 

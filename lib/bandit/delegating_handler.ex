@@ -7,8 +7,12 @@ defmodule Bandit.DelegatingHandler do
 
   use ThousandIsland.Handler
 
+  alias Bandit.Util
+
   @impl ThousandIsland.Handler
   def handle_connection(socket, %{handler_module: handler_module} = state) do
+    Util.set_label({__MODULE__, handler_module})
+
     handler_module.handle_connection(socket, state)
     |> handle_bandit_continuation(socket)
   end
