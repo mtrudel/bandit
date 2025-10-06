@@ -137,6 +137,46 @@ options via the `Bandit.start_link/1` function:
 Bandit.start_link(plug: MyPlug)
 ```
 
+## Using EEx Templates with Bandit
+
+[EEx](https://hexdocs.pm/eex/1.18.4/EEx.html) is the standard Elixir templating engine.
+
+It allows us to embed Elixir code inside text strings, and in particular inside HTML, which is quite useful if we want to build an Elixir web application.
+
+One way to use templates with Bandit is by directly reading the template contents into a string, and then using the `eval_string` function.
+
+```elixir
+template_path = Path.join([File.cwd!(), "templates", "index.html.eex"])
+template_content = File.read!(template_path)
+assigns = [hello: "World!"]
+html_string = EEx.eval_string(template_content, assigns)
+conn
+|> put_resp_content_type("text/html")
+|> send_resp(200, html_string)
+```
+
+The `function_from_file/5` function of the EEx package allows us to precompile a file into an Elixir function, which we can then call at runtime to output some HTML.
+This has the advantage of being faster than reading from the filesystem each time we want to render a template.
+
+The first parameter is the type of function to define - `:def` for public functions, `:defp` for private functions. The second argument is the name of the function as an atom, the third argument is a string with the path of the template, and the fourth argument is the list of parameters to pass to the template.
+
+```elixir
+defmodule MyApp.Router do
+  # ...
+  require EEx
+  EEx.function_from_file(:def, :index, "templates/index.html.eex", [:hello])
+  # ...
+  get "/" do
+    # ...
+    html_string = index("World!")
+    conn
+    |> put_resp_content_type("text/html")
+    |> send_resp(200, html_string)
+  end
+  # ...
+end
+```
+
 ## Configuration
 
 A number of options are defined when starting a server. The complete list is
