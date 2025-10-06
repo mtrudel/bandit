@@ -12,9 +12,16 @@ defmodule SimpleH2Client do
     socket
   end
 
-  def exchange_prefaces(socket) do
+  def exchange_prefaces(socket, with_settings \\ false) do
     Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-    {:ok, <<0, 0, 0, 4, 0, 0, 0, 0, 0>>} = Transport.recv(socket, 9)
+    {:ok, <<length::24, 4, 0, 0, 0, 0, 0>>} = Transport.recv(socket, 9)
+
+    if with_settings and length > 0 do
+      {:ok, _settings_data} = Transport.recv(socket, length)
+    else
+      0 = length
+    end
+
     Transport.send(socket, <<0, 0, 0, 4, 1, 0, 0, 0, 0>>)
   end
 
