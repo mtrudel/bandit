@@ -14,7 +14,7 @@ defmodule Bandit.HTTP2.Handler do
     connection = Bandit.HTTP2.Connection.init(socket, state.plug, state.opts)
     {:continue, Map.merge(state, %{buffer: <<>>, connection: connection})}
   rescue
-    error -> rescue_error(error, __STACKTRACE__, socket, state)
+    error -> rescue_connection_error(error, __STACKTRACE__, socket, state)
   end
 
   @impl ThousandIsland.Handler
@@ -38,7 +38,8 @@ defmodule Bandit.HTTP2.Handler do
     end)
     |> then(&{:continue, &1})
   rescue
-    error -> rescue_error(error, __STACKTRACE__, socket, state)
+    error in Bandit.HTTP2.Errors.StreamError -> rescue_stream_error(error, socket, state)
+    error -> rescue_connection_error(error, __STACKTRACE__, socket, state)
   end
 
   @impl ThousandIsland.Handler
@@ -148,7 +149,18 @@ defmodule Bandit.HTTP2.Handler do
     {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
   end
 
-  defp rescue_error(error, stacktrace, socket, state) do
+  defp rescue_stream_error(error, socket, state) do
+    Bandit.HTTP2.Connection.send_rst_stream(
+      error.stream_id,
+      error.error_code,
+      socket,
+      state.connection
+    )
+
+    {:continue, state}
+  end
+
+  defp rescue_connection_error(error, stacktrace, socket, state) do
     do_rescue_error(error, stacktrace, socket, state)
     {:close, state}
   end

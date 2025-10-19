@@ -1,6 +1,7 @@
 defmodule HTTP2ProtocolTest do
   use ExUnit.Case, async: true
   use ServerHelpers
+  use Machete
 
   import Bitwise
 
@@ -232,6 +233,16 @@ defmodule HTTP2ProtocolTest do
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Connection count exceeded"
+    end
+
+    @tag :capture_log
+    test "max_requests zero does not put a limit", context do
+      context = https_server(context, http_2_options: [max_requests: 0])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", port)
+      {:ok, 1, false, _, _} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
     end
   end
 
@@ -3048,6 +3059,101 @@ defmodule HTTP2ProtocolTest do
 
     def unquote(:*)(conn) do
       echo_components(conn)
+    end
+  end
+
+  describe "max_concurrent_streams flag" do
+    test "refuses streams when max_concurrent_streams limit is exceeded", context do
+      context =
+        context
+        |> https_server(http_2_options: [default_local_settings: [max_concurrent_streams: 2]])
+        |> Enum.into(context)
+
+      port = context.port
+
+      socket = setup_connection_with_custom_settings(context)
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 1, :get, "/slow_body_response", port)
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 3, :get, "/slow_body_response", port, send_ctx)
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 5, :get, "/slow_body_response", port, send_ctx)
+
+      t0 = for _ <- 1..3, do: SimpleH2Client.recv_frame(socket)
+
+      # Now fourth stream should be accepted since we're below the limit again
+      SimpleH2Client.send_simple_headers(socket, 7, :get, "/echo", context.port, send_ctx)
+
+      t1 = for _ <- 1..5, do: SimpleH2Client.recv_frame(socket)
+
+      t0
+      |> Enum.concat(t1)
+      |> assert
+      ~> in_any_order([
+        {:ok, :headers, integer(), 1, string()},
+        {:ok, :data, integer(), 1, "OK"},
+        {:ok, :headers, integer(), 3, string()},
+        {:ok, :data, integer(), 3, "OK"},
+        {:ok, :rst_stream, 0, 5, <<7::32>>},
+        {:ok, :headers, integer(), 7, string()},
+        {:ok, :data, integer(), 7, "OK"}
+      ])
+
+      assert Transport.recv(socket, 0) == {:error, :closed}
+    end
+
+    test "allows new streams after previous streams complete", context do
+      context =
+        context
+        |> https_server(http_2_options: [default_local_settings: [max_concurrent_streams: 2]])
+        |> Enum.into(context)
+
+      port = context.port
+
+      socket = setup_connection_with_custom_settings(context)
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 1, :get, "/slow_body_response", port)
+
+      {:ok, send_ctx} =
+        SimpleH2Client.send_simple_headers(socket, 3, :get, "/slow_body_response", port, send_ctx)
+
+      t0 = for _ <- 1..2, do: SimpleH2Client.recv_frame(socket)
+
+      SimpleH2Client.send_simple_headers(socket, 5, :get, "/slow_body_response", port, send_ctx)
+
+      t1 = for _ <- 1..5, do: SimpleH2Client.recv_frame(socket)
+
+      t0
+      |> Enum.concat(t1)
+      |> assert
+      ~> in_any_order([
+        {:ok, :headers, integer(), 1, string()},
+        {:ok, :headers, integer(), 3, string()},
+        {:ok, :headers, integer(), 5, string()},
+        {:ok, :data, integer(), 1, "OK"},
+        {:ok, :data, integer(), 3, "OK"},
+        {:ok, :data, integer(), 5, "OK"},
+        {:ok, :goaway, 0, 0, <<5::32, 0::32>>}
+      ])
+
+      assert Transport.recv(socket, 0) == {:error, :closed}
+    end
+
+    def slow_body_response(conn) do
+      Process.sleep(50)
+      conn |> send_resp(200, "OK")
+    end
+
+    # Helper function to set up connection when server has custom settings
+    defp setup_connection_with_custom_settings(context) do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket, true)
+      SimpleH2Client.exchange_client_settings(socket)
+      socket
     end
   end
 end
