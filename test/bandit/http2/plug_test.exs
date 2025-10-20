@@ -839,7 +839,13 @@ defmodule HTTP2PlugTest do
   end
 
   def ssl_data(conn) do
-    send_resp(conn, 200, conn |> get_ssl_data() |> inspect())
+    body =
+      conn
+      |> get_ssl_data()
+      |> Keyword.take([:protocol, :ciphers])
+      |> inspect(limit: :infinity)
+
+    send_resp(conn, 200, body)
   end
 
   test "silently accepts EXIT messages from normally terminating spawned processes", context do
