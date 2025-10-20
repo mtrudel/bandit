@@ -279,36 +279,34 @@ defmodule Bandit.HTTP2.Connection do
 
   @spec check_reset_stream_rate_limit!(t()) :: t()
   defp check_reset_stream_rate_limit!(connection) do
-    max_reset_stream_rate =
-      Keyword.get(connection.opts.http_2, :max_reset_stream_rate, {500, 10_000})
-
-    case max_reset_stream_rate do
+    case Keyword.get(connection.opts.http_2, :max_reset_stream_rate, {500, 10_000}) do
       nil ->
         connection
 
-      {max_count, time_window_ms} ->
-        now = System.monotonic_time(:millisecond)
-        cutoff_time = now - time_window_ms
-
-        # Filter out timestamps older than the time window
-        recent_timestamps =
-          Enum.filter(connection.reset_stream_timestamps, fn timestamp ->
-            timestamp >= cutoff_time
-          end)
-
-        new_timestamps = [now | recent_timestamps]
-        new_count = length(new_timestamps)
-
-        if new_count > max_count do
-          connection_error!(
-            "Stream resets rate exceeded #{new_count} resets in #{time_window_ms}ms",
-            Bandit.HTTP2.Errors.enhance_your_calm()
-          )
-        else
-          %{connection | reset_stream_timestamps: new_timestamps}
-        end
+      {intensity, period} ->
+        now = :erlang.monotonic_time(:millisecond)
+        threshold = now - period
+        resets = connection.reset_stream_timestamps
+        recent_timestamps = can_reset(intensity - 1, threshold, resets, [], intensity, period)
+        %{connection | reset_stream_timestamps: [now | recent_timestamps]}
     end
   end
+
+  defp can_reset(_, _, [], acc, _, _),
+    do: :lists.reverse(acc)
+
+  defp can_reset(_, threshold, [restart | _], acc, _, _) when restart < threshold,
+    do: :lists.reverse(acc)
+
+  defp can_reset(0, _, [_ | _], _acc, intensity, period),
+    do:
+      connection_error!(
+        "Stream resets rate exceeded #{intensity} resets in #{period}ms",
+        Bandit.HTTP2.Errors.enhance_your_calm()
+      )
+
+  defp can_reset(n, threshold, [restart | restarts], acc, intensity, period),
+    do: can_reset(n - 1, threshold, restarts, [restart | acc], intensity, period)
 
   # Shared logic to send any pending frames upon adjustment of our send window
   defp do_pending_sends(socket, connection) do
