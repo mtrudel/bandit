@@ -74,7 +74,7 @@ jobs:
     - name: Run benchmark
       run: mix benchmark --profile ${{ inputs.profile }} --protocol ${{ inputs.protocol }} ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
     - name: Upload results file
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v5
       with:
         name: http-benchmark.csv
         path: http-benchmark.csv
