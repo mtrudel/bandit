@@ -18,7 +18,8 @@ defmodule Bandit.HTTP2.Connection do
             conn_data: nil,
             telemetry_span: nil,
             plug: nil,
-            opts: %{}
+            opts: %{},
+            cancel_stream_timestamps: []
 
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
@@ -37,7 +38,8 @@ defmodule Bandit.HTTP2.Connection do
           opts: %{
             required(:http) => Bandit.http_options(),
             required(:http_2) => Bandit.http_2_options()
-          }
+          },
+          cancel_stream_timestamps: [integer()]
         }
 
   @spec init(ThousandIsland.Socket.t(), Bandit.Pipeline.plug_def(), map()) :: t()
@@ -202,6 +204,7 @@ defmodule Bandit.HTTP2.Connection do
       end)
 
     %{connection | streams: streams}
+    |> check_cancel_stream_rate_limit!()
   end
 
   # Catch-all handler for unknown frame types
@@ -272,6 +275,39 @@ defmodule Bandit.HTTP2.Connection do
   defp check_oversize_fragment!(fragment, connection) do
     if byte_size(fragment) > Keyword.get(connection.opts.http_2, :max_header_block_size, 50_000),
       do: connection_error!("Received overlong headers")
+  end
+
+  @spec check_cancel_stream_rate_limit!(t()) :: t()
+  defp check_cancel_stream_rate_limit!(connection) do
+    max_cancel_stream_rate =
+      Keyword.get(connection.opts.http_2, :max_cancel_stream_rate, {500, 10_000})
+
+    case max_cancel_stream_rate do
+      nil ->
+        connection
+
+      {max_count, time_window_ms} ->
+        now = System.monotonic_time(:millisecond)
+        cutoff_time = now - time_window_ms
+
+        # Filter out timestamps older than the time window
+        recent_timestamps =
+          Enum.filter(connection.cancel_stream_timestamps, fn timestamp ->
+            timestamp >= cutoff_time
+          end)
+
+        new_timestamps = [now | recent_timestamps]
+        new_count = length(new_timestamps)
+
+        if new_count > max_count do
+          connection_error!(
+            "Stream cancellation rate exceeded #{new_count} cancellations in #{time_window_ms}ms",
+            Bandit.HTTP2.Errors.enhance_your_calm()
+          )
+        else
+          %{connection | cancel_stream_timestamps: new_timestamps}
+        end
+    end
   end
 
   # Shared logic to send any pending frames upon adjustment of our send window
