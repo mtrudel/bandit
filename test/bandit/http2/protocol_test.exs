@@ -2051,15 +2051,11 @@ defmodule HTTP2ProtocolTest do
     test "raises an error upon receipt of an RST_STREAM frame during reading", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      SimpleH2Client.send_simple_headers(socket, 1, :post, "/expect_reset", context.port)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_rst_stream(socket, 1, 99)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.TransportError) Received RST_STREAM from client: unknown (99)"
-    end
-
-    def expect_reset(conn) do
-      read_body(conn)
     end
 
     @tag :capture_log
@@ -2103,6 +2099,72 @@ defmodule HTTP2ProtocolTest do
       Process.sleep(100)
       {:error, :closed} = chunk(conn, "CHUNK")
       conn
+    end
+
+    @tag :capture_log
+    test "rejects connections that exceed RST_STREAM rate limit", context do
+      context = https_server(context, http_2_options: [max_cancel_stream_rate: {3, 1000}])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+
+      # Create streams first by sending headers, then send RST_STREAM frames
+      for stream_id <- [1, 3, 5, 7] do
+        SimpleH2Client.send_simple_headers(socket, stream_id, :get, "/echo", port)
+        SimpleH2Client.send_rst_stream(socket, stream_id, 8)
+      end
+
+      # Connection should be closed due to rate limiting. We expect to see the connection closed
+      # but the server may send RST_STREAM frames before GOAWAY, so just check that connection is closed
+      refute SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "Stream cancellation rate exceeded"
+    end
+
+    @tag :capture_log
+    test "allows RST_STREAM frames within rate limit", context do
+      context = https_server(context, http_2_options: [max_cancel_stream_rate: {5, 1000}])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+
+      # Create streams first by sending headers, then send RST_STREAM frames (within limit)
+      for stream_id <- [1, 3, 5] do
+        SimpleH2Client.send_simple_headers(socket, stream_id, :get, "/echo", port)
+        SimpleH2Client.send_rst_stream(socket, stream_id, 8)
+      end
+
+      # Should be able to make a normal request
+      SimpleH2Client.send_simple_headers(socket, 7, :get, "/echo", port)
+
+      t1 = for _ <- 1..9, do: SimpleH2Client.recv_frame(socket)
+
+      assert t1
+             ~> in_any_order([
+               {:ok, :headers, integer(), 1, string()},
+               {:ok, :headers, integer(), 3, string()},
+               {:ok, :headers, integer(), 5, string()},
+               {:ok, :headers, integer(), 7, string()},
+               {:ok, :headers, integer(), 1, string()},
+               {:ok, :headers, integer(), 3, string()},
+               {:ok, :headers, integer(), 5, string()},
+               {:ok, :data, integer(), 7, ""},
+               {:ok, :goaway, 0, 0, <<7::32, 0::32>>}
+             ])
+    end
+
+    test "disables rate limiting when max_cancel_stream_rate is nil", context do
+      context = https_server(context, http_2_options: [max_cancel_stream_rate: nil])
+      socket = SimpleH2Client.setup_connection(context)
+      port = context[:port]
+
+      # Create streams first by sending headers, then send many RST_STREAM frames
+      for stream_id <- 1..10 do
+        SimpleH2Client.send_simple_headers(socket, stream_id * 2 - 1, :get, "/echo", port)
+        SimpleH2Client.send_rst_stream(socket, stream_id * 2 - 1, 8)
+      end
+
+      # Connection should remain alive
+      assert SimpleH2Client.connection_alive?(socket)
     end
   end
 
