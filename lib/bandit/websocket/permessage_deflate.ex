@@ -87,15 +87,16 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     inflate_context = :zlib.open()
     :ok = :zlib.inflateInit(inflate_context, fix_bits(-instance.client_max_window_bits))
     deflate_context = :zlib.open()
+    deflate_opts = Keyword.get(opts, :deflate_options, [])
 
     :ok =
       :zlib.deflateInit(
         deflate_context,
-        Keyword.get(opts, :level, :default),
+        Keyword.get(deflate_opts, :level, :default),
         :deflated,
         fix_bits(-instance.server_max_window_bits),
-        Keyword.get(opts, :mem_level, 8),
-        Keyword.get(opts, :strategy, :default)
+        Keyword.get(deflate_opts, :mem_level, 8),
+        Keyword.get(deflate_opts, :strategy, :default)
       )
 
     %{instance | inflate_context: inflate_context, deflate_context: deflate_context}
