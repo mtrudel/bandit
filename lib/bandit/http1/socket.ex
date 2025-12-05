@@ -429,6 +429,7 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     def ensure_completed(%@for{read_state: :read} = socket), do: socket
+    def ensure_completed(%@for{keepalive: false} = socket), do: socket
 
     def ensure_completed(%@for{} = socket) do
       case read_data(socket, []) do
