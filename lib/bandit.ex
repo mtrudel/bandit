@@ -205,7 +205,7 @@ defmodule Bandit do
         ]
 
   @typedoc """
-  Options to configure the deflate library used for HTTP compression
+  Options to configure the deflate library used for HTTP and WebSocket compression
   """
   @type deflate_options :: [
           {:level, :zlib.zlevel()}
