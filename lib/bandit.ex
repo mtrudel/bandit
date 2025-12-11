@@ -192,16 +192,20 @@ defmodule Bandit do
     upgrade requests still need to set the `compress: true` option in `connection_opts` on
     a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
     for details). Defaults to `true`
+  * `deflate_options`: A keyword list of options to set on the deflate library when using the
+    per-message deflate extension. A complete list can be found at `t:deflate_options/0`.
+    `window_bits` is currently ignored and left to negotiation.
   """
   @type websocket_options :: [
           {:enabled, boolean()}
           | {:max_frame_size, pos_integer()}
           | {:validate_text_frames, boolean()}
           | {:compress, boolean()}
+          | {:deflate_options, deflate_options()}
         ]
 
   @typedoc """
-  Options to configure the deflate library used for HTTP compression
+  Options to configure the deflate library used for HTTP and WebSocket compression
   """
   @type deflate_options :: [
           {:level, :zlib.zlevel()}
@@ -234,7 +238,7 @@ defmodule Bandit do
   @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate default_local_settings)a
-  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress primitive_ops_module)a
+  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options primitive_ops_module)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
                         |> Map.keys()
