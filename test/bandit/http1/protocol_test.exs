@@ -242,6 +242,45 @@ defmodule HTTP1ProtocolTest do
       |> send_resp(200, "OK")
     end
 
+    test "connection: close skips body draining when plug does not read body", context do
+      # Use a longer read timeout so we can verify the connection closes quickly
+      # (i.e., doesn't wait for the timeout to drain the body)
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 500])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      # Send headers with a large content-length but don't send any body data
+      Transport.send(
+        client,
+        "POST /close_connection_with_unread_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 10000000\r\n\r\n"
+      )
+
+      # The plug returns immediately with Connection: close without reading the body
+      # With the fix, this should return quickly without waiting for body read timeout
+      start_time = System.monotonic_time(:millisecond)
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert Enum.any?(headers, fn {k, v} -> k == :connection && String.downcase(v) == "close" end)
+
+      elapsed = System.monotonic_time(:millisecond) - start_time
+
+      # Should complete well before the 500ms read timeout
+      assert elapsed < 200, "Expected quick response but took #{elapsed}ms"
+
+      # Connection should be closed
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def close_connection_with_unread_body(conn) do
+      # Return immediately with Connection: close without reading the body
+      conn
+      |> put_resp_header("connection", "close")
+      |> send_resp(200, "OK")
+    end
+
     test "keepalive mixed-case header connections are respected in HTTP/1.0", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
