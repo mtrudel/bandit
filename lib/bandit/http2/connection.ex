@@ -18,7 +18,8 @@ defmodule Bandit.HTTP2.Connection do
             conn_data: nil,
             telemetry_span: nil,
             plug: nil,
-            opts: %{}
+            opts: %{},
+            reset_stream_timestamps: []
 
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
@@ -37,7 +38,8 @@ defmodule Bandit.HTTP2.Connection do
           opts: %{
             required(:http) => Bandit.http_options(),
             required(:http_2) => Bandit.http_2_options()
-          }
+          },
+          reset_stream_timestamps: [integer()]
         }
 
   @spec init(ThousandIsland.Socket.t(), Bandit.Pipeline.plug_def(), map()) :: t()
@@ -202,6 +204,7 @@ defmodule Bandit.HTTP2.Connection do
       end)
 
     %{connection | streams: streams}
+    |> check_reset_stream_rate_limit!()
   end
 
   # Catch-all handler for unknown frame types
@@ -273,6 +276,37 @@ defmodule Bandit.HTTP2.Connection do
     if byte_size(fragment) > Keyword.get(connection.opts.http_2, :max_header_block_size, 50_000),
       do: connection_error!("Received overlong headers")
   end
+
+  @spec check_reset_stream_rate_limit!(t()) :: t()
+  defp check_reset_stream_rate_limit!(connection) do
+    case Keyword.get(connection.opts.http_2, :max_reset_stream_rate, {500, 10_000}) do
+      nil ->
+        connection
+
+      {intensity, period} ->
+        now = :erlang.monotonic_time(:millisecond)
+        threshold = now - period
+        resets = connection.reset_stream_timestamps
+        recent_timestamps = can_reset(intensity - 1, threshold, resets, [], intensity, period)
+        %{connection | reset_stream_timestamps: [now | recent_timestamps]}
+    end
+  end
+
+  defp can_reset(_, _, [], acc, _, _),
+    do: :lists.reverse(acc)
+
+  defp can_reset(_, threshold, [restart | _], acc, _, _) when restart < threshold,
+    do: :lists.reverse(acc)
+
+  defp can_reset(0, _, [_ | _], _acc, intensity, period),
+    do:
+      connection_error!(
+        "Stream resets rate exceeded #{intensity} resets in #{period}ms",
+        Bandit.HTTP2.Errors.enhance_your_calm()
+      )
+
+  defp can_reset(n, threshold, [restart | restarts], acc, intensity, period),
+    do: can_reset(n - 1, threshold, restarts, [restart | acc], intensity, period)
 
   # Shared logic to send any pending frames upon adjustment of our send window
   defp do_pending_sends(socket, connection) do

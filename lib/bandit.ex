@@ -164,6 +164,10 @@ defmodule Bandit do
     continuation frames. Defaults to 50_000 bytes
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/2 connection before closing the connection. Defaults to 0 (no limit)
+  * `max_reset_stream_rate`: The maximum rate of stream resets (RST_STREAM frames) allowed.
+    Specified as a tuple of `{count, milliseconds}` where `count` is the maximum number of
+    RST_STREAM frames allowed within the time window of `milliseconds`. Defaults to `{500, 10_000}`
+    (500 resets per 10 seconds). Setting this to `nil` disables rate limiting
   * `default_local_settings`: Options to override the default values for local HTTP/2
     settings. Values provided here will override the defaults specified in RFC9113§6.5.2
   """
@@ -171,6 +175,7 @@ defmodule Bandit do
           {:enabled, boolean()}
           | {:max_header_block_size, pos_integer()}
           | {:max_requests, pos_integer()}
+          | {:max_reset_stream_rate, {pos_integer(), pos_integer()} | nil}
           | {:default_local_settings, keyword()}
         ]
 
@@ -232,7 +237,7 @@ defmodule Bandit do
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
   @http_keys ~w(compress deflate_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
-  @http_2_keys ~w(enabled max_header_block_size max_requests default_local_settings)a
+  @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options primitive_ops_module)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
