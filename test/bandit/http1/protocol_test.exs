@@ -262,7 +262,9 @@ defmodule HTTP1ProtocolTest do
       # With the fix, this should return quickly without waiting for body read timeout
       start_time = System.monotonic_time(:millisecond)
       assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
       assert Enum.any?(headers, fn {k, v} -> k == :connection && String.downcase(v) == "close" end)
+
       elapsed = System.monotonic_time(:millisecond) - start_time
 
       # Should complete well before the 500ms read timeout
