@@ -1,3 +1,13 @@
+## 1.9.0 (12 Dec 2025)
+
+### Enhancements
+
+* Skip body draining when Connection: close is set (#546, thanks @pepicrft!)
+* Make deflate options for WebSockets configurable (#540, thanks @proxima!)
+* Mitigate HTTP/2 rapid reset attacks (#533, thanks @NelsonVides!)
+* Implement improved respect for SETTINGS_MAX_CONCURRENT_STREAMS (#524, thanks @NelsonVides!)
+* Support zstd HTTP compression (#514, thanks @mattmatters!)
+
 ## 1.8.0 (18 Aug 2025)
 
 ### Enhancements
