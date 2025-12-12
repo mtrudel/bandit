@@ -43,7 +43,9 @@ defmodule Bandit.HTTP1.Handler do
 
   defp clear_process_dict do
     Process.get_keys()
-    |> Enum.each(&if &1 not in ~w[$ancestors $initial_call]a, do: Process.delete(&1))
+    |> Enum.each(
+      &if &1 not in ~w[$ancestors $initial_call $process_label]a, do: Process.delete(&1)
+    )
   end
 
   defp do_websocket_upgrade(upgrade_opts, state) do
