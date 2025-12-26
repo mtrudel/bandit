@@ -440,7 +440,12 @@ defmodule HTTP2ProtocolTest do
       end
     end
 
-    test "uses the first matching encoding in accept-encoding", context do
+    test "uses the first matching encoding in response_encodings", context do
+      context =
+        context
+        |> https_server(http_options: [response_encodings: ~w(gzip x-gzip deflate)])
+        |> Enum.into(context)
+
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -448,7 +453,7 @@ defmodule HTTP2ProtocolTest do
         {":path", "/send_big_body"},
         {":scheme", "https"},
         {":authority", "localhost:#{context.port}"},
-        {"accept-encoding", "foo, deflate"}
+        {"accept-encoding", "foo, deflate, gzip"}
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
@@ -457,19 +462,14 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "34"},
-                {"content-encoding", "deflate"},
+                {"content-length", "46"},
+                {"content-encoding", "gzip"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
               ], _ctx} = SimpleH2Client.recv_headers(socket)
 
-      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-
-      inflate_context = :zlib.open()
-      :ok = :zlib.inflateInit(inflate_context)
-      inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
-
-      assert inflated_body == String.duplicate("a", 10_000)
+      expected = :zlib.gzip(String.duplicate("a", 10_000))
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
     end
 
     test "does not indicate content encoding or vary for 204 responses", context do
