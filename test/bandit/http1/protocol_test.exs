@@ -1176,23 +1176,25 @@ defmodule HTTP1ProtocolTest do
       end
     end
 
-    test "uses the first matching encoding in accept-encoding", context do
+    test "uses the first matching encoding in response_encodings", context do
+      context =
+        context
+        |> http_server(http_options: [response_encodings: ~w(gzip x-gzip deflate)])
+        |> Enum.into(context)
+
       response =
         Req.get!(context.req,
           url: "/send_big_body",
-          headers: [{"accept-encoding", "foo, deflate"}]
+          headers: [{"accept-encoding", "foo, deflate, gzip"}],
+          base_url: context.base
         )
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["34"]
-      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
       assert response.headers["vary"] == ["accept-encoding"]
 
-      inflate_context = :zlib.open()
-      :ok = :zlib.inflateInit(inflate_context)
-      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
-
-      assert inflated_body == String.duplicate("a", 10_000)
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
     test "does not indicate content encoding or vary for 204 responses", context do

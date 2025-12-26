@@ -16,14 +16,18 @@ defmodule Bandit.Compression do
     @accepted_encodings @accepted_encodings ++ ["zstd"]
   end
 
-  @spec negotiate_content_encoding(nil | binary(), boolean()) :: String.t() | nil
+  @spec negotiate_content_encoding(nil | binary(), keyword()) :: String.t() | nil
   def negotiate_content_encoding(nil, _), do: nil
-  def negotiate_content_encoding(_, false), do: nil
 
-  def negotiate_content_encoding(accept_encoding, true) do
-    accept_encoding
-    |> Plug.Conn.Utils.list()
-    |> Enum.find(&(&1 in @accepted_encodings))
+  def negotiate_content_encoding(accept_encoding, http_opts) do
+    if Keyword.get(http_opts, :compress, true) do
+      client_accept_encoding = Plug.Conn.Utils.list(accept_encoding)
+
+      Keyword.get(http_opts, :response_encodings, @accepted_encodings)
+      |> Enum.find(&(&1 in client_accept_encoding))
+    else
+      nil
+    end
   end
 
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
