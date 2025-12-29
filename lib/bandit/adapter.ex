@@ -39,7 +39,7 @@ defmodule Bandit.Adapter do
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
-        Keyword.get(opts.http, :compress, true)
+        opts.http
       )
 
     %__MODULE__{
