@@ -1,3 +1,9 @@
+## 1.10.0 (29 Dec 2025)
+
+### Enhancements
+
+* Expose `response_encodings` to allow specifying an explicit preference order to compression encodings (#555)
+
 ## 1.9.0 (12 Dec 2025)
 
 ### Enhancements
