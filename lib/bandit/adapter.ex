@@ -95,11 +95,12 @@ defmodule Bandit.Adapter do
     empty_body? = body == "" || body == []
     {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
 
-    {encoded_body, compression_context} =
+    {compress_chunk, compression_context} =
       Bandit.Compression.compress_chunk(body, compression_context)
 
-    compression_metrics = Bandit.Compression.close(compression_context)
+    {close_chunk, compression_metrics} = Bandit.Compression.close(compression_context)
 
+    encoded_body = [compress_chunk | close_chunk]
     encoded_length = IO.iodata_length(encoded_body)
     headers = Bandit.Headers.add_content_length(headers, encoded_length, status, adapter.method)
 
@@ -180,9 +181,19 @@ defmodule Bandit.Adapter do
     # tuple instead of just raising or dying on error. Rescue here to implement this
     try do
       if IO.iodata_length(chunk) == 0 do
-        compression_metrics = Bandit.Compression.close(adapter.compression_context)
+        {encoded_chunk, compression_metrics} =
+          Bandit.Compression.close(adapter.compression_context)
+
         adapter = %{adapter | metrics: Map.merge(adapter.metrics, compression_metrics)}
-        {:ok, nil, send_data(adapter, chunk, true)}
+
+        adapter =
+          if encoded_chunk != [] do
+            send_data(adapter, encoded_chunk, false)
+          else
+            adapter
+          end
+
+        {:ok, nil, send_data(adapter, "", true)}
       else
         {encoded_chunk, compression_context} =
           Bandit.Compression.compress_chunk(chunk, adapter.compression_context)
