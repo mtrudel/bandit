@@ -10,10 +10,10 @@ defmodule Bandit.Compression do
           lib_context: term()
         }
 
-  @accepted_encodings ~w(deflate gzip x-gzip)
+  @accepted_encodings ~w(gzip x-gzip deflate)
 
   if Code.ensure_loaded?(:zstd) do
-    @accepted_encodings @accepted_encodings ++ ["zstd"]
+    @accepted_encodings ~w(zstd) ++ @accepted_encodings
   end
 
   @spec negotiate_content_encoding(nil | binary(), keyword()) :: String.t() | nil
