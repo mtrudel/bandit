@@ -1,3 +1,14 @@
+## 1.10.1 (5 Jan 2026)
+
+### Changes
+
+* Change default preference order for compression methods to be 'zstd (if present), gzip, deflate' (#562)
+
+### Fixes
+
+* Allow `:zstd_options` key to be set in config (#558, thanks @Fudoshiki!)
+* Fix error where deflate responses weren't always completely sent (#559, thanks @josevalim!)
+
 ## 1.10.0 (29 Dec 2025)
 
 ### Enhancements
