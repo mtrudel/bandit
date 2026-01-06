@@ -38,7 +38,6 @@ defmodule Bandit.HTTP2.Stream do
   # functions here, with the luxury of a nicely unwound stack and a process that is guaranteed to
   # be terminated as soon as these functions are called
 
-  require Integer
   require Logger
 
   defstruct connection_pid: nil,

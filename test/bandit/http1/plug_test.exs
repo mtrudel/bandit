@@ -4,8 +4,6 @@ defmodule HTTP1PlugTest do
   use ReqHelpers
   use Machete
 
-  require Logger
-
   setup :http_server
   setup :req_http1_client
 
