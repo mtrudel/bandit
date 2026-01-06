@@ -35,8 +35,6 @@ defmodule Bandit.Trace do
 
   use GenServer
 
-  require Logger
-
   @events [
     [:bandit, :request, :start],
     [:bandit, :request, :stop],
