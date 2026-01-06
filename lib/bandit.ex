@@ -100,7 +100,7 @@ defmodule Bandit do
     negotiation as described in
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `response_encodings`: A list of compression encodings, expressed in order of preference.
-    Defaults to `~w(deflate gzip x-gzip zstd)`, with `zstd` only being present on platforms which
+    Defaults to `~w(zstd gzip x-gzip deflate)`, with `zstd` only being present on platforms which
     have the zstd library compiled in
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
