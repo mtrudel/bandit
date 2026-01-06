@@ -1127,13 +1127,15 @@ defmodule HTTP1ProtocolTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["34"]
+      assert response.headers["content-length"] == ["40"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
       inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
 
       assert inflated_body == String.duplicate("a", 10_000)
     end
@@ -1238,13 +1240,15 @@ defmodule HTTP1ProtocolTest do
         Req.get!(context.req, url: "/send_iolist_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["34"]
+      assert response.headers["content-length"] == ["40"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
       inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
 
       assert inflated_body == String.duplicate("a", 10_000)
     end
@@ -1263,7 +1267,8 @@ defmodule HTTP1ProtocolTest do
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
       inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
-
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
       assert inflated_body == String.duplicate("a", 10_000)
     end
 

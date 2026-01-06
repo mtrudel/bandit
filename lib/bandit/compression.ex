@@ -137,27 +137,32 @@ defmodule Bandit.Compression do
   end
 
   def close(%__MODULE__{} = context) do
-    close_context(context)
+    chunk = close_context(context)
 
     if context.method == :identity do
-      %{}
+      {chunk, %{}}
     else
-      %{
-        resp_compression_method: to_string(context.method),
-        resp_uncompressed_body_bytes: context.bytes_in
-      }
+      {chunk,
+       %{
+         resp_compression_method: to_string(context.method),
+         resp_uncompressed_body_bytes: context.bytes_in
+       }}
     end
   end
 
   defp close_context(%__MODULE__{method: :deflate, lib_context: lib_context}) do
+    last = :zlib.deflate(lib_context, [], :finish)
+    :ok = :zlib.deflateEnd(lib_context)
     :zlib.close(lib_context)
+    last
   end
 
   if Code.ensure_loaded?(:zstd) do
     defp close_context(%__MODULE__{method: :zstd, lib_context: lib_context}) do
       :zstd.close(lib_context)
+      []
     end
   end
 
-  defp close_context(_context), do: :ok
+  defp close_context(_context), do: []
 end

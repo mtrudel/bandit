@@ -334,7 +334,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "34"},
+                {"content-length", "40"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -345,6 +345,8 @@ defmodule HTTP2ProtocolTest do
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
       inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
 
       assert inflated_body == String.duplicate("a", 10_000)
     end
@@ -565,7 +567,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "34"},
+                {"content-length", "40"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -576,6 +578,8 @@ defmodule HTTP2ProtocolTest do
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
       inflated_body = :zlib.inflate(inflate_context, body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
 
       assert inflated_body == String.duplicate("a", 10_000)
     end
@@ -985,11 +989,17 @@ defmodule HTTP2ProtocolTest do
 
       {:ok, 1, false, chunk_1} = SimpleH2Client.recv_body(socket)
       {:ok, 1, false, chunk_2} = SimpleH2Client.recv_body(socket)
+      {:ok, 1, false, chunk_3} = SimpleH2Client.recv_body(socket)
       assert {:ok, 1, true, ""} == SimpleH2Client.recv_body(socket)
 
       inflate_context = :zlib.open()
       :ok = :zlib.inflateInit(inflate_context)
-      inflated_body = :zlib.inflate(inflate_context, [chunk_1, chunk_2]) |> IO.iodata_to_binary()
+
+      inflated_body =
+        :zlib.inflate(inflate_context, [chunk_1, chunk_2, chunk_3]) |> IO.iodata_to_binary()
+
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
 
       assert inflated_body == "OKDOKEE"
     end
