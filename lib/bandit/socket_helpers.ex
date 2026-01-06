@@ -1,6 +1,11 @@
 defmodule Bandit.SocketHelpers do
   @moduledoc false
 
+  def iodata_empty?(""), do: true
+  def iodata_empty?([]), do: true
+  def iodata_empty?([head | tail]), do: iodata_empty?(head) and iodata_empty?(tail)
+  def iodata_empty?(_), do: false
+
   @spec conn_data(ThousandIsland.Socket.t()) :: Bandit.Pipeline.conn_data()
   def conn_data(socket) do
     secure? = ThousandIsland.Socket.secure?(socket)

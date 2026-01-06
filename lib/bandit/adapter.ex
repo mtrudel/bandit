@@ -92,7 +92,7 @@ defmodule Bandit.Adapter do
     start_time = Bandit.Telemetry.monotonic_time()
 
     # Save an extra iodata_length by checking common cases
-    empty_body? = body == "" || body == []
+    empty_body? = Bandit.SocketHelpers.iodata_empty?(body)
     {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
 
     {compress_chunk, compression_context} =
@@ -180,10 +180,9 @@ defmodule Bandit.Adapter do
     # chunk/2 is unique among Plug.Conn.Adapter's sending callbacks in that it can return an error
     # tuple instead of just raising or dying on error. Rescue here to implement this
     try do
-      if IO.iodata_length(chunk) == 0 do
+      if Bandit.SocketHelpers.iodata_empty?(chunk) do
         {encoded_chunk, compression_metrics} =
           Bandit.Compression.close(adapter.compression_context)
-
         adapter = %{adapter | metrics: Map.merge(adapter.metrics, compression_metrics)}
 
         adapter =

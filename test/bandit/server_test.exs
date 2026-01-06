@@ -2,8 +2,6 @@ defmodule ServerTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  require LoggerHelpers
-
   test "server logs connection details at startup" do
     LoggerHelpers.receive_all_log_events(__MODULE__)
     Process.sleep(100)

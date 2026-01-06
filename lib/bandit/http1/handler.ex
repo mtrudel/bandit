@@ -31,10 +31,10 @@ defmodule Bandit.HTTP1.Handler do
 
       # We have bytes that we've read but haven't yet processed, tail call handle_data to start
       # reading the next request
-      if IO.iodata_length(transport.buffer) != 0 do
-        handle_data(transport.buffer, transport.socket, state)
-      else
+      if Bandit.SocketHelpers.iodata_empty?(transport.buffer) do
         {:continue, state}
+      else
+        handle_data(transport.buffer, transport.socket, state)
       end
     else
       {:close, state}
