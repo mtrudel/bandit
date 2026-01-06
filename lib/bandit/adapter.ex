@@ -183,6 +183,7 @@ defmodule Bandit.Adapter do
       if Bandit.SocketHelpers.iodata_empty?(chunk) do
         {encoded_chunk, compression_metrics} =
           Bandit.Compression.close(adapter.compression_context)
+
         adapter = %{adapter | metrics: Map.merge(adapter.metrics, compression_metrics)}
 
         adapter =
