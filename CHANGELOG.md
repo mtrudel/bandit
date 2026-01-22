@@ -1,3 +1,9 @@
+## 1.10.2 (22 Jan 2026)
+
+### Enhancements
+
+* Distinguish client disconnects from genuine body read timeouts (#564, thanks @pepicrft!)
+
 ## 1.10.1 (5 Jan 2026)
 
 ### Changes
