@@ -925,6 +925,36 @@ defmodule HTTP1ProtocolTest do
       Plug.Conn.read_body(conn)
       raise "Shouldn't get here"
     end
+
+    @tag :capture_log
+    test "reports TransportError when client disconnects during body read",
+         context do
+      context =
+        context
+        |> http_server(
+          http_options: [log_client_closures: :short],
+          thousand_island_options: [read_timeout: 100]
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /short_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 1000\r\n\r\nABC"
+      )
+
+      # Give the server time to start reading and hit the blocking recv
+      Process.sleep(20)
+
+      # Close the connection before timeout, simulating client abort
+      Transport.close(client)
+
+      # Wait for the server to detect the disconnect during timeout (timeout + buffer)
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      # Should be TransportError, not HTTPError, because client disconnected
+      assert msg =~ "Bandit.TransportError"
+    end
   end
 
   describe "chunked request bodies" do
