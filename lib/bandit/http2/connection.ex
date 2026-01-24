@@ -227,11 +227,15 @@ defmodule Bandit.HTTP2.Connection do
       :new ->
         new_stream!(connection, stream_id)
 
+        sendfile_chunk_size =
+          Keyword.get(connection.opts.http_2, :sendfile_chunk_size, 1_048_576) || 1_048_576
+
         stream =
           Bandit.HTTP2.Stream.init(
             self(),
             stream_id,
-            connection.remote_settings.initial_window_size
+            connection.remote_settings.initial_window_size,
+            sendfile_chunk_size
           )
 
         case Bandit.HTTP2.StreamProcess.start_link(
