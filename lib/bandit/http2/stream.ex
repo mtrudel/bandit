@@ -475,13 +475,16 @@ defmodule Bandit.HTTP2.Stream do
       end
     end
 
+    @sendfile_chunk_size 1024 * 1024
+
     def sendfile(%@for{} = stream, path, offset, length) do
       case :file.open(path, [:raw, :binary]) do
         {:ok, fd} ->
           try do
-            case :file.pread(fd, offset, length) do
-              {:ok, data} -> send_data(stream, data, true)
-              {:error, reason} -> raise "Error reading file for sendfile: #{inspect(reason)}"
+            if length == 0 do
+              send_data(stream, "", true)
+            else
+              sendfile_loop(stream, fd, offset, length, 0)
             end
           after
             :file.close(fd)
@@ -489,6 +492,33 @@ defmodule Bandit.HTTP2.Stream do
 
         {:error, reason} ->
           raise "Error opening file for sendfile: #{inspect(reason)}"
+      end
+    end
+
+    defp sendfile_loop(stream, _fd, _offset, length, sent) when sent >= length do
+      stream
+    end
+
+    defp sendfile_loop(stream, fd, offset, length, sent) do
+      read_size = min(length - sent, @sendfile_chunk_size)
+
+      case :file.pread(fd, offset + sent, read_size) do
+        {:ok, data} ->
+          now_sent = byte_size(data)
+          end_stream = sent + now_sent >= length
+          stream = send_data(stream, data, end_stream)
+
+          if end_stream do
+            stream
+          else
+            sendfile_loop(stream, fd, offset, length, sent + now_sent)
+          end
+
+        :eof ->
+          raise "Error reading file for sendfile: :eof"
+
+        {:error, reason} ->
+          raise "Error reading file for sendfile: #{inspect(reason)}"
       end
     end
 
