@@ -271,10 +271,15 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, String.duplicate("a", 50_000))
     end
 
-    test "sendfile streams in multiple DATA frames when max frame size allows large frames", context do
+    test "sendfile streams in multiple DATA frames when max frame size allows large frames",
+         context do
       size = 1_500_000
+
       tmp_path =
-        Path.join(System.tmp_dir!(), "bandit-sendfile-large-#{System.unique_integer([:positive])}")
+        Path.join(
+          System.tmp_dir!(),
+          "bandit-sendfile-large-#{System.unique_integer([:positive])}"
+        )
 
       File.write!(tmp_path, :binary.copy(<<"a">>, size))
       :persistent_term.put({__MODULE__, :large_sendfile_path}, tmp_path)
@@ -286,6 +291,7 @@ defmodule HTTP2ProtocolTest do
 
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
+
       SimpleH2Client.exchange_client_settings(
         socket,
         <<4::16, 3_000_000::32, 5::16, 2_000_000::32>>
