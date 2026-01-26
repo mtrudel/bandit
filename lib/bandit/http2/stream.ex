@@ -45,6 +45,7 @@ defmodule Bandit.HTTP2.Stream do
             state: :idle,
             recv_window_size: 65_535,
             send_window_size: nil,
+            sendfile_chunk_size: nil,
             bytes_remaining: nil,
             read_timeout: 15_000
 
@@ -64,15 +65,17 @@ defmodule Bandit.HTTP2.Stream do
           state: state(),
           recv_window_size: non_neg_integer(),
           send_window_size: non_neg_integer(),
+          sendfile_chunk_size: pos_integer(),
           bytes_remaining: non_neg_integer() | nil,
           read_timeout: timeout()
         }
 
-  def init(connection_pid, stream_id, initial_send_window_size) do
+  def init(connection_pid, stream_id, initial_send_window_size, sendfile_chunk_size) do
     %__MODULE__{
       connection_pid: connection_pid,
       stream_id: stream_id,
-      send_window_size: initial_send_window_size
+      send_window_size: initial_send_window_size,
+      sendfile_chunk_size: sendfile_chunk_size
     }
   end
 
@@ -479,9 +482,10 @@ defmodule Bandit.HTTP2.Stream do
       case :file.open(path, [:raw, :binary]) do
         {:ok, fd} ->
           try do
-            case :file.pread(fd, offset, length) do
-              {:ok, data} -> send_data(stream, data, true)
-              {:error, reason} -> raise "Error reading file for sendfile: #{inspect(reason)}"
+            if length == 0 do
+              send_data(stream, "", true)
+            else
+              sendfile_loop(stream, fd, offset, length, 0)
             end
           after
             :file.close(fd)
@@ -490,6 +494,37 @@ defmodule Bandit.HTTP2.Stream do
         {:error, reason} ->
           raise "Error opening file for sendfile: #{inspect(reason)}"
       end
+    end
+
+    defp sendfile_loop(stream, _fd, _offset, length, sent) when sent >= length do
+      stream
+    end
+
+    defp sendfile_loop(stream, fd, offset, length, sent) do
+      read_size = min(length - sent, sendfile_chunk_size(stream))
+
+      case :file.pread(fd, offset + sent, read_size) do
+        {:ok, data} ->
+          now_sent = byte_size(data)
+          end_stream = sent + now_sent >= length
+          stream = send_data(stream, data, end_stream)
+
+          if end_stream do
+            stream
+          else
+            sendfile_loop(stream, fd, offset, length, sent + now_sent)
+          end
+
+        :eof ->
+          raise "Error reading file for sendfile: :eof"
+
+        {:error, reason} ->
+          raise "Error reading file for sendfile: #{inspect(reason)}"
+      end
+    end
+
+    defp sendfile_chunk_size(%@for{sendfile_chunk_size: sendfile_chunk_size}) do
+      max(sendfile_chunk_size, 1)
     end
 
     defp split_data(data, desired_length) do

@@ -271,6 +271,49 @@ defmodule HTTP2ProtocolTest do
       conn |> send_resp(200, String.duplicate("a", 50_000))
     end
 
+    test "sendfile streams in multiple DATA frames when max frame size allows large frames",
+         context do
+      size = 1_500_000
+
+      tmp_path =
+        Path.join(
+          System.tmp_dir!(),
+          "bandit-sendfile-large-#{System.unique_integer([:positive])}"
+        )
+
+      File.write!(tmp_path, :binary.copy(<<"a">>, size))
+      :persistent_term.put({__MODULE__, :large_sendfile_path}, tmp_path)
+
+      on_exit(fn ->
+        :persistent_term.erase({__MODULE__, :large_sendfile_path})
+        File.rm(tmp_path)
+      end)
+
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+
+      SimpleH2Client.exchange_client_settings(
+        socket,
+        <<4::16, 3_000_000::32, 5::16, 2_000_000::32>>
+      )
+
+      SimpleH2Client.send_window_update(socket, 0, 3_000_000)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/sendfile_large_chunked", context.port)
+
+      assert {:ok, 1, false, [{":status", "200"} | _], _ctx} =
+               SimpleH2Client.recv_headers(socket)
+
+      assert {:ok, 1, false, first} = SimpleH2Client.recv_body(socket)
+      assert byte_size(first) > 0
+      assert {:ok, 1, true, second} = SimpleH2Client.recv_body(socket)
+      assert byte_size(second) > 0
+    end
+
+    def sendfile_large_chunked(conn) do
+      path = :persistent_term.get({__MODULE__, :large_sendfile_path})
+      send_file(conn, 200, path, 0, :all)
+    end
+
     test "the server preserves existing settings which are NOT sent by the client", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
