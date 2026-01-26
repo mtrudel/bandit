@@ -316,27 +316,32 @@ defmodule Bandit.HTTP1.Socket do
           end
 
         {:error, :timeout} ->
-          # After a timeout, check if the peer is still connected. If not, this is
-          # likely a client disconnect that manifested as a timeout.
-          # We raise TransportError for disconnects and HTTPError for genuine timeouts.
-          # Use a non-blocking recv (timeout: 0) to detect closed connections.
-          case ThousandIsland.Socket.recv(socket, 0, 0) do
-            {:error, :timeout} ->
-              # Socket is still open but no data - genuine timeout
-              request_error!("Body read timeout", :request_timeout)
-
-            {:error, reason} ->
-              # Socket error (e.g., :closed) - client disconnected
-              socket_error!(reason)
-
-            {:ok, _data} ->
-              # Unexpected: data arrived just after timeout. Treat as timeout
-              # since we already committed to the timeout path.
-              request_error!("Body read timeout", :request_timeout)
-          end
+          handle_timeout_with_disconnect_check!(socket)
 
         {:error, reason} ->
           socket_error!(reason)
+      end
+    end
+
+    # After a timeout, check if the peer is still connected. If not, this is
+    # likely a client disconnect that manifested as a timeout.
+    # We raise TransportError for disconnects and HTTPError for genuine timeouts.
+    # Use a non-blocking recv (timeout: 0) to detect closed connections.
+    @spec handle_timeout_with_disconnect_check!(ThousandIsland.Socket.t()) :: no_return()
+    defp handle_timeout_with_disconnect_check!(socket) do
+      case ThousandIsland.Socket.recv(socket, 0, 0) do
+        {:error, :timeout} ->
+          # Socket is still open but no data - genuine timeout
+          request_error!("Body read timeout", :request_timeout)
+
+        {:error, reason} ->
+          # Socket error (e.g., :closed) - client disconnected
+          socket_error!(reason)
+
+        {:ok, _data} ->
+          # Unexpected: data arrived just after timeout. Treat as timeout
+          # since we already committed to the timeout path.
+          request_error!("Body read timeout", :request_timeout)
       end
     end
 
@@ -453,6 +458,15 @@ defmodule Bandit.HTTP1.Socket do
         {:ok, _data, socket} -> socket
         {:more, _data, _socket} -> request_error!("Unable to read remaining data in request body")
       end
+    rescue
+      e in [Bandit.HTTPError] ->
+        # If we got a timeout during ensure_completed (draining the body),
+        # check if the client actually disconnected.
+        if e.plug_status == :request_timeout do
+          handle_timeout_with_disconnect_check!(socket.socket)
+        else
+          reraise e, __STACKTRACE__
+        end
     end
 
     def supported_upgrade?(%@for{} = _socket, protocol), do: protocol == :websocket
