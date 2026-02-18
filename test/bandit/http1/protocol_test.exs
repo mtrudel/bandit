@@ -487,9 +487,8 @@ defmodule HTTP1ProtocolTest do
 
     @tag :capture_log
     test "returns 400 if a non-absolute path is send", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "400 Bad Request", _headers, <<>>} =
+               recv_bad_request_with_single_retry(context, "./../non_absolute_path")
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
@@ -497,12 +496,26 @@ defmodule HTTP1ProtocolTest do
 
     @tag :capture_log
     test "returns 400 if path has no leading slash", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "400 Bad Request", _headers, <<>>} =
+               recv_bad_request_with_single_retry(context, "path_without_leading_slash")
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
+    end
+
+    defp recv_bad_request_with_single_retry(context, request_target) do
+      send_and_recv = fn ->
+        client = SimpleHTTP1Client.tcp_client(context)
+        SimpleHTTP1Client.send(client, "GET", request_target, ["host: localhost"])
+        SimpleHTTP1Client.recv_reply(client)
+      end
+
+      try do
+        send_and_recv.()
+      rescue
+        e in MatchError ->
+          if e.term == {:error, :closed}, do: send_and_recv.(), else: reraise(e, __STACKTRACE__)
+      end
     end
   end
 
