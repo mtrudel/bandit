@@ -955,6 +955,34 @@ defmodule HTTP1ProtocolTest do
       # Should be TransportError, not HTTPError, because client disconnected
       assert msg =~ "Bandit.TransportError"
     end
+
+    @tag :capture_log
+    test "reports TransportError when client disconnects during ensure_completed body drain",
+         context do
+      context =
+        context
+        |> http_server(
+          http_options: [log_client_closures: :short],
+          thousand_island_options: [read_timeout: 100]
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /send_ok HTTP/1.1\r\nhost: localhost\r\ncontent-length: 1000\r\n\r\nABC"
+      )
+
+      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+
+      # Give ensure_completed a chance to begin draining before disconnecting
+      Process.sleep(20)
+      Transport.close(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "Bandit.TransportError"
+    end
   end
 
   describe "chunked request bodies" do
