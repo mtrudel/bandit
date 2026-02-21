@@ -224,6 +224,21 @@ defmodule Bandit.Adapter do
 
   defp send_headers(adapter, status, headers, body_disposition) do
     headers =
+      case Map.get(adapter.opts, :http_3, []) |> Keyword.get(:alt_svc) do
+        nil ->
+          headers
+
+        alt_svc ->
+          # Only advertise HTTP/3 on HTTP/1 and HTTP/2 responses; clients on
+          # HTTP/3 already know they're using it (RFC 9110 §7.8).
+          if Bandit.HTTPTransport.version(adapter.transport) == :"HTTP/3" do
+            headers
+          else
+            [{"alt-svc", alt_svc} | headers]
+          end
+      end
+
+    headers =
       if is_nil(Bandit.Headers.get_header(headers, "date")) do
         [Bandit.Clock.date_header() | headers]
       else

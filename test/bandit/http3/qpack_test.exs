@@ -215,17 +215,17 @@ defmodule Bandit.HTTP3.QPACKTest do
                {:error, :dynamic_table_not_supported}
     end
 
-    test "rejects Huffman-encoded name in literal-without-name-reference" do
-      # 0x28 = 0b00101000: bits 7-5=001, N=0, H=1, name_len prefix=0
+    test "errors on truncated Huffman name in literal-without-name-reference" do
+      # 0x28 = 0b00101000: bits 7-5=001, N=0, H=1, name_len=0
+      # name decodes to empty string via Huffman, but value bytes are missing
       assert QPACK.decode_headers(<<0x00, 0x00, 0x28>>) ==
-               {:error, :huffman_name_not_supported}
+               {:error, :truncated_string}
     end
 
-    test "rejects Huffman-encoded value in literal with name reference" do
-      # name ref index 0 (:authority), then value with H=1
-      # 0x83 = H=1, length=3 → huffman_not_supported
+    test "errors on invalid Huffman-encoded value in literal with name reference" do
+      # name ref index 0 (:authority), then value with H=1, len=3, "foo" (not valid Huffman)
       assert QPACK.decode_headers(<<0x00, 0x00, 0x50, 0x83, "foo">>) ==
-               {:error, :huffman_not_supported}
+               {:error, {:huffman_decode_error, {:protocol_error, :invalid_huffman_encoding}}}
     end
 
     test "rejects unknown representation byte (post-base indexed 0x10)" do

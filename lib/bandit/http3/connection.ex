@@ -105,19 +105,36 @@ defmodule Bandit.HTTP3.Connection do
   end
 
   # ---------------------------------------------------------------------------
-  # handle_stream_data/4  — called when QUIC delivers bytes on a stream
+  # handle_stream_data/5  — called when QUIC delivers bytes on a stream
+  #
+  # handler_pid is the calling Handler process; needed to spawn StreamProcess
+  # children on first data arrival (the :quic library does not send a
+  # separate stream_opened event before stream_data).
   # ---------------------------------------------------------------------------
 
-  @spec handle_stream_data(non_neg_integer(), binary(), boolean(), t()) :: t()
-  def handle_stream_data(stream_id, data, fin, connection) do
-    case Map.get(connection.streams, stream_id) do
-      nil ->
-        # Unidirectional stream (control / QPACK): buffer and parse
+  @spec handle_stream_data(non_neg_integer(), binary(), boolean(), t(), pid()) :: t()
+  def handle_stream_data(stream_id, data, fin, connection, handler_pid) do
+    case band(stream_id, 0x3) do
+      @request_stream_type ->
+        # Client-initiated bidirectional stream → HTTP/3 request
+        connection2 =
+          if Map.has_key?(connection.streams, stream_id) do
+            connection
+          else
+            spawn_request_stream(stream_id, handler_pid, connection)
+          end
+
+        case Map.get(connection2.streams, stream_id) do
+          nil -> connection2
+          pid -> handle_request_data(stream_id, data, fin, pid, connection2)
+        end
+
+      @client_uni_type ->
+        # Client-initiated unidirectional: control / QPACK
         handle_unidirectional_data(stream_id, data, fin, connection)
 
-      pid ->
-        # Request stream: accumulate bytes and deliver complete HTTP/3 frames
-        handle_request_data(stream_id, data, fin, pid, connection)
+      _ ->
+        connection
     end
   end
 

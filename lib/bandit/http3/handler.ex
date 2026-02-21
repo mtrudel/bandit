@@ -81,6 +81,8 @@ defmodule Bandit.HTTP3.Handler do
 
   @impl GenServer
   def handle_info({:quic, conn_ref, {:connected, info}}, %{conn_ref: conn_ref} = state) do
+    require Logger
+    Logger.debug("[H3 DEBUG] Handler received :connected, info=#{inspect(info)}")
     {peer_ip, peer_port} = extract_peer_address(info)
 
     peer_data = %{address: peer_ip, port: peer_port, ssl_cert: nil}
@@ -100,7 +102,9 @@ defmodule Bandit.HTTP3.Handler do
 
     # RFC 9114 §6.2.1: server MUST open a control stream and send SETTINGS
     # before any other HTTP/3 frames.
-    open_control_stream(state.quic_fns, state.opts)
+    Logger.debug("[H3 DEBUG] calling open_control_stream")
+    result = open_control_stream(state.quic_fns, state.opts)
+    Logger.debug("[H3 DEBUG] open_control_stream result=#{inspect(result)}")
 
     {:noreply,
      %{state | connection: connection, peer_data: peer_data, sock_data: sock_data}}
@@ -131,9 +135,11 @@ defmodule Bandit.HTTP3.Handler do
         {:quic, conn_ref, {:stream_data, stream_id, data, fin}},
         %{conn_ref: conn_ref} = state
       ) do
+    require Logger
+    Logger.debug("[H3 DEBUG] Handler recv stream_data stream_id=#{stream_id} size=#{byte_size(data)} fin=#{fin} has_conn=#{state.connection != nil}")
     if state.connection do
       connection =
-        Bandit.HTTP3.Connection.handle_stream_data(stream_id, data, fin, state.connection)
+        Bandit.HTTP3.Connection.handle_stream_data(stream_id, data, fin, state.connection, self())
 
       {:noreply, %{state | connection: connection}}
     else
@@ -220,14 +226,15 @@ defmodule Bandit.HTTP3.Handler do
   # Private helpers
   # ---------------------------------------------------------------------------
 
-  # Build production quic_fns that call the real :quic_connection module.
+  # Build production quic_fns. Use the :quic public API which handles conn_ref
+  # being a reference (it does the ref→pid lookup internally).
   defp build_quic_fns(conn_ref) do
     %{
       send: fn stream_id, data, fin ->
-        :quic_connection.send_data(conn_ref, stream_id, data, fin: fin)
+        :quic.send_data(conn_ref, stream_id, data, fin)
       end,
       open_unidirectional: fn ->
-        :quic_connection.open_unidirectional_stream(conn_ref)
+        :quic.open_unidirectional_stream(conn_ref)
       end
     }
   end

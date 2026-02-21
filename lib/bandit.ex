@@ -241,6 +241,29 @@ defmodule Bandit do
 
   require Logger
 
+  @doc """
+  Returns the listening address of a running Bandit server.
+
+  Works whether the server was started with or without HTTP/3 enabled. When
+  HTTP/3 is enabled the returned pid is a supervisor, not ThousandIsland
+  directly; this function finds the ThousandIsland child automatically.
+  """
+  @spec listener_info(pid()) ::
+          {:ok, {:inet.ip_address(), :inet.port_number()}} | :error
+  def listener_info(pid) do
+    case ThousandIsland.listener_info(pid) do
+      {:ok, _} = ok ->
+        ok
+
+      :error ->
+        # pid is likely a supervisor (HTTP/3 enabled path); find TI child
+        case find_child_pid(pid, ThousandIsland) do
+          nil -> :error
+          ti_pid -> ThousandIsland.listener_info(ti_pid)
+        end
+    end
+  end
+
   @doc false
   @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(arg) do
@@ -360,10 +383,18 @@ defmodule Bandit do
     if http_3_enabled and scheme == :https do
       h3_port = Keyword.get(http_3_options, :port, port)
 
+      # Stash the alt-svc value in opts so the HTTP/1 and HTTP/2 adapters can
+      # advertise HTTP/3 availability on every response (RFC 9110 §7.8).
+      alt_svc = "h3=\":#{h3_port}\"; ma=86400"
+      updated_http3_opts = [{:alt_svc, alt_svc} | http_3_options]
+      updated_opts = %{handler_options.opts | http_3: updated_http3_opts}
+      updated_handler_options = %{handler_options | opts: updated_opts}
+      ti_opts = Keyword.put(ti_opts, :handler_options, updated_handler_options)
+
       h3_opts = [
         port: h3_port,
         plug: plug,
-        opts: handler_options.opts,
+        opts: updated_opts,
         ssl_options: transport_options
       ]
 
@@ -423,6 +454,7 @@ defmodule Bandit do
     |> Supervisor.which_children()
     |> Enum.find_value(fn
       {^id, pid, _, _} when is_pid(pid) -> pid
+      {{^id, _}, pid, _, _} when is_pid(pid) -> pid
       _ -> false
     end)
   end

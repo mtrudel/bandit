@@ -54,12 +54,12 @@ defmodule Bandit.HTTP3.Listener do
       Bandit.HTTP3.Handler.start_link(conn_pid, conn_ref, plug, handler_opts)
     end
 
-    quic_listener_opts = [
+    quic_listener_opts = %{
       alpn: ["h3"],
       cert: cert_der,
       key: key_der,
       connection_handler: connection_handler
-    ]
+    }
 
     case :quic_listener.start_link(port, quic_listener_opts) do
       {:ok, listener_pid} ->
@@ -95,11 +95,14 @@ defmodule Bandit.HTTP3.Listener do
   # Cert / key extraction
   # ---------------------------------------------------------------------------
 
-  # Extract DER-encoded cert and key from the keyword list returned by
-  # Plug.SSL.configure/1. The SSL options may contain either a pre-loaded
-  # DER binary (`:cert`/`:key` keys) or a path to a PEM file
-  # (`:certfile`/`:keyfile` keys).
-  @spec extract_cert_and_key(keyword()) :: {binary(), binary()}
+  # Extract the cert (DER binary) and key (decoded Erlang term) from the SSL
+  # options keyword list produced by Plug.SSL.configure/1.
+  #
+  # The cert is passed to :quic_listener as a DER binary.
+  # The key must be a decoded key term that :quic_tls / :crypto.sign understand:
+  #   - RSA: [E, N, D, P1, P2, E1, E2, C]  (big integers)
+  #   - EC:  {:ECPrivateKey, ...}            (record as returned by der_decode)
+  @spec extract_cert_and_key(keyword()) :: {binary(), term()}
   defp extract_cert_and_key(ssl_options) do
     cert_der =
       case Keyword.get(ssl_options, :cert) do
@@ -113,7 +116,7 @@ defmodule Bandit.HTTP3.Listener do
           der
       end
 
-    key_der =
+    key =
       case Keyword.get(ssl_options, :key) do
         nil ->
           ssl_options
@@ -121,15 +124,15 @@ defmodule Bandit.HTTP3.Listener do
           |> File.read!()
           |> decode_pem_key()
 
-        # :ssl may store the key as {:RSAPrivateKey, der} etc.
-        {_type, der} when is_binary(der) ->
-          der
+        # :ssl stores pre-loaded keys as {type_atom, der_binary}
+        {type, der} when is_binary(der) ->
+          der |> then(&:public_key.der_decode(type, &1)) |> key_to_crypto()
 
         der when is_binary(der) ->
-          der
+          der |> decode_pem_key()
       end
 
-    {cert_der, key_der}
+    {cert_der, key}
   end
 
   @spec decode_pem_cert(binary()) :: binary()
@@ -145,16 +148,30 @@ defmodule Bandit.HTTP3.Listener do
     end
   end
 
-  @spec decode_pem_key(binary()) :: binary()
+  # Decode a PEM-encoded private key file and convert to the term that
+  # :quic_tls / :crypto.sign accepts.
+  @spec decode_pem_key(binary()) :: term()
   defp decode_pem_key(pem) do
     case :public_key.pem_decode(pem) do
-      [{type, der, _} | _] when type in [:RSAPrivateKey, :ECPrivateKey, :PrivateKeyInfo] ->
-        der
+      [entry | _] ->
+        entry |> :public_key.pem_entry_decode() |> key_to_crypto()
 
       _ ->
         raise Bandit.TransportError,
           message: "Unable to decode private key from keyfile for HTTP/3 listener",
           error: :bad_key
     end
+  end
+
+  # Convert a decoded public_key record to the format :crypto.sign expects.
+  #   RSA -> [E, N, D, P1, P2, E1, E2, C]
+  #   EC  -> the ECPrivateKey record as-is (quic_tls pattern-matches on it)
+  @spec key_to_crypto(term()) :: term()
+  defp key_to_crypto({:RSAPrivateKey, _, n, e, d, p1, p2, e1, e2, c, _}) do
+    [e, n, d, p1, p2, e1, e2, c]
+  end
+
+  defp key_to_crypto({:ECPrivateKey, _, _, _, _, _} = ec_key) do
+    ec_key
   end
 end

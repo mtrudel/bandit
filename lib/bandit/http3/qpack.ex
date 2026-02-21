@@ -304,25 +304,30 @@ defmodule Bandit.HTTP3.QPACK do
     huffman_name = (byte &&& 0x08) != 0
     partial = byte &&& 0x07
 
-    if huffman_name do
-      {:error, :huffman_name_not_supported}
-    else
-      case decode_int_cont(partial, 3, rest) do
-        {:ok, name_len, rest} ->
-          case rest do
-            <<name::binary-size(name_len), rest::binary>> ->
-              case decode_string(rest) do
-                {:ok, value, rest} -> {:ok, {name, value}, rest}
-                err -> err
-              end
+    case decode_int_cont(partial, 3, rest) do
+      {:ok, name_len, rest} ->
+        case rest do
+          <<encoded_name::binary-size(name_len), rest::binary>> ->
+            with {:ok, name} <-
+                   (if huffman_name do
+                      try do
+                        {:ok, HPAX.Huffman.decode(encoded_name)}
+                      catch
+                        {:hpax, reason} -> {:error, {:huffman_decode_error, reason}}
+                      end
+                    else
+                      {:ok, encoded_name}
+                    end),
+                 {:ok, value, rest} <- decode_string(rest) do
+              {:ok, {name, value}, rest}
+            end
 
-            _ ->
-              {:error, :truncated_name}
-          end
+          _ ->
+            {:error, :truncated_name}
+        end
 
-        err ->
-          err
-      end
+      err ->
+        err
     end
   end
 
@@ -334,19 +339,28 @@ defmodule Bandit.HTTP3.QPACK do
     {:error, :truncated_header_block}
   end
 
-  # String literal: H bit (high bit) + 7-bit prefix length + raw bytes
+  # String literal: H bit (high bit) + 7-bit prefix length + raw bytes (or Huffman)
+  # HPAX.Huffman.decode/1 returns binary() directly and throws on invalid input.
   defp decode_string(<<byte, rest::binary>>) do
     huffman = (byte &&& 0x80) != 0
     partial = byte &&& 0x7F
 
     case decode_int_cont(partial, 7, rest) do
-      {:ok, _len, _rest} when huffman ->
-        {:error, :huffman_not_supported}
-
       {:ok, len, rest} ->
         case rest do
-          <<str::binary-size(len), rest::binary>> -> {:ok, str, rest}
-          _ -> {:error, :truncated_string}
+          <<encoded::binary-size(len), rest::binary>> ->
+            if huffman do
+              try do
+                {:ok, HPAX.Huffman.decode(encoded), rest}
+              catch
+                {:hpax, reason} -> {:error, {:huffman_decode_error, reason}}
+              end
+            else
+              {:ok, encoded, rest}
+            end
+
+          _ ->
+            {:error, :truncated_string}
         end
 
       err ->

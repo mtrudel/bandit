@@ -42,7 +42,7 @@ defmodule ServerHelpers do
         TelemetryHelpers.attach_all_events(__MODULE__) |> on_exit()
         LoggerHelpers.receive_all_log_events(__MODULE__)
 
-        {:ok, {_ip, port}} = ThousandIsland.listener_info(server_pid)
+        {:ok, {_ip, port}} = Bandit.listener_info(server_pid)
         [base: "#{config[:scheme]}://localhost:#{port}", port: port, server_pid: server_pid]
       end
 
