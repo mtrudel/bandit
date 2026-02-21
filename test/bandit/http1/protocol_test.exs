@@ -487,9 +487,8 @@ defmodule HTTP1ProtocolTest do
 
     @tag :capture_log
     test "returns 400 if a non-absolute path is send", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "./../non_absolute_path", ["host: localhost"])
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "400 Bad Request", _headers, <<>>} =
+               recv_bad_request_with_single_retry(context, "./../non_absolute_path")
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
@@ -497,12 +496,26 @@ defmodule HTTP1ProtocolTest do
 
     @tag :capture_log
     test "returns 400 if path has no leading slash", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "path_without_leading_slash", ["host: localhost"])
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "400 Bad Request", _headers, <<>>} =
+               recv_bad_request_with_single_retry(context, "path_without_leading_slash")
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
+    end
+
+    defp recv_bad_request_with_single_retry(context, request_target) do
+      send_and_recv = fn ->
+        client = SimpleHTTP1Client.tcp_client(context)
+        SimpleHTTP1Client.send(client, "GET", request_target, ["host: localhost"])
+        SimpleHTTP1Client.recv_reply(client)
+      end
+
+      try do
+        send_and_recv.()
+      rescue
+        e in MatchError ->
+          if e.term == {:error, :closed}, do: send_and_recv.(), else: reraise(e, __STACKTRACE__)
+      end
     end
   end
 
@@ -953,6 +966,34 @@ defmodule HTTP1ProtocolTest do
       # Wait for the server to detect the disconnect during timeout (timeout + buffer)
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       # Should be TransportError, not HTTPError, because client disconnected
+      assert msg =~ "Bandit.TransportError"
+    end
+
+    @tag :capture_log
+    test "reports TransportError when client disconnects during ensure_completed body drain",
+         context do
+      context =
+        context
+        |> http_server(
+          http_options: [log_client_closures: :short],
+          thousand_island_options: [read_timeout: 100]
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /send_ok HTTP/1.1\r\nhost: localhost\r\ncontent-length: 1000\r\n\r\nABC"
+      )
+
+      assert {:ok, "200 OK", _, _} = SimpleHTTP1Client.recv_reply(client)
+
+      # Give ensure_completed a chance to begin draining before disconnecting
+      Process.sleep(20)
+      Transport.close(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "Bandit.TransportError"
     end
   end
