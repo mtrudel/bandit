@@ -51,7 +51,12 @@ defmodule ServerHelpers do
       end
 
       def call(conn, []) do
-        function = String.to_atom(List.first(conn.path_info))
+        function =
+          case List.first(conn.path_info) do
+            nil -> :no_path_provided
+            path -> String.to_atom(path)
+          end
+
         apply(__MODULE__, function, [conn])
       end
 

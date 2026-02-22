@@ -90,8 +90,9 @@ defmodule Bandit.HTTP1.Socket do
 
         {:ok, {:http_request, method, request_target, version}, rest} ->
           version = get_version!(version)
-          request_target = resolve_request_target!(request_target)
+          # decode_packet is inconsistent about atom/string method returns
           method = to_string(method)
+          request_target = resolve_request_target!(request_target, method)
           socket = %{socket | buffer: rest, version: version}
           {method, request_target, socket}
 
@@ -111,20 +112,20 @@ defmodule Bandit.HTTP1.Socket do
     defp get_version!(other), do: request_error!("Invalid HTTP version: #{inspect(other)}")
 
     # Unwrap different request_targets returned by :erlang.decode_packet/3
-    defp resolve_request_target!({:abs_path, path}), do: {nil, nil, nil, path}
+    defp resolve_request_target!({:abs_path, path}, _), do: {nil, nil, nil, path}
 
-    defp resolve_request_target!({:absoluteURI, scheme, host, :undefined, path}),
+    defp resolve_request_target!({:absoluteURI, scheme, host, :undefined, path}, _),
       do: {to_string(scheme), host, nil, path}
 
-    defp resolve_request_target!({:absoluteURI, scheme, host, port, path}),
+    defp resolve_request_target!({:absoluteURI, scheme, host, port, path}, _),
       do: {to_string(scheme), host, port, path}
 
-    defp resolve_request_target!(:*), do: {nil, nil, nil, :*}
+    defp resolve_request_target!(:*, "OPTIONS"), do: {nil, nil, nil, :*}
 
-    defp resolve_request_target!({:scheme, _scheme, _path}),
-      do: request_error!("schemeURI is not supported")
+    defp resolve_request_target!({:scheme, scheme, port}, "CONNECT"),
+      do: {nil, scheme, port, nil}
 
-    defp resolve_request_target!(_request_target),
+    defp resolve_request_target!(_request_target, _method),
       do: request_error!("Unsupported request target (RFC9112§3.2)")
 
     defp do_read_headers!(socket, headers \\ []) do
