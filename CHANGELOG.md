@@ -1,3 +1,12 @@
+## 1.10.3 (22 Feb 2026)
+
+### Enhancements
+
+* Support authority form requests for CONNECT requests (#571)
+* Narrow acceptance of asterisk form requests to OPTIONS requests (#571)
+* Detect client disconnect on timeout in ensure_completed (#566, thanks @pepicrft!)
+* Improve http2 sendfile streaming (#565, thanks @elibosley!)
+
 ## 1.10.2 (22 Jan 2026)
 
 ### Enhancements
