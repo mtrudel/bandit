@@ -629,19 +629,35 @@ defmodule HTTP1ProtocolTest do
   end
 
   describe "authority-form request target (RFC9112§3.2.3)" do
-    @tag :capture_log
-    test "returns 400 for authority-form / CONNECT requests", context do
+    test "accepts authority-form requests when verb is CONNECT", context do
       client = SimpleHTTP1Client.tcp_client(context)
+
+      # The server isn't implementing proper CONNECT support but we can cheat a bit since we
+      # control both sides here
       SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["port"] == "80"
+      assert Jason.decode!(body)["host"] == "www.example.com"
+      assert Jason.decode!(body)["path_info"] == []
+    end
+
+    def no_path_provided(conn) do
+      echo_components(conn)
+    end
+
+    @tag :capture_log
+    test "returns 400 for authority request with a non CONNECT verb", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "www.example.com:80", ["host: localhost"])
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) schemeURI is not supported"
+      assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
   end
 
   describe "asterisk-form request target (RFC9112§3.2.4)" do
-    test "parse global OPTIONS path correctly", context do
+    test "accepts asterisk-form requests when verb is OPTIONS", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "OPTIONS", "*", ["host: localhost:1234"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
@@ -650,6 +666,16 @@ defmodule HTTP1ProtocolTest do
 
     def unquote(:*)(conn) do
       echo_components(conn)
+    end
+
+    @tag :capture_log
+    test "returns 400 for asterisk request with a non OPTIONS verb", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "*", ["host: localhost:1234"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unsupported request target (RFC9112§3.2)"
     end
   end
 
