@@ -200,6 +200,19 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule InitCloseWithDisconnectedWebSock do
+      use NoopWebSock
+      def init(_opts), do: {:stop, {:shutdown, :disconnected}, :init}
+    end
+
+    test "can close a connection by returning an {:shutdown, :disconnected} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InitCloseWithDisconnectedWebSock)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule InitCloseWithCodeAndNilDetailWebSock do
       use NoopWebSock
       def init(_opts), do: {:stop, :normal, {5555, nil}, :init}
@@ -482,6 +495,21 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.send_text_frame(client, "OK")
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInCloseWithDisconnectedWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:stop, {:shutdown, :disconnected}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :disconnected} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInCloseWithDisconnectedWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
@@ -814,6 +842,22 @@ defmodule WebSocketWebSockTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    defmodule HandleControlCloseWithDisconnectedWebSock do
+      use NoopWebSock
+      def handle_control(_data, state), do: {:stop, {:shutdown, :disconnected}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :disconnected} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleControlCloseWithDisconnectedWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+      _ = SimpleWebSocketClient.recv_pong_frame(client)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
     defmodule HandleControlCloseWithCodeAndNilDetailWebSock do
       use NoopWebSock
       def handle_control(_data, state), do: {:stop, :normal, {5555, nil}, state}
@@ -1111,6 +1155,25 @@ defmodule WebSocketWebSockTest do
       Process.send(pid, "OK", [])
 
       assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1012::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule HandleInfoCloseWithDisconnectedWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(_data, state), do: {:stop, {:shutdown, :disconnected}, state}
+    end
+
+    test "can close a connection by returning an {:shutdown, :disconnected} tuple", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, HandleInfoCloseWithDisconnectedWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+      Process.send(pid, "OK", [])
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
