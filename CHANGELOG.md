@@ -1,3 +1,9 @@
+## 1.10.4 (25 Mar 2026)
+
+### Enhancements
+
+* Support `{:shutdown, :disconnected}` as a normal WebSocket result code (#576, thanks @wwitek-whatnot!)
+
 ## 1.10.3 (22 Feb 2026)
 
 ### Enhancements
