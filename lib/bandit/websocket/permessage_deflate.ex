@@ -9,7 +9,8 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
           server_max_window_bits: 8..15,
           client_max_window_bits: 8..15,
           inflate_context: :zlib.zstream(),
-          deflate_context: :zlib.zstream()
+          deflate_context: :zlib.zstream(),
+          max_inflate_ratio: integer()
         }
 
   defstruct server_no_context_takeover: false,
@@ -17,9 +18,10 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
             server_max_window_bits: 15,
             client_max_window_bits: 15,
             inflate_context: nil,
-            deflate_context: nil
+            deflate_context: nil,
+            max_inflate_ratio: nil
 
-  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
+  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits max_inflate_ratio]
 
   def negotiate(requested_extensions, opts) do
     :proplists.get_all_values("permessage-deflate", requested_extensions)
@@ -86,6 +88,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     instance = struct(__MODULE__, params)
     inflate_context = :zlib.open()
     :ok = :zlib.inflateInit(inflate_context, fix_bits(-instance.client_max_window_bits))
+
     deflate_context = :zlib.open()
     deflate_opts = Keyword.get(opts, :deflate_options, [])
 
@@ -99,7 +102,14 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
         Keyword.get(deflate_opts, :strategy, :default)
       )
 
-    %{instance | inflate_context: inflate_context, deflate_context: deflate_context}
+    max_inflate_ratio = Keyword.get(opts, :max_inflate_ratio, 25)
+
+    %{
+      instance
+      | inflate_context: inflate_context,
+        deflate_context: deflate_context,
+        max_inflate_ratio: max_inflate_ratio
+    }
   end
 
   # https://www.erlang.org/doc/man/zlib.html#deflateInit-6
@@ -109,18 +119,44 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
   # Note that we pass back the context to the caller even though it is unmodified locally
 
   def inflate(data, %__MODULE__{} = context) do
-    inflated_data =
-      context.inflate_context
-      |> :zlib.inflate(<<data::binary, 0x00, 0x00, 0xFF, 0xFF>>)
-      |> IO.iodata_to_binary()
+    safe_inflate(
+      context.inflate_context,
+      :zlib.safeInflate(context.inflate_context, <<data::binary, 0x00, 0x00, 0xFF, 0xFF>>),
+      [],
+      byte_size(data) * context.max_inflate_ratio
+    )
+    |> case do
+      {:ok, inflated_iodata, inflate_context} ->
+        if context.client_no_context_takeover, do: :zlib.inflateReset(context.inflate_context)
+        {:ok, IO.iodata_to_binary(inflated_iodata), %{context | inflate_context: inflate_context}}
 
-    if context.client_no_context_takeover, do: :zlib.inflateReset(context.inflate_context)
-    {:ok, inflated_data, context}
+      {:error, reason} ->
+        {:error, reason}
+    end
   rescue
     e -> {:error, "Error encountered #{inspect(e)}"}
   end
 
   def inflate(_data, nil), do: {:error, :no_compress}
+
+  defp safe_inflate(inflate_context, {:continue, deflated}, buffer, bytes_remaining)
+       when bytes_remaining > 0 do
+    safe_inflate(
+      inflate_context,
+      :zlib.safeInflate(inflate_context, <<>>),
+      [buffer | deflated],
+      bytes_remaining - IO.iodata_length(deflated)
+    )
+  end
+
+  defp safe_inflate(_inflate_context, {:continue, _deflated}, _buffer, bytes_remaining)
+       when bytes_remaining <= 0 do
+    {:error, :too_much_inflation}
+  end
+
+  defp safe_inflate(inflate_context, {:finished, deflated}, buffer, _bytes_remaining) do
+    {:ok, [buffer | deflated], inflate_context}
+  end
 
   def deflate(data, %__MODULE__{} = context) do
     deflated_data =

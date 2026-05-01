@@ -308,6 +308,9 @@ defmodule Bandit.WebSocket.Connection do
       {:error, :no_compress} ->
         do_error(1002, "Received unexpected compressed frame (RFC6455§5.2)", socket, connection)
 
+      {:error, :too_much_inflation} ->
+        do_error(1009, "Received compressed frame inflating too much", socket, connection)
+
       {:error, _reason} ->
         do_error(1007, "Inflation error", socket, connection)
     end

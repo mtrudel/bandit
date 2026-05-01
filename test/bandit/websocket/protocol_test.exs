@@ -239,6 +239,42 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
       assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
     end
+
+    test "server sends a 1009 on an overly compressed frame", context do
+      output =
+        capture_log(fn ->
+          zstream = :zlib.open()
+          :ok = :zlib.deflateInit(zstream, :default, :deflated, -15, 8, :default)
+
+          deflated_chunks =
+            Enum.map(
+              1..1_000_000,
+              fn _ -> :zlib.deflate(zstream, "aaaaaaaaaa", :none) end
+            )
+
+          final_flush = :zlib.deflate(zstream, <<>>, :sync)
+          :zlib.close(zstream)
+          deflated = IO.iodata_to_binary([deflated_chunks, final_flush])
+          trailer_size = byte_size(deflated) - 4
+          <<payload::binary-size(trailer_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
+
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+          SimpleWebSocketClient.send_text_frame(client, payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received compressed frame inflating too much"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received compressed frame inflating too much"
+    end
   end
 
   describe "ping frames" do

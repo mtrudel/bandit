@@ -202,6 +202,9 @@ defmodule Bandit do
   * `deflate_options`: A keyword list of options to set on the deflate library when using the
     per-message deflate extension. A complete list can be found at `t:deflate_options/0`.
     `window_bits` is currently ignored and left to negotiation.
+  * `max_inflate_ratio`: The maximum allowable ratio to allow decompression of received WebSocket
+    messages. Intended to prevent 'inflate bomb' attacks where a tiny deflated messages inflates to
+    a massive one. Defaults to `25` representing a 25:1 allowable inflation ratio.
   """
   @type websocket_options :: [
           {:enabled, boolean()}
@@ -209,6 +212,7 @@ defmodule Bandit do
           | {:validate_text_frames, boolean()}
           | {:compress, boolean()}
           | {:deflate_options, deflate_options()}
+          | {:max_inflate_ratio, pos_integer()}
         ]
 
   @typedoc """
@@ -245,7 +249,7 @@ defmodule Bandit do
   @http_keys ~w(compress response_encodings deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
-  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options primitive_ops_module)a
+  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
                         |> Map.keys()
