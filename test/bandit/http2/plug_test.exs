@@ -448,6 +448,123 @@ defmodule HTTP2PlugTest do
     conn
   end
 
+  describe "send_file" do
+    test "accepts positive offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=3&length=3")
+
+      assert response.status == 200
+      assert response.body == "DEF"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    test "accepts zero offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=3")
+
+      assert response.status == 200
+      assert response.body == "ABC"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    @tag :capture_log
+    test "rejects zero offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=-1&length=3")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Offset cannot be negative"
+    end
+
+    test "accepts :all length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=:all")
+
+      assert response.status == 200
+      assert response.body == "ABCDEF"
+      assert response.headers["content-length"] == ["6"]
+    end
+
+    test "accepts positive length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=3")
+
+      assert response.status == 200
+      assert response.body == "ABC"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    @tag :capture_log
+    test "rejects zero length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=0")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Length cannot be zero or negative"
+    end
+
+    @tag :capture_log
+    test "rejects negative length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=-2")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Length cannot be zero or negative"
+    end
+
+    @tag :capture_log
+    test "errors out if asked to read beyond the file", context do
+      {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
+      assert response.status == 500
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
+    end
+
+    def send_file(conn) do
+      conn = fetch_query_params(conn)
+      offset = String.to_integer(conn.params["offset"])
+
+      length =
+        case conn.params["length"] do
+          ":all" -> :all
+          other -> String.to_integer(other)
+        end
+
+      send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), offset, length)
+    end
+
+    test "sending a large file greater than 2048 bytes", context do
+      response = Req.get!(context.req, url: "/send_large_file")
+
+      assert response.status == 200
+      assert response.body == File.read!(Path.join([__DIR__, "../../support/sendfile_large"]))
+    end
+
+    def send_large_file(conn) do
+      send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile_large"]), 0, :all)
+    end
+
+    @tag :capture_log
+    test "sending a file from another process works as expected", context do
+      response = Req.get!(context.req, url: "/other_process_send_file")
+
+      assert response.status == 200
+    end
+
+    def other_process_send_file(conn) do
+      error =
+        Task.async(fn ->
+          try do
+            send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+          rescue
+            error -> error
+          end
+        end)
+        |> Task.await()
+
+      assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
+
+      send_resp(conn, 200, "OK")
+    end
+  end
+
   describe "upgrade handling" do
     @tag :capture_log
     test "raises an ArgumentError on unsupported upgrades", context do
@@ -490,84 +607,6 @@ defmodule HTTP2PlugTest do
   end
 
   def garbage(_conn), do: :boom
-
-  test "writes out a sent file for the entire file", context do
-    response = Req.get!(context.req, url: "/send_full_file")
-
-    assert response.status == 200
-    assert response.headers["content-length"] == ["6"]
-    assert response.body == "ABCDEF"
-  end
-
-  def send_full_file(conn) do
-    conn
-    |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-  end
-
-  test "writes out a sent file for parts of a file", context do
-    response = Req.get!(context.req, url: "/send_file?offset=1&length=5")
-
-    assert response.status == 200
-    assert response.body == "BCDEF"
-  end
-
-  @large_file_path Path.join([__DIR__, "../../support/sendfile_large"])
-
-  test "sending a large file greater than 2048 bytes", context do
-    response = Req.get!(context.req, url: "/large_file_test")
-
-    assert response.status == 200
-    assert response.body == File.read!(@large_file_path)
-  end
-
-  def large_file_test(conn) do
-    conn
-    |> send_file(200, @large_file_path, 0, :all)
-  end
-
-  @tag :capture_log
-  test "errors out if asked to read beyond the file", context do
-    {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
-    assert response.status == 500
-
-    assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-    assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
-  end
-
-  def send_file(conn) do
-    conn = fetch_query_params(conn)
-
-    conn
-    |> send_file(
-      200,
-      Path.join([__DIR__, "../../support/sendfile"]),
-      String.to_integer(conn.params["offset"]),
-      String.to_integer(conn.params["length"])
-    )
-  end
-
-  @tag :capture_log
-  test "sending a file from another process works as expected", context do
-    response = Req.get!(context.req, url: "/other_process_send_file")
-
-    assert response.status == 200
-  end
-
-  def other_process_send_file(conn) do
-    error =
-      Task.async(fn ->
-        try do
-          send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    send_resp(conn, 200, "OK")
-  end
 
   test "sending a body blocks on connection flow control", context do
     context =
@@ -1025,7 +1064,7 @@ defmodule HTTP2PlugTest do
     end
 
     test "it should add resp metrics to `stop` events for sendfile responses", context do
-      Req.get!(context.req, url: "/send_full_file")
+      Req.get!(context.req, url: "/send_file?offset=0&length=:all")
 
       assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
 
@@ -1043,7 +1082,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["send_full_file"]),
+               conn: struct_like(Plug.Conn, path_info: ["send_file"]),
                plug: {__MODULE__, []}
              }
     end

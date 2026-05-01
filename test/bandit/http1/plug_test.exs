@@ -281,6 +281,89 @@ defmodule HTTP1PlugTest do
     end
   end
 
+  describe "send_file" do
+    test "accepts positive offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=3&length=3")
+
+      assert response.status == 200
+      assert response.body == "DEF"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    test "accepts zero offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=3")
+
+      assert response.status == 200
+      assert response.body == "ABC"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    @tag :capture_log
+    test "rejects zero offset", context do
+      response = Req.get!(context.req, url: "/send_file?offset=-1&length=3")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Offset cannot be negative"
+    end
+
+    test "accepts :all length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=:all")
+
+      assert response.status == 200
+      assert response.body == "ABCDEF"
+      assert response.headers["content-length"] == ["6"]
+    end
+
+    test "accepts positive length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=3")
+
+      assert response.status == 200
+      assert response.body == "ABC"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    @tag :capture_log
+    test "rejects zero length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=0")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Length cannot be zero or negative"
+    end
+
+    @tag :capture_log
+    test "rejects negative length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=0&length=-2")
+
+      assert response.status == 500
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(RuntimeError) Length cannot be zero or negative"
+    end
+
+    @tag :capture_log
+    test "errors out if asked to read beyond the file", context do
+      {:ok, response} = Req.get(context.req, url: "/send_file?offset=1&length=3000")
+      assert response.status == 500
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
+    end
+
+    def send_file(conn) do
+      conn = fetch_query_params(conn)
+      offset = String.to_integer(conn.params["offset"])
+
+      length =
+        case conn.params["length"] do
+          ":all" -> :all
+          other -> String.to_integer(other)
+        end
+
+      send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), offset, length)
+    end
+  end
+
   describe "supporting plug functions" do
     test "reading HTTP version", context do
       response = Req.get!(context.req, url: "/report_version")
