@@ -127,6 +127,9 @@ defmodule Bandit.Adapter do
         offset,
         length
       ) do
+    if offset < 0, do: raise("Offset cannot be negative")
+    if is_number(length) && length <= 0, do: raise("Length cannot be zero or negative")
+
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
     {:ok, fileinfo} = :file.read_file_info(path, [:raw, time: :universal])
