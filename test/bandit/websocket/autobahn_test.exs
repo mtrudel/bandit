@@ -22,7 +22,11 @@ defmodule WebsocketAutobahnTest do
   @tag :capture_log
   test "autobahn test suite" do
     # We can't use ServerHelpers since we need to bind on all interfaces
-    {:ok, server_pid} = start_supervised({Bandit, plug: __MODULE__, port: 0})
+    {:ok, server_pid} =
+      start_supervised(
+        {Bandit, plug: __MODULE__, port: 0, websocket_options: [max_frame_size: 20_000_000]}
+      )
+
     {:ok, {_address, port}} = ThousandIsland.listener_info(server_pid)
 
     random_string = :rand.uniform(0x100000000) |> Integer.to_string(36) |> String.downcase()
