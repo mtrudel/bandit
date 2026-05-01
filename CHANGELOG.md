@@ -1,3 +1,27 @@
+# 1.11.0 (1 May 2026)
+
+### Fixes
+
+* Fix WebSocket inflate vulnerability (CVE-2026-39804, commit 8156921, thanks @PJUllrich & @maennchen!)
+* Fix WebSocket continuation frame handling vulnerability (CVE-2026-42786, commit 21612c7, thanks @PJUllrich & @maennchen!)
+* Fix HTTP/2 frame size parsing vulnerability (CVE-2026-42788, commit 1e8e559, thanks @PJUllrich & @maennchen!)
+* Improve handling of zero/negative length & offset parameters to send_file (#580, thanks @PJUllrich & @maennchen!)
+
+### Enhancements
+
+* Define a new `max_inflate_ratio` WebSocket configuration option that defines a
+  maximum allowable decompression ratio to help mitigate inflate bombing. Defaults to 25:1
+* Define a new `max_fragmented_message_size` WebSocket configuration option
+  which defines the maximum allowed WebSocket frame size (inclusive of
+  continuation frames). Defaults to 8MB
+
+# Changes
+
+* The default value of the `max_frame_size` WebSocket option has changed from `:infinity` to 8MB
+* Zero length non-fin continuation frames are now disallowed (we now skip Autobahn 6.1.2 as a result)
+* Multiple content-length fields in an HTTP/1 request are now disallowed (CVE-2026-39805, commit f2ca636, thanks @PJUllrich & @maennchen!)
+* We now *only* use the underlying transport when determining scheme (CVE-2026-39807, commit 45feea2, thanks @PJUllrich & @maennchen!)
+
 ## 1.10.4 (25 Mar 2026)
 
 ### Enhancements
