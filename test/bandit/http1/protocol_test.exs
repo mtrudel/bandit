@@ -830,6 +830,26 @@ defmodule HTTP1ProtocolTest do
 
     # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     @tag :capture_log
+    test "rejects a request with multiple separate content length headers, even if identical",
+         context do
+      # Use a smaller body size to avoid raciness in reading the response
+      response =
+        Req.post!(context.req,
+          url: "/expect_body_with_multiple_content_length",
+          headers: [{"content-length", "8000"}, {"content-length", "8000"}],
+          body: String.duplicate("a", 8_000)
+        )
+
+      assert response.status == 400
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3)\""
+    end
+
+    # Error case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
+    @tag :capture_log
     test "rejects a request with non-matching multiple content lengths", context do
       # Use a smaller body size to avoid raciness in reading the response
       response =

@@ -49,9 +49,11 @@ defmodule Bandit.Headers do
   @spec get_content_length(Plug.Conn.headers()) ::
           {:ok, nil | non_neg_integer()} | {:error, String.t()}
   def get_content_length(headers) do
-    case get_header(headers, "content-length") do
-      nil -> {:ok, nil}
-      value -> parse_content_length(value)
+    # We need to special case this because we don't accept multiple content-length headers
+    case Enum.filter(headers, &(elem(&1, 0) == "content-length")) do
+      [] -> {:ok, nil}
+      [{"content-length", value}] -> parse_content_length(value)
+      _ -> {:error, "invalid content-length header (RFC9112§6.3)"}
     end
   end
 
