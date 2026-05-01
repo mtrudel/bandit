@@ -17,6 +17,15 @@ defmodule HTTP2FrameDeserializationTest do
     end
   end
 
+  describe "oversize frames" do
+    test "drops oversize frames early" do
+      frame = <<16_385::24, 0, 0, 0, 0, 0, 1>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error, 6, "Payload size too large (RFC9113§4.2)"}, <<>>}
+    end
+  end
+
   describe "extra data" do
     test "returns extra data" do
       frame = <<0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 3>>

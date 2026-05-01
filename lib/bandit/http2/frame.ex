@@ -25,6 +25,20 @@ defmodule Bandit.HTTP2.Frame do
           | {{:more, iodata()}, <<>>}
           | {{:error, Bandit.HTTP2.Errors.error_code(), binary()}, iodata()}
           | nil
+  # This is a little more aggressive than necessary. RFC9113§4.2 says we only need
+  # to treat frame size violations as connection level errors if the frame in
+  # question would affect the connection as a whole, so we could be more surgical
+  # here and send stream level errors in some cases. However, we are well within
+  # our rights to consider such errors as connection errors
+  def deserialize(
+        <<length::24, _type::8, _flags::8, _reserved::1, _stream_id::31, rest::binary>>,
+        max_frame_size
+      )
+      when length > max_frame_size do
+    {{:error, Bandit.HTTP2.Errors.frame_size_error(), "Payload size too large (RFC9113§4.2)"},
+     rest}
+  end
+
   def deserialize(
         <<length::24, type::8, flags::8, _reserved::1, stream_id::31,
           payload::binary-size(length), rest::binary>>,
@@ -46,21 +60,6 @@ defmodule Bandit.HTTP2.Frame do
       unknown -> Bandit.HTTP2.Frame.Unknown.deserialize(unknown, flags, stream_id, payload)
     end
     |> then(&{&1, rest})
-  end
-
-  # This is a little more aggressive than necessary. RFC9113§4.2 says we only need
-  # to treat frame size violations as connection level errors if the frame in
-  # question would affect the connection as a whole, so we could be more surgical
-  # here and send stream level errors in some cases. However, we are well within
-  # our rights to consider such errors as connection errors
-  def deserialize(
-        <<length::24, _type::8, _flags::8, _reserved::1, _stream_id::31,
-          _payload::binary-size(length), rest::binary>>,
-        max_frame_size
-      )
-      when length > max_frame_size do
-    {{:error, Bandit.HTTP2.Errors.frame_size_error(), "Payload size too large (RFC9113§4.2)"},
-     rest}
   end
 
   # nil is used to indicate for Stream.unfold/2 that the frame deserialization is finished
