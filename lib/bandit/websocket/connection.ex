@@ -94,13 +94,26 @@ defmodule Bandit.WebSocket.Connection do
     case frame do
       %Frame.Continuation{fin: true} = frame ->
         data = IO.iodata_to_binary([connection.fragment_frame.data | frame.data])
-        frame = %{connection.fragment_frame | fin: true, data: data}
-        handle_frame(frame, socket, %{connection | fragment_frame: nil})
+
+        if oversize_message?(data, connection.opts) do
+          do_error(1009, "Received oversize fragmented message", socket, connection)
+        else
+          frame = %{connection.fragment_frame | fin: true, data: data}
+          handle_frame(frame, socket, %{connection | fragment_frame: nil})
+        end
 
       %Frame.Continuation{fin: false} = frame ->
-        data = [connection.fragment_frame.data | frame.data]
-        frame = %{connection.fragment_frame | fin: true, data: data}
-        {:continue, %{connection | fragment_frame: frame}}
+        if IO.iodata_length(frame.data) == 0 do
+          do_error(1008, "Received zero byte non-fin continuation frame", socket, connection)
+        else
+          data = [connection.fragment_frame.data | frame.data]
+
+          if oversize_message?(data, connection.opts) do
+            do_error(1009, "Received oversize fragmented message", socket, connection)
+          else
+            {:continue, %{connection | fragment_frame: %{connection.fragment_frame | data: data}}}
+          end
+        end
 
       %Frame.Text{} ->
         do_error(1002, "Received unexpected text frame (RFC6455§5.4)", socket, connection)
@@ -110,6 +123,13 @@ defmodule Bandit.WebSocket.Connection do
 
       frame ->
         handle_control_frame(frame, socket, connection)
+    end
+  end
+
+  defp oversize_message?(data, opts) do
+    case Keyword.get(opts, :max_fragmented_message_size, 8_000_000) do
+      0 -> false
+      max_fragmented_message_size -> IO.iodata_length(data) > max_fragmented_message_size
     end
   end
 

@@ -191,7 +191,10 @@ defmodule Bandit do
 
   * `enabled`: Whether or not to serve WebSocket upgrade requests. Defaults to true
   * `max_frame_size`: The maximum size of a single WebSocket frame (expressed as
-    a number of bytes on the wire). Defaults to 0 (no limit)
+    a number of bytes on the wire). Use a value of 0 for no limit. Defaults to 8_000_000
+  * `max_fragmented_message_size`: The maximum size of a WebSocket message delivered across
+    multiple continuation frames (expressed as a number of bytes on the wire). Does NOT affect the
+    handling of single-frame messages. Use a value of 0 for no limit. Defaults to 8_000_000
   * `validate_text_frames`: Whether or not to validate text frames as being UTF-8. Strictly
     speaking this is required per RFC6455§5.6, however it can be an expensive operation and one
     that may be safely skipped in some situations. Defaults to true
@@ -209,6 +212,7 @@ defmodule Bandit do
   @type websocket_options :: [
           {:enabled, boolean()}
           | {:max_frame_size, pos_integer()}
+          | {:max_fragmented_message_size, pos_integer()}
           | {:validate_text_frames, boolean()}
           | {:compress, boolean()}
           | {:deflate_options, deflate_options()}
@@ -249,7 +253,7 @@ defmodule Bandit do
   @http_keys ~w(compress response_encodings deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
-  @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module)a
+  @websocket_keys ~w(enabled max_frame_size max_fragmented_message_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
                         |> Map.keys()

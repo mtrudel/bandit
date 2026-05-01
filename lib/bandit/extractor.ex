@@ -33,7 +33,7 @@ defmodule Bandit.Extractor do
 
   @spec new(module(), module(), Keyword.t()) :: t()
   def new(frame_parser, primitive_ops_module, opts) do
-    max_frame_size = Keyword.get(opts, :max_frame_size, 0)
+    max_frame_size = Keyword.get(opts, :max_frame_size, 8_000_000)
 
     %__MODULE__{
       max_frame_size: max_frame_size,
