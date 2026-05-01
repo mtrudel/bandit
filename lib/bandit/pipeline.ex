@@ -73,7 +73,7 @@ defmodule Bandit.Pipeline do
         ) :: Plug.Conn.t()
   defp build_conn!(transport, method, request_target, headers, {secure?, peer_address}, opts) do
     adapter = Bandit.Adapter.init(self(), transport, method, headers, opts)
-    scheme = determine_scheme(secure?, request_target)
+    scheme = determine_scheme(secure?)
     version = Bandit.HTTPTransport.version(transport)
     {host, port} = determine_host_and_port!(scheme, version, request_target, headers)
     {path, query} = determine_path_and_query(request_target)
@@ -81,14 +81,9 @@ defmodule Bandit.Pipeline do
     Plug.Conn.Adapter.conn({Bandit.Adapter, adapter}, method, uri, peer_address, headers)
   end
 
-  @spec determine_scheme(boolean(), request_target()) :: String.t() | nil
-  defp determine_scheme(secure?, {scheme, _, _, _}) do
-    case {secure?, scheme} do
-      {true, nil} -> "https"
-      {false, nil} -> "http"
-      {_, scheme} -> scheme
-    end
-  end
+  @spec determine_scheme(boolean()) :: String.t()
+  defp determine_scheme(true), do: "https"
+  defp determine_scheme(false), do: "http"
 
   @spec determine_host_and_port!(binary(), atom(), request_target(), Plug.Conn.headers()) ::
           {Plug.Conn.host(), Plug.Conn.port_number()}

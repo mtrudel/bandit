@@ -2649,7 +2649,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["scheme"] == "https"
     end
 
-    test "uses :scheme even if it does not match transport", context do
+    test "uses transport even if it does not match :scheme", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -2663,7 +2663,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-      assert Jason.decode!(body)["scheme"] == "http"
+      assert Jason.decode!(body)["scheme"] == "https"
     end
 
     test "derives host from host header", context do
@@ -2940,7 +2940,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["scheme"] == "https"
     end
 
-    test "uses :scheme even if it does not match transport", context do
+    test "uses transport even if it does not match :scheme", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -2954,7 +2954,7 @@ defmodule HTTP2ProtocolTest do
 
       assert SimpleH2Client.successful_response?(socket, 1, false)
       {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
-      assert Jason.decode!(body)["scheme"] == "http"
+      assert Jason.decode!(body)["scheme"] == "https"
     end
 
     test "derives host from :authority header, even if it differs from host header", context do

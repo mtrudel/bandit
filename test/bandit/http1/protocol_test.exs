@@ -520,11 +520,11 @@ defmodule HTTP1ProtocolTest do
   end
 
   describe "absolute-form request target (RFC9112§3.2.2)" do
-    test "uses request-line scheme even if it does not match the transport", context do
+    test "uses transport scheme even if it does not match request-line scheme", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "https://banana/echo_components")
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["scheme"] == "https"
+      assert Jason.decode!(body)["scheme"] == "http"
     end
 
     test "derives host from the URI, even if it differs from host header", context do
