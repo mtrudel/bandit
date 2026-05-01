@@ -72,6 +72,8 @@ defmodule Bandit do
     be found at `t:http_2_options/0`
   * `websocket_options`: A list of options to configure Bandit's WebSocket stack. A complete list can
     be found at `t:websocket_options/0`
+  * `http_3_options`: A list of options to configure Bandit's HTTP/3 stack. Requires `scheme: :https`.
+    A complete list can be found at `t:http_3_options/0`
   """
   @type options :: [
           {:plug, module() | {module(), Plug.opts()}}
@@ -91,6 +93,7 @@ defmodule Bandit do
           | {:http_1_options, http_1_options()}
           | {:http_2_options, http_2_options()}
           | {:websocket_options, websocket_options()}
+          | {:http_3_options, http_3_options()}
         ]
 
   @typedoc """
@@ -212,6 +215,17 @@ defmodule Bandit do
         ]
 
   @typedoc """
+  Options to configure the HTTP/3 stack in Bandit
+
+  * `enabled`: Whether or not to serve HTTP/3 requests. Requires `scheme: :https`. Defaults to false
+  * `port`: The UDP port to listen on for HTTP/3. Defaults to the same port as the TCP listener
+  """
+  @type http_3_options :: [
+          {:enabled, boolean()}
+          | {:port, :inet.port_number()}
+        ]
+
+  @typedoc """
   Options to configure the deflate library used for HTTP and WebSocket compression
   """
   @type deflate_options :: [
@@ -230,6 +244,29 @@ defmodule Bandit do
 
   require Logger
 
+  @doc """
+  Returns the listening address of a running Bandit server.
+
+  Works whether the server was started with or without HTTP/3 enabled. When
+  HTTP/3 is enabled the returned pid is a supervisor, not ThousandIsland
+  directly; this function finds the ThousandIsland child automatically.
+  """
+  @spec listener_info(pid()) ::
+          {:ok, {:inet.ip_address(), :inet.port_number()}} | :error
+  def listener_info(pid) do
+    case ThousandIsland.listener_info(pid) do
+      {:ok, _} = ok ->
+        ok
+
+      :error ->
+        # pid is likely a supervisor (HTTP/3 enabled path); find TI child
+        case find_child_pid(pid, ThousandIsland) do
+          nil -> :error
+          ti_pid -> ThousandIsland.listener_info(ti_pid)
+        end
+    end
+  end
+
   @doc false
   @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(arg) do
@@ -241,11 +278,12 @@ defmodule Bandit do
     }
   end
 
-  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
+  @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options http_3_options)a
   @http_keys ~w(compress response_encodings deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size validate_text_frames compress deflate_options primitive_ops_module)a
+  @http_3_keys ~w(enabled port)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
                         |> Map.keys()
@@ -279,12 +317,17 @@ defmodule Bandit do
       Keyword.get(arg, :websocket_options, [])
       |> validate_options(@websocket_keys, :websocket_options)
 
+    http_3_options =
+      Keyword.get(arg, :http_3_options, [])
+      |> validate_options(@http_3_keys, :http_3_options)
+
     {plug_mod, _} = plug = plug(arg)
     display_plug = Keyword.get(arg, :display_plug, plug_mod)
     startup_log = Keyword.get(arg, :startup_log, :info)
 
     {http_1_enabled, http_1_options} = Keyword.pop(http_1_options, :enabled, true)
     {http_2_enabled, http_2_options} = Keyword.pop(http_2_options, :enabled, true)
+    {http_3_enabled, http_3_options} = Keyword.pop(http_3_options, :enabled, false)
 
     handler_options = %{
       plug: plug,
@@ -293,7 +336,8 @@ defmodule Bandit do
         http: http_options,
         http_1: http_1_options,
         http_2: http_2_options,
-        websocket: websocket_options
+        websocket: websocket_options,
+        http_3: http_3_options
       },
       http_1_enabled: http_1_enabled,
       http_2_enabled: http_2_enabled
@@ -331,31 +375,91 @@ defmodule Bandit do
 
     port = Keyword.get(arg, :port, default_port) |> parse_as_number()
 
-    thousand_island_options
-    |> Keyword.put_new(:port, port)
-    |> Keyword.put_new(:transport_module, transport_module)
-    |> Keyword.put(:transport_options, transport_options)
-    |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
-    |> Keyword.put_new(:handler_options, handler_options)
-    |> ThousandIsland.start_link()
-    |> case do
-      {:ok, pid} ->
-        startup_log &&
-          Logger.log(startup_log, info(scheme, display_plug, pid), domain: [:bandit], plug: plug)
+    ti_opts =
+      thousand_island_options
+      |> Keyword.put_new(:port, port)
+      |> Keyword.put_new(:transport_module, transport_module)
+      |> Keyword.put(:transport_options, transport_options)
+      |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
+      |> Keyword.put_new(:handler_options, handler_options)
 
-        {:ok, pid}
+    if http_3_enabled and scheme == :https do
+      h3_port = Keyword.get(http_3_options, :port, port)
 
-      {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
-        Logger.error([info(scheme, display_plug, nil), " failed, port #{port} already in use"],
-          domain: [:bandit],
-          plug: plug
-        )
+      # Stash the alt-svc value in opts so the HTTP/1 and HTTP/2 adapters can
+      # advertise HTTP/3 availability on every response (RFC 9110 §7.8).
+      alt_svc = "h3=\":#{h3_port}\"; ma=86400"
+      updated_http3_opts = [{:alt_svc, alt_svc} | http_3_options]
+      updated_opts = %{handler_options.opts | http_3: updated_http3_opts}
+      updated_handler_options = %{handler_options | opts: updated_opts}
+      ti_opts = Keyword.put(ti_opts, :handler_options, updated_handler_options)
 
-        error
+      h3_opts = [
+        port: h3_port,
+        plug: plug,
+        opts: updated_opts,
+        ssl_options: transport_options
+      ]
 
-      {:error, _} = error ->
-        error
+      children = [
+        {ThousandIsland, ti_opts},
+        {Bandit.HTTP3.Listener, h3_opts}
+      ]
+
+      case Supervisor.start_link(children, strategy: :one_for_one) do
+        {:ok, sup_pid} ->
+          if startup_log do
+            ti_pid = find_child_pid(sup_pid, ThousandIsland)
+            Logger.log(startup_log, info(scheme, display_plug, ti_pid), domain: [:bandit], plug: plug)
+          end
+
+          {:ok, sup_pid}
+
+        {:error, {:shutdown, {:failed_to_start_child, ThousandIsland, reason}}} = error ->
+          Logger.error(
+            [info(scheme, display_plug, nil), " failed: #{inspect(reason)}"],
+            domain: [:bandit],
+            plug: plug
+          )
+
+          error
+
+        {:error, _} = error ->
+          error
+      end
+    else
+      ti_opts
+      |> ThousandIsland.start_link()
+      |> case do
+        {:ok, pid} ->
+          startup_log &&
+            Logger.log(startup_log, info(scheme, display_plug, pid), domain: [:bandit], plug: plug)
+
+          {:ok, pid}
+
+        {:error, {:shutdown, {:failed_to_start_child, :listener, :eaddrinuse}}} = error ->
+          Logger.error([info(scheme, display_plug, nil), " failed, port #{port} already in use"],
+            domain: [:bandit],
+            plug: plug
+          )
+
+          error
+
+        {:error, _} = error ->
+          error
+      end
     end
+  end
+
+  @spec find_child_pid(pid(), module()) :: pid() | nil
+  defp find_child_pid(sup_pid, id) do
+    sup_pid
+    |> Supervisor.which_children()
+    |> Enum.find_value(fn
+      {^id, pid, _, _} when is_pid(pid) -> pid
+      {{^id, _}, pid, _, _} when is_pid(pid) -> pid
+      _ -> false
+    end)
   end
 
   @spec special_case_inet_options(options()) :: options()
