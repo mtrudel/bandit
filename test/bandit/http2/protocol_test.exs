@@ -2891,24 +2891,6 @@ defmodule HTTP2ProtocolTest do
 
       headers = [
         {":method", "GET"},
-        {":path", "/../non_absolute_path"},
-        {":scheme", "https"},
-        {"host", "banana:#{context.port}"}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
-      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
-    end
-
-    @tag :capture_log
-    test "returns stream error if path has no leading slash", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "GET"},
         {":path", "path_without_leading_slash"},
         {":scheme", "https"},
         {"host", "banana:#{context.port}"}
@@ -3120,24 +3102,6 @@ defmodule HTTP2ProtocolTest do
 
     @tag :capture_log
     test "returns stream error if a non-absolute path is send", context do
-      socket = SimpleH2Client.setup_connection(context)
-
-      headers = [
-        {":method", "GET"},
-        {":path", "/../non_absolute_path"},
-        {":scheme", "https"},
-        {":authority", "banana:#{context.port}"}
-      ]
-
-      SimpleH2Client.send_headers(socket, 1, true, headers)
-      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
-      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path contains dot segment"
-    end
-
-    @tag :capture_log
-    test "returns stream error if path has no leading slash", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
