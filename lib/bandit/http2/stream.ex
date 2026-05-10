@@ -160,16 +160,9 @@ defmodule Bandit.HTTP2.Stream do
       |> case do
         nil -> stream_error!("Received empty :path", stream)
         "*" -> :*
-        "/" <> _ = path -> split_path!(path, stream)
+        "/" <> _ = path -> path
         _ -> stream_error!("Path does not start with /", stream)
       end
-    end
-
-    # RFC9113§8.3.1 - path should match the path-absolute production from RFC3986
-    defp split_path!(path, stream) do
-      if path |> String.split("/") |> Enum.all?(&(&1 not in [".", ".."])),
-        do: path,
-        else: stream_error!("Path contains dot segment", stream)
     end
 
     # RFC9113§8.3 - pseudo headers must appear first
