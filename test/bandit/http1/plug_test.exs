@@ -231,6 +231,67 @@ defmodule HTTP1PlugTest do
       {:ok, "", conn} = read_body(conn)
       conn |> send_resp(200, body)
     end
+
+    test "respects the length option on content-length encoded requests", context do
+      response =
+        Req.post!(context.req,
+          url: "/read_body_with_limit",
+          body: String.duplicate("0123456789", 100_000)
+        )
+
+      assert response.status == 200
+      assert response.body == "[]-[\"1000000\"]"
+    end
+
+    test "respects the length option on chunk encoded requests", context do
+      # chunk size is such that the length: value of 800k is midway through a chunk
+      stream =
+        Stream.repeatedly(fn -> String.duplicate("0123456789", 25_000) end)
+        |> Stream.take(4)
+
+      response = Req.post!(context.req, url: "/read_body_with_limit", body: stream)
+
+      assert response.status == 200
+      assert response.body == "[\"chunked\"]-[]"
+    end
+
+    test "respects the length option on chunk encoded requests where chunk size multiple exactly matches length option",
+         context do
+      stream =
+        Stream.repeatedly(fn -> String.duplicate("0123456789", 10_000) end)
+        |> Stream.take(10)
+
+      response = Req.post!(context.req, url: "/read_body_with_limit", body: stream)
+
+      assert response.status == 200
+      assert response.body == "[\"chunked\"]-[]"
+    end
+
+    test "respects the length option on chunk encoded requests where chunk size exceeds length option",
+         context do
+      stream =
+        Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
+        |> Stream.take(1)
+
+      response = Req.post!(context.req, url: "/read_body_with_limit", body: stream)
+
+      assert response.status == 200
+      assert response.body == "[\"chunked\"]-[]"
+    end
+
+    def read_body_with_limit(conn) do
+      encoding = Plug.Conn.get_req_header(conn, "transfer-encoding")
+      content_length = Plug.Conn.get_req_header(conn, "content-length")
+
+      {:more, body, conn} = Plug.Conn.read_body(conn, length: 800_000)
+      {:ok, body_2, conn} = Plug.Conn.read_body(conn, length: 800_000)
+
+      assert byte_size(body) ~> number(roughly: 800_000)
+      assert byte_size(body_2) ~> number(roughly: 200_000)
+
+      assert IO.iodata_to_binary([body | body_2]) == String.duplicate("0123456789", 100_000)
+      send_resp(conn, 200, "#{inspect(encoding)}-#{inspect(content_length)}")
+    end
   end
 
   describe "upgrade handling" do
