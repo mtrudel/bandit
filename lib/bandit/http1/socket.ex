@@ -85,7 +85,7 @@ defmodule Bandit.HTTP1.Socket do
 
       case :erlang.decode_packet(:http_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
-          chunk = read_available_for_header!(socket.socket)
+          chunk = read_available!(socket.socket, socket.socket.read_timeout)
           do_read_request_line!(%{socket | buffer: socket.buffer <> chunk}, request_target)
 
         {:ok, {:http_request, method, request_target, version}, rest} ->
@@ -133,7 +133,7 @@ defmodule Bandit.HTTP1.Socket do
 
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
-          chunk = read_available_for_header!(socket.socket)
+          chunk = read_available!(socket.socket, socket.socket.read_timeout)
           socket = %{socket | buffer: socket.buffer <> chunk}
           do_read_headers!(socket, headers)
 
@@ -277,21 +277,11 @@ defmodule Bandit.HTTP1.Socket do
     # Internal Reading
     ##################
 
-    @compile {:inline, read_available_for_header!: 1}
-    @spec read_available_for_header!(ThousandIsland.Socket.t()) :: binary()
-    defp read_available_for_header!(socket) do
-      case ThousandIsland.Socket.recv(socket, 0) do
-        {:ok, chunk} -> chunk
-        {:error, reason} -> socket_error!(reason)
-      end
-    end
-
     @compile {:inline, read_available!: 2}
     @spec read_available!(ThousandIsland.Socket.t(), timeout()) :: binary()
     defp read_available!(socket, read_timeout) do
       case ThousandIsland.Socket.recv(socket, 0, read_timeout) do
-        {:ok, chunk} -> chunk
-        {:error, :timeout} -> <<>>
+        {:ok, chunk} when byte_size(chunk) > 0 -> chunk
         {:error, reason} -> socket_error!(reason)
       end
     end
@@ -307,7 +297,7 @@ defmodule Bandit.HTTP1.Socket do
             iolist()
     defp read!(socket, to_read, already_read, read_size, read_timeout) do
       case ThousandIsland.Socket.recv(socket, min(to_read, read_size), read_timeout) do
-        {:ok, chunk} ->
+        {:ok, chunk} when byte_size(chunk) > 0 ->
           remaining_bytes = to_read - byte_size(chunk)
 
           if remaining_bytes > 0 do
