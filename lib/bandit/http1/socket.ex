@@ -44,6 +44,8 @@ defmodule Bandit.HTTP1.Socket do
         }
 
   defimpl Bandit.HTTPTransport do
+    require Logger
+
     @max_chunk_size_byte_count 16
 
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
@@ -130,7 +132,7 @@ defmodule Bandit.HTTP1.Socket do
     defp resolve_request_target!(_request_target, _method),
       do: request_error!("Unsupported request target (RFC9112§3.2)")
 
-    defp do_read_headers!(socket, headers \\ []) do
+    defp do_read_headers!(%@for{} = socket, headers \\ []) do
       packet_size = Keyword.get(socket.opts.http_1, :max_header_length, 10_000)
 
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
@@ -272,10 +274,13 @@ defmodule Bandit.HTTP1.Socket do
 
       case do_read_chunk_size!(socket, buffer, opts) do
         {0, rest} ->
-          case rest do
-            "\r\n" <> rest -> {<<>>, rest}
-            _ -> raise "We got trailers, don't know how to deal with them"
-          end
+          {trailers, fake_socket} =
+            do_read_headers!(%@for{socket: socket, buffer: rest, opts: %{http_1: []}})
+
+          if trailers != [],
+            do: Logger.warning("Encountered trailers in chunked request; ignoring")
+
+          {<<>>, fake_socket.buffer}
 
         {chunk_size, rest} ->
           to_read = min(chunk_size, max_to_read)

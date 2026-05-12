@@ -1113,8 +1113,32 @@ defmodule HTTP1ProtocolTest do
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-
       assert msg == "** (Bandit.HTTPError) Malformed chunked encoding request body"
+    end
+
+    @tag :capture_log
+    test "handles trailers (by throwing them on the floor", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      Transport.send(client, "0\r\nTrailer: trailer\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+
+      # Make sure the connection survived by trying another request
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      Transport.send(client, "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
     end
   end
 
