@@ -1045,6 +1045,24 @@ defmodule HTTP1ProtocolTest do
   end
 
   describe "chunked request bodies" do
+    test "reads a tiny chunked body properly", context do
+      stream =
+        Stream.repeatedly(fn -> String.duplicate("123", 1) end)
+        |> Stream.take(1)
+
+      response = Req.post!(context.req, url: "/expect_tiny_chunked_body", body: stream)
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
+    def expect_tiny_chunked_body(conn) do
+      assert Plug.Conn.get_req_header(conn, "transfer-encoding") == ["chunked"]
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == "123"
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a chunked body properly", context do
       stream =
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
@@ -1058,9 +1076,69 @@ defmodule HTTP1ProtocolTest do
 
     def expect_chunked_body(conn) do
       assert Plug.Conn.get_req_header(conn, "transfer-encoding") == ["chunked"]
-      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      {:more, body, conn} = Plug.Conn.read_body(conn)
       assert body == String.duplicate("0123456789", 800_000)
+      {:ok, <<>>, conn} = Plug.Conn.read_body(conn)
       send_resp(conn, 200, "OK")
+    end
+
+    @tag :capture_log
+    test "handles an invalidly large chunk size header", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "123456789012345\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Was not able to parse a chunk size less than 16 octets in length"
+    end
+
+    @tag :capture_log
+    test "handles an invalid chunk end marker", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\nABC\n\r")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Malformed chunked encoding request body"
+    end
+
+    @tag :capture_log
+    test "handles trailers (by throwing them on the floor", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      Transport.send(client, "0\r\nTrailer: trailer\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+
+      # Make sure the connection survived by trying another request
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      Transport.send(client, "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
     end
   end
 

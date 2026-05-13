@@ -44,6 +44,10 @@ defmodule Bandit.HTTP1.Socket do
         }
 
   defimpl Bandit.HTTPTransport do
+    require Logger
+
+    @max_chunk_size_byte_count 16
+
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 
     def sock_data(%@for{} = socket), do: Bandit.SocketHelpers.sock_data(socket.socket)
@@ -85,7 +89,7 @@ defmodule Bandit.HTTP1.Socket do
 
       case :erlang.decode_packet(:http_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
-          chunk = read_available_for_header!(socket.socket)
+          chunk = read_available!(socket.socket, socket.socket.read_timeout)
           do_read_request_line!(%{socket | buffer: socket.buffer <> chunk}, request_target)
 
         {:ok, {:http_request, method, request_target, version}, rest} ->
@@ -128,12 +132,12 @@ defmodule Bandit.HTTP1.Socket do
     defp resolve_request_target!(_request_target, _method),
       do: request_error!("Unsupported request target (RFC9112§3.2)")
 
-    defp do_read_headers!(socket, headers \\ []) do
+    defp do_read_headers!(%@for{} = socket, headers \\ []) do
       packet_size = Keyword.get(socket.opts.http_1, :max_header_length, 10_000)
 
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
-          chunk = read_available_for_header!(socket.socket)
+          chunk = read_available!(socket.socket, socket.socket.read_timeout)
           socket = %{socket | buffer: socket.buffer <> chunk}
           do_read_headers!(socket, headers)
 
@@ -187,15 +191,13 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
-      read_size = Keyword.get(opts, :read_length, 1_000_000)
-      read_timeout = Keyword.get(opts, :read_timeout)
+      case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, opts) do
+        {:ok, body, buffer} ->
+          {:ok, IO.iodata_to_binary(body), %{socket | read_state: :read, buffer: buffer}}
 
-      {body, buffer} =
-        do_read_chunked_data!(socket.socket, socket.buffer, <<>>, read_size, read_timeout)
-
-      body = IO.iodata_to_binary(body)
-
-      {:ok, body, %{socket | read_state: :read, buffer: buffer}}
+        {:more, body, buffer} ->
+          {:more, IO.iodata_to_binary(body), %{socket | buffer: buffer}}
+      end
     end
 
     def read_data(%@for{read_state: :headers_read, body_encoding: body_encoding}, _opts)
@@ -222,7 +224,7 @@ defmodule Bandit.HTTP1.Socket do
         byte_size(buffer) < max_to_return ->
           # We need to read off the wire
           read_size = Keyword.get(opts, :read_length, 1_000_000)
-          read_timeout = Keyword.get(opts, :read_timeout)
+          read_timeout = Keyword.get(opts, :read_timeout, 15_000)
 
           to_return =
             read!(socket, max_to_return - byte_size(buffer), [buffer], read_size, read_timeout)
@@ -238,61 +240,148 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    @dialyzer {:no_improper_lists, do_read_chunked_data!: 5}
-    defp do_read_chunked_data!(socket, buffer, body, read_size, read_timeout) do
-      case :binary.split(buffer, "\r\n") do
-        ["0", "\r\n" <> rest] ->
-          # We should be reading (and ignoring) trailers here
-          {IO.iodata_to_binary(body), rest}
+    # do_read_chunked_data! reads up to the configured length, reading multiple
+    # chunks to do so. It accumulates data in the 'body' list, adding to it
+    # chunk by (possibly partial) chunk until either the end of the body is reached
+    # or the configured length is exceeded
+    @dialyzer {:no_improper_lists, do_read_chunked_data!: 4}
+    defp do_read_chunked_data!(socket, buffer, body, opts) do
+      max_to_read = Keyword.get(opts, :length, 8_000_000) - IO.iodata_length(body)
 
-        [chunk_size, rest] ->
-          chunk_size = String.to_integer(chunk_size, 16)
+      case do_read_chunk!(socket, buffer, max_to_read, opts) do
+        {<<>>, rest} ->
+          {:ok, body, rest}
 
-          case rest do
-            <<next_chunk::binary-size(chunk_size), ?\r, ?\n, rest::binary>> ->
-              do_read_chunked_data!(socket, rest, [body, next_chunk], read_size, read_timeout)
-
-            _ ->
-              to_read = chunk_size - byte_size(rest)
-
-              if to_read > 0 do
-                iolist = read!(socket, to_read, [], read_size, read_timeout)
-                buffer = IO.iodata_to_binary([buffer | iolist])
-                do_read_chunked_data!(socket, buffer, body, read_size, read_timeout)
-              else
-                chunk = read_available!(socket, read_timeout)
-                buffer = buffer <> chunk
-                do_read_chunked_data!(socket, buffer, body, read_size, read_timeout)
-              end
+        {chunk, rest} ->
+          if IO.iodata_length(chunk) < max_to_read do
+            do_read_chunked_data!(socket, rest, [body | chunk], opts)
+          else
+            {:more, [body | chunk], rest}
           end
-
-        _ ->
-          chunk = read_available!(socket, read_timeout)
-          buffer = buffer <> chunk
-          do_read_chunked_data!(socket, buffer, body, read_size, read_timeout)
       end
+    end
+
+    # do_read_chunk will read a single chunk, including the header length and
+    # trailing \r\n marker. In the case of chunks which are longer than max_to_read,
+    # it will read max_to_read bytes and then push a fake chunk header onto the
+    # buffer which subsequent calls will see as a regular chunk header.
+    @dialyzer {:no_improper_lists, do_read_chunk!: 4}
+    defp do_read_chunk!(socket, buffer, max_to_read, opts) do
+      # This is only called at the *start* of a chunk.  As such, the only well formed data here is
+      # the start of a chunk (ie: a hex number followed by \r\n followed by data).
+      # do_read_chunk_size! will raise an error if it is unable to find a valid chunk start within
+      # the first @max_chunk_size_byte_count bytes
+
+      case do_read_chunk_size!(socket, buffer, opts) do
+        {0, rest} ->
+          {trailers, fake_socket} =
+            do_read_headers!(%@for{socket: socket, buffer: rest, opts: %{http_1: []}})
+
+          if trailers != [],
+            do: Logger.warning("Encountered trailers in chunked request; ignoring")
+
+          {<<>>, fake_socket.buffer}
+
+        {chunk_size, rest} ->
+          to_read = min(chunk_size, max_to_read)
+          read_size = Keyword.get(opts, :read_length, 1_000_000)
+          read_timeout = Keyword.get(opts, :read_timeout, 15_000)
+
+          {to_return, rest} = read_exactly!(socket, rest, to_read, read_size, read_timeout)
+
+          case chunk_size - to_read do
+            0 ->
+              {newline, rest} = read_exactly!(socket, rest, 2, read_size, read_timeout)
+
+              if IO.iodata_to_binary(newline) != "\r\n",
+                do: request_error!("Malformed chunked encoding request body")
+
+              {to_return, rest}
+
+            remaining when remaining > 0 ->
+              # Build a binary since we'll be passing it to read_chunk_size! which expects a binary
+              {to_return, Integer.to_string(remaining, 16) <> "\r\n" <> rest}
+          end
+      end
+    end
+
+    # Reads the chunk header, taking care to only read up to @max_chunk_size_byte_count bytes to do so. Protects
+    # against arbitrarily long chunk headers per RFC9112§7.1
+    defp do_read_chunk_size!(socket, buffer, opts)
+         when byte_size(buffer) < @max_chunk_size_byte_count do
+      case :binary.match(buffer, "\r\n") do
+        {chunk_size_size, 2} ->
+          do_parse_chunk_size(buffer, chunk_size_size)
+
+        :nomatch ->
+          # We don't yet have a valid chunk prefix. Keep reading until we do
+          # Intentionally build a binary and not an iolist so we safely call ourselves again
+          more = read_available!(socket, Keyword.get(opts, :read_timeout, 15_000))
+          do_read_chunk_size!(socket, buffer <> more, opts)
+      end
+    end
+
+    defp do_read_chunk_size!(_socket, buffer, _opts) do
+      case :binary.match(buffer, "\r\n", [{:scope, {0, @max_chunk_size_byte_count}}]) do
+        {chunk_size_size, 2} ->
+          do_parse_chunk_size(buffer, chunk_size_size)
+
+        :nomatch ->
+          request_error!(
+            "Was not able to parse a chunk size less than #{@max_chunk_size_byte_count} octets in length"
+          )
+      end
+    end
+
+    defp do_parse_chunk_size(buffer, chunk_size_size) do
+      <<chunk_size::binary-size(chunk_size_size), "\r\n", rest::binary>> = buffer
+      chunk_size = String.to_integer(chunk_size, 16)
+      {chunk_size, rest}
     end
 
     ##################
     # Internal Reading
     ##################
 
-    @compile {:inline, read_available_for_header!: 1}
-    @spec read_available_for_header!(ThousandIsland.Socket.t()) :: binary()
-    defp read_available_for_header!(socket) do
-      case ThousandIsland.Socket.recv(socket, 0) do
-        {:ok, chunk} -> chunk
-        {:error, reason} -> socket_error!(reason)
-      end
-    end
-
     @compile {:inline, read_available!: 2}
     @spec read_available!(ThousandIsland.Socket.t(), timeout()) :: binary()
     defp read_available!(socket, read_timeout) do
       case ThousandIsland.Socket.recv(socket, 0, read_timeout) do
-        {:ok, chunk} -> chunk
-        {:error, :timeout} -> <<>>
+        {:ok, chunk} when byte_size(chunk) > 0 -> chunk
+        # This case is possible in some specific edge cases and we don't want to recurse
+        {:ok, <<>>} -> socket_error!(:timeout)
         {:error, reason} -> socket_error!(reason)
+      end
+    end
+
+    @dialyzer {:no_improper_lists, read_exactly!: 5}
+    @compile {:inline, read_exactly!: 5}
+    defp read_exactly!(socket, buffer, to_read, read_size, read_timeout) when to_read >= 0 do
+      case to_read - IO.iodata_length(buffer) do
+        bytes_still_to_read when bytes_still_to_read == 0 ->
+          # buffer is exactly the right size. Return it directly to save a binary conversion
+
+          {buffer, <<>>}
+
+        bytes_still_to_read when bytes_still_to_read < 0 ->
+          # We somehow have too much (likely because we were handed an oversized buffer to start)
+          # We need to binary-ize it in order to split it in size
+          <<to_return::binary-size(to_read), rest::binary>> = IO.iodata_to_binary(buffer)
+
+          {to_return, rest}
+
+        bytes_still_to_read when bytes_still_to_read > 0 ->
+          # We need to read from the wire to hit our required length. Limit ourselves to the
+          # prescribed read_size
+          actual_read_size = min(bytes_still_to_read, read_size)
+
+          case ThousandIsland.Socket.recv(socket, actual_read_size, read_timeout) do
+            {:ok, data} when byte_size(data) > 0 ->
+              read_exactly!(socket, [buffer | data], to_read, read_size, read_timeout)
+
+            {:error, reason} ->
+              socket_error!(reason)
+          end
       end
     end
 
@@ -307,7 +396,7 @@ defmodule Bandit.HTTP1.Socket do
             iolist()
     defp read!(socket, to_read, already_read, read_size, read_timeout) do
       case ThousandIsland.Socket.recv(socket, min(to_read, read_size), read_timeout) do
-        {:ok, chunk} ->
+        {:ok, chunk} when byte_size(chunk) > 0 ->
           remaining_bytes = to_read - byte_size(chunk)
 
           if remaining_bytes > 0 do
