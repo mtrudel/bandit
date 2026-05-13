@@ -1,3 +1,14 @@
+# 1.11.1 (13 May 2026)
+
+### Fixes
+
+* Improve handling of large chunked request bodies (CVE-2026-39803, #585, thanks @PJUllrich & @maennchen!)
+* Improve handling of request trailers (CVE-2026-39806, #585, thanks @PJUllrich & @maennchen!)
+
+### Changes
+
+* We no longer disallow `.` and `..` path components in HTTP/2 absolute paths (#581)
+
 # 1.11.0 (1 May 2026)
 
 ### Fixes
