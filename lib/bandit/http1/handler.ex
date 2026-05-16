@@ -64,11 +64,6 @@ defmodule Bandit.HTTP1.Handler do
     {:noreply, {socket, state}, socket.read_timeout}
   end
 
-  def handle_info(msg, state) do
-    log_no_handle_info(msg)
-    {:noreply, state}
-  end
-
   defp log_no_handle_info(msg) do
     # Copied verbatim from lib/elixir/lib/gen_server.ex
     proc =

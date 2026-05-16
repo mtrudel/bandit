@@ -133,9 +133,6 @@ defmodule Bandit.HTTP2.Stream do
 
         :timeout ->
           stream_error!("Timed out waiting for HEADER", stream)
-
-        %@for{} = stream ->
-          read_headers(stream)
       end
     end
 
@@ -313,35 +310,6 @@ defmodule Bandit.HTTP2.Stream do
       end
     end
 
-    defp do_recv(%@for{state: :remote_closed} = stream, timeout) do
-      receive do
-        {:bandit, {:headers, _headers, _end_stream}} ->
-          do_stream_closed_error!("Received HEADERS in remote_closed state", stream)
-
-        {:bandit, {:data, _data, _end_stream}} ->
-          do_stream_closed_error!("Received DATA in remote_closed state", stream)
-
-        {:bandit, {:send_window_update, delta}} ->
-          do_recv_send_window_update(stream, delta)
-
-        {:bandit, {:rst_stream, error_code}} ->
-          do_recv_rst_stream!(stream, error_code)
-      after
-        timeout -> :timeout
-      end
-    end
-
-    defp do_recv(%@for{state: :closed} = stream, timeout) do
-      receive do
-        {:bandit, {:headers, _headers, _end_stream}} -> stream
-        {:bandit, {:data, _data, _end_stream}} -> stream
-        {:bandit, {:send_window_update, _delta}} -> stream
-        {:bandit, {:rst_stream, _error_code}} -> stream
-      after
-        timeout -> :timeout
-      end
-    end
-
     defp do_recv_headers(%@for{state: :idle} = stream), do: %{stream | state: :open}
     defp do_recv_headers(stream), do: stream
 
@@ -398,10 +366,6 @@ defmodule Bandit.HTTP2.Stream do
           )
       end
     end
-
-    @spec do_stream_closed_error!(String.t(), Bandit.HTTP2.Stream.t()) :: no_return()
-    defp do_stream_closed_error!(msg, stream),
-      do: stream_error!(msg, stream, Bandit.HTTP2.Errors.stream_closed())
 
     # Stream API - Sending
 
