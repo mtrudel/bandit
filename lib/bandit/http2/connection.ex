@@ -393,7 +393,7 @@ defmodule Bandit.HTTP2.Connection do
     if data_length <= desired_length do
       {data, data_length, <<>>}
     else
-      <<to_send::binary-size(desired_length), rest::binary>> = IO.iodata_to_binary(data)
+      <<to_send::binary-size(^desired_length), rest::binary>> = IO.iodata_to_binary(data)
       {to_send, desired_length, rest}
     end
   end

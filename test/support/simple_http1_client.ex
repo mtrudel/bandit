@@ -44,7 +44,7 @@ defmodule SimpleHTTP1Client do
 
             pending when pending < 0 ->
               expected = String.to_integer(value)
-              <<response::binary-size(expected), _rest::binary>> = rest
+              <<response::binary-size(^expected), _rest::binary>> = rest
               response
 
             pending ->

@@ -218,7 +218,7 @@ defmodule Bandit.HTTP1.Socket do
 
         byte_size(buffer) >= max_to_return ->
           # We can satisfy the read request entirely from our buffer
-          <<to_return::binary-size(max_to_return), rest::binary>> = buffer
+          <<to_return::binary-size(^max_to_return), rest::binary>> = buffer
           {to_return, rest, unread_content_length - max_to_return}
 
         byte_size(buffer) < max_to_return ->
@@ -232,7 +232,7 @@ defmodule Bandit.HTTP1.Socket do
 
           # We may have read more than we need to return
           if byte_size(to_return) >= max_to_return do
-            <<to_return::binary-size(max_to_return), rest::binary>> = to_return
+            <<to_return::binary-size(^max_to_return), rest::binary>> = to_return
             {to_return, rest, unread_content_length - max_to_return}
           else
             {to_return, <<>>, unread_content_length - byte_size(to_return)}
@@ -334,7 +334,7 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     defp do_parse_chunk_size(buffer, chunk_size_size) do
-      <<chunk_size::binary-size(chunk_size_size), "\r\n", rest::binary>> = buffer
+      <<chunk_size::binary-size(^chunk_size_size), "\r\n", rest::binary>> = buffer
       chunk_size = String.to_integer(chunk_size, 16)
       {chunk_size, rest}
     end
@@ -366,7 +366,7 @@ defmodule Bandit.HTTP1.Socket do
         bytes_still_to_read when bytes_still_to_read < 0 ->
           # We somehow have too much (likely because we were handed an oversized buffer to start)
           # We need to binary-ize it in order to split it in size
-          <<to_return::binary-size(to_read), rest::binary>> = IO.iodata_to_binary(buffer)
+          <<to_return::binary-size(^to_read), rest::binary>> = IO.iodata_to_binary(buffer)
 
           {to_return, rest}
 
