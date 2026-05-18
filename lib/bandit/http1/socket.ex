@@ -348,8 +348,9 @@ defmodule Bandit.HTTP1.Socket do
     defp read_available!(socket, read_timeout) do
       case ThousandIsland.Socket.recv(socket, 0, read_timeout) do
         {:ok, chunk} when byte_size(chunk) > 0 -> chunk
-        # This case is possible in some specific edge cases and we don't want to recurse
-        {:ok, <<>>} -> socket_error!(:timeout)
+        # The empty body case is possible in some specific edge cases and we don't want to recurse
+        {:ok, <<>>} -> handle_timeout_with_disconnect_check!(socket)
+        {:error, :timeout} -> handle_timeout_with_disconnect_check!(socket)
         {:error, reason} -> socket_error!(reason)
       end
     end
@@ -378,6 +379,9 @@ defmodule Bandit.HTTP1.Socket do
           case ThousandIsland.Socket.recv(socket, actual_read_size, read_timeout) do
             {:ok, data} when byte_size(data) > 0 ->
               read_exactly!(socket, [buffer | data], to_read, read_size, read_timeout)
+
+            {:error, :timeout} ->
+              handle_timeout_with_disconnect_check!(socket)
 
             {:error, reason} ->
               socket_error!(reason)
@@ -422,7 +426,7 @@ defmodule Bandit.HTTP1.Socket do
       case ThousandIsland.Socket.recv(socket, 0, 0) do
         {:error, :timeout} ->
           # Socket is still open but no data - genuine timeout
-          request_error!("Body read timeout", :request_timeout)
+          request_error!("Read timeout", :request_timeout)
 
         {:error, reason} ->
           # Socket error (e.g., :closed) - client disconnected
