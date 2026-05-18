@@ -981,7 +981,7 @@ defmodule HTTP1ProtocolTest do
     end
 
     def short_body(conn) do
-      Plug.Conn.read_body(conn)
+      Plug.Conn.read_body(conn, read_timeout: 100)
       raise "Shouldn't get here"
     end
 
