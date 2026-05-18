@@ -356,7 +356,7 @@ defmodule WebSocketProtocolTest do
           :zlib.close(zstream)
           deflated = IO.iodata_to_binary([deflated_chunks, final_flush])
           trailer_size = byte_size(deflated) - 4
-          <<payload::binary-size(trailer_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
+          <<payload::binary-size(^trailer_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
 
           client = SimpleWebSocketClient.tcp_client(context)
           SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)

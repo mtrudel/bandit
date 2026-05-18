@@ -168,7 +168,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
 
     deflated_data =
       case deflated_data do
-        <<deflated_data::binary-size(deflated_size), 0x00, 0x00, 0xFF, 0xFF>> -> deflated_data
+        <<deflated_data::binary-size(^deflated_size), 0x00, 0x00, 0xFF, 0xFF>> -> deflated_data
         deflated -> deflated
       end
 
