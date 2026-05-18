@@ -178,15 +178,17 @@ defmodule Bandit.HTTP1.Socket do
           opts
         )
         when is_number(unread_content_length) do
-      {to_return, buffer, remaining_unread_content_length} =
+      {body, buffer} =
         do_read_content_length_data!(socket.socket, socket.buffer, unread_content_length, opts)
+
+      remaining_unread_content_length = unread_content_length - IO.iodata_length(body)
 
       socket = %{socket | buffer: buffer, unread_content_length: remaining_unread_content_length}
 
       if remaining_unread_content_length == 0 do
-        {:ok, to_return, %{socket | read_state: :read}}
+        {:ok, body, %{socket | read_state: :read}}
       else
-        {:more, to_return, socket}
+        {:more, body, socket}
       end
     end
 
@@ -207,37 +209,11 @@ defmodule Bandit.HTTP1.Socket do
 
     def read_data(%@for{} = socket, _opts), do: {:ok, <<>>, socket}
 
-    @dialyzer {:no_improper_lists, do_read_content_length_data!: 4}
     defp do_read_content_length_data!(socket, buffer, unread_content_length, opts) do
-      max_to_return = min(unread_content_length, Keyword.get(opts, :length, 8_000_000))
-
-      cond do
-        max_to_return == 0 ->
-          # We have already satisfied our content length
-          {<<>>, buffer, unread_content_length}
-
-        byte_size(buffer) >= max_to_return ->
-          # We can satisfy the read request entirely from our buffer
-          <<to_return::binary-size(^max_to_return), rest::binary>> = buffer
-          {to_return, rest, unread_content_length - max_to_return}
-
-        byte_size(buffer) < max_to_return ->
-          # We need to read off the wire
-          read_size = Keyword.get(opts, :read_length, 1_000_000)
-          read_timeout = Keyword.get(opts, :read_timeout, 15_000)
-
-          to_return =
-            read!(socket, max_to_return - byte_size(buffer), [buffer], read_size, read_timeout)
-            |> IO.iodata_to_binary()
-
-          # We may have read more than we need to return
-          if byte_size(to_return) >= max_to_return do
-            <<to_return::binary-size(^max_to_return), rest::binary>> = to_return
-            {to_return, rest, unread_content_length - max_to_return}
-          else
-            {to_return, <<>>, unread_content_length - byte_size(to_return)}
-          end
-      end
+      bytes_to_return = min(unread_content_length, Keyword.get(opts, :length, 8_000_000))
+      read_size = Keyword.get(opts, :read_length, 1_000_000)
+      read_timeout = Keyword.get(opts, :read_timeout, 15_000)
+      read_exactly!(socket, buffer, bytes_to_return, read_size, read_timeout)
     end
 
     # do_read_chunked_data! reads up to the configured length, reading multiple
@@ -348,8 +324,9 @@ defmodule Bandit.HTTP1.Socket do
     defp read_available!(socket, read_timeout) do
       case ThousandIsland.Socket.recv(socket, 0, read_timeout) do
         {:ok, chunk} when byte_size(chunk) > 0 -> chunk
-        # This case is possible in some specific edge cases and we don't want to recurse
-        {:ok, <<>>} -> socket_error!(:timeout)
+        # The empty body case is possible in some specific edge cases and we don't want to recurse
+        {:ok, <<>>} -> handle_timeout_with_disconnect_check!(socket)
+        {:error, :timeout} -> handle_timeout_with_disconnect_check!(socket)
         {:error, reason} -> socket_error!(reason)
       end
     end
@@ -379,37 +356,12 @@ defmodule Bandit.HTTP1.Socket do
             {:ok, data} when byte_size(data) > 0 ->
               read_exactly!(socket, [buffer | data], to_read, read_size, read_timeout)
 
+            {:error, :timeout} ->
+              handle_timeout_with_disconnect_check!(socket)
+
             {:error, reason} ->
               socket_error!(reason)
           end
-      end
-    end
-
-    @dialyzer {:no_improper_lists, read!: 5}
-    @spec read!(
-            ThousandIsland.Socket.t(),
-            non_neg_integer(),
-            iolist(),
-            non_neg_integer(),
-            timeout()
-          ) ::
-            iolist()
-    defp read!(socket, to_read, already_read, read_size, read_timeout) do
-      case ThousandIsland.Socket.recv(socket, min(to_read, read_size), read_timeout) do
-        {:ok, chunk} when byte_size(chunk) > 0 ->
-          remaining_bytes = to_read - byte_size(chunk)
-
-          if remaining_bytes > 0 do
-            read!(socket, remaining_bytes, [already_read | chunk], read_size, read_timeout)
-          else
-            [already_read | chunk]
-          end
-
-        {:error, :timeout} ->
-          handle_timeout_with_disconnect_check!(socket)
-
-        {:error, reason} ->
-          socket_error!(reason)
       end
     end
 
@@ -422,7 +374,7 @@ defmodule Bandit.HTTP1.Socket do
       case ThousandIsland.Socket.recv(socket, 0, 0) do
         {:error, :timeout} ->
           # Socket is still open but no data - genuine timeout
-          request_error!("Body read timeout", :request_timeout)
+          request_error!("Read timeout", :request_timeout)
 
         {:error, reason} ->
           # Socket error (e.g., :closed) - client disconnected

@@ -824,7 +824,7 @@ defmodule HTTP1PlugTest do
           plug: {__MODULE__, []},
           connection_telemetry_span_context: reference(),
           telemetry_span_context: reference(),
-          error: "Unrecoverable error: timeout"
+          error: "Read timeout"
         }
       )
     end

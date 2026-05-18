@@ -977,11 +977,11 @@ defmodule HTTP1ProtocolTest do
       assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) Body read timeout"
+      assert msg == "** (Bandit.HTTPError) Read timeout"
     end
 
     def short_body(conn) do
-      Plug.Conn.read_body(conn)
+      Plug.Conn.read_body(conn, read_timeout: 100)
       raise "Shouldn't get here"
     end
 
@@ -1139,6 +1139,59 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "3\r\n123\r\n")
       Transport.send(client, "0\r\n\r\n")
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+    end
+
+    @tag :capture_log
+    test "handles a timing out chunk read in the middle of a chunk", context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 100])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/incomplete_chunk_body_within_chunks", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n12\r\n")
+      assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Read timeout"
+    end
+
+    def incomplete_chunk_body_within_chunks(conn) do
+      Plug.Conn.read_body(conn, read_timeout: 100)
+      raise "Shouldn't get here"
+    end
+
+    @tag :capture_log
+    test "handles a timing out chunk read in between chunks", context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 100])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/incomplete_chunk_body_between_chunks", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Read timeout"
+    end
+
+    def incomplete_chunk_body_between_chunks(conn) do
+      {:more, "123", conn} = Plug.Conn.read_body(conn, read_timeout: 100)
+      Plug.Conn.read_body(conn, read_timeout: 100)
+      raise "Shouldn't get here"
     end
   end
 
