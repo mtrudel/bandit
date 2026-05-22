@@ -1551,5 +1551,33 @@ defmodule WebSocketWebSockTest do
                error: :timeout
              }
     end
+
+    defmodule PeriodicPushWebSock do
+      use NoopWebSock
+
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+      def handle_info(:push, state), do: {:push, {:text, "tick"}, state}
+    end
+
+    test "local websocket messages do not extend the read timeout", context do
+      context = http_server(context, thousand_island_options: [read_timeout: 100])
+      TelemetryHelpers.attach_all_events(PeriodicPushWebSock) |> on_exit()
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, PeriodicPushWebSock)
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      for _ <- 1..2 do
+        Process.sleep(25)
+        Process.send(pid, :push, [])
+        assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "tick"}
+      end
+
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], _measurements,
+                      %{error: :timeout}},
+                     500
+    end
   end
 end

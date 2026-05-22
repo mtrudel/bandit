@@ -24,6 +24,7 @@ defmodule Bandit.WebSocket.Handler do
       state
       |> Map.take([:handler_module])
       |> Map.put(:extractor, Extractor.new(Frame, primitive_ops_module, connection_opts))
+      |> Map.put(:last_read_at, monotonic_now())
 
     case Connection.init(websock, websock_opts, connection_opts, socket) do
       {:continue, connection} ->
@@ -41,7 +42,7 @@ defmodule Bandit.WebSocket.Handler do
   def handle_data(data, socket, state) do
     state.extractor
     |> Extractor.push_data(data)
-    |> pop_frame(socket, state)
+    |> pop_frame(socket, %{state | last_read_at: monotonic_now()})
   end
 
   defp pop_frame(extractor, socket, state) do
@@ -83,15 +84,26 @@ defmodule Bandit.WebSocket.Handler do
   def handle_timeout(socket, state), do: Connection.handle_timeout(socket, state.connection)
 
   def handle_info({:plug_conn, :sent}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
+    do: {:noreply, {socket, state}, read_timeout(socket, state)}
 
   def handle_info(msg, {socket, state}) do
     case Connection.handle_info(msg, socket, state.connection) do
       {:continue, connection_state} ->
-        {:noreply, {socket, %{state | connection: connection_state}}, socket.read_timeout}
+        state = %{state | connection: connection_state}
+        {:noreply, {socket, state}, read_timeout(socket, state)}
 
       {:error, reason, connection_state} ->
         {:stop, reason, {socket, %{state | connection: connection_state}}}
     end
   end
+
+  defp read_timeout(%{read_timeout: timeout}, %{last_read_at: last_read_at})
+       when is_integer(timeout) do
+    elapsed = monotonic_now() - last_read_at
+    max(timeout - elapsed, 0)
+  end
+
+  defp read_timeout(socket, _state), do: socket.read_timeout
+
+  defp monotonic_now, do: System.monotonic_time(:millisecond)
 end
