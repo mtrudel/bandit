@@ -60,7 +60,7 @@ defmodule Bandit.HTTP1.Socket do
       {method, request_target, socket} = do_read_request_line!(socket)
       {headers, socket} = do_read_headers!(socket)
       content_length = get_content_length!(headers)
-      body_encoding = Bandit.Headers.get_header(headers, "transfer-encoding")
+      body_encoding = safe_downcase(Bandit.Headers.get_header(headers, "transfer-encoding"))
       request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
       socket = %{socket | request_connection_header: request_connection_header}
 
