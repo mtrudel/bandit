@@ -1063,6 +1063,25 @@ defmodule HTTP1ProtocolTest do
       send_resp(conn, 200, "OK")
     end
 
+    test "reads a chunked body with a non-lowercase transfer-encoding value", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_case_insensitive_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: Chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n")
+      Transport.send(client, "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+    end
+
+    def expect_case_insensitive_chunked_body(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == "123"
+      send_resp(conn, 200, "OK")
+    end
+
     test "reads a chunked body properly", context do
       stream =
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)
