@@ -771,7 +771,7 @@ sent in HTTP/2 (#483)
 
 * Added HTTP compression via 'Content-Encoding' negotiation, enabled by default.
   Configuration is available; see [Bandit
-  docs](https://hexdocs.pm/bandit/Bandit.html#module-config-options) for details
+  docs](https://bandit.hexdocs.pm/Bandit.html#module-config-options) for details
 
 ### Changes
 
@@ -792,7 +792,7 @@ sent in HTTP/2 (#483)
 
 * Add configuration points for various parameters within the HTTP/1, HTTP/2 and
   WebSocket stacks. See [Bandit
-  docs](https://hexdocs.pm/bandit/Bandit.html#module-config-options) for details
+  docs](https://bandit.hexdocs.pm/Bandit.html#module-config-options) for details
 
 # Changelog for 0.6.x
 

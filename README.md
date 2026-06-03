@@ -2,7 +2,7 @@
 ![Bandit](https://github.com/mtrudel/bandit/raw/main/assets/readme_logo-darkmode.png#gh-dark-mode-only)
 
 [![Build Status](https://github.com/mtrudel/bandit/workflows/Elixir%20CI/badge.svg)](https://github.com/mtrudel/bandit/actions)
-[![Docs](https://img.shields.io/badge/api-docs-green.svg?style=flat)](https://hexdocs.pm/bandit)
+[![Docs](https://img.shields.io/badge/api-docs-green.svg?style=flat)](https://bandit.hexdocs.pm)
 [![Hex.pm](https://img.shields.io/hexpm/v/bandit.svg?style=flat&color=blue)](https://hex.pm/packages/bandit)
 
 Bandit is an HTTP server for Plug and WebSock apps.
@@ -102,7 +102,7 @@ Using Bandit to host your Phoenix application couldn't be simpler:
    using Bandit to serve your endpoint**, and everything should 'just work'. Note
    that if you have set any exotic configuration options within your endpoint,
    you may need to update that configuration to work with Bandit; see the
-   [Bandit.PhoenixAdapter](https://hexdocs.pm/bandit/Bandit.PhoenixAdapter.html)
+   [Bandit.PhoenixAdapter](https://bandit.hexdocs.pm/Bandit.PhoenixAdapter.html)
    documentation for more information.
 
 ## Using Bandit With Plug Applications
@@ -140,7 +140,7 @@ Bandit.start_link(plug: MyPlug)
 ## Configuration
 
 A number of options are defined when starting a server. The complete list is
-defined by the [`t:Bandit.options/0`](https://hexdocs.pm/bandit/Bandit.html#summary) type.
+defined by the [`t:Bandit.options/0`](https://bandit.hexdocs.pm/Bandit.html#summary) type.
 
 ## Setting up an HTTPS Server
 
@@ -176,8 +176,8 @@ If you're using Bandit to run a Phoenix application as suggested above, there is
 nothing more for you to do; WebSocket support will 'just work'.
 
 If you wish to interact with WebSockets at a more fundamental level, the
-[WebSock](https://hexdocs.pm/websock/WebSock.html) and
-[WebSockAdapter](https://hexdocs.pm/websock_adapter/WebSockAdapter.html) libraries
+[WebSock](https://websock.hexdocs.pm/WebSock.html) and
+[WebSockAdapter](https://websock_adapter.hexdocs.pm/WebSockAdapter.html) libraries
 provides a generic abstraction for WebSockets (very similar to how Plug is
 a generic abstraction on top of HTTP). Bandit fully supports all aspects of
 these libraries.
@@ -238,7 +238,7 @@ def deps do
 end
 ```
 
-Documentation can be found at [https://hexdocs.pm/bandit](https://hexdocs.pm/bandit).
+Documentation can be found at [https://bandit.hexdocs.pm](https://bandit.hexdocs.pm).
 
 # License
 

@@ -18,7 +18,7 @@ defmodule Bandit.MixProject do
         licenses: ["MIT"],
         links: %{
           "GitHub" => "https://github.com/mtrudel/bandit",
-          "Changelog" => "https://hexdocs.pm/bandit/changelog.html"
+          "Changelog" => "https://bandit.hexdocs.pm/changelog.html"
         },
         files: ["lib", "mix.exs", "README*", "LICENSE*", "CHANGELOG*"]
       ],
