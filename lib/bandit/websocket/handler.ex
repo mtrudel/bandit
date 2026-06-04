@@ -83,7 +83,13 @@ defmodule Bandit.WebSocket.Handler do
   def handle_timeout(socket, state), do: Connection.handle_timeout(socket, state.connection)
 
   def handle_info({:plug_conn, :sent}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
+    # Do not reset the read timeout on outbound "sent" for WS. This ensures that a
+    # silent half-open connection (no inbound client frames/heartbeats) will still
+    # be reaped by the transport read_timeout even if the server continues to
+    # generate outbound traffic (e.g. LV diffs, PubSub). Resetting on send was
+    # keeping such connections alive indefinitely (unlike Cowboy behavior).
+    # See mtrudel/bandit#577.
+    do: {:noreply, {socket, state}}
 
   def handle_info(msg, {socket, state}) do
     case Connection.handle_info(msg, socket, state.connection) do
