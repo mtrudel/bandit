@@ -1,3 +1,19 @@
+# 1.12.0 (5 June 2026)
+
+### Changes
+
+* Incorporate changes from Thousand Island 1.5, improving the separation of
+local GenServer timeouts and network facing timeouts (#597 &
+https://thousand-island.hexdocs.pm/changelog.html#1-5-0-1-jun-2026)
+
+### Fixes
+
+* Properly handle mixed-case Transfer-Encoding headers (#590, thanks @mize85!)
+
+### Enhancements
+
+* Internal improvements to HTTP/1 body read functions (#588)
+
 # 1.11.1 (13 May 2026)
 
 ### Fixes
