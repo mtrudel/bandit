@@ -63,15 +63,15 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_call({:peer_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.SocketHelpers.peer_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.peer_data(socket), {socket, state}}
   end
 
   def handle_call({:sock_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.SocketHelpers.sock_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.sock_data(socket), {socket, state}}
   end
 
   def handle_call({:ssl_data, _stream_id}, _from, {socket, state}) do
-    {:reply, Bandit.SocketHelpers.ssl_data(socket), {socket, state}, socket.read_timeout}
+    {:reply, Bandit.SocketHelpers.ssl_data(socket), {socket, state}}
   end
 
   def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
@@ -99,7 +99,7 @@ defmodule Bandit.HTTP2.Handler do
         state.connection
       )
 
-    {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+    {:noreply, {socket, %{state | connection: connection}}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
@@ -114,7 +114,7 @@ defmodule Bandit.HTTP2.Handler do
         state.connection
       )
 
-    {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+    {:noreply, {socket, %{state | connection: connection}}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
@@ -127,14 +127,14 @@ defmodule Bandit.HTTP2.Handler do
       state.connection
     )
 
-    {:noreply, {socket, state}, socket.read_timeout}
+    {:noreply, {socket, state}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_info({{:send_rst_stream, error_code}, stream_id}, {socket, state}) do
     Bandit.HTTP2.Connection.send_rst_stream(stream_id, error_code, socket, state.connection)
-    {:noreply, {socket, state}, socket.read_timeout}
+    {:noreply, {socket, state}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
@@ -146,7 +146,7 @@ defmodule Bandit.HTTP2.Handler do
 
   def handle_info({:EXIT, pid, _reason}, {socket, state}) do
     connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
-    {:noreply, {socket, %{state | connection: connection}}, socket.read_timeout}
+    {:noreply, {socket, %{state | connection: connection}}}
   end
 
   defp rescue_stream_error(error, socket, state) do

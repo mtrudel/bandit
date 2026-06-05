@@ -53,15 +53,13 @@ defmodule Bandit.HTTP1.Handler do
     {:switch, Bandit.WebSocket.Handler, Map.put(state, :upgrade_opts, upgrade_opts)}
   end
 
-  def handle_info({:plug_conn, :sent}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
+  def handle_info({:plug_conn, :sent}, {socket, state}), do: {:noreply, {socket, state}}
 
-  def handle_info({:EXIT, _pid, :normal}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
+  def handle_info({:EXIT, _pid, :normal}, {socket, state}), do: {:noreply, {socket, state}}
 
   def handle_info(msg, {socket, state}) do
     if Keyword.get(state.opts.http_1, :log_unknown_messages, false), do: log_no_handle_info(msg)
-    {:noreply, {socket, state}, socket.read_timeout}
+    {:noreply, {socket, state}}
   end
 
   defp log_no_handle_info(msg) do

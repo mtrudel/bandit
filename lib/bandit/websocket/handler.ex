@@ -82,13 +82,12 @@ defmodule Bandit.WebSocket.Handler do
   @impl ThousandIsland.Handler
   def handle_timeout(socket, state), do: Connection.handle_timeout(socket, state.connection)
 
-  def handle_info({:plug_conn, :sent}, {socket, state}),
-    do: {:noreply, {socket, state}, socket.read_timeout}
+  def handle_info({:plug_conn, :sent}, {socket, state}), do: {:noreply, {socket, state}}
 
   def handle_info(msg, {socket, state}) do
     case Connection.handle_info(msg, socket, state.connection) do
       {:continue, connection_state} ->
-        {:noreply, {socket, %{state | connection: connection_state}}, socket.read_timeout}
+        {:noreply, {socket, %{state | connection: connection_state}}}
 
       {:error, reason, connection_state} ->
         {:stop, reason, {socket, %{state | connection: connection_state}}}
