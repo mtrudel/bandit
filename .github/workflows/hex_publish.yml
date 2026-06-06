@@ -14,8 +14,8 @@ jobs:
     - name: Setup Elixir
       uses: erlef/setup-beam@v1
       with:
-        elixir-version: 1.18.x
-        otp-version: 27.1
+        elixir-version: 1.19.x
+        otp-version: 28.x
     - name: Install deps
       run: mix deps.get
     - name: Publish Hex package
