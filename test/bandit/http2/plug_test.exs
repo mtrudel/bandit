@@ -565,6 +565,111 @@ defmodule HTTP2PlugTest do
     end
   end
 
+  describe "trailers" do
+    test "Bandit.HTTP2.Stream.send_trailers/2 sends a trailer HEADERS frame to the client (high-level via Req)",
+         context do
+      # Override the default test read_timeout. The default is
+      # 100ms in `https_server/2` which is too short for the
+      # trailer round-trip — the connection would close with
+      # GOAWAY before the trailer is read.
+      context =
+        context
+        |> https_server(thousand_island_options: [read_timeout: 5_000])
+        |> Enum.into(context)
+
+      # Req's HTTP/2 client preserves trailers natively. The
+      # exact surfacing depends on the Req version. We just
+      # check that the response succeeds and the body is correct;
+      # the low-level SimpleH2Client test below verifies the
+      # trailer at the wire level.
+      response = Req.get!(context.req, url: "/trailers")
+      assert response.status == 200
+      assert response.body == "body"
+    end
+
+    test "Bandit.HTTP2.Stream.send_trailers/2 sends a trailer HEADERS frame (low-level via SimpleH2Client)",
+         context do
+      # Override the default test read_timeout.
+      context =
+        context
+        |> https_server(thousand_island_options: [read_timeout: 5_000])
+        |> Enum.into(context)
+
+      # The plug uses the lower-level HTTP/2 transport directly
+      # to send the response HEADERS + body + trailer. This
+      # exercises the new `send_trailers/2` public API at the
+      # wire level.
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "get"},
+        {":path", "/trailers"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      # The plug sends the response HEADERS + body, then a
+      # trailer HEADERS with `grpc-status: 0`. We expect
+      # TWO HEADERS frames on the wire: one for the response
+      # (with `:status: 200`), one for the trailer (without
+      # `:status`, with `grpc-status: 0`).
+      {:ok, 1, false, response_headers, _} = SimpleH2Client.recv_headers(socket)
+      assert {":status", "200"} in response_headers
+
+      # The body is sent as a single DATA frame (not end_stream).
+      {:ok, 1, false, _body} = SimpleH2Client.recv_body(socket)
+
+      # The trailer is a HEADERS frame with END_STREAM.
+      # It has NO `:status` pseudo-header (RFC9113§8.2.2).
+      {:ok, 1, true, trailer_headers, _} = SimpleH2Client.recv_headers(socket)
+      refute Enum.any?(trailer_headers, fn {k, _v} -> k == ":status" end)
+      assert {"grpc-status", "0"} in trailer_headers
+    end
+
+    test "Bandit.HTTP2.Stream.send_trailers/2 raises on pseudo-header fields" do
+      # Trailers MUST NOT contain pseudo-header fields (RFC9113§8.2.2).
+      # The function should raise a `Bandit.HTTP2.Errors.StreamError`
+      # to catch this misuse at runtime.
+      stream = %Bandit.HTTP2.Stream{
+        connection_pid: self(),
+        stream_id: 1,
+        state: :open
+      }
+
+      assert_raise Bandit.HTTP2.Errors.StreamError, ~r/pseudo-header/, fn ->
+        Bandit.HTTP2.Stream.send_trailers(stream, [{":status", "200"}])
+      end
+    end
+
+    def trailers(conn) do
+      # Use the lower-level HTTP/2 transport directly to send
+      # the response in three steps:
+      #   1. Response HEADERS (via send_headers on the transport)
+      #   2. Response body DATA
+      #   3. Trailer HEADERS (via the new send_trailers/2)
+      #
+      # We use the lower-level transport rather than
+      # `send_chunked + chunk` to avoid coupling the test
+      # to the Plug adapter's chunked-response state machine.
+      %Bandit.Adapter{transport: %Bandit.HTTP2.Stream{} = transport} = elem(conn.adapter, 1)
+
+      # Step 1: Send the response headers. We call the
+      # `Bandit.HTTPTransport.send_headers/4` callback directly
+      # with `:raw` body_disposition (no end_stream). This
+      # matches what `send_chunked/2` does internally.
+      transport = Bandit.HTTPTransport.send_headers(transport, 200, [], :raw)
+
+      # Step 2: Send the body (no end_stream — trailer will close).
+      transport = Bandit.HTTPTransport.send_data(transport, "body", false)
+
+      # Step 3: Send the trailer. This is the new public API.
+      Bandit.HTTP2.Stream.send_trailers(transport, [{"grpc-status", "0"}])
+      conn
+    end
+  end
+
   describe "upgrade handling" do
     @tag :capture_log
     test "raises an ArgumentError on unsupported upgrades", context do
