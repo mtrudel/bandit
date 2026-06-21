@@ -96,6 +96,26 @@ defmodule Bandit.HTTP2.Stream do
     %{stream | state: state_after_send_end_stream(state)}
   end
 
+  @doc """
+  No-op: the stream's local side is already closed.
+
+  This clause handles the common race where the endpoint
+  sends the last DATA frame (or the client resets the
+  stream via RST_STREAM) before `send_trailers/2` is
+  called. Since the stream is already `:local_closed`,
+  there is no need to send another END_STREAM-bearing
+  HEADERS frame — the stream is already finished.
+
+  We still validate the trailers (for call-site hygiene),
+  but we do not send anything and return the stream
+  unchanged.
+  """
+  def send_trailers(%__MODULE__{state: state} = stream, trailers)
+      when state in [:local_closed, :closed] and is_list(trailers) do
+    _ = validate_trailer_headers!(trailers, stream)
+    stream
+  end
+
   # State transition for the receiver of an end-stream signal
   # (trailers always carry END_STREAM).
   defp state_after_send_end_stream(:open), do: :local_closed
