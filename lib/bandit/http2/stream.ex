@@ -79,6 +79,67 @@ defmodule Bandit.HTTP2.Stream do
     }
   end
 
+  @doc """
+  Send an HTTP/2 trailer HEADERS frame on the given stream.
+  """
+  def send_trailers(%__MODULE__{state: state} = stream, trailers)
+      when state in [:open, :remote_closed] and is_list(trailers) do
+    validate_trailer_headers!(trailers, stream)
+
+    # Trailers always close the stream. The end_stream flag
+    # on a HEADERS frame terminates the stream (per
+    # RFC9113§6.2). The state transition mirrors the one in
+    # the defimpl's `set_state_on_send_end_stream/2` but is
+    # inlined here so we don't need to expose a new public
+    # function just for one caller.
+    send(stream.connection_pid, {{:send_headers, trailers, true}, stream.stream_id})
+    %{stream | state: state_after_send_end_stream(state)}
+  end
+
+  @doc """
+  No-op: the stream's local side is already closed.
+
+  This clause handles the common race where the endpoint
+  sends the last DATA frame (or the client resets the
+  stream via RST_STREAM) before `send_trailers/2` is
+  called. Since the stream is already `:local_closed`,
+  there is no need to send another END_STREAM-bearing
+  HEADERS frame — the stream is already finished.
+
+  We still validate the trailers (for call-site hygiene),
+  but we do not send anything and return the stream
+  unchanged.
+  """
+  def send_trailers(%__MODULE__{state: state} = stream, trailers)
+      when state in [:local_closed, :closed] and is_list(trailers) do
+    _ = validate_trailer_headers!(trailers, stream)
+    stream
+  end
+
+  # State transition for the receiver of an end-stream signal
+  # (trailers always carry END_STREAM).
+  defp state_after_send_end_stream(:open), do: :local_closed
+  defp state_after_send_end_stream(:remote_closed), do: :closed
+
+  defp validate_trailer_headers!(trailers, stream) do
+    Enum.each(trailers, fn
+      {":" <> _, _} ->
+        raise Bandit.HTTP2.Errors.StreamError,
+          message: "trailer fields MUST NOT contain pseudo-header fields (RFC9113§8.2.2)",
+          error_code: Bandit.HTTP2.Errors.protocol_error(),
+          stream_id: stream.stream_id
+
+      {":" <> _, _, _} ->
+        raise Bandit.HTTP2.Errors.StreamError,
+          message: "trailer fields MUST NOT contain pseudo-header fields (RFC9113§8.2.2)",
+          error_code: Bandit.HTTP2.Errors.protocol_error(),
+          stream_id: stream.stream_id
+
+      _ ->
+        :ok
+    end)
+  end
+
   # Collection API - Delivery
   #
   # These functions are intended to be called by the connection process which contains this
@@ -587,5 +648,11 @@ defmodule Bandit.HTTP2.Stream do
     @spec connection_error!(term(), Bandit.HTTP2.Errors.error_code()) :: no_return()
     defp connection_error!(message, error_code \\ Bandit.HTTP2.Errors.protocol_error()),
       do: raise(Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code)
+
+    # Delegate to the module-level `send_trailers/2` so the
+    # protocol dispatch path uses the same implementation
+    # as direct callers. This keeps the validation logic
+    # in one place.
+    defdelegate send_trailers(stream, trailers), to: Bandit.HTTP2.Stream
   end
 end
