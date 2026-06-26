@@ -164,7 +164,21 @@ defmodule Bandit.Adapter do
     start_time = Bandit.Telemetry.monotonic_time()
     metrics = Map.put(adapter.metrics, :resp_start_time, start_time)
 
-    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, false, true)
+    # When the caller declares a content-length up front, stream a
+    # length-delimited body instead of chunked transfer-encoding. The HTTP/1
+    # transport already does this (the `:chunk_encoded when has_content_length`
+    # path writes raw bytes via the `:chunk_streaming` write state), and HTTP/2
+    # carries the length in its header block with no framing change. Response
+    # compression would rewrite the body and invalidate the declared length, so
+    # it is disabled in this mode — the caller owns the exact bytes and must send
+    # precisely `content-length` of them via chunk/2.
+    {headers, compression_context} =
+      if is_nil(Bandit.Headers.get_header(headers, "content-length")) do
+        Bandit.Compression.new(adapter, status, headers, false, true)
+      else
+        {headers, %Bandit.Compression{method: :identity}}
+      end
+
     adapter = %{adapter | metrics: metrics, compression_context: compression_context}
     send(adapter.owner_pid, @already_sent)
     {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
