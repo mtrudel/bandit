@@ -47,6 +47,7 @@ defmodule Bandit.HTTP2.Stream do
             send_window_size: nil,
             sendfile_chunk_size: nil,
             bytes_remaining: nil,
+            pending_headers: nil,
             read_timeout: 15_000
 
   @typedoc "An HTTP/2 stream identifier"
@@ -67,6 +68,7 @@ defmodule Bandit.HTTP2.Stream do
           send_window_size: non_neg_integer(),
           sendfile_chunk_size: pos_integer(),
           bytes_remaining: non_neg_integer() | nil,
+          pending_headers: nil | Plug.Conn.headers(),
           read_timeout: timeout()
         }
 
@@ -369,6 +371,14 @@ defmodule Bandit.HTTP2.Stream do
 
     # Stream API - Sending
 
+    # `:raw` always precedes a body (via send_data/sendfile), so buffer the headers and let
+    # send_data flush them with the first DATA frame in a single write (cf. HTTP/1 send_buffer).
+    def send_headers(%@for{state: state} = stream, status, headers, :raw)
+        when state in [:open, :remote_closed] do
+      headers = [{":status", to_string(status)} | split_cookies(headers)]
+      %{stream | pending_headers: headers}
+    end
+
     def send_headers(%@for{state: state} = stream, status, headers, body_disposition)
         when state in [:open, :remote_closed] do
       # We need to map body_disposition into the state model of HTTP/2. This turns out to be really
@@ -406,12 +416,18 @@ defmodule Bandit.HTTP2.Stream do
 
       max_bytes_to_send = max(stream.send_window_size, 0)
       {data_to_send, bytes_to_send, rest} = split_data(data, max_bytes_to_send)
+      end_stream_to_send = end_stream && byte_size(rest) == 0
 
       stream =
-        if end_stream || bytes_to_send > 0 do
-          end_stream_to_send = end_stream && byte_size(rest) == 0
-          call(stream, {:send_data, data_to_send, end_stream_to_send}, :infinity)
-          %{stream | send_window_size: stream.send_window_size - bytes_to_send}
+        if stream.pending_headers != nil or end_stream or bytes_to_send > 0 do
+          headers = stream.pending_headers || []
+          call(stream, {:send_data, headers, data_to_send, end_stream_to_send}, :infinity)
+
+          %{
+            stream
+            | pending_headers: nil,
+              send_window_size: stream.send_window_size - bytes_to_send
+          }
         else
           stream
         end
@@ -539,6 +555,11 @@ defmodule Bandit.HTTP2.Stream do
       do_send(stream, {:close_connection, error.error_code, error.message})
       stream
     end
+
+    # A TransportError means the client reset the stream (do_recv_rst_stream!). RFC9113§6.4 forbids
+    # sending any further frame except PRIORITY after receiving RST_STREAM, so send no response at
+    # all -- not even an error one, unlike the generic clause below. Mirrors HTTP/1's handling.
+    def send_on_error(%@for{} = stream, %Bandit.TransportError{}), do: %{stream | state: :closed}
 
     def send_on_error(%@for{state: state} = stream, error) when state in [:idle, :open] do
       stream = maybe_send_error(%{stream | state: :open}, error)
