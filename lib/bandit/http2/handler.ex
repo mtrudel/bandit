@@ -74,7 +74,7 @@ defmodule Bandit.HTTP2.Handler do
     {:reply, Bandit.SocketHelpers.ssl_data(socket), {socket, state}}
   end
 
-  def handle_call({{:send_data, data, end_stream}, stream_id}, from, {socket, state}) do
+  def handle_call({{:send_data, headers, data, end_stream}, stream_id}, from, {socket, state}) do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
     # In cases where there is not enough space in the connection window, Connection will call
@@ -92,6 +92,7 @@ defmodule Bandit.HTTP2.Handler do
     connection =
       Bandit.HTTP2.Connection.send_data(
         stream_id,
+        headers,
         data,
         end_stream,
         unblock,

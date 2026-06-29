@@ -2189,17 +2189,16 @@ defmodule HTTP2ProtocolTest do
       # Should be able to make a normal request
       SimpleH2Client.send_simple_headers(socket, 7, :get, "/slow_body_response", port)
 
-      t1 = for _ <- 1..9, do: SimpleH2Client.recv_frame(socket)
+      t1 = for _ <- 1..6, do: SimpleH2Client.recv_frame(socket)
 
+      # Streams 1/3/5 are reset before the slow handler responds; since HEADERS are coalesced with
+      # the first DATA frame, the reset is seen before any write so each emits only an error HEADERS.
       assert t1
              ~> in_any_order([
                {:ok, :headers, integer(), 1, string()},
                {:ok, :headers, integer(), 3, string()},
                {:ok, :headers, integer(), 5, string()},
                {:ok, :headers, integer(), 7, string()},
-               {:ok, :headers, integer(), 1, string()},
-               {:ok, :headers, integer(), 3, string()},
-               {:ok, :headers, integer(), 5, string()},
                {:ok, :data, integer(), 7, "OK"},
                {:ok, :goaway, 0, 0, <<7::32, 0::32>>}
              ])

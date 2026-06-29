@@ -319,7 +319,7 @@ defmodule Bandit.HTTP2.Connection do
     |> Enum.reduce(connection, fn pending_send, connection ->
       connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
       {stream_id, rest, end_stream, on_unblock} = pending_send
-      send_data(stream_id, rest, end_stream, on_unblock, socket, connection)
+      send_data(stream_id, [], rest, end_stream, on_unblock, socket, connection)
     end)
   end
 
@@ -341,50 +341,85 @@ defmodule Bandit.HTTP2.Connection do
           t()
         ) :: t()
   def send_headers(stream_id, headers, end_stream, socket, connection) do
-    with enc_headers <- Enum.map(headers, fn {key, value} -> {:store, key, value} end),
-         {block, send_hpack_state} <- HPAX.encode(enc_headers, connection.send_hpack_state) do
-      %Bandit.HTTP2.Frame.Headers{
-        stream_id: stream_id,
-        end_stream: end_stream,
-        fragment: block
-      }
-      |> send_frame(socket, connection)
-
-      %{connection | send_hpack_state: send_hpack_state}
-    end
+    {headers_iodata, connection} = encode_headers(stream_id, headers, end_stream, connection)
+    _ = ThousandIsland.Socket.send(socket, headers_iodata)
+    connection
   end
 
+  # Sends `data` for a stream, optionally coalescing a leading HEADERS frame (when `headers` is
+  # non-empty) into the same socket write. HEADERS are not flow-controlled; only the DATA obeys the
+  # connection send window, with any remainder queued in pending_sends.
   @spec send_data(
           Bandit.HTTP2.Stream.stream_id(),
+          Plug.Conn.headers(),
           iodata(),
           boolean(),
           fun(),
           ThousandIsland.Socket.t(),
           t()
         ) :: t()
-  def send_data(stream_id, data, end_stream, on_unblock, socket, connection) do
-    with connection_window_size <- connection.send_window_size,
-         max_bytes_to_send <- max(connection_window_size, 0),
-         {data_to_send, bytes_to_send, rest} <- split_data(data, max_bytes_to_send),
-         connection <- %{connection | send_window_size: connection_window_size - bytes_to_send},
-         end_stream_to_send <- end_stream && byte_size(rest) == 0 do
-      if end_stream_to_send || bytes_to_send > 0 do
-        %Bandit.HTTP2.Frame.Data{
+  def send_data(stream_id, headers, data, end_stream, on_unblock, socket, connection) do
+    {prefix_iodata, connection} =
+      if headers == [],
+        do: {[], connection},
+        else: encode_headers(stream_id, headers, false, connection)
+
+    {data_iodata, rest, connection} = split_window(stream_id, data, end_stream, connection)
+
+    if prefix_iodata != [] or data_iodata != [],
+      do: ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
+
+    finish_data(stream_id, rest, end_stream, on_unblock, connection)
+  end
+
+  defp encode_headers(stream_id, headers, end_stream, connection) do
+    enc_headers = Enum.map(headers, fn {key, value} -> {:store, key, value} end)
+    {block, send_hpack_state} = HPAX.encode(enc_headers, connection.send_hpack_state)
+
+    iodata =
+      serialize_frame(
+        %Bandit.HTTP2.Frame.Headers{
           stream_id: stream_id,
-          end_stream: end_stream_to_send,
-          data: data_to_send
-        }
-        |> send_frame(socket, connection)
+          end_stream: end_stream,
+          fragment: block
+        },
+        connection
+      )
+
+    {iodata, %{connection | send_hpack_state: send_hpack_state}}
+  end
+
+  defp split_window(stream_id, data, end_stream, connection) do
+    max_bytes_to_send = max(connection.send_window_size, 0)
+    {data_to_send, bytes_to_send, rest} = split_data(data, max_bytes_to_send)
+    connection = %{connection | send_window_size: connection.send_window_size - bytes_to_send}
+    end_stream_to_send = end_stream && byte_size(rest) == 0
+
+    iodata =
+      if end_stream_to_send || bytes_to_send > 0 do
+        serialize_frame(
+          %Bandit.HTTP2.Frame.Data{
+            stream_id: stream_id,
+            end_stream: end_stream_to_send,
+            data: data_to_send
+          },
+          connection
+        )
+      else
+        []
       end
 
-      if byte_size(rest) == 0 do
-        on_unblock.()
-        connection
-      else
-        pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
-        %{connection | pending_sends: pending_sends}
-      end
-    end
+    {iodata, rest, connection}
+  end
+
+  defp finish_data(_stream_id, <<>>, _end_stream, on_unblock, connection) do
+    on_unblock.()
+    connection
+  end
+
+  defp finish_data(stream_id, rest, end_stream, on_unblock, connection) do
+    pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
+    %{connection | pending_sends: pending_sends}
   end
 
   defp split_data(data, desired_length) do
@@ -462,12 +497,10 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp send_frame(frame, socket, connection) do
-    _ =
-      ThousandIsland.Socket.send(
-        socket,
-        Bandit.HTTP2.Frame.serialize(frame, connection.remote_settings.max_frame_size)
-      )
-
+    _ = ThousandIsland.Socket.send(socket, serialize_frame(frame, connection))
     :ok
   end
+
+  defp serialize_frame(frame, connection),
+    do: Bandit.HTTP2.Frame.serialize(frame, connection.remote_settings.max_frame_size)
 end
