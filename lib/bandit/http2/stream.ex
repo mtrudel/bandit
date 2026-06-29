@@ -556,6 +556,11 @@ defmodule Bandit.HTTP2.Stream do
       stream
     end
 
+    # A TransportError means the client reset the stream (do_recv_rst_stream!). RFC9113§6.4 forbids
+    # sending any further frame except PRIORITY after receiving RST_STREAM, so send no response at
+    # all -- not even an error one, unlike the generic clause below. Mirrors HTTP/1's handling.
+    def send_on_error(%@for{} = stream, %Bandit.TransportError{}), do: %{stream | state: :closed}
+
     def send_on_error(%@for{state: state} = stream, error) when state in [:idle, :open] do
       stream = maybe_send_error(%{stream | state: :open}, error)
       %{stream | state: :local_closed}
