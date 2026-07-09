@@ -59,7 +59,10 @@ defmodule Bandit.WebSocket.Handler do
         end
 
       {extractor, {:error, reason}} ->
-        {:error, {:deserializing, reason}, %{state | extractor: extractor}}
+        error = {:deserializing, reason}
+        {:error, _reason, connection} = Connection.handle_error(error, socket, state.connection)
+        Bandit.Logger.maybe_log_websocket_protocol_error(error, connection)
+        {:error, {:shutdown, error}, %{state | extractor: extractor, connection: connection}}
 
       {extractor, :more} ->
         {:continue, %{state | extractor: extractor}}
