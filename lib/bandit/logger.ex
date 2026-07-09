@@ -27,6 +27,17 @@ defmodule Bandit.Logger do
     end
   end
 
+  def maybe_log_websocket_protocol_error(reason, connection) do
+    case Keyword.get(connection.opts, :log_protocol_errors, :short) do
+      false ->
+        :ok
+
+      _short_or_verbose ->
+        logger_metadata = logger_metadata_for(:exit, reason, [], websock: connection.websock)
+        Logger.error(Exception.format_banner(:exit, reason), logger_metadata)
+    end
+  end
+
   def logger_metadata_for(kind, reason, stacktrace, metadata) do
     crash_reason = crash_reason(kind, reason, stacktrace)
 
