@@ -1,3 +1,9 @@
+# 1.12.1 (24 July 2026)
+
+### Fixes
+
+* Fix DoS issue with fragmented WebSocket frames (CVE-2026-65623, thanks @PJUllrich!)
+
 # 1.12.0 (5 June 2026)
 
 ### Changes
