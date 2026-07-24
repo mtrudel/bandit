@@ -72,7 +72,8 @@ defmodule Bandit.WebSocket.Connection do
         end
 
       %Frame.Text{fin: false} = frame ->
-        {:continue, %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
+        {:continue,
+         %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
 
       %Frame.Binary{fin: true, compressed: true} = frame ->
         do_inflate(frame, socket, connection)
@@ -82,7 +83,8 @@ defmodule Bandit.WebSocket.Connection do
         |> handle_continutation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
-        {:continue, %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
+        {:continue,
+         %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
 
       frame ->
         handle_control_frame(frame, socket, connection)
