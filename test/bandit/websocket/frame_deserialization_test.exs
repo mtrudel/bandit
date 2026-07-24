@@ -128,6 +128,43 @@ defmodule WebSocketFrameDeserializationTest do
     end
   end
 
+  describe "mask bit" do
+    test "errors on unmasked small frames as soon as the length byte is available" do
+      frame = <<0x1::1, 0x0::3, 0x1::4, 0::1, 5::7>>
+
+      assert Frame.header_and_payload_length(frame, 0) ==
+               {:error, :client_frame_without_mask}
+    end
+
+    test "errors on unmasked medium frames without needing the extended length or payload" do
+      frame = <<0x1::1, 0x0::3, 0x1::4, 0::1, 126::7>>
+
+      assert Frame.header_and_payload_length(frame, 0) ==
+               {:error, :client_frame_without_mask}
+    end
+
+    test "errors on unmasked large frames without needing the extended length or payload" do
+      frame = <<0x1::1, 0x0::3, 0x1::4, 0::1, 127::7>>
+
+      assert Frame.header_and_payload_length(frame, 0) ==
+               {:error, :client_frame_without_mask}
+    end
+
+    test "errors on unmasked frames regardless of declared payload size, bypassing no size limit" do
+      payload = String.duplicate("a", 500)
+      frame = <<0x1::1, 0x0::3, 0x1::4, 0::1, 126::7, 500::16, payload::binary>>
+
+      assert Frame.header_and_payload_length(frame, 100) ==
+               {:error, :client_frame_without_mask}
+    end
+
+    test "does not error before the length byte has arrived (single fixed-header byte)" do
+      frame = <<0x1::1, 0x0::3, 0x1::4, 0::1>>
+
+      assert Frame.header_and_payload_length(frame, 0) == :more
+    end
+  end
+
   describe "insufficient data" do
     test "returns error" do
       frame = <<0x1::1, 0x0::3, 0x1::4, 1::1, 125::7, 0::32, 1, 2, 3>>

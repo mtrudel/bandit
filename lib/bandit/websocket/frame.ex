@@ -54,7 +54,7 @@ defmodule Bandit.WebSocket.Frame do
   end
 
   def header_and_payload_length(
-        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 0::1, _rest::binary>>,
+        <<_fin::1, _compressed::1, _rsv::2, _opcode::4, 0::1, _len::7, _rest::binary>>,
         _max_frame_size
       ) do
     {:error, :client_frame_without_mask}
