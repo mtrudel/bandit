@@ -253,6 +253,18 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<>>}
     end
 
+    test "the server advertises overridden default_local_settings in its initial SETTINGS frame",
+         context do
+      context =
+        https_server(context,
+          http_2_options: [default_local_settings: [max_header_list_size: 1000]]
+        )
+
+      socket = SimpleH2Client.tls_client(context)
+      Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
+      assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<6::16, 1000::32>>}
+    end
+
     test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
       socket = SimpleH2Client.tls_client(context)
       SimpleH2Client.exchange_prefaces(socket)
@@ -2013,6 +2025,61 @@ defmodule HTTP2ProtocolTest do
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received overlong headers"
     end
+
+    test "returns a stream error (without closing the connection) if the decoded header list exceeds max_header_list_size",
+         context do
+      context =
+        https_server(context,
+          http_2_options: [default_local_settings: [max_header_list_size: 1000]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers =
+        [
+          {":method", "GET"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context[:port]}"}
+        ] ++ for i <- 1..50, do: {"x-header-#{i}", String.duplicate("a", 50)}
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 11}
+
+      # The connection (and its HPACK decoder state) remains usable for subsequent streams
+      {:ok, _ctx} =
+        SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", context[:port])
+
+      assert {:ok, 3, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+    end
+
+    test "does not enforce a limit on decoded header list size when max_header_list_size is overridden to :infinity",
+         context do
+      context =
+        https_server(context,
+          http_2_options: [default_local_settings: [max_header_list_size: :infinity]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      # A single dynamic-table entry sized to just fit Bandit's default 4096 byte HPACK table,
+      # referenced many times, decodes to a many-megabyte header list. This must NOT be
+      # rejected, since max_header_list_size: :infinity means no limit is enforced
+      big_value = String.duplicate("a", 4063)
+
+      headers =
+        [
+          {":method", "GET"},
+          {":path", "/body_response"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context[:port]}"}
+        ] ++ for _ <- 1..3000, do: {"x", big_value}
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+    end
   end
 
   describe "PRIORITY frames" do
@@ -3230,7 +3297,7 @@ defmodule HTTP2ProtocolTest do
     # Helper function to set up connection when server has custom settings
     defp setup_connection_with_custom_settings(context) do
       socket = SimpleH2Client.tls_client(context)
-      SimpleH2Client.exchange_prefaces(socket, true)
+      SimpleH2Client.exchange_prefaces(socket)
       SimpleH2Client.exchange_client_settings(socket)
       socket
     end

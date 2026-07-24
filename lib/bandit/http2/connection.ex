@@ -149,17 +149,32 @@ defmodule Bandit.HTTP2.Connection do
     %{connection | streams: streams}
   end
 
-  def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: true} = frame, _socket, connection) do
+  def handle_frame(%Bandit.HTTP2.Frame.Headers{end_headers: true} = frame, socket, connection) do
     check_oversize_fragment!(frame.fragment, connection)
 
     case HPAX.decode(frame.fragment, connection.recv_hpack_state) do
       {:ok, headers, recv_hpack_state} ->
-        streams =
-          with_stream(connection, frame.stream_id, fn stream ->
-            Bandit.HTTP2.Stream.deliver_headers(stream, headers, frame.end_stream)
-          end)
+        # We need to preserve HPAX's internal state even if we reject this stream's header list
+        connection = %{connection | recv_hpack_state: recv_hpack_state}
 
-        %{connection | recv_hpack_state: recv_hpack_state, streams: streams}
+        # Erlang term ordering does the right thing with :infinity here
+        if header_list_size(headers) > connection.local_settings.max_header_list_size do
+          send_rst_stream(
+            frame.stream_id,
+            Bandit.HTTP2.Errors.enhance_your_calm(),
+            socket,
+            connection
+          )
+
+          connection
+        else
+          streams =
+            with_stream(connection, frame.stream_id, fn stream ->
+              Bandit.HTTP2.Stream.deliver_headers(stream, headers, frame.end_stream)
+            end)
+
+          %{connection | streams: streams}
+        end
 
       _ ->
         connection_error!("Header decode error", Bandit.HTTP2.Errors.compression_error())
@@ -266,6 +281,7 @@ defmodule Bandit.HTTP2.Connection do
       connection_error!("Connection count exceeded", Bandit.HTTP2.Errors.refused_stream())
     end
 
+    # Erlang term ordering does the right thing with :infinity here
     if connection.local_settings.max_concurrent_streams <=
          Bandit.HTTP2.StreamCollection.open_stream_count(connection.streams) do
       stream_error!(
@@ -279,6 +295,13 @@ defmodule Bandit.HTTP2.Connection do
   defp check_oversize_fragment!(fragment, connection) do
     if byte_size(fragment) > Keyword.get(connection.opts.http_2, :max_header_block_size, 50_000),
       do: connection_error!("Received overlong headers")
+  end
+
+  # Header list size per RFC9113§6.5.2
+  defp header_list_size(headers) do
+    Enum.reduce(headers, 0, fn {name, value}, acc ->
+      acc + byte_size(name) + byte_size(value) + 32
+    end)
   end
 
   @spec check_reset_stream_rate_limit!(t()) :: t()
