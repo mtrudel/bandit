@@ -698,6 +698,78 @@ defmodule WebSocketProtocolTest do
     end
   end
 
+  describe "protocol error logging" do
+    defmodule MonitoredWebSock do
+      use NoopWebSock
+
+      def init(opts) do
+        WebSocketProtocolTest.send(self())
+        {:ok, opts}
+      end
+
+      def terminate(reason, _state), do: WebSocketProtocolTest.send(reason)
+    end
+
+    @tag :capture_log
+    test "frame deserialization errors are short logged by default", context do
+      ref = make_ref() |> inspect() |> String.to_atom()
+
+      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
+      assert_receive connection_pid when is_pid(connection_pid), 500
+      monitor_ref = Process.monitor(connection_pid)
+
+      # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
+      SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive {:error, "Received unsupported RSV flags 2"}, 500
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Verify that the error is logged in a controlled manner
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (exit) {:deserializing, \"Received unsupported RSV flags 2\"}"
+
+      # Verify that the connection process exits quietly, without a crash report
+      assert_receive {:DOWN, ^monitor_ref, :process, ^connection_pid,
+                      {:shutdown, {:deserializing, "Received unsupported RSV flags 2"}}},
+                     500
+    end
+
+    @tag :capture_log
+    test "frame deserialization errors are not logged if so configured", context do
+      context = http_server(context, websocket_options: [log_protocol_errors: false])
+
+      ref = make_ref() |> inspect() |> String.to_atom()
+
+      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
+      assert_receive connection_pid when is_pid(connection_pid), 500
+      monitor_ref = Process.monitor(connection_pid)
+
+      # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
+      SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
+
+      assert_receive {:error, "Received unsupported RSV flags 2"}, 500
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      assert_receive {:DOWN, ^monitor_ref, :process, ^connection_pid,
+                      {:shutdown, {:deserializing, "Received unsupported RSV flags 2"}}},
+                     500
+
+      refute_receive {:log, %{level: :error}}
+    end
+  end
+
   describe "timeout conditions" do
     test "server sends a 1002 if no frames sent at all", context do
       client = SimpleWebSocketClient.tcp_client(context)
