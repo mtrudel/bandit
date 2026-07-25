@@ -1655,6 +1655,41 @@ defmodule HTTP1ProtocolTest do
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
+    test "send_chunked streams length-delimited (no chunked encoding) when content-length is set",
+         context do
+      response = Req.get!(context.req, url: "/send_known_length_stream")
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["transfer-encoding"] == nil
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "length-delimited send_chunked is not compressed even when negotiated", context do
+      # Compression would rewrite the body and break the declared content-length,
+      # so it must be disabled in this mode.
+      response =
+        Req.get!(context.req,
+          url: "/send_known_length_stream",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["transfer-encoding"] == nil
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    def send_known_length_stream(conn) do
+      conn = conn |> put_resp_header("content-length", "10000") |> send_chunked(200)
+
+      Enum.reduce(1..10, conn, fn _i, conn ->
+        {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
+        conn
+      end)
+    end
+
     def send_big_body_chunked(conn) do
       conn = send_chunked(conn, 200)
 
