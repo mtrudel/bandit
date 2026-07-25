@@ -6,7 +6,13 @@ defmodule Bandit.HTTP1.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
-    transport = %Bandit.HTTP1.Socket{socket: socket, buffer: data, opts: state.opts}
+    transport = %Bandit.HTTP1.Socket{
+      socket: socket,
+      buffer: data,
+      opts: state.opts,
+      close_after_response: request_limit_reached?(state)
+    }
+
     connection_span = ThousandIsland.Socket.telemetry_span(socket)
     conn_data = Bandit.SocketHelpers.conn_data(socket)
 
@@ -39,6 +45,12 @@ defmodule Bandit.HTTP1.Handler do
     else
       {:close, state}
     end
+  end
+
+  defp request_limit_reached?(state) do
+    requests_processed = Map.get(state, :requests_processed, 0) + 1
+    request_limit = Keyword.get(state.opts.http_1, :max_requests, 0)
+    request_limit != 0 && requests_processed >= request_limit
   end
 
   defp clear_process_dict do

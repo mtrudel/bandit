@@ -187,13 +187,16 @@ defmodule HTTP1ProtocolTest do
       client = SimpleHTTP1Client.tcp_client(context)
 
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", first_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      refute Keyword.has_key?(first_headers, :connection)
 
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", second_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      refute Keyword.has_key?(second_headers, :connection)
 
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", _headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert {:ok, "200 OK", third_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(third_headers, :connection) == ["close"]
 
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end

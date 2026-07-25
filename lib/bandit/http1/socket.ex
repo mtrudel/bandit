@@ -17,6 +17,7 @@ defmodule Bandit.HTTP1.Socket do
             version: :"HTTP/1.0",
             send_buffer: nil,
             request_connection_header: nil,
+            close_after_response: false,
             keepalive: nil,
             opts: %{}
 
@@ -37,6 +38,7 @@ defmodule Bandit.HTTP1.Socket do
           version: nil | :"HTTP/1.1" | :"HTTP/1.0",
           send_buffer: iolist(),
           request_connection_header: binary(),
+          close_after_response: boolean(),
           keepalive: boolean(),
           opts: %{
             required(:http_1) => Bandit.http_1_options()
@@ -427,6 +429,12 @@ defmodule Bandit.HTTP1.Socket do
       cond do
         status in 100..199 ->
           {headers, socket}
+
+        socket.close_after_response ->
+          headers =
+            [{"connection", "close"} | Enum.reject(headers, &(elem(&1, 0) == "connection"))]
+
+          {headers, %{socket | keepalive: false}}
 
         socket.request_connection_header == "close" || response_connection_header == "close" ->
           {headers, %{socket | keepalive: false}}
