@@ -24,12 +24,9 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp maybe_keepalive(transport, state) do
-    requests_processed = Map.get(state, :requests_processed, 0) + 1
-    request_limit = Keyword.get(state.opts.http_1, :max_requests, 0)
-    under_limit = request_limit == 0 || requests_processed < request_limit
-
-    if under_limit && transport.keepalive do
+    if !transport.close_after_response && transport.keepalive do
       if Keyword.get(state.opts.http_1, :clear_process_dict, true), do: clear_process_dict()
+      requests_processed = Map.get(state, :requests_processed, 0) + 1
       gc_every_n_requests = Keyword.get(state.opts.http_1, :gc_every_n_keepalive_requests, 5)
       if rem(requests_processed, gc_every_n_requests) == 0, do: :erlang.garbage_collect()
 
