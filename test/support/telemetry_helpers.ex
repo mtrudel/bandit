@@ -11,10 +11,7 @@ defmodule TelemetryHelpers do
 
   def attach_all_events(plug_or_websock) do
     ref = make_ref()
-
-    _ =
-      :telemetry.attach_many(ref, @events, &__MODULE__.handle_event/4, {self(), plug_or_websock})
-
+    :telemetry.attach_many(ref, @events, &__MODULE__.handle_event/4, {self(), plug_or_websock})
     fn -> :telemetry.detach(ref) end
   end
 

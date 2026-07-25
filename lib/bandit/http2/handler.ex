@@ -141,7 +141,7 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_info({{:close_connection, error_code, msg}, _stream_id}, {socket, state}) do
-    _ = Bandit.HTTP2.Connection.close_connection(error_code, msg, socket, state.connection)
+    Bandit.HTTP2.Connection.close_connection(error_code, msg, socket, state.connection)
     {:stop, :normal, {socket, state}}
   end
 
@@ -174,15 +174,14 @@ defmodule Bandit.HTTP2.Handler do
   defp do_rescue_error(error, stacktrace, socket, state) do
     {error_code, message} = error_code_and_message(error)
 
-    _ =
-      if state[:connection] do
-        Bandit.HTTP2.Connection.close_connection(
-          error_code,
-          message,
-          socket,
-          state[:connection]
-        )
-      end
+    if state[:connection] do
+      Bandit.HTTP2.Connection.close_connection(
+        error_code,
+        message,
+        socket,
+        state[:connection]
+      )
+    end
 
     Bandit.Logger.maybe_log_protocol_error(error, stacktrace, state.opts, plug: state.plug)
   end

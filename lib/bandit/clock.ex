@@ -43,7 +43,7 @@ defmodule Bandit.Clock do
 
   @spec run() :: no_return()
   defp run do
-    _ = update_header()
+    update_header()
     Process.sleep(1_000)
     run()
   end
