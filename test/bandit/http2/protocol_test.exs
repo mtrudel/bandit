@@ -78,6 +78,27 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag :capture_log
+    test "it should shut down the connection gracefully (rather than crash) when an unexpected, non-Bandit exception is raised while handling a frame",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # A HEADERS frame whose sole header field is a literal with a new name that is declared
+      # as Huffman-coded (H=1) but whose 16 bits don't correspond to any valid Huffman code (a
+      # real encoder never produces such output; see hpax's HPAX.Huffman.decode/1). This raises
+      # a bare FunctionClauseError deep within the (as of this writing, unpatched) hpax
+      # dependency -- an exception with no :error_code field, unlike the ConnectionError /
+      # StreamError structs Bandit raises itself -- and the connection must still close
+      # gracefully via GOAWAY rather than crash a second time trying to handle it
+      header_block = <<0x40, 0x82, 0xFF, 0xFF, 0x00>>
+      SimpleH2Client.send_frame(socket, 1, 0x05, 1, header_block)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 2}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "FunctionClauseError"
+    end
+
+    @tag :capture_log
     test "it should shut down the connection gracefully and log when encountering a connection error related to a stream",
          context do
       socket = SimpleH2Client.tls_client(context)

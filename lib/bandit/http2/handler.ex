@@ -171,16 +171,30 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   defp do_rescue_error(error, stacktrace, socket, state) do
+    {error_code, message} = error_code_and_message(error)
+
     _ =
       if state[:connection] do
         Bandit.HTTP2.Connection.close_connection(
-          error.error_code,
-          error.message,
+          error_code,
+          message,
           socket,
           state[:connection]
         )
       end
 
     Bandit.Logger.maybe_log_protocol_error(error, stacktrace, state.opts, plug: state.plug)
+  end
+
+  # Errors we raise ourselves (ConnectionError, StreamError) carry an explicit error_code.
+  # Anything else (a bug elsewhere in the stack, a dependency raising unexpectedly, etc.) has
+  # no such notion, so fall back to a generic error_code rather than crashing this rescue path
+  # itself and leaving the connection to die ungracefully
+  defp error_code_and_message(%{error_code: error_code} = error) do
+    {error_code, Exception.message(error)}
+  end
+
+  defp error_code_and_message(error) do
+    {Bandit.HTTP2.Errors.internal_error(), Exception.message(error)}
   end
 end
