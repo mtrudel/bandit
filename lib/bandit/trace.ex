@@ -81,7 +81,7 @@ defmodule Bandit.Trace do
 
   @impl GenServer
   def init(opts) do
-    _ = :telemetry.attach_many(self(), @events, &__MODULE__.handle_event/4, self())
+    :telemetry.attach_many(self(), @events, &__MODULE__.handle_event/4, self())
     {:ok, struct!(%__MODULE__{queue: :queue.new()}, opts)}
   end
 

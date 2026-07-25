@@ -365,7 +365,7 @@ defmodule Bandit.HTTP2.Connection do
         ) :: t()
   def send_headers(stream_id, headers, end_stream, socket, connection) do
     {headers_iodata, connection} = encode_headers(stream_id, headers, end_stream, connection)
-    _ = ThousandIsland.Socket.send(socket, headers_iodata)
+    ThousandIsland.Socket.send(socket, headers_iodata)
     connection
   end
 
@@ -391,8 +391,7 @@ defmodule Bandit.HTTP2.Connection do
 
     if !Bandit.SocketHelpers.iodata_empty?(prefix_iodata) ||
          !Bandit.SocketHelpers.iodata_empty?(data_iodata) do
-      _ = ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
-      :ok
+      ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
     end
 
     finish_data(stream_id, rest, end_stream, on_unblock, connection)
@@ -523,8 +522,7 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp send_frame(frame, socket, connection) do
-    _ = ThousandIsland.Socket.send(socket, serialize_frame(frame, connection))
-    :ok
+    ThousandIsland.Socket.send(socket, serialize_frame(frame, connection))
   end
 
   defp serialize_frame(frame, connection),

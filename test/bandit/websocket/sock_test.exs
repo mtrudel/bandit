@@ -40,7 +40,7 @@ defmodule WebSocketWebSockTest do
       SimpleWebSocketClient.http1_handshake(client, InitPushStateWebSock)
 
       # Ignore the frame it pushes us
-      _ = SimpleWebSocketClient.recv_text_frame(client)
+      SimpleWebSocketClient.recv_text_frame(client)
 
       SimpleWebSocketClient.send_text_frame(client, "OK")
       {:ok, response} = SimpleWebSocketClient.recv_text_frame(client)
