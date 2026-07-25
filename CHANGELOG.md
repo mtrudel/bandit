@@ -1,3 +1,22 @@
+# 1.12.2 (25 July 2026)
+
+### Enhancements
+
+* Improve internal HTTP/2 error handling to be better about closing stream/connection
+* Coalesce header and body in to single transport send (#606, thanks @NelsonVides!)
+* Improve compression behaviour when streaming an explicitly length delimited body (#605, thanks @elibosley!)
+* Quiet WebSocket deserialization erorrs, add verbosity config lever (#610, thanks @ericmj!)
+* Send connection: close when we're at max_requests (#613, thanks @joshdchang!)
+
+### Fixes
+
+* Fix bogus check for unmasked WebSocket frames
+  (https://github.com/mtrudel/bandit/security/advisories/GHSA-rhh8-5xw9-c3gm,
+  thanks @lukaszsamson!)
+* Enforce max_header_list_size if overridden
+  (https://github.com/mtrudel/bandit/security/advisories/GHSA-9q5m-g6v3-6772,
+  thanks @lukaszsamson!)
+
 # 1.12.1 (24 July 2026)
 
 ### Fixes
