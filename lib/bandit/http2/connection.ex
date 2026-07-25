@@ -366,8 +366,11 @@ defmodule Bandit.HTTP2.Connection do
 
     {data_iodata, rest, connection} = split_window(stream_id, data, end_stream, connection)
 
-    if prefix_iodata != [] or data_iodata != [],
-      do: ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
+    if !Bandit.SocketHelpers.iodata_empty?(prefix_iodata) ||
+         !Bandit.SocketHelpers.iodata_empty?(data_iodata) do
+      _ = ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
+      :ok
+    end
 
     finish_data(stream_id, rest, end_stream, on_unblock, connection)
   end
