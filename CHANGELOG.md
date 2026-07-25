@@ -1,3 +1,9 @@
+# 1.12.3 (25 July 2026)
+
+### Enhancements
+
+* Cache connection-level data between HTTP/1 keepalives (#603, thanks @preciz!)
+
 # 1.12.2 (25 July 2026)
 
 ### Enhancements
