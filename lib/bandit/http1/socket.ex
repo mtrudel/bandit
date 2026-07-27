@@ -151,6 +151,7 @@ defmodule Bandit.HTTP1.Socket do
           do_read_headers!(socket, headers)
 
         {:ok, {:http_header, _, header, _, value}, rest} ->
+          validate_field_value!(value)
           socket = %{socket | buffer: rest}
           headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
 
@@ -172,6 +173,17 @@ defmodule Bandit.HTTP1.Socket do
 
         {:error, reason} ->
           request_error!("Header read unknown error: #{inspect(reason)}")
+      end
+    end
+
+    # RFC9110§5.5: field values containing CR, LF, or NUL characters are invalid and
+    # dangerous (a common request-smuggling / response-splitting vector).
+    @spec validate_field_value!(binary()) :: :ok
+    defp validate_field_value!(value) do
+      if String.contains?(value, ["\r", "\n", "\0"]) do
+        request_error!("Field value contains invalid characters (RFC9110§5.5)")
+      else
+        :ok
       end
     end
 
