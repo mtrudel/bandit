@@ -900,6 +900,68 @@ defmodule HTTP2PlugTest do
     send_resp(conn, 204, "")
   end
 
+  describe "Expect: 100-continue (RFC9110§10.1.1)" do
+    test "sends a 100 Continue interim response before reading the request body", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_headers(socket, 1, false, [
+        {":method", "POST"},
+        {":path", "/expect_continue_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"expect", "100-continue"}
+      ])
+
+      assert {:ok, 1, false, [{":status", "100"} | _], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      SimpleH2Client.send_body(socket, 1, true, "123")
+
+      assert [
+               SimpleH2Client.recv_frame(socket),
+               SimpleH2Client.recv_frame(socket),
+               SimpleH2Client.recv_frame(socket)
+             ]
+             ~> in_any_order([
+               {:ok, :window_update, term(), 0, term()},
+               {:ok, :headers, term(), 1, term()},
+               {:ok, :data, term(), 1, "123"}
+             ])
+    end
+
+    def expect_continue_body(conn) do
+      {:ok, body, conn} = read_body(conn, read_timeout: 200)
+      send_resp(conn, 200, body)
+    end
+
+    test "does not send a 100 Continue interim response if the plug never reads the body",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_headers(socket, 1, false, [
+        {":method", "POST"},
+        {":path", "/expect_continue_body_unread"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"expect", "100-continue"}
+      ])
+
+      SimpleH2Client.send_body(socket, 1, true, "123")
+
+      assert [
+               SimpleH2Client.recv_frame(socket),
+               SimpleH2Client.recv_frame(socket),
+               SimpleH2Client.recv_frame(socket)
+             ]
+             ~> in_any_order([
+               {:ok, :window_update, term(), 0, term()},
+               {:ok, :headers, term(), 1, term()},
+               {:ok, :data, term(), 1, term()}
+             ])
+    end
+
+    def expect_continue_body_unread(conn), do: send_resp(conn, 200, "")
+  end
+
   describe "telemetry" do
     test "it should send `start` events for normally completing requests", context do
       Req.get!(context.req, url: "/send_200")

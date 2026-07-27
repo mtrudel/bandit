@@ -55,17 +55,7 @@ defmodule Bandit.Adapter do
     }
   end
 
-  # RFC9110§10.1.1: a client sending a request body may include an "Expect: 100-continue"
-  # header field and wait for a 100 (Continue) interim response before sending the body. This
-  # is left to be sent lazily, on the plug's first actual attempt to read the body (see
-  # read_req_body/2 below) rather than eagerly for every such request - whether to read the
-  # body at all is a decision Bandit leaves to the plug (see the project's README "minimal
-  # internal policy" goal); Bandit only needs to unblock the client at the point the plug
-  # actually asks to read, which is the one case that would otherwise deadlock (client waiting
-  # for permission to send, server waiting to receive). HTTP/1.0 has no concept of
-  # informational responses, so this is restricted to HTTP/1.1 (matching inform/3's own
-  # version gating).
-  defp expect_continue?(headers, :"HTTP/1.1") do
+  defp expect_continue?(headers, version) when version in [:"HTTP/1.1", :"HTTP/2"] do
     headers |> Bandit.Headers.get_header("expect") |> safe_downcase() == "100-continue"
   end
 
