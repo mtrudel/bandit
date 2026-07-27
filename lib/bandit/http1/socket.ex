@@ -437,6 +437,17 @@ defmodule Bandit.HTTP1.Socket do
           {headers, %{socket | keepalive: false}}
 
         socket.request_connection_header == "close" || response_connection_header == "close" ->
+          # Per RFC9112§9.6, a party that intends to close the connection SHOULD send a
+          # 'close' connection option in its final message. If the response hasn't already
+          # declared this itself, do so now (this happens when the client, not the plug,
+          # is the one that asked for the connection to close).
+          headers =
+            if response_connection_header == "close" do
+              headers
+            else
+              [{"connection", "close"} | Enum.reject(headers, &(elem(&1, 0) == "connection"))]
+            end
+
           {headers, %{socket | keepalive: false}}
 
         socket.version == :"HTTP/1.1" ->
