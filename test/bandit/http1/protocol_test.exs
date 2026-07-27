@@ -2233,6 +2233,19 @@ defmodule HTTP1ProtocolTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
+    test "closes the connection when an HTTP/1.1 client explicitly requests it", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: localhost",
+        "connection: close"
+      ])
+
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(headers, :connection) == ["close"]
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
     test "handles pipeline requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
