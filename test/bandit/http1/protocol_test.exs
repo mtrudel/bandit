@@ -529,6 +529,32 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
+  describe "Host header validation (RFC9112§3.2, RFC9110§7.2)" do
+    @tag :capture_log
+    test "returns 400 for a request with multiple distinct host headers", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: banana",
+        "host: orange"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "returns 400 for a request with multiple host headers, even if identical", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: banana",
+        "host: banana"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
   describe "request headers (RFC9112§5)" do
     @tag :capture_log
     test "rejects whitespace between a field name and its colon (RFC9112§5.1)", context do
