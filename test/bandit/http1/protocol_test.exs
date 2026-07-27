@@ -1740,6 +1740,63 @@ defmodule HTTP1ProtocolTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "respects deflate_options", context do
+      context =
+        context
+        |> http_server(http_options: [deflate_options: [level: 0]])
+        |> Enum.into(context)
+
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          base_url: context.base,
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+
+      # level: 0 disables compression, so the "compressed" body is only a few bytes
+      # larger than the raw input, rather than the 40 bytes achieved at the default level
+      # (see the "writes out a response with deflate encoding" test above)
+      assert String.to_integer(hd(response.headers["content-length"])) > 10_000
+
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
+
+    # TODO Remove conditional once Erlang v28 is required
+    if Code.ensure_loaded?(:zstd) do
+      test "respects zstd_options", context do
+        context =
+          context
+          |> http_server(http_options: [zstd_options: %{checksumFlag: true}])
+          |> Enum.into(context)
+
+        response =
+          Req.get!(context.req,
+            url: "/send_big_body",
+            base_url: context.base,
+            headers: [{"accept-encoding", "zstd"}]
+          )
+
+        assert response.status == 200
+        assert response.headers["content-encoding"] == ["zstd"]
+
+        # checksumFlag adds a fixed 4-byte checksum to the frame, so this should be
+        # exactly 4 bytes larger than the 19 bytes achieved at the default options (see
+        # the "writes out a response with zstd encoding" test above)
+        assert response.headers["content-length"] == ["23"]
+
+        assert :zstd.decompress(response.body) |> IO.iodata_to_binary() ==
+                 String.duplicate("a", 10_000)
+      end
+    end
+
     def send_big_body(conn) do
       conn
       |> put_resp_header("content-length", "10000")

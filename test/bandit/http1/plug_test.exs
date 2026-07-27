@@ -180,6 +180,24 @@ defmodule HTTP1PlugTest do
       send_resp(conn, 200, inspect(existing_pdict))
     end
 
+    test "process dictionary is not reset between requests if clear_process_dict is false",
+         context do
+      context =
+        context
+        |> http_server(http_1_options: [clear_process_dict: false])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+
+      assert {:ok, "200 OK", _headers, second} = SimpleHTTP1Client.recv_reply(client)
+      assert second =~ "garbage"
+    end
+
     test "gc_every_n_keepalive_requests is respected", context do
       context =
         context
