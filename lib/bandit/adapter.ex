@@ -16,6 +16,7 @@ defmodule Bandit.Adapter do
             content_encoding: nil,
             compression_context: nil,
             upgrade: nil,
+            expect_continue: false,
             metrics: %{},
             opts: []
 
@@ -28,6 +29,7 @@ defmodule Bandit.Adapter do
           content_encoding: String.t(),
           compression_context: Bandit.Compression.t() | nil,
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
+          expect_continue: boolean(),
           metrics: %{},
           opts: %{
             required(:http) => Bandit.http_options(),
@@ -47,14 +49,25 @@ defmodule Bandit.Adapter do
       owner_pid: owner_pid,
       method: method,
       content_encoding: content_encoding,
+      expect_continue: expect_continue?(headers, Bandit.HTTPTransport.version(transport)),
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
       opts: opts
     }
   end
 
+  defp expect_continue?(headers, version) when version in [:"HTTP/1.1", :"HTTP/2"] do
+    headers |> Bandit.Headers.get_header("expect") |> safe_downcase() == "100-continue"
+  end
+
+  defp expect_continue?(_headers, _version), do: false
+
+  defp safe_downcase(nil), do: nil
+  defp safe_downcase(str), do: String.downcase(str, :ascii)
+
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{} = adapter, opts) do
     validate_calling_process!(adapter)
+    adapter = maybe_send_continue(adapter)
 
     metrics =
       adapter.metrics
@@ -81,6 +94,16 @@ defmodule Bandit.Adapter do
         {:more, body, %{adapter | transport: transport, metrics: metrics}}
     end
   end
+
+  # Only send the interim response if nothing has been sent to the client yet - if the plug
+  # already sent its own informational response (e.g. explicitly called `inform/3`) or has
+  # already committed a final response, `adapter.status` will be non-nil and any response
+  # already unblocks a client that's waiting on Expect: 100-continue, so sending our own would
+  # be redundant (and, for a final response, would corrupt the response stream).
+  defp maybe_send_continue(%__MODULE__{expect_continue: true, status: nil} = adapter),
+    do: send_headers(%{adapter | expect_continue: false}, 100, [], :inform)
+
+  defp maybe_send_continue(adapter), do: adapter
 
   ##################
   # Response Sending

@@ -1138,6 +1138,68 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
+  describe "Expect: 100-continue (RFC9110§10.1.1)" do
+    def expect_continue_body(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn, read_timeout: 200)
+      send_resp(conn, 200, body)
+    end
+
+    test "sends a 100 Continue interim response before reading the request body", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_body", [
+        "host: localhost",
+        "content-length: 3",
+        "expect: 100-continue"
+      ])
+
+      assert {:ok, "100 Continue", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
+
+      Transport.send(client, "123")
+      assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "does not send a 100 Continue interim response if the plug never reads the body",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_body_unread", [
+        "host: localhost",
+        "content-length: 3",
+        "expect: 100-continue"
+      ])
+
+      assert {:ok, "200 OK", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def expect_continue_body_unread(conn), do: send_resp(conn, 200, "")
+
+    test "does not send a duplicate 100 Continue if the plug already sent its own informational response",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_after_own_inform", [
+        "host: localhost",
+        "content-length: 3",
+        "expect: 100-continue"
+      ])
+
+      Transport.send(client, "123")
+
+      Process.sleep(10)
+      assert {:ok, status, _headers, rest} = SimpleHTTP1Client.recv_reply(client)
+      assert status =~ "103"
+
+      assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.parse_response(client, rest)
+    end
+
+    def expect_continue_after_own_inform(conn) do
+      conn = inform(conn, 103, [])
+      {:ok, body, conn} = Plug.Conn.read_body(conn, read_timeout: 200)
+      send_resp(conn, 200, body)
+    end
+  end
+
   describe "chunked request bodies (RFC9112§7.1)" do
     test "reads a tiny chunked body properly", context do
       stream =
