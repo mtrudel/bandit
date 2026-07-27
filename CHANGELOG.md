@@ -1,3 +1,20 @@
+# 1.12.4 (27 July 2026)
+
+### Fixes
+
+* Properly send Connection: close header when client requests closure (#617)
+* Disallow transfer-encoding on HTTP/1.0 connections (#618)
+* Reject requests with multiple Host headers (#619)
+* Reject malformed header lines (#620)
+* Fix handling of chunk extensions (#621)
+
+### Enhancements
+
+* Tighten up CI against supply chain attacks (#623, thanks @Totara-thib!)
+* Reorganize and increase coverage of HTTP/1 tests to better match RFC structure (#616)
+* Tolerate a leading newline on HTTP/1 requests (#622)
+* Send "100 Continue" interim response before reading body if client requests it (#624)
+
 # 1.12.3 (25 July 2026)
 
 ### Enhancements
