@@ -136,6 +136,47 @@ defmodule HTTP1ProtocolTest do
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Invalid HTTP version: {0, 9}"
     end
+
+    @tag :capture_log
+    test "rejects a lowercase HTTP-version token", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / http/1.1\r\nhost: localhost\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "method coverage (RFC9110§9.3)" do
+    test "accepts PUT requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "PUT", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "PUT"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "accepts DELETE requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "DELETE", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "DELETE"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "accepts PATCH requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "PATCH", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "PATCH"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "accepts TRACE requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "TRACE", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "TRACE"} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "method case sensitivity (RFC9112§3.1)" do
+    test "does not normalize the case of a lowercase method", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "get", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "get"} = SimpleHTTP1Client.recv_reply(client)
+    end
   end
 
   describe "request line limits (RFC9112§3)" do
@@ -483,6 +524,33 @@ defmodule HTTP1ProtocolTest do
   end
 
   describe "request headers (RFC9112§5)" do
+    @tag :capture_log
+    test "rejects whitespace between a field name and its colon (RFC9112§5.1)", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo : bar\r\n\r\n"
+      )
+
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status == "400 Bad Request"
+    end
+
+    @tag :capture_log
+    test "does not silently accept obsolete line folding in a header value (RFC9112§5.2)",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo: bar\r\n baz\r\n\r\n"
+      )
+
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status in ["200 OK", "400 Bad Request"]
+    end
+
     test "reads headers properly", context do
       response =
         Req.get!(context.req,
@@ -682,6 +750,24 @@ defmodule HTTP1ProtocolTest do
 
       assert msg ==
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+    end
+
+    @tag :capture_log
+    test "rejects a request containing both content-length and transfer-encoding", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "content-length: 3",
+        "transfer-encoding: chunked"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Request cannot contain both 'content-length' and 'transfer-encoding' (RFC9112§6.3.3)"
     end
 
     test "handles the case where we ask for less than is already in the buffer", context do
@@ -1268,6 +1354,36 @@ defmodule HTTP1ProtocolTest do
       {:more, "123", conn} = Plug.Conn.read_body(conn, read_timeout: 100)
       Plug.Conn.read_body(conn, read_timeout: 100)
       raise "Shouldn't get here"
+    end
+  end
+
+  describe "transfer-encoding edge cases (RFC9112§6.1, §7.1.1)" do
+    @tag :capture_log
+    test "rejects a request with transfer-encoding applied twice", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: chunked, chunked"
+      ])
+
+      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status == "400 Bad Request"
+    end
+
+    @tag :capture_log
+    test "rejects an unrecognized transfer-coding", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: unknown-coding"
+      ])
+
+      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status in ["400 Bad Request", "501 Not Implemented"]
     end
   end
 
@@ -1928,6 +2044,29 @@ defmodule HTTP1ProtocolTest do
     end
 
     @tag :capture_log
+    test "raises an error if client closes mid-chunk without completing the chunked body",
+         context do
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\nAB")
+      Process.sleep(10)
+      Transport.close(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
+    end
+
+    @tag :capture_log
     test "raises an error if client closes while body is being written", context do
       context =
         context
@@ -2011,6 +2150,14 @@ defmodule HTTP1ProtocolTest do
 
     def hello_world(conn) do
       send_resp(conn, 200, "OK module")
+    end
+
+    test "closes the connection by default for HTTP/1.0 requests with no connection header",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "1.0")
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
     test "handles pipeline requests", context do
