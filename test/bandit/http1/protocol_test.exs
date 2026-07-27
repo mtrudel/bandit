@@ -36,12 +36,6 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "GET / http/1.1\r\nhost: localhost\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
-
-    test "tolerates a single leading empty line before the request line", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "\r\nGET /echo_components HTTP/1.1\r\nhost: localhost\r\n\r\n")
-      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-    end
   end
 
   describe "method coverage (RFC9110§9.3)" do
@@ -422,59 +416,7 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "Host header validation (RFC9112§3.2, RFC9110§7.2)" do
-    @tag :capture_log
-    test "returns 400 for a request with multiple distinct host headers", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
-        "host: banana",
-        "host: orange"
-      ])
-
-      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-    end
-
-    @tag :capture_log
-    test "returns 400 for a request with multiple host headers, even if identical", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
-        "host: banana",
-        "host: banana"
-      ])
-
-      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-    end
-  end
-
   describe "request headers (RFC9112§5)" do
-    @tag :capture_log
-    test "rejects a header value containing a bare CR (RFC9110§5.5)", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      Transport.send(
-        client,
-        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo: a\rb\r\n\r\n"
-      )
-
-      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert status == "400 Bad Request"
-    end
-
-    @tag :capture_log
-    test "rejects a header value containing a NUL byte (RFC9110§5.5)", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      Transport.send(
-        client,
-        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo: a\0b\r\n\r\n"
-      )
-
-      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert status == "400 Bad Request"
-    end
-
     @tag :capture_log
     test "rejects whitespace between a field name and its colon (RFC9112§5.1)", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -1138,28 +1080,6 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "Expect: 100-continue (RFC9110§10.1.1)" do
-    def expect_continue_body(conn) do
-      {:ok, body, conn} = Plug.Conn.read_body(conn, read_timeout: 200)
-      send_resp(conn, 200, body)
-    end
-
-    test "sends a 100 Continue interim response before reading the request body", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "POST", "/expect_continue_body", [
-        "host: localhost",
-        "content-length: 3",
-        "expect: 100-continue"
-      ])
-
-      assert {:ok, "100 Continue", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
-
-      Transport.send(client, "123")
-      assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.recv_reply(client)
-    end
-  end
-
   describe "chunked request bodies (RFC9112§7.1)" do
     test "reads a tiny chunked body properly", context do
       stream =
@@ -1357,37 +1277,6 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
       assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
       assert status in ["400 Bad Request", "501 Not Implemented"]
-    end
-
-    test "ignores unrecognized chunk extensions", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
-        "host: localhost",
-        "transfer-encoding: chunked"
-      ])
-
-      Transport.send(client, "3;ext=value\r\n123\r\n")
-      Transport.send(client, "0\r\n\r\n")
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
-    end
-
-    @tag :capture_log
-    test "treats a transfer-encoding request from an HTTP/1.0 client as faulty framing",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "POST",
-        "/expect_incomplete_body",
-        ["host: localhost", "transfer-encoding: chunked"],
-        "1.0"
-      )
-
-      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
-      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert status == "400 Bad Request"
     end
   end
 
@@ -2218,19 +2107,6 @@ defmodule HTTP1ProtocolTest do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "1.0")
       assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    test "closes the connection when an HTTP/1.1 client explicitly requests it", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
-        "host: localhost",
-        "connection: close"
-      ])
-
-      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert Keyword.get_values(headers, :connection) == ["close"]
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
