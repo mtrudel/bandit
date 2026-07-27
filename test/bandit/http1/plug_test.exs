@@ -544,6 +544,80 @@ defmodule HTTP1PlugTest do
     end
   end
 
+  describe "adapter callback edge cases" do
+    test "raises if an adapter function is called from a process other than the stream owner",
+         context do
+      response = Req.get!(context.req, url: "/call_from_other_process")
+
+      assert response.status == 200
+      assert response.body =~ "Adapter functions must be called by stream owner"
+    end
+
+    def call_from_other_process(conn) do
+      result =
+        fn ->
+          try do
+            send_resp(conn, 200, "should not happen")
+            :sent
+          rescue
+            e -> {:error, Exception.message(e)}
+          end
+        end
+        |> Task.async()
+        |> Task.await()
+
+      send_resp(conn, 200, inspect(result))
+    end
+
+    test "push is not supported", context do
+      response = Req.get!(context.req, url: "/push_response")
+
+      assert response.status == 200
+      assert response.body =~ "server push not supported"
+    end
+
+    def push_response(conn) do
+      try do
+        push!(conn, "/static/style.css")
+        send_resp(conn, 200, "should not happen")
+      rescue
+        e -> send_resp(conn, 200, Exception.message(e))
+      end
+    end
+
+    test "an empty chunk ends the response", context do
+      response = Req.get!(context.req, url: "/chunk_then_empty_chunk")
+
+      assert response.status == 200
+      assert response.body == "hello"
+      assert response.headers["transfer-encoding"] == ["chunked"]
+    end
+
+    def chunk_then_empty_chunk(conn) do
+      conn = send_chunked(conn, 200)
+      {:ok, conn} = chunk(conn, "hello")
+      {:ok, conn} = chunk(conn, "")
+      conn
+    end
+
+    @tag :capture_log
+    test "raises Plug.Conn.AlreadySentError if send_resp is called twice", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/double_send_resp", ["host: banana"])
+
+      assert {:ok, "200 OK", _headers, "first"} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(Plug.Conn.AlreadySentError)"
+    end
+
+    def double_send_resp(conn) do
+      conn = send_resp(conn, 200, "first")
+      send_resp(conn, 200, "second")
+    end
+  end
+
   describe "process concerns" do
     test "survives EXIT messages from normally terminating spawned processes", context do
       response = Req.get!(context.req, url: "/spawn_child")
