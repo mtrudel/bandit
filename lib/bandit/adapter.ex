@@ -16,6 +16,7 @@ defmodule Bandit.Adapter do
             content_encoding: nil,
             compression_context: nil,
             upgrade: nil,
+            expect_continue: false,
             metrics: %{},
             opts: []
 
@@ -28,6 +29,7 @@ defmodule Bandit.Adapter do
           content_encoding: String.t(),
           compression_context: Bandit.Compression.t() | nil,
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
+          expect_continue: boolean(),
           metrics: %{},
           opts: %{
             required(:http) => Bandit.http_options(),
@@ -47,14 +49,35 @@ defmodule Bandit.Adapter do
       owner_pid: owner_pid,
       method: method,
       content_encoding: content_encoding,
+      expect_continue: expect_continue?(headers, Bandit.HTTPTransport.version(transport)),
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
       opts: opts
     }
   end
 
+  # RFC9110§10.1.1: a client sending a request body may include an "Expect: 100-continue"
+  # header field and wait for a 100 (Continue) interim response before sending the body. This
+  # is left to be sent lazily, on the plug's first actual attempt to read the body (see
+  # read_req_body/2 below) rather than eagerly for every such request - whether to read the
+  # body at all is a decision Bandit leaves to the plug (see the project's README "minimal
+  # internal policy" goal); Bandit only needs to unblock the client at the point the plug
+  # actually asks to read, which is the one case that would otherwise deadlock (client waiting
+  # for permission to send, server waiting to receive). HTTP/1.0 has no concept of
+  # informational responses, so this is restricted to HTTP/1.1 (matching inform/3's own
+  # version gating).
+  defp expect_continue?(headers, :"HTTP/1.1") do
+    headers |> Bandit.Headers.get_header("expect") |> safe_downcase() == "100-continue"
+  end
+
+  defp expect_continue?(_headers, _version), do: false
+
+  defp safe_downcase(nil), do: nil
+  defp safe_downcase(str), do: String.downcase(str, :ascii)
+
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{} = adapter, opts) do
     validate_calling_process!(adapter)
+    adapter = maybe_send_continue(adapter)
 
     metrics =
       adapter.metrics
@@ -81,6 +104,16 @@ defmodule Bandit.Adapter do
         {:more, body, %{adapter | transport: transport, metrics: metrics}}
     end
   end
+
+  # Only send the interim response if nothing has been sent to the client yet - if the plug
+  # already sent its own informational response (e.g. explicitly called `inform/3`) or has
+  # already committed a final response, `adapter.status` will be non-nil and any response
+  # already unblocks a client that's waiting on Expect: 100-continue, so sending our own would
+  # be redundant (and, for a final response, would corrupt the response stream).
+  defp maybe_send_continue(%__MODULE__{expect_continue: true, status: nil} = adapter),
+    do: send_headers(%{adapter | expect_continue: false}, 100, [], :inform)
+
+  defp maybe_send_continue(adapter), do: adapter
 
   ##################
   # Response Sending
