@@ -8,9 +8,9 @@ on:
 
 jobs:
   test:
-    uses: mtrudel/elixir-ci-actions/.github/workflows/test.yml@18c287f5666c0873f6c8c585551b9416694a731c # main
+    uses: mtrudel/elixir-ci-actions/.github/workflows/test.yml@main
   lint:
-    uses: mtrudel/elixir-ci-actions/.github/workflows/lint.yml@18c287f5666c0873f6c8c585551b9416694a731c # main
+    uses: mtrudel/elixir-ci-actions/.github/workflows/lint.yml@main
     permissions:
       actions: write
   h2spec:
