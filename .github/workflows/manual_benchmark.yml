@@ -59,11 +59,11 @@ jobs:
     - name: Install nghttp2
       run: sudo apt-get install nghttp2
     - name: Checkout code
-      uses: actions/checkout@v7
+      uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with: 
         repository: mtrudel/benchmark
     - name: Setup Elixir
-      uses: erlef/setup-beam@v1
+      uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
       with:
         elixir-version: 1.14.x
         otp-version: 25.1
@@ -74,7 +74,7 @@ jobs:
     - name: Run benchmark
       run: mix benchmark --profile ${{ inputs.profile }} --protocol ${{ inputs.protocol }} ${{ inputs.baseline_server }}@${{ inputs.baseline_version }} ${{ inputs.test_server }}@${{ inputs.test_version }}
     - name: Upload results file
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: http-benchmark.csv
         path: http-benchmark.csv
