@@ -1278,6 +1278,24 @@ defmodule HTTP1ProtocolTest do
       assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
       assert status in ["400 Bad Request", "501 Not Implemented"]
     end
+
+    @tag :capture_log
+    test "treats a transfer-encoding request from an HTTP/1.0 client as faulty framing",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "POST",
+        "/expect_incomplete_body",
+        ["host: localhost", "transfer-encoding: chunked"],
+        "1.0"
+      )
+
+      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status == "400 Bad Request"
+    end
   end
 
   describe "response body — chunked transfer-encoding (RFC9112§7.1)" do

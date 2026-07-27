@@ -76,6 +76,13 @@ defmodule Bandit.HTTP1.Socket do
           {:ok, method, request_target, headers, socket}
 
         {nil, body_encoding} ->
+          # Per RFC9112§6.1, a server that receives an HTTP/1.0 message with a
+          # Transfer-Encoding header field MUST treat the message as if the framing is
+          # faulty and close the connection after processing the message.
+          if socket.version == :"HTTP/1.0" do
+            request_error!("Transfer-encoding is not valid for HTTP/1.0 requests (RFC9112§6.1)")
+          end
+
           socket = %{socket | read_state: :headers_read, body_encoding: body_encoding}
           {:ok, method, request_target, headers, socket}
 
