@@ -76,6 +76,13 @@ defmodule Bandit.HTTP1.Socket do
           {:ok, method, request_target, headers, socket}
 
         {nil, body_encoding} ->
+          # Per RFC9112§6.1, a server that receives an HTTP/1.0 message with a
+          # Transfer-Encoding header field MUST treat the message as if the framing is
+          # faulty and close the connection after processing the message.
+          if socket.version == :"HTTP/1.0" do
+            request_error!("Transfer-encoding is not valid for HTTP/1.0 requests (RFC9112§6.1)")
+          end
+
           socket = %{socket | read_state: :headers_read, body_encoding: body_encoding}
           {:ok, method, request_target, headers, socket}
 
@@ -144,6 +151,7 @@ defmodule Bandit.HTTP1.Socket do
           do_read_headers!(socket, headers)
 
         {:ok, {:http_header, _, header, _, value}, rest} ->
+          validate_field_value!(value)
           socket = %{socket | buffer: rest}
           headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
 
@@ -165,6 +173,17 @@ defmodule Bandit.HTTP1.Socket do
 
         {:error, reason} ->
           request_error!("Header read unknown error: #{inspect(reason)}")
+      end
+    end
+
+    # RFC9110§5.5: field values containing CR, LF, or NUL characters are invalid and
+    # dangerous (a common request-smuggling / response-splitting vector).
+    @spec validate_field_value!(binary()) :: :ok
+    defp validate_field_value!(value) do
+      if String.contains?(value, ["\r", "\n", "\0"]) do
+        request_error!("Field value contains invalid characters (RFC9110§5.5)")
+      else
+        :ok
       end
     end
 
@@ -446,6 +465,17 @@ defmodule Bandit.HTTP1.Socket do
           {headers, %{socket | keepalive: false}}
 
         socket.request_connection_header == "close" || response_connection_header == "close" ->
+          # Per RFC9112§9.6, a party that intends to close the connection SHOULD send a
+          # 'close' connection option in its final message. If the response hasn't already
+          # declared this itself, do so now (this happens when the client, not the plug,
+          # is the one that asked for the connection to close).
+          headers =
+            if response_connection_header == "close" do
+              headers
+            else
+              [{"connection", "close"} | Enum.reject(headers, &(elem(&1, 0) == "connection"))]
+            end
+
           {headers, %{socket | keepalive: false}}
 
         socket.version == :"HTTP/1.1" ->

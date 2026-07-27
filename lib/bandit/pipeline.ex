@@ -88,16 +88,19 @@ defmodule Bandit.Pipeline do
   @spec determine_host_and_port!(binary(), atom(), request_target(), Plug.Conn.headers()) ::
           {Plug.Conn.host(), Plug.Conn.port_number()}
   defp determine_host_and_port!(scheme, version, {_, nil, nil, _}, headers) do
-    case {Bandit.Headers.get_header(headers, "host"), version} do
-      {nil, :"HTTP/1.0"} ->
+    case {Bandit.Headers.get_host_header(headers), version} do
+      {{:ok, nil}, :"HTTP/1.0"} ->
         {"", URI.default_port(scheme)}
 
-      {nil, _} ->
+      {{:ok, nil}, _} ->
         request_error!("Unable to obtain host and port: No host header")
 
-      {host_header, _} ->
+      {{:ok, host_header}, _} ->
         {host, port} = Bandit.Headers.parse_hostlike_header!(host_header)
         {host, port || URI.default_port(scheme)}
+
+      {{:error, reason}, _} ->
+        request_error!("Unable to obtain host and port: #{reason}")
     end
   end
 

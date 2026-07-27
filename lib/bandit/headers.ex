@@ -13,6 +13,19 @@ defmodule Bandit.Headers do
     end
   end
 
+  # Host is special-cased (rather than using get_header/2) because, per RFC9112§3.2 /
+  # RFC9110§7.2, a request MUST be rejected if it contains more than one host header,
+  # even if the values are identical (unlike content-length, which tolerates duplicates
+  # if they agree).
+  @spec get_host_header(Plug.Conn.headers()) :: {:ok, binary() | nil} | {:error, String.t()}
+  def get_host_header(headers) do
+    case Enum.filter(headers, &(elem(&1, 0) == "host")) do
+      [] -> {:ok, nil}
+      [{"host", value}] -> {:ok, value}
+      _ -> {:error, "multiple host headers (RFC9112§3.2, RFC9110§7.2)"}
+    end
+  end
+
   # Covers IPv6 addresses, like `[::1]:4000` as defined in RFC3986.
   @spec parse_hostlike_header!(host_header :: binary()) ::
           {Plug.Conn.host(), nil | Plug.Conn.port_number()}
