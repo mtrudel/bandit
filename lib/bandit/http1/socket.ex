@@ -312,8 +312,17 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     defp do_parse_chunk_size(buffer, chunk_size_size) do
-      <<chunk_size::binary-size(^chunk_size_size), "\r\n", rest::binary>> = buffer
-      chunk_size = String.to_integer(chunk_size, 16)
+      <<chunk_size_line::binary-size(^chunk_size_size), "\r\n", rest::binary>> = buffer
+
+      # Chunk extensions (anything from a ';' onward) are ignored per RFC9112§7.1.1
+      [chunk_size | _chunk_ext] = :binary.split(chunk_size_line, ";")
+
+      chunk_size =
+        case Integer.parse(chunk_size, 16) do
+          {chunk_size, ""} -> chunk_size
+          _ -> request_error!("Unable to parse chunk size")
+        end
+
       {chunk_size, rest}
     end
 
