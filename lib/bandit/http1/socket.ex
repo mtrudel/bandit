@@ -102,6 +102,11 @@ defmodule Bandit.HTTP1.Socket do
           socket = %{socket | buffer: rest, version: version}
           {method, request_target, socket}
 
+        {:ok, {:http_error, "\r\n"}, rest} ->
+          # RFC9112§2.2: servers SHOULD ignore at least one empty line (CRLF) received
+          # prior to the request line
+          do_read_request_line!(%{socket | buffer: rest}, request_target)
+
         {:ok, {:http_error, reason}, _rest} ->
           request_error!("Request line HTTP error: #{inspect(reason)}")
 
