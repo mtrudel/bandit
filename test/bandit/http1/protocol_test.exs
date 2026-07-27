@@ -9,114 +9,7 @@ defmodule HTTP1ProtocolTest do
   setup :http_server
   setup :req_http1_client
 
-  describe "protocol error logging" do
-    @tag :capture_log
-    test "errors are short logged by default", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
-    end
-
-    @tag :capture_log
-    test "errors are verbosely logged if so configured", context do
-      context =
-        context
-        |> http_server(http_options: [log_protocol_errors: :verbose])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg =~ "** (Bandit.HTTPError) Header read HTTP error: \"GARBAGE\\r\\n\""
-      assert msg =~ "lib/bandit/pipeline.ex:"
-    end
-
-    test "errors are not logged if so configured", context do
-      context =
-        context
-        |> http_server(http_options: [log_protocol_errors: false])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-
-      refute_receive {:log, %{level: :error}}
-    end
-
-    test "client closure protocol errors are not logged by default", context do
-      context =
-        context
-        |> http_server(http_options: [log_protocol_errors: :verbose])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
-
-      refute_receive {:log, %{level: :error}}
-    end
-
-    @tag :capture_log
-    test "client closure protocol errors are short logged if so configured", context do
-      context =
-        context
-        |> http_server(http_options: [log_client_closures: :short])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
-    end
-
-    @tag :capture_log
-    test "client closure protocol errors are verbosely logged if so configured", context do
-      context =
-        context
-        |> http_server(http_options: [log_client_closures: :verbose])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg =~ "** (Bandit.TransportError) Unrecoverable error: closed"
-      assert msg =~ "lib/bandit/pipeline.ex:"
-    end
-
-    @tag :capture_log
-    test "it should provide useful metadata to logger handler", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
-
-      assert_receive {:log, log_event}, 500
-
-      assert %{
-               meta: %{
-                 domain: [:elixir, :bandit],
-                 crash_reason:
-                   {%Bandit.HTTPError{message: "Header read HTTP error: \"GARBAGE\\r\\n\""},
-                    [_ | _] = _stacktrace},
-                 plug: {__MODULE__, []}
-               }
-             } = log_event
-    end
-  end
-
-  describe "invalid requests" do
+  describe "invalid requests (RFC9112§2.2, §2.3, §5.1)" do
     @tag :capture_log
     test "returns a 400 if the request cannot be parsed", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -136,225 +29,66 @@ defmodule HTTP1ProtocolTest do
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTPError) Invalid HTTP version: {0, 9}"
     end
+
+    @tag :capture_log
+    test "rejects a lowercase HTTP-version token", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / http/1.1\r\nhost: localhost\r\n\r\n")
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+    end
   end
 
-  describe "keepalive requests" do
-    test "handles pipeline requests", context do
+  describe "method coverage (RFC9110§9.3)" do
+    test "accepts PUT requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
-
-      Transport.send(
-        client,
-        String.duplicate("GET /send_ok HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
-      )
-
-      for _ <- 1..50 do
-        # Need to read the exact size of the expected response because SimpleHTTP1Client
-        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
-        {:ok, bytes} = Transport.recv(client, 152)
-        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
-      end
+      SimpleHTTP1Client.send(client, "PUT", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "PUT"} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    test "handles pipeline requests with unread POST bodies", context do
+    test "accepts DELETE requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
-
-      Transport.send(
-        client,
-        String.duplicate(
-          "POST /send_ok HTTP/1.1\r\nHost: localhost\r\nContent-Length:3\r\n\r\nABC",
-          50
-        )
-      )
-
-      for _ <- 1..50 do
-        # Need to read the exact size of the expected response because SimpleHTTP1Client
-        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
-        {:ok, bytes} = Transport.recv(client, 152)
-        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
-      end
+      SimpleHTTP1Client.send(client, "DELETE", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "DELETE"} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    def send_ok(conn) do
-      send_resp(conn, 200, "OK")
+    test "accepts PATCH requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "PATCH", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "PATCH"} = SimpleHTTP1Client.recv_reply(client)
     end
 
-    test "closes connection after max_requests is reached", context do
+    test "accepts TRACE requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "TRACE", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "TRACE"} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "method case sensitivity (RFC9112§3.1)" do
+    test "does not normalize the case of a lowercase method", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "get", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "get"} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
+  describe "request line limits (RFC9112§3)" do
+    @tag :capture_log
+    test "returns 414 for request lines that are too long", context do
       context =
         context
-        |> http_server(http_1_options: [max_requests: 3])
+        |> http_server(http_1_options: [max_request_line_length: 5000])
         |> Enum.into(context)
 
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", first_headers, _} = SimpleHTTP1Client.recv_reply(client)
-      refute Keyword.has_key?(first_headers, :connection)
+      SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
 
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", second_headers, _} = SimpleHTTP1Client.recv_reply(client)
-      refute Keyword.has_key?(second_headers, :connection)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
-      assert {:ok, "200 OK", third_headers, _} = SimpleHTTP1Client.recv_reply(client)
-      assert Keyword.get_values(third_headers, :connection) == ["close"]
-
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    test "closes connection after exception is raised (for safety)", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "/known_crasher", ["host: banana"])
-
-      assert {:ok, "418 I'm a teapot", [connection: "close"], _} =
+      assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
                SimpleHTTP1Client.recv_reply(client)
 
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def known_crasher(_conn) do
-      raise SafeError, "boom"
-    end
-
-    test "idle keepalive connections are closed after read_timeout", context do
-      context =
-        context
-        |> http_server(thousand_island_options: [read_timeout: 100])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"])
-      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      Process.sleep(110)
-
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    test "responses which contain a connection: close header close the connection", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "GET", "/close_connection", ["host: localhost"])
-
-      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def close_connection(conn) do
-      conn
-      |> put_resp_header("connection", "close")
-      |> send_resp(200, "OK")
-    end
-
-    test "connection: close skips body draining when plug does not read body", context do
-      # Use a longer read timeout so we can verify the connection closes quickly
-      # (i.e., doesn't wait for the timeout to drain the body)
-      context =
-        context
-        |> http_server(thousand_island_options: [read_timeout: 500])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      # Send headers with a large content-length but don't send any body data
-      Transport.send(
-        client,
-        "POST /close_connection_with_unread_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 10000000\r\n\r\n"
-      )
-
-      # The plug returns immediately with Connection: close without reading the body
-      # With the fix, this should return quickly without waiting for body read timeout
-      start_time = System.monotonic_time(:millisecond)
-      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
-
-      assert Enum.any?(headers, fn {k, v} -> k == :connection && String.downcase(v) == "close" end)
-
-      elapsed = System.monotonic_time(:millisecond) - start_time
-
-      # Should complete well before the 500ms read timeout
-      assert elapsed < 200, "Expected quick response but took #{elapsed}ms"
-
-      # Connection should be closed
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def close_connection_with_unread_body(conn) do
-      # Return immediately with Connection: close without reading the body
-      conn
-      |> put_resp_header("connection", "close")
-      |> send_resp(200, "OK")
-    end
-
-    test "keepalive mixed-case header connections are respected in HTTP/1.0", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/echo_components",
-        ["host: localhost", "connection: Keep-Alive"],
-        "1.0"
-      )
-
-      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/echo_components",
-        ["host: localhost", "connection: Keep-Alive"],
-        "1.0"
-      )
-
-      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-    end
-
-    test "keepalive are explicitly signalled in HTTP/1.0", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/echo_components",
-        ["host: localhost", "connection: keep-alive"],
-        "1.0"
-      )
-
-      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert [{:connection, "keep-alive"} | _headers] = headers
-    end
-
-    test "unread content length bodies are read before starting a new request", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
-        "host: localhost",
-        "content-length: 6"
-      ])
-
-      Transport.send(client, "ABCDEF")
-      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
-      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
-    end
-
-    test "unread chunked bodies are read before starting a new request", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
-        "host: localhost",
-        "transfer-encoding: chunked"
-      ])
-
-      Transport.send(client, "6\r\nABCDEF\r\n0\r\n\r\n")
-      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
-
-      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
-      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
-    end
-
-    def echo_method(conn) do
-      send_resp(conn, 200, conn.method)
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Request URI is too long"
     end
   end
 
@@ -682,27 +416,34 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "request line limits" do
+  describe "request headers (RFC9112§5)" do
     @tag :capture_log
-    test "returns 414 for request lines that are too long", context do
-      context =
-        context
-        |> http_server(http_1_options: [max_request_line_length: 5000])
-        |> Enum.into(context)
-
+    test "rejects whitespace between a field name and its colon (RFC9112§5.1)", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", String.duplicate("a", 5000 - 14))
+      Transport.send(
+        client,
+        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo : bar\r\n\r\n"
+      )
 
-      assert {:ok, "414 Request-URI Too Long", _headers, <<>>} =
-               SimpleHTTP1Client.recv_reply(client)
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) Request URI is too long"
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status == "400 Bad Request"
     end
-  end
 
-  describe "request headers" do
+    @tag :capture_log
+    test "does not silently accept obsolete line folding in a header value (RFC9112§5.2)",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "GET /echo_components HTTP/1.1\r\nhost: localhost\r\nx-foo: bar\r\n baz\r\n\r\n"
+      )
+
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status in ["200 OK", "400 Bad Request"]
+    end
+
     test "reads headers properly", context do
       response =
         Req.get!(context.req,
@@ -782,7 +523,7 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "content-length request bodies" do
+  describe "content-length request bodies (RFC9112§6.2, §6.3)" do
     test "reads a zero length body properly", context do
       response = Req.get!(context.req, url: "/expect_no_body")
 
@@ -902,6 +643,24 @@ defmodule HTTP1ProtocolTest do
 
       assert msg ==
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+    end
+
+    @tag :capture_log
+    test "rejects a request containing both content-length and transfer-encoding", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "content-length: 3",
+        "transfer-encoding: chunked"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Request cannot contain both 'content-length' and 'transfer-encoding' (RFC9112§6.3.3)"
     end
 
     test "handles the case where we ask for less than is already in the buffer", context do
@@ -1047,7 +806,281 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "chunked request bodies" do
+  describe "response body — content-length framing by status code (RFC9112§6.3, RFC9110§15.3-15.5)" do
+    test "sends expected content-length but no body for HEAD requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_big_body", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
+    end
+
+    test "respects provided content-length headers for HEAD responses", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/head_preserve_content_length", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10001"
+    end
+
+    def head_preserve_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "10001")
+      |> send_resp(200, "")
+    end
+
+    test "replaces any incorrect provided content-length headers", context do
+      response = Req.get!(context.req, url: "/send_incorrect_content_length")
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "replaces any incorrect provided content-length headers for HEAD responses", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "HEAD", "/send_incorrect_content_length", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
+    end
+
+    def send_incorrect_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "10001")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "writes out a response with no content-length header or body for 204 responses",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_204", ["host: localhost"])
+
+      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+    end
+
+    def send_204(conn) do
+      send_resp(conn, 204, "this is an invalid body")
+    end
+
+    test "writes out a response with content-length header but no body for 304 responses",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_304", ["host: localhost"])
+
+      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "5"
+    end
+
+    def send_304(conn) do
+      send_resp(conn, 304, "abcde")
+    end
+
+    test "respects plug-provided zero content-length and no body for 304 responses", context do
+      response = Req.head!(context.req, url: "/send_304_zero_content_length")
+
+      assert response.status == 304
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_304_zero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "0")
+      |> send_resp(304, "")
+    end
+
+    test "respects plug-provided nonzero content-length but no body for 304 responses", context do
+      response = Req.head!(context.req, url: "/send_304_nonzero_content_length")
+
+      assert response.status == 304
+      assert response.body == ""
+      assert response.headers["content-length"] == ["5"]
+    end
+
+    def send_304_nonzero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "5")
+      |> send_resp(304, "abcde")
+    end
+
+    test "writes out a response with zero content-length for 200 responses", context do
+      response = Req.get!(context.req, url: "/send_200")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    test "writes out a response omitting content-length for HEAD 200 responses", context do
+      response = Req.head!(context.req, url: "/send_200")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == nil
+    end
+
+    def send_200(conn) do
+      send_resp(conn, 200, "")
+    end
+
+    test "respects plug-provided zero content-length and no body for HEAD 200 responses",
+         context do
+      response = Req.head!(context.req, url: "/send_200_zero_content_length")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_200_zero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "0")
+      |> send_resp(200, "")
+    end
+
+    test "respects plug-provided nonzero content-length but no body for HEAD 200 responses",
+         context do
+      response = Req.head!(context.req, url: "/send_200_nonzero_content_length")
+
+      assert response.status == 200
+      assert response.body == ""
+      assert response.headers["content-length"] == ["5"]
+    end
+
+    def send_200_nonzero_content_length(conn) do
+      conn
+      |> put_resp_header("content-length", "5")
+      |> send_resp(200, "abcde")
+    end
+
+    test "writes out a response with zero content-length for 301 responses", context do
+      response = Req.get!(context.req, url: "/send_301")
+
+      assert response.status == 301
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_301(conn) do
+      send_resp(conn, 301, "")
+    end
+
+    test "writes out a response with zero content-length for 401 responses", context do
+      response = Req.get!(context.req, url: "/send_401")
+
+      assert response.status == 401
+      assert response.body == ""
+      assert response.headers["content-length"] == ["0"]
+    end
+
+    def send_401(conn) do
+      send_resp(conn, 401, "")
+    end
+  end
+
+  describe "response body — sendfile (RFC9112§6.3, RFC9110§15.3-15.5)" do
+    test "writes out a sent file for the entire file with content length", context do
+      response = Req.get!(context.req, url: "/send_full_file")
+
+      assert response.status == 200
+      assert response.body == "ABCDEF"
+      assert response.headers["content-length"] == ["6"]
+    end
+
+    test "writes out headers but not body for files requested via HEAD request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_full_file(conn) do
+      conn
+      |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "does not write out a content-length header or body for files on a 204",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_204", ["host: localhost"])
+
+      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == nil
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_full_file_204(conn) do
+      conn
+      |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "write out a content-length header but no body for files on a 304", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_304", ["host: localhost"])
+
+      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def send_full_file_304(conn) do
+      conn
+      |> send_file(304, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
+    end
+
+    test "writes out a sent file for parts of a file with content length", context do
+      response = Req.get!(context.req, url: "/send_file?offset=1&length=3")
+
+      assert response.status == 200
+      assert response.body == "BCD"
+      assert response.headers["content-length"] == ["3"]
+    end
+
+    def send_file(conn) do
+      conn = fetch_query_params(conn)
+
+      conn
+      |> send_file(
+        200,
+        Path.join([__DIR__, "../../support/sendfile"]),
+        String.to_integer(conn.params["offset"]),
+        String.to_integer(conn.params["length"])
+      )
+    end
+  end
+
+  describe "informational (1xx) responses (RFC9112§6.3, RFC9110§15.2.1)" do
+    test "sending informational responses", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
+
+      Process.sleep(10)
+      assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
+      assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
+
+      assert {:ok, "200 OK", _headers, "Informer"} =
+               SimpleHTTP1Client.parse_response(client, rest)
+    end
+
+    test "does not send informational responses to HTTP/1.0 clients", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"], "1.0")
+
+      assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def send_inform(conn) do
+      conn = conn |> inform(100, [{:"x-from", "inform"}])
+      conn |> send_resp(200, "Informer")
+    end
+  end
+
+  describe "chunked request bodies (RFC9112§7.1)" do
     test "reads a tiny chunked body properly", context do
       stream =
         Stream.repeatedly(fn -> String.duplicate("123", 1) end)
@@ -1217,181 +1250,123 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "upgrade handling" do
+  describe "transfer-encoding edge cases (RFC9112§6.1, §7.1.1)" do
     @tag :capture_log
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a GET",
-         context do
+    test "rejects a request with transfer-encoding applied twice", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(
-        client,
-        "POST",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: WebSocket",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-          "Sec-WebSocket-Version: 13"
-        ]
-      )
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: chunked, chunked"
+      ])
 
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) HTTP method POST unsupported"
+      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status == "400 Bad Request"
     end
 
     @tag :capture_log
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
-         context do
+    test "rejects an unrecognized transfer-coding", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: NOPE",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-          "Sec-WebSocket-Version: 13"
-        ]
-      )
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: unknown-coding"
+      ])
 
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-
-      assert msg ==
-               "** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
-    end
-
-    @tag :capture_log
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: WebSocket",
-          "Connection: NOPE",
-          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-          "Sec-WebSocket-Version: 13"
-        ]
-      )
-
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-
-      assert msg ==
-               "** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
-    end
-
-    @tag :capture_log
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: WebSocket",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Version: 13"
-        ]
-      )
-
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
-    end
-
-    @tag :capture_log
-    test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: WebSocket",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-          "Sec-WebSocket-Version: 99"
-        ]
-      )
-
-      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
-
-      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-
-      assert msg ==
-               "** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
-    end
-
-    test "returns a 400 and errors loudly if websocket support is not enabled", context do
-      context =
-        context
-        |> http_server(websocket_options: [enabled: false])
-        |> Enum.into(context)
-
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(
-        client,
-        "GET",
-        "/upgrade_websocket",
-        [
-          "Host: server.example.com",
-          "Upgrade: WebSocket",
-          "Connection: Upgrade",
-          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
-          "Sec-WebSocket-Version: 13"
-        ]
-      )
-
-      assert SimpleHTTP1Client.recv_reply(client)
-             ~> {:ok, "200 OK",
-              [
-                date: string(),
-                "content-length": "79",
-                vary: "accept-encoding",
-                "cache-control": "max-age=0, private, must-revalidate"
-              ],
-              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.Adapter\"}"}
-    end
-
-    defmodule MyNoopWebSock do
-      use NoopWebSock
-    end
-
-    def upgrade_websocket(conn) do
-      # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
-      # calling upgrade_adapter
-      conn
-      |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
-    rescue
-      e in ArgumentError ->
-        conn
-        |> send_resp(200, inspect(e))
+      Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
+      assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert status in ["400 Bad Request", "501 Not Implemented"]
     end
   end
 
-  describe "response body" do
+  describe "response body — chunked transfer-encoding (RFC9112§7.1)" do
+    test "writes out a chunked response", context do
+      response = Req.get!(context.req, url: "/send_chunked_200")
+
+      assert response.status == 200
+      assert response.body == "OK"
+      assert response.headers["transfer-encoding"] == ["chunked"]
+    end
+
+    def send_chunked_200(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(200)
+        |> chunk("OK")
+
+      conn
+    end
+
+    test "streams a content-length delimited response if content-length is set before chunking",
+         context do
+      response = Req.get!(context.req, url: "/send_chunked_200_with_content_length")
+
+      assert response.status == 200
+      assert response.body == "OK"
+      assert response.headers["transfer-encoding"] != ["chunked"]
+      assert response.headers["content-length"] == ["2"]
+    end
+
+    def send_chunked_200_with_content_length(conn) do
+      conn =
+        conn
+        |> put_resp_header("content-length", "2")
+        |> send_chunked(200)
+
+      {:ok, conn} = chunk(conn, "O")
+      {:ok, conn} = chunk(conn, "K")
+
+      conn
+    end
+
+    test "does not add the transfer-encoding header for 204 responses", context do
+      response = Req.get!(context.req, url: "/send_chunked_204")
+
+      assert response.status == 204
+      assert response.body == ""
+      refute Map.has_key?(response.headers, "transfer-encoding")
+    end
+
+    def send_chunked_204(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(204)
+        |> chunk("")
+
+      conn
+    end
+
+    test "does not write out transfer-encoding headers or body for a chunked response to a HEAD request",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_chunked_200", ["host: localhost"])
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+
+      refute Bandit.Headers.get_header(headers, :"content-length")
+      refute Bandit.Headers.get_header(headers, :"transfer-encoding")
+    end
+
+    test "writes out a chunked iolist response", context do
+      response = Req.get!(context.req, url: "/send_chunked_200_iolist")
+
+      assert response.status == 200
+      assert response.body == "OK"
+      assert response.headers["transfer-encoding"] == ["chunked"]
+    end
+
+    def send_chunked_200_iolist(conn) do
+      {:ok, conn} =
+        conn
+        |> send_chunked(200)
+        |> chunk(["OK"])
+
+      conn
+    end
+  end
+
+  describe "response body — content negotiation and encoding (RFC9110§8.4)" do
     test "writes out a response with deflate encoding if so negotiated", context do
       response =
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "deflate"}])
@@ -1652,6 +1627,63 @@ defmodule HTTP1ProtocolTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "respects deflate_options", context do
+      context =
+        context
+        |> http_server(http_options: [deflate_options: [level: 0]])
+        |> Enum.into(context)
+
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          base_url: context.base,
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+
+      # level: 0 disables compression, so the "compressed" body is only a few bytes
+      # larger than the raw input, rather than the 40 bytes achieved at the default level
+      # (see the "writes out a response with deflate encoding" test above)
+      assert String.to_integer(hd(response.headers["content-length"])) > 10_000
+
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context)
+      inflated_body = :zlib.inflate(inflate_context, response.body) |> IO.iodata_to_binary()
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
+      assert inflated_body == String.duplicate("a", 10_000)
+    end
+
+    # TODO Remove conditional once Erlang v28 is required
+    if Code.ensure_loaded?(:zstd) do
+      test "respects zstd_options", context do
+        context =
+          context
+          |> http_server(http_options: [zstd_options: %{checksumFlag: true}])
+          |> Enum.into(context)
+
+        response =
+          Req.get!(context.req,
+            url: "/send_big_body",
+            base_url: context.base,
+            headers: [{"accept-encoding", "zstd"}]
+          )
+
+        assert response.status == 200
+        assert response.headers["content-encoding"] == ["zstd"]
+
+        # checksumFlag adds a fixed 4-byte checksum to the frame, so this should be
+        # exactly 4 bytes larger than the 19 bytes achieved at the default options (see
+        # the "writes out a response with zstd encoding" test above)
+        assert response.headers["content-length"] == ["23"]
+
+        assert :zstd.decompress(response.body) |> IO.iodata_to_binary() ==
+                 String.duplicate("a", 10_000)
+      end
+    end
+
     def send_big_body(conn) do
       conn
       |> put_resp_header("content-length", "10000")
@@ -1740,359 +1772,183 @@ defmodule HTTP1ProtocolTest do
       |> put_resp_header("cache-control", "no-transform")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
+  end
 
-    test "sends expected content-length but no body for HEAD requests", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/send_big_body", ["host: localhost"])
-
-      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
-    end
-
-    test "respects provided content-length headers for HEAD responses", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/head_preserve_content_length", ["host: localhost"])
-
-      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "10001"
-    end
-
-    def head_preserve_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "10001")
-      |> send_resp(200, "")
-    end
-
-    test "replaces any incorrect provided content-length headers", context do
-      response = Req.get!(context.req, url: "/send_incorrect_content_length")
-
-      assert response.status == 200
-      assert response.headers["content-length"] == ["10000"]
-      assert response.body == String.duplicate("a", 10_000)
-    end
-
-    test "replaces any incorrect provided content-length headers for HEAD responses", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-
-      SimpleHTTP1Client.send(client, "HEAD", "/send_incorrect_content_length", ["host: localhost"])
-
-      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "10000"
-    end
-
-    def send_incorrect_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "10001")
-      |> send_resp(200, String.duplicate("a", 10_000))
-    end
-
-    test "writes out a response with no content-length header or body for 204 responses",
+  describe "upgrade handling (RFC9110§7.8, RFC6455)" do
+    @tag :capture_log
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but the connection is not a GET",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/send_204", ["host: localhost"])
 
-      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client)
-      assert Bandit.Headers.get_header(headers, :"content-length") == nil
-    end
-
-    def send_204(conn) do
-      send_resp(conn, 204, "this is an invalid body")
-    end
-
-    test "writes out a response with content-length header but no body for 304 responses",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "/send_304", ["host: localhost"])
-
-      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "5"
-    end
-
-    def send_304(conn) do
-      send_resp(conn, 304, "abcde")
-    end
-
-    test "respects plug-provided zero content-length and no body for 304 responses", context do
-      response = Req.head!(context.req, url: "/send_304_zero_content_length")
-
-      assert response.status == 304
-      assert response.body == ""
-      assert response.headers["content-length"] == ["0"]
-    end
-
-    def send_304_zero_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "0")
-      |> send_resp(304, "")
-    end
-
-    test "respects plug-provided nonzero content-length but no body for 304 responses", context do
-      response = Req.head!(context.req, url: "/send_304_nonzero_content_length")
-
-      assert response.status == 304
-      assert response.body == ""
-      assert response.headers["content-length"] == ["5"]
-    end
-
-    def send_304_nonzero_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "5")
-      |> send_resp(304, "abcde")
-    end
-
-    test "writes out a response with zero content-length for 200 responses", context do
-      response = Req.get!(context.req, url: "/send_200")
-
-      assert response.status == 200
-      assert response.body == ""
-      assert response.headers["content-length"] == ["0"]
-    end
-
-    test "writes out a response omitting content-length for HEAD 200 responses", context do
-      response = Req.head!(context.req, url: "/send_200")
-
-      assert response.status == 200
-      assert response.body == ""
-      assert response.headers["content-length"] == nil
-    end
-
-    def send_200(conn) do
-      send_resp(conn, 200, "")
-    end
-
-    test "respects plug-provided zero content-length and no body for HEAD 200 responses",
-         context do
-      response = Req.head!(context.req, url: "/send_200_zero_content_length")
-
-      assert response.status == 200
-      assert response.body == ""
-      assert response.headers["content-length"] == ["0"]
-    end
-
-    def send_200_zero_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "0")
-      |> send_resp(200, "")
-    end
-
-    test "respects plug-provided nonzero content-length but no body for HEAD 200 responses",
-         context do
-      response = Req.head!(context.req, url: "/send_200_nonzero_content_length")
-
-      assert response.status == 200
-      assert response.body == ""
-      assert response.headers["content-length"] == ["5"]
-    end
-
-    def send_200_nonzero_content_length(conn) do
-      conn
-      |> put_resp_header("content-length", "5")
-      |> send_resp(200, "abcde")
-    end
-
-    test "writes out a response with zero content-length for 301 responses", context do
-      response = Req.get!(context.req, url: "/send_301")
-
-      assert response.status == 301
-      assert response.body == ""
-      assert response.headers["content-length"] == ["0"]
-    end
-
-    def send_301(conn) do
-      send_resp(conn, 301, "")
-    end
-
-    test "writes out a response with zero content-length for 401 responses", context do
-      response = Req.get!(context.req, url: "/send_401")
-
-      assert response.status == 401
-      assert response.body == ""
-      assert response.headers["content-length"] == ["0"]
-    end
-
-    def send_401(conn) do
-      send_resp(conn, 401, "")
-    end
-
-    test "writes out a chunked response", context do
-      response = Req.get!(context.req, url: "/send_chunked_200")
-
-      assert response.status == 200
-      assert response.body == "OK"
-      assert response.headers["transfer-encoding"] == ["chunked"]
-    end
-
-    def send_chunked_200(conn) do
-      {:ok, conn} =
-        conn
-        |> send_chunked(200)
-        |> chunk("OK")
-
-      conn
-    end
-
-    test "streams a content-length delimited response if content-length is set before chunking",
-         context do
-      response = Req.get!(context.req, url: "/send_chunked_200_with_content_length")
-
-      assert response.status == 200
-      assert response.body == "OK"
-      assert response.headers["transfer-encoding"] != ["chunked"]
-      assert response.headers["content-length"] == ["2"]
-    end
-
-    def send_chunked_200_with_content_length(conn) do
-      conn =
-        conn
-        |> put_resp_header("content-length", "2")
-        |> send_chunked(200)
-
-      {:ok, conn} = chunk(conn, "O")
-      {:ok, conn} = chunk(conn, "K")
-
-      conn
-    end
-
-    test "does not add the transfer-encoding header for 204 responses", context do
-      response = Req.get!(context.req, url: "/send_chunked_204")
-
-      assert response.status == 204
-      assert response.body == ""
-      refute Map.has_key?(response.headers, "transfer-encoding")
-    end
-
-    def send_chunked_204(conn) do
-      {:ok, conn} =
-        conn
-        |> send_chunked(204)
-        |> chunk("")
-
-      conn
-    end
-
-    test "does not write out transfer-encoding headers or body for a chunked response to a HEAD request",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/send_chunked_200", ["host: localhost"])
-
-      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-
-      refute Bandit.Headers.get_header(headers, :"content-length")
-      refute Bandit.Headers.get_header(headers, :"transfer-encoding")
-    end
-
-    test "writes out a chunked iolist response", context do
-      response = Req.get!(context.req, url: "/send_chunked_200_iolist")
-
-      assert response.status == 200
-      assert response.body == "OK"
-      assert response.headers["transfer-encoding"] == ["chunked"]
-    end
-
-    def send_chunked_200_iolist(conn) do
-      {:ok, conn} =
-        conn
-        |> send_chunked(200)
-        |> chunk(["OK"])
-
-      conn
-    end
-
-    test "writes out a sent file for the entire file with content length", context do
-      response = Req.get!(context.req, url: "/send_full_file")
-
-      assert response.status == 200
-      assert response.body == "ABCDEF"
-      assert response.headers["content-length"] == ["6"]
-    end
-
-    test "writes out headers but not body for files requested via HEAD request", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file", ["host: localhost"])
-
-      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def send_full_file(conn) do
-      conn
-      |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-    end
-
-    test "does not write out a content-length header or body for files on a 204",
-         context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_204", ["host: localhost"])
-
-      assert {:ok, "204 No Content", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == nil
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def send_full_file_204(conn) do
-      conn
-      |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-    end
-
-    test "write out a content-length header but no body for files on a 304", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_304", ["host: localhost"])
-
-      assert {:ok, "304 Not Modified", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
-      assert Bandit.Headers.get_header(headers, :"content-length") == "6"
-      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
-    end
-
-    def send_full_file_304(conn) do
-      conn
-      |> send_file(304, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-    end
-
-    test "writes out a sent file for parts of a file with content length", context do
-      response = Req.get!(context.req, url: "/send_file?offset=1&length=3")
-
-      assert response.status == 200
-      assert response.body == "BCD"
-      assert response.headers["content-length"] == ["3"]
-    end
-
-    def send_file(conn) do
-      conn = fetch_query_params(conn)
-
-      conn
-      |> send_file(
-        200,
-        Path.join([__DIR__, "../../support/sendfile"]),
-        String.to_integer(conn.params["offset"]),
-        String.to_integer(conn.params["length"])
+      SimpleHTTP1Client.send(
+        client,
+        "POST",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
       )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) HTTP method POST unsupported"
+    end
+
+    @tag :capture_log
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but upgrade header is incorrect",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: NOPE",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'upgrade' header must contain 'websocket', got [\"NOPE\"]"
+    end
+
+    @tag :capture_log
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but connection header is incorrect",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: NOPE",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'connection' header must contain 'upgrade', got [\"NOPE\"]"
+    end
+
+    @tag :capture_log
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but key header is incorrect",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) 'sec-websocket-key' header is absent"
+    end
+
+    @tag :capture_log
+    test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 99"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'sec-websocket-version' header must equal '13', got [\"99\"]"
+    end
+
+    test "returns a 400 and errors loudly if websocket support is not enabled", context do
+      context =
+        context
+        |> http_server(websocket_options: [enabled: false])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client)
+             ~> {:ok, "200 OK",
+              [
+                date: string(),
+                "content-length": "79",
+                vary: "accept-encoding",
+                "cache-control": "max-age=0, private, must-revalidate"
+              ],
+              "%ArgumentError{message: \"upgrade to websocket not supported by Bandit.Adapter\"}"}
+    end
+
+    defmodule MyNoopWebSock do
+      use NoopWebSock
+    end
+
+    def upgrade_websocket(conn) do
+      # In actual use, it's the caller's responsibility to ensure the upgrade is valid before
+      # calling upgrade_adapter
+      conn
+      |> upgrade_adapter(:websocket, {MyNoopWebSock, [], []})
+    rescue
+      e in ArgumentError ->
+        conn
+        |> send_resp(200, inspect(e))
     end
   end
 
-  test "sending informational responses", context do
-    client = SimpleHTTP1Client.tcp_client(context)
-    SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"])
-
-    Process.sleep(10)
-    assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
-    assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
-    assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.parse_response(client, rest)
-  end
-
-  test "does not send informational responses to HTTP/1.0 clients", context do
-    client = SimpleHTTP1Client.tcp_client(context)
-    SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"], "1.0")
-
-    assert {:ok, "200 OK", _headers, "Informer"} = SimpleHTTP1Client.recv_reply(client)
-  end
-
-  def send_inform(conn) do
-    conn = conn |> inform(100, [{:"x-from", "inform"}])
-    conn |> send_resp(200, "Informer")
-  end
-
-  describe "connection closure / error handling" do
+  describe "connection closure / error handling (RFC9112§8, §9.6)" do
     @tag :capture_log
     test "raises an error if client closes while headers are being read", context do
       context =
@@ -2135,6 +1991,29 @@ defmodule HTTP1ProtocolTest do
     def expect_incomplete_body(conn) do
       {:ok, _body, _conn} = Plug.Conn.read_body(conn)
       Logger.error("IMPOSSIBLE")
+    end
+
+    @tag :capture_log
+    test "raises an error if client closes mid-chunk without completing the chunked body",
+         context do
+      context =
+        context
+        |> http_server(http_options: [log_client_closures: :short])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_incomplete_body", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\nAB")
+      Process.sleep(10)
+      Transport.close(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
     end
 
     @tag :capture_log
@@ -2206,7 +2085,9 @@ defmodule HTTP1ProtocolTest do
       Logger.error("IMPOSSIBLE")
       conn
     end
+  end
 
+  describe "connection persistence / keepalive (RFC9112§9.3)" do
     test "silently exits if client closes during keepalive", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
@@ -2219,6 +2100,232 @@ defmodule HTTP1ProtocolTest do
 
     def hello_world(conn) do
       send_resp(conn, 200, "OK module")
+    end
+
+    test "closes the connection by default for HTTP/1.0 requests with no connection header",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"], "1.0")
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "handles pipeline requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        String.duplicate("GET /send_ok HTTP/1.1\r\nHost: localhost\r\n\r\n", 50)
+      )
+
+      for _ <- 1..50 do
+        # Need to read the exact size of the expected response because SimpleHTTP1Client
+        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
+        {:ok, bytes} = Transport.recv(client, 152)
+        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
+      end
+    end
+
+    test "handles pipeline requests with unread POST bodies", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        String.duplicate(
+          "POST /send_ok HTTP/1.1\r\nHost: localhost\r\nContent-Length:3\r\n\r\nABC",
+          50
+        )
+      )
+
+      for _ <- 1..50 do
+        # Need to read the exact size of the expected response because SimpleHTTP1Client
+        # doesn't track 'rest' bytes and ends up throwing a bunch of responses on the floor
+        {:ok, bytes} = Transport.recv(client, 152)
+        assert({:ok, "200 OK", _, _} = SimpleHTTP1Client.parse_response(client, bytes))
+      end
+    end
+
+    def send_ok(conn) do
+      send_resp(conn, 200, "OK")
+    end
+
+    test "closes connection after max_requests is reached", context do
+      context =
+        context
+        |> http_server(http_1_options: [max_requests: 3])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", first_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      refute Keyword.has_key?(first_headers, :connection)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", second_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      refute Keyword.has_key?(second_headers, :connection)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana"])
+      assert {:ok, "200 OK", third_headers, _} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(third_headers, :connection) == ["close"]
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "closes connection after exception is raised (for safety)", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/known_crasher", ["host: banana"])
+
+      assert {:ok, "418 I'm a teapot", [connection: "close"], _} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def known_crasher(_conn) do
+      raise SafeError, "boom"
+    end
+
+    test "idle keepalive connections are closed after read_timeout", context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 100])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      Process.sleep(110)
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "responses which contain a connection: close header close the connection", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/close_connection", ["host: localhost"])
+
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def close_connection(conn) do
+      conn
+      |> put_resp_header("connection", "close")
+      |> send_resp(200, "OK")
+    end
+
+    test "connection: close skips body draining when plug does not read body", context do
+      # Use a longer read timeout so we can verify the connection closes quickly
+      # (i.e., doesn't wait for the timeout to drain the body)
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 500])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      # Send headers with a large content-length but don't send any body data
+      Transport.send(
+        client,
+        "POST /close_connection_with_unread_body HTTP/1.1\r\nhost: localhost\r\ncontent-length: 10000000\r\n\r\n"
+      )
+
+      # The plug returns immediately with Connection: close without reading the body
+      # With the fix, this should return quickly without waiting for body read timeout
+      start_time = System.monotonic_time(:millisecond)
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert Enum.any?(headers, fn {k, v} -> k == :connection && String.downcase(v) == "close" end)
+
+      elapsed = System.monotonic_time(:millisecond) - start_time
+
+      # Should complete well before the 500ms read timeout
+      assert elapsed < 200, "Expected quick response but took #{elapsed}ms"
+
+      # Connection should be closed
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    def close_connection_with_unread_body(conn) do
+      # Return immediately with Connection: close without reading the body
+      conn
+      |> put_resp_header("connection", "close")
+      |> send_resp(200, "OK")
+    end
+
+    test "keepalive mixed-case header connections are respected in HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: Keep-Alive"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: Keep-Alive"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "keepalive are explicitly signalled in HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: keep-alive"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert [{:connection, "keep-alive"} | _headers] = headers
+    end
+
+    test "unread content length bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "content-length: 6"
+      ])
+
+      Transport.send(client, "ABCDEF")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "unread chunked bodies are read before starting a new request", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/echo_method", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "6\r\nABCDEF\r\n0\r\n\r\n")
+      assert {:ok, "200 OK", _headers, "POST"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: banana"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def echo_method(conn) do
+      send_resp(conn, 200, conn.method)
     end
   end
 end

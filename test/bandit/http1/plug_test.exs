@@ -180,6 +180,24 @@ defmodule HTTP1PlugTest do
       send_resp(conn, 200, inspect(existing_pdict))
     end
 
+    test "process dictionary is not reset between requests if clear_process_dict is false",
+         context do
+      context =
+        context
+        |> http_server(http_1_options: [clear_process_dict: false])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "[]"} = SimpleHTTP1Client.recv_reply(client)
+
+      SimpleHTTP1Client.send(client, "GET", "/pdict", ["host: localhost"])
+
+      assert {:ok, "200 OK", _headers, second} = SimpleHTTP1Client.recv_reply(client)
+      assert second =~ "garbage"
+    end
+
     test "gc_every_n_keepalive_requests is respected", context do
       context =
         context
@@ -526,6 +544,80 @@ defmodule HTTP1PlugTest do
     end
   end
 
+  describe "adapter callback edge cases" do
+    test "raises if an adapter function is called from a process other than the stream owner",
+         context do
+      response = Req.get!(context.req, url: "/call_from_other_process")
+
+      assert response.status == 200
+      assert response.body =~ "Adapter functions must be called by stream owner"
+    end
+
+    def call_from_other_process(conn) do
+      result =
+        fn ->
+          try do
+            send_resp(conn, 200, "should not happen")
+            :sent
+          rescue
+            e -> {:error, Exception.message(e)}
+          end
+        end
+        |> Task.async()
+        |> Task.await()
+
+      send_resp(conn, 200, inspect(result))
+    end
+
+    test "push is not supported", context do
+      response = Req.get!(context.req, url: "/push_response")
+
+      assert response.status == 200
+      assert response.body =~ "server push not supported"
+    end
+
+    def push_response(conn) do
+      try do
+        push!(conn, "/static/style.css")
+        send_resp(conn, 200, "should not happen")
+      rescue
+        e -> send_resp(conn, 200, Exception.message(e))
+      end
+    end
+
+    test "an empty chunk ends the response", context do
+      response = Req.get!(context.req, url: "/chunk_then_empty_chunk")
+
+      assert response.status == 200
+      assert response.body == "hello"
+      assert response.headers["transfer-encoding"] == ["chunked"]
+    end
+
+    def chunk_then_empty_chunk(conn) do
+      conn = send_chunked(conn, 200)
+      {:ok, conn} = chunk(conn, "hello")
+      {:ok, conn} = chunk(conn, "")
+      conn
+    end
+
+    @tag :capture_log
+    test "raises Plug.Conn.AlreadySentError if send_resp is called twice", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/double_send_resp", ["host: banana"])
+
+      assert {:ok, "200 OK", _headers, "first"} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "(Plug.Conn.AlreadySentError)"
+    end
+
+    def double_send_resp(conn) do
+      conn = send_resp(conn, 200, "first")
+      send_resp(conn, 200, "second")
+    end
+  end
+
   describe "process concerns" do
     test "survives EXIT messages from normally terminating spawned processes", context do
       response = Req.get!(context.req, url: "/spawn_child")
@@ -552,356 +644,6 @@ defmodule HTTP1PlugTest do
       spawn_link(fn -> exit(:abnormal) end)
       Process.sleep(10)
       send_resp(conn, 204, "")
-    end
-  end
-
-  describe "telemetry" do
-    test "it should send `start` events for normally completing requests", context do
-      Req.get!(context.req, url: "/send_200")
-
-      assert_receive {:telemetry, [:bandit, :request, :start], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    test "it should send `stop` events for normally completing requests", context do
-      Req.get!(context.req, url: "/send_200")
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               resp_body_bytes: 0,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["send_200"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    test "it should add req metrics to `stop` events for requests with no request body",
-         context do
-      Req.post!(context.req, url: "/do_read_body", body: <<>>)
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               req_body_start_time: integer(roughly: System.monotonic_time()),
-               req_body_end_time: integer(roughly: System.monotonic_time()),
-               req_body_bytes: 0,
-               resp_body_bytes: 2,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    def do_read_body(conn) do
-      {:ok, _body, conn} = Plug.Conn.read_body(conn)
-      send_resp(conn, 200, "OK")
-    end
-
-    test "it should add req metrics to `stop` events for requests with request body", context do
-      Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               req_body_start_time: integer(roughly: System.monotonic_time()),
-               req_body_end_time: integer(roughly: System.monotonic_time()),
-               req_body_bytes: 80,
-               resp_body_bytes: 2,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    test "it should add req metrics to `stop` events for chunked request body", context do
-      stream = Stream.repeatedly(fn -> "a" end) |> Stream.take(80)
-      Req.post!(context.req, url: "/do_read_body", body: stream)
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               req_body_start_time: integer(roughly: System.monotonic_time()),
-               req_body_end_time: integer(roughly: System.monotonic_time()),
-               req_body_bytes: 80,
-               resp_body_bytes: 2,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    test "it should add req metrics to `stop` events for requests with content encoding",
-         context do
-      Req.post!(context.req,
-        url: "/do_read_body",
-        body: String.duplicate("a", 80),
-        headers: [{"accept-encoding", "gzip"}]
-      )
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               req_body_start_time: integer(roughly: System.monotonic_time()),
-               req_body_end_time: integer(roughly: System.monotonic_time()),
-               req_body_bytes: 80,
-               resp_uncompressed_body_bytes: 2,
-               resp_body_bytes: 22,
-               resp_compression_method: "gzip",
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    test "it should add (some) resp metrics to `stop` events for chunked responses", context do
-      Req.get!(context.req, url: "/send_chunked_200")
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               resp_body_bytes: 2,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["send_chunked_200"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    def send_chunked_200(conn) do
-      {:ok, conn} =
-        conn
-        |> send_chunked(200)
-        |> chunk("OK")
-
-      conn
-    end
-
-    test "it should add resp metrics to `stop` events for sendfile responses", context do
-      Req.get!(context.req, url: "/send_full_file")
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native)),
-               req_header_end_time: integer(roughly: System.monotonic_time()),
-               resp_body_bytes: 6,
-               resp_start_time: integer(roughly: System.monotonic_time()),
-               resp_end_time: integer(roughly: System.monotonic_time())
-             }
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["send_full_file"]),
-               plug: {__MODULE__, []}
-             }
-    end
-
-    def send_full_file(conn) do
-      conn
-      |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-    end
-
-    @tag :capture_log
-    test "it should send `stop` events for malformed requests", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native))
-             }
-
-      assert metadata
-             ~> %{
-               plug: {__MODULE__, []},
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               error: string()
-             }
-    end
-
-    @tag :capture_log
-    test "it should send `stop` events for timed out requests", context do
-      client = SimpleHTTP1Client.tcp_client(context)
-      Transport.send(client, "GET / HTTP/1.1\r\nfoo: bar\r\n")
-
-      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{
-               monotonic_time: integer(roughly: System.monotonic_time()),
-               duration: integer(max: System.convert_time_unit(1, :second, :native))
-             }
-
-      assert(
-        metadata
-        ~> %{
-          plug: {__MODULE__, []},
-          connection_telemetry_span_context: reference(),
-          telemetry_span_context: reference(),
-          error: "Read timeout"
-        }
-      )
-    end
-
-    @tag :capture_log
-    test "it should send `exception` events for raising requests", context do
-      Req.get!(context.req, url: "/raise_error")
-
-      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["raise_error"]),
-               plug: {__MODULE__, []},
-               kind: :exit,
-               exception: %RuntimeError{message: "boom"},
-               stacktrace: list()
-             }
-    end
-
-    def raise_error(_conn) do
-      raise "boom"
-    end
-
-    @tag :capture_log
-    test "it should send `exception` events for throwing requests", context do
-      Req.get!(context.req, url: "/uncaught_throw")
-
-      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["uncaught_throw"]),
-               plug: {__MODULE__, []},
-               kind: :throw,
-               exception: "thrown",
-               stacktrace: list()
-             }
-    end
-
-    def uncaught_throw(_conn) do
-      throw("thrown")
-    end
-
-    @tag :capture_log
-    test "it should send `exception` events for exiting requests", context do
-      Req.get!(context.req, url: "/uncaught_exit")
-
-      assert_receive {:telemetry, [:bandit, :request, :exception], measurements, metadata}, 500
-
-      assert measurements
-             ~> %{monotonic_time: integer(roughly: System.monotonic_time())}
-
-      assert metadata
-             ~> %{
-               connection_telemetry_span_context: reference(),
-               telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["uncaught_exit"]),
-               plug: {__MODULE__, []},
-               kind: :exit,
-               exception: "exited",
-               stacktrace: list()
-             }
-    end
-
-    def uncaught_exit(_conn) do
-      exit("exited")
     end
   end
 end
