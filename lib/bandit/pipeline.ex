@@ -34,6 +34,8 @@ defmodule Bandit.Pipeline do
       {:ok, method, request_target, headers, transport} =
         Bandit.HTTPTransport.read_headers(transport)
 
+      transport = maybe_send_continue(transport, headers)
+
       conn = build_conn!(transport, method, request_target, headers, conn_data, opts)
       span = Bandit.Telemetry.start_span(:request, measurements, Map.put(metadata, :conn, conn))
 
@@ -62,6 +64,25 @@ defmodule Bandit.Pipeline do
         handle_error(:error, exception, __STACKTRACE__, transport, span, opts, plug: plug)
     end
   end
+
+  # Per RFC9110§10.1.1, a client sending a request body may include an "Expect:
+  # 100-continue" header field and wait for a 100 (Continue) interim response before
+  # sending the body. HTTP/1.0 has no concept of informational responses, so this is
+  # restricted to HTTP/1.1 (matching Bandit.Adapter.inform/3's own version gating).
+  @spec maybe_send_continue(Bandit.HTTPTransport.t(), Plug.Conn.headers()) ::
+          Bandit.HTTPTransport.t()
+  defp maybe_send_continue(transport, headers) do
+    expect = headers |> Bandit.Headers.get_header("expect") |> safe_downcase()
+
+    if expect == "100-continue" and Bandit.HTTPTransport.version(transport) == :"HTTP/1.1" do
+      Bandit.HTTPTransport.send_headers(transport, 100, [], :inform)
+    else
+      transport
+    end
+  end
+
+  defp safe_downcase(nil), do: nil
+  defp safe_downcase(str), do: String.downcase(str, :ascii)
 
   @spec build_conn!(
           Bandit.HTTPTransport.t(),

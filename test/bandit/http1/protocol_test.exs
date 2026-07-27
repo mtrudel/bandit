@@ -1138,6 +1138,28 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
+  describe "Expect: 100-continue (RFC9110§10.1.1)" do
+    def expect_continue_body(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn, read_timeout: 200)
+      send_resp(conn, 200, body)
+    end
+
+    test "sends a 100 Continue interim response before reading the request body", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_body", [
+        "host: localhost",
+        "content-length: 3",
+        "expect: 100-continue"
+      ])
+
+      assert {:ok, "100 Continue", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
+
+      Transport.send(client, "123")
+      assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.recv_reply(client)
+    end
+  end
+
   describe "chunked request bodies (RFC9112§7.1)" do
     test "reads a tiny chunked body properly", context do
       stream =
