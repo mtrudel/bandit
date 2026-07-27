@@ -143,6 +143,12 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "GET / http/1.1\r\nhost: localhost\r\n\r\n")
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
+
+    test "tolerates a single leading empty line before the request line", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "\r\nGET /echo_components HTTP/1.1\r\nhost: localhost\r\n\r\n")
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
   end
 
   describe "method coverage (RFC9110§9.3)" do
