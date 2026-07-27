@@ -22,9 +22,11 @@ represent the request and subsequently pass it to the configured `Plug` module.
 
 # Testing
 
-All of this is exhaustively tested. Tests are located in `request_test.exs`, and
-are broadly either concerned with testing network-facing aspects of the
-implementation (ie: how well Bandit satisfies the relevant RFCs) or the Plug-facing
-aspects of the implementation.
+All of this is exhaustively tested, across four files in `test/bandit/http1/`:
+
+* `protocol_test.exs` - network-facing aspects of the implementation, organized to follow RFC 9112's own document order
+* `plug_test.exs` - the Plug-facing aspects of the implementation
+* `logging_test.exs` - logging behavior for protocol errors and client disconnects
+* `telemetry_test.exs` - `:telemetry` event emission
 
 Unfortunately, there is no HTTP/1 equivalent to the external h2spec test suite.
