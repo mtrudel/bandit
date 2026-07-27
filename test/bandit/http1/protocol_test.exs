@@ -448,9 +448,9 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
-  describe "field value validation (RFC9110§5.5)" do
+  describe "request headers (RFC9112§5)" do
     @tag :capture_log
-    test "rejects a header value containing a bare CR", context do
+    test "rejects a header value containing a bare CR (RFC9110§5.5)", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
       Transport.send(
@@ -463,7 +463,7 @@ defmodule HTTP1ProtocolTest do
     end
 
     @tag :capture_log
-    test "rejects a header value containing a NUL byte", context do
+    test "rejects a header value containing a NUL byte (RFC9110§5.5)", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
       Transport.send(
@@ -474,9 +474,7 @@ defmodule HTTP1ProtocolTest do
       assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
       assert status == "400 Bad Request"
     end
-  end
 
-  describe "request headers (RFC9112§5)" do
     @tag :capture_log
     test "rejects whitespace between a field name and its colon (RFC9112§5.1)", context do
       client = SimpleHTTP1Client.tcp_client(context)
