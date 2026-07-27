@@ -1331,6 +1331,19 @@ defmodule HTTP1ProtocolTest do
       assert status in ["400 Bad Request", "501 Not Implemented"]
     end
 
+    test "ignores unrecognized chunk extensions", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3;ext=value\r\n123\r\n")
+      Transport.send(client, "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+    end
+    
     @tag :capture_log
     test "treats a transfer-encoding request from an HTTP/1.0 client as faulty framing",
          context do
