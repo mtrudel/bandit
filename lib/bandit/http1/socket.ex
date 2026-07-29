@@ -146,22 +146,27 @@ defmodule Bandit.HTTP1.Socket do
     defp resolve_request_target!(_request_target, _method),
       do: request_error!("Unsupported request target (RFC9112§3.2)")
 
-    defp do_read_headers!(%@for{} = socket, headers \\ []) do
+    defp do_read_headers!(%@for{} = socket) do
       packet_size = Keyword.get(socket.opts.http_1, :max_header_length, 10_000)
+      max_header_count = Keyword.get(socket.opts.http_1, :max_header_count, 50)
+      do_read_headers!(socket, packet_size, max_header_count, [], 0)
+    end
 
+    defp do_read_headers!(socket, packet_size, max_header_count, headers, header_count) do
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
           chunk = read_available!(socket.socket, socket.socket.read_timeout)
           socket = %{socket | buffer: socket.buffer <> chunk}
-          do_read_headers!(socket, headers)
+          do_read_headers!(socket, packet_size, max_header_count, headers, header_count)
 
         {:ok, {:http_header, _, header, _, value}, rest} ->
           validate_field_value!(value)
           socket = %{socket | buffer: rest}
           headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
+          header_count = header_count + 1
 
-          if length(headers) <= Keyword.get(socket.opts.http_1, :max_header_count, 50) do
-            do_read_headers!(socket, headers)
+          if header_count <= max_header_count do
+            do_read_headers!(socket, packet_size, max_header_count, headers, header_count)
           else
             request_error!("Too many headers", :request_header_fields_too_large)
           end
