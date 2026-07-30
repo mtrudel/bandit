@@ -50,7 +50,7 @@ defmodule Bandit.WebSocket.Connection do
       span: span
     }
 
-    websock.init(websock_state) |> handle_continutation(socket, instance)
+    websock.init(websock_state) |> handle_continuation(socket, instance)
   end
 
   def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
@@ -66,7 +66,7 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Text{fin: true} = frame ->
         if !Keyword.get(connection.opts, :validate_text_frames, true) || String.valid?(frame.data) do
           connection.websock.handle_in({frame.data, opcode: :text}, connection.websock_state)
-          |> handle_continutation(socket, connection)
+          |> handle_continuation(socket, connection)
         else
           do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
         end
@@ -80,7 +80,7 @@ defmodule Bandit.WebSocket.Connection do
 
       %Frame.Binary{fin: true} = frame ->
         connection.websock.handle_in({frame.data, opcode: :binary}, connection.websock_state)
-        |> handle_continutation(socket, connection)
+        |> handle_continuation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
         {:continue,
@@ -167,7 +167,7 @@ defmodule Bandit.WebSocket.Connection do
 
         if function_exported?(connection.websock, :handle_control, 2) do
           connection.websock.handle_control({frame.data, opcode: :ping}, connection.websock_state)
-          |> handle_continutation(socket, connection)
+          |> handle_continuation(socket, connection)
         else
           {:continue, connection}
         end
@@ -175,7 +175,7 @@ defmodule Bandit.WebSocket.Connection do
       %Frame.Pong{} = frame ->
         if function_exported?(connection.websock, :handle_control, 2) do
           connection.websock.handle_control({frame.data, opcode: :pong}, connection.websock_state)
-          |> handle_continutation(socket, connection)
+          |> handle_continuation(socket, connection)
         else
           {:continue, connection}
         end
@@ -219,11 +219,11 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_info(msg, socket, connection) do
     connection.websock.handle_info(msg, connection.websock_state)
-    |> handle_continutation(socket, connection)
+    |> handle_continuation(socket, connection)
   end
 
-  defp handle_continutation(continutation, socket, connection) do
-    case continutation do
+  defp handle_continuation(continuation, socket, connection) do
+    case continuation do
       {:ok, websock_state} ->
         {:continue, %{connection | websock_state: websock_state}}
 

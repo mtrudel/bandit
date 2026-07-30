@@ -28,7 +28,7 @@
 * Improve internal HTTP/2 error handling to be better about closing stream/connection
 * Coalesce header and body in to single transport send (#606, thanks @NelsonVides!)
 * Improve compression behaviour when streaming an explicitly length delimited body (#605, thanks @elibosley!)
-* Quiet WebSocket deserialization erorrs, add verbosity config lever (#610, thanks @ericmj!)
+* Quiet WebSocket deserialization errors, add verbosity config lever (#610, thanks @ericmj!)
 * Send connection: close when we're at max_requests (#613, thanks @joshdchang!)
 
 ### Fixes
