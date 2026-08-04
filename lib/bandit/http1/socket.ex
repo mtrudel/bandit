@@ -224,7 +224,7 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
-      case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, opts) do
+      case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, 0, opts) do
         {:ok, body, buffer} ->
           {:ok, IO.iodata_to_binary(body), %{socket | read_state: :read, buffer: buffer}}
 
@@ -251,17 +251,19 @@ defmodule Bandit.HTTP1.Socket do
     # chunks to do so. It accumulates data in the 'body' list, adding to it
     # chunk by (possibly partial) chunk until either the end of the body is reached
     # or the configured length is exceeded
-    @dialyzer {:no_improper_lists, do_read_chunked_data!: 4}
-    defp do_read_chunked_data!(socket, buffer, body, opts) do
-      max_to_read = Keyword.get(opts, :length, 8_000_000) - IO.iodata_length(body)
+    @dialyzer {:no_improper_lists, do_read_chunked_data!: 5}
+    defp do_read_chunked_data!(socket, buffer, body, body_length, opts) do
+      max_to_read = Keyword.get(opts, :length, 8_000_000) - body_length
 
       case do_read_chunk!(socket, buffer, max_to_read, opts) do
         {<<>>, rest} ->
           {:ok, body, rest}
 
         {chunk, rest} ->
-          if IO.iodata_length(chunk) < max_to_read do
-            do_read_chunked_data!(socket, rest, [body | chunk], opts)
+          length = IO.iodata_length(chunk)
+
+          if length < max_to_read do
+            do_read_chunked_data!(socket, rest, [body | chunk], body_length + length, opts)
           else
             {:more, [body | chunk], rest}
           end
