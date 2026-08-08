@@ -203,7 +203,7 @@ defmodule Bandit.HTTP2.Stream do
     # specific cases by RFC9113§8.2.2. We check those cases in a separate filter
     defp no_connection_headers!(headers, stream) do
       connection_headers =
-        ~w[connection keep-alive proxy-authenticate proxy-authorization trailers transfer-encoding upgrade]
+        ~w[connection keep-alive proxy-authenticate proxy-authorization proxy-connection trailers transfer-encoding upgrade]
 
       if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
         do: stream_error!("Received connection-specific header", stream)
