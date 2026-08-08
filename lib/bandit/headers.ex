@@ -26,6 +26,25 @@ defmodule Bandit.Headers do
     end
   end
 
+  # Transfer-encoding is special-cased for the same reason content-length is:
+  # it determines message framing, so resolving it with get_header/2 (which
+  # returns the first match and ignores the rest) lets a request whose framing
+  # is ambiguous be read as though it were not. Per RFC9112§6.1 repeated
+  # transfer-encoding headers combine into one comma-separated value, and
+  # RFC9112§6.3 requires rejecting a request whose final encoding is not
+  # chunked. Since the only encoding accepted here is a bare 'chunked', any
+  # repetition is either unsupported or has chunked in a non-final position,
+  # and can be rejected outright.
+  @spec get_transfer_encoding(Plug.Conn.headers()) ::
+          {:ok, binary() | nil} | {:error, String.t()}
+  def get_transfer_encoding(headers) do
+    case Enum.filter(headers, &(elem(&1, 0) == "transfer-encoding")) do
+      [] -> {:ok, nil}
+      [{"transfer-encoding", value}] -> {:ok, value}
+      _ -> {:error, "multiple transfer-encoding headers (RFC9112§6.1, RFC9112§6.3)"}
+    end
+  end
+
   # Covers IPv6 addresses, like `[::1]:4000` as defined in RFC3986.
   @spec parse_hostlike_header!(host_header :: binary()) ::
           {Plug.Conn.host(), nil | Plug.Conn.port_number()}

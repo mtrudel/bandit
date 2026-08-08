@@ -1291,6 +1291,89 @@ defmodule HTTP1ProtocolTest do
       assert msg == "** (Bandit.HTTPError) Malformed chunked encoding request body"
     end
 
+    # RFC9112§7.1: chunk-size = 1*HEXDIG. A sign is not a hex digit.
+    @tag :capture_log
+    test "rejects a chunk size with a leading plus sign", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "+10\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to parse chunk size"
+    end
+
+    # A signed zero must not be read as the terminating chunk. If it is, the
+    # body ends at a byte position no conforming parser would end it at, and
+    # whatever follows is read as a new request on the same connection.
+    @tag :capture_log
+    test "rejects a signed zero chunk size rather than ending the body", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "-0\r\n\r\nGET /echo_components HTTP/1.1\r\nHost: localhost\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to parse chunk size"
+
+      # The bytes after the signed zero must not have been served as a request
+      # of their own.
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    # A negative size reaches read_exactly!/5, which is guarded on a
+    # non-negative length, so this raised FunctionClauseError rather than
+    # returning a 400.
+    @tag :capture_log
+    test "rejects a negative chunk size", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "-1\r\nAAAA\r\n0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to parse chunk size"
+    end
+
+    # RFC9112§6.1 combines repeated transfer-encoding headers into one
+    # comma-separated value; RFC9112§6.3 then requires rejecting the request,
+    # since chunked is no longer the final encoding.
+    @tag :capture_log
+    test "rejects a request with multiple transfer-encoding headers", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked",
+        "Transfer-encoding: identity"
+      ])
+
+      Transport.send(client, "0\r\n\r\nGET /echo_components HTTP/1.1\r\nHost: localhost\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Transfer encoding unknown error: \"multiple transfer-encoding headers (RFC9112§6.1, RFC9112§6.3)\""
+
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
     @tag :capture_log
     test "handles trailers (by throwing them on the floor", context do
       client = SimpleHTTP1Client.tcp_client(context)
