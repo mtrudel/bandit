@@ -262,6 +262,7 @@ defmodule Bandit do
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
                         |> Map.from_struct()
                         |> Map.keys()
+                        |> Enum.sort()
 
   @doc """
   Starts a Bandit server using the provided arguments. See `t:options/0` for specific options to
