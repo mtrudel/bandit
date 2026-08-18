@@ -38,7 +38,7 @@ defmodule Bandit.HTTP2.Errors do
 
   @spec to_reason(integer()) :: atom()
 
-  for {name, value} <- error_codes do
+  for {name, value} <- Enum.sort(error_codes) do
     @spec unquote(name)() :: unquote(Macro.var(name, Elixir)) :: unquote(value)
     def unquote(name)(), do: unquote(value)
 
