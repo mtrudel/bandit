@@ -1766,6 +1766,28 @@ defmodule HTTP2ProtocolTest do
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
     end
 
+    # RFC9113§8.2.2 names Proxy-Connection alongside Connection, Keep-Alive,
+    # Transfer-Encoding and Upgrade.
+    @tag :capture_log
+    test "returns an error if the proxy-connection header is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"proxy-connection", "keep-alive"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
+    end
+
     test "accepts TE header with a value of trailer", context do
       socket = SimpleH2Client.setup_connection(context)
 
