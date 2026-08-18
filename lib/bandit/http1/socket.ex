@@ -62,7 +62,7 @@ defmodule Bandit.HTTP1.Socket do
       {method, request_target, socket} = do_read_request_line!(socket)
       {headers, socket} = do_read_headers!(socket)
       content_length = get_content_length!(headers)
-      body_encoding = safe_downcase(Bandit.Headers.get_header(headers, "transfer-encoding"))
+      body_encoding = get_transfer_encoding!(headers)
       request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
       socket = %{socket | request_connection_header: request_connection_header}
 
@@ -201,6 +201,13 @@ defmodule Bandit.HTTP1.Socket do
       case Bandit.Headers.get_content_length(headers) do
         {:ok, content_length} -> content_length
         {:error, reason} -> request_error!("Content length unknown error: #{inspect(reason)}")
+      end
+    end
+
+    defp get_transfer_encoding!(headers) do
+      case Bandit.Headers.get_transfer_encoding(headers) do
+        {:ok, transfer_encoding} -> safe_downcase(transfer_encoding)
+        {:error, reason} -> request_error!("Transfer encoding unknown error: #{inspect(reason)}")
       end
     end
 
@@ -346,14 +353,39 @@ defmodule Bandit.HTTP1.Socket do
       # Chunk extensions (anything from a ';' onward) are ignored per RFC9112§7.1.1
       [chunk_size | _chunk_ext] = :binary.split(chunk_size_line, ";")
 
-      chunk_size =
-        case Integer.parse(chunk_size, 16) do
-          {chunk_size, ""} -> chunk_size
-          _ -> request_error!("Unable to parse chunk size")
-        end
-
-      {chunk_size, rest}
+      {parse_chunk_size!(chunk_size), rest}
     end
+
+    # RFC9112§7.1 defines chunk-size as 1*HEXDIG. Integer.parse/2 additionally
+    # accepts a leading '+' or '-', so the grammar has to be checked separately
+    # rather than inferred from the parse succeeding. Without this, '+10' reads
+    # as a sixteen byte chunk, and '-0' parses as zero and is taken for the
+    # terminating chunk, ending the body at a position no conforming parser
+    # would end it at. A negative size reaches read_exactly!/5, which is
+    # guarded on a non-negative length and so raises FunctionClauseError rather
+    # than returning a 400.
+    @spec parse_chunk_size!(binary()) :: non_neg_integer()
+    defp parse_chunk_size!(chunk_size) do
+      with true <- hex_digits?(chunk_size),
+           {chunk_size, ""} <- Integer.parse(chunk_size, 16) do
+        chunk_size
+      else
+        _ -> request_error!("Unable to parse chunk size")
+      end
+    end
+
+    @spec hex_digits?(binary()) :: boolean()
+    defp hex_digits?(<<>>), do: false
+    defp hex_digits?(chunk_size), do: all_hex_digits?(chunk_size)
+
+    @spec all_hex_digits?(binary()) :: boolean()
+    defp all_hex_digits?(<<>>), do: true
+
+    defp all_hex_digits?(<<digit, rest::binary>>)
+         when digit in ?0..?9 or digit in ?a..?f or digit in ?A..?F,
+         do: all_hex_digits?(rest)
+
+    defp all_hex_digits?(_chunk_size), do: false
 
     ##################
     # Internal Reading
