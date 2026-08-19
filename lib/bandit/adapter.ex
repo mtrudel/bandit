@@ -159,7 +159,7 @@ defmodule Bandit.Adapter do
     %File.Stat{type: :regular, size: size} = File.Stat.from_record(fileinfo)
     length = if length == :all, do: size - offset, else: length
 
-    if offset + length <= size do
+    if length >= 0 and offset + length <= size do
       headers = Bandit.Headers.add_content_length(headers, length, status, adapter.method)
       adapter = send_headers(adapter, status, headers, :raw)
 
