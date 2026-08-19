@@ -48,6 +48,12 @@ defmodule Bandit.HTTP2.Frame.Data do
      "DATA frame with invalid padding length (RFC9113§6.1)"}
   end
 
+  # A PADDED frame that is too short to even contain the pad length octet (RFC9113§4.2, §6.1)
+  def deserialize(_flags, _stream_id, _payload) do
+    {:error, Bandit.HTTP2.Errors.frame_size_error(),
+     "DATA frame with insufficient padding data (RFC9113§6.1)"}
+  end
+
   defimpl Bandit.HTTP2.Frame.Serializable do
     @end_stream_bit 0
 
