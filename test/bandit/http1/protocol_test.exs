@@ -1859,6 +1859,23 @@ defmodule HTTP1ProtocolTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "does no encoding if a malformed etag starting with W but not W/ is present", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_malformed_w_etag",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      # An etag of "Wonky" starts with "W" but is not a well-formed weak etag (RFC9110§8.8.1
+      # requires the weak indicator to be "W/"), so it must be treated as a strong etag and
+      # compression must be skipped, just as with a well-formed strong etag.
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     test "does content encoding if a weak etag is present in the response", context do
       response =
         Req.get!(context.req, url: "/send_weak_etag", headers: [{"accept-encoding", "gzip"}])
@@ -2053,6 +2070,12 @@ defmodule HTTP1ProtocolTest do
     def send_weak_etag(conn) do
       conn
       |> put_resp_header("etag", "W/\"1234\"")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_malformed_w_etag(conn) do
+      conn
+      |> put_resp_header("etag", "Wonky")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
