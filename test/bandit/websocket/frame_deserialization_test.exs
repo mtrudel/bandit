@@ -331,6 +331,13 @@ defmodule WebSocketFrameDeserializationTest do
       assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
                {:error, "Cannot have a compressed connection close frame (RFC7692§6.1)"}
     end
+
+    test "refuses frame with per-message compressed bit set and fin bit clear" do
+      frame = <<0x0::1, 0x4::3, 0x8::4, 1::1, 0::7, 0x01020304::32>>
+
+      assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
+               {:error, "Cannot have a compressed connection close frame (RFC7692§6.1)"}
+    end
   end
 
   describe "PING frames" do
@@ -372,6 +379,13 @@ defmodule WebSocketFrameDeserializationTest do
       assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
                {:error, "Cannot have a compressed ping frame (RFC7692§6.1)"}
     end
+
+    test "refuses frames with per-message compressed bit set and fin bit clear" do
+      frame = <<0x0::1, 0x4::3, 0x9::4, 1::1, 0::7, 0x01020304::32>>
+
+      assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
+               {:error, "Cannot have a compressed ping frame (RFC7692§6.1)"}
+    end
   end
 
   describe "PONG frames" do
@@ -409,6 +423,13 @@ defmodule WebSocketFrameDeserializationTest do
 
     test "refuses frames with per-message compressed bit set" do
       frame = <<0x1::1, 0x4::3, 0xA::4, 1::1, 0::7, 0x01020304::32>>
+
+      assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
+               {:error, "Cannot have a compressed pong frame (RFC7692§6.1)"}
+    end
+
+    test "refuses frames with per-message compressed bit set and fin bit clear" do
+      frame = <<0x0::1, 0x4::3, 0xA::4, 1::1, 0::7, 0x01020304::32>>
 
       assert Frame.deserialize(frame, WebSocketPrimitiveOps) ==
                {:error, "Cannot have a compressed pong frame (RFC7692§6.1)"}

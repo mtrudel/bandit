@@ -34,7 +34,7 @@ defmodule Bandit.WebSocket.Frame.ConnectionClose do
     {:error, "Cannot have a fragmented connection close frame (RFC6455§5.5)"}
   end
 
-  def deserialize(true, true, _payload) do
+  def deserialize(_fin, true, _payload) do
     {:error, "Cannot have a compressed connection close frame (RFC7692§6.1)"}
   end
 
