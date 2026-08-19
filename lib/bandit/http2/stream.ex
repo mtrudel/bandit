@@ -72,11 +72,18 @@ defmodule Bandit.HTTP2.Stream do
           read_timeout: timeout()
         }
 
-  def init(connection_pid, stream_id, initial_send_window_size, sendfile_chunk_size) do
+  def init(
+        connection_pid,
+        stream_id,
+        initial_send_window_size,
+        initial_recv_window_size,
+        sendfile_chunk_size
+      ) do
     %__MODULE__{
       connection_pid: connection_pid,
       stream_id: stream_id,
       send_window_size: initial_send_window_size,
+      recv_window_size: initial_recv_window_size,
       sendfile_chunk_size: sendfile_chunk_size
     }
   end
