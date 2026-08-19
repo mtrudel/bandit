@@ -743,6 +743,36 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, expected}
     end
 
+    test "does no encoding if a malformed etag starting with W but not W/ is present", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_malformed_w_etag"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      # An etag of "Wonky" starts with "W" but is not a well-formed weak etag (RFC9110§8.8.1
+      # requires the weak indicator to be "W/"), so it must be treated as a strong etag and
+      # compression must be skipped, just as with a well-formed strong etag.
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "10000"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"etag", "Wonky"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      # Assert that we did not try to compress the body
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
+    end
+
     test "does no encoding if cache-control: no-transform is present in the response", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -871,6 +901,12 @@ defmodule HTTP2ProtocolTest do
     def send_weak_etag(conn) do
       conn
       |> put_resp_header("etag", "W/\"1234\"")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_malformed_w_etag(conn) do
+      conn
+      |> put_resp_header("etag", "Wonky")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
 
