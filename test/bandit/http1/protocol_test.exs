@@ -1678,6 +1678,61 @@ defmodule HTTP1ProtocolTest do
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
+    test "does not duplicate an existing vary: accept-encoding header", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_with_vary_accept_encoding",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
+    end
+
+    def send_big_body_with_vary_accept_encoding(conn) do
+      conn
+      |> put_resp_header("vary", "accept-encoding")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "does not duplicate an existing vary header regardless of its casing", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_with_vary_mixed_case",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["Accept-Encoding"]
+    end
+
+    def send_big_body_with_vary_mixed_case(conn) do
+      conn
+      |> put_resp_header("vary", "Accept-Encoding")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "still adds vary: accept-encoding alongside an unrelated existing vary header",
+         context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_with_vary_accept_language",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding", "accept-language"]
+    end
+
+    def send_big_body_with_vary_accept_language(conn) do
+      conn
+      |> put_resp_header("vary", "accept-language")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
     test "does not indicate content encoding or vary for 204 responses", context do
       response =
         Req.get!(context.req, url: "/send_204", headers: [{"accept-encoding", "deflate"}])

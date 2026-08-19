@@ -49,9 +49,23 @@ defmodule Bandit.Compression do
   end
 
   defp maybe_add_vary_header(adapter, status, headers) do
-    if status != 204 && Keyword.get(adapter.opts.http, :compress, true),
-      do: [{"vary", "accept-encoding"} | headers],
-      else: headers
+    if status != 204 && Keyword.get(adapter.opts.http, :compress, true) &&
+         !vary_includes_accept_encoding?(headers),
+       do: [{"vary", "accept-encoding"} | headers],
+       else: headers
+  end
+
+  defp vary_includes_accept_encoding?(headers) do
+    # vary field-names are case-insensitive, and a plug may emit more than one vary header, so
+    # scan every vary header and compare tokens case-insensitively rather than trusting the
+    # first header's exact casing.
+    headers
+    |> Enum.filter(fn {name, _value} -> String.downcase(name, :ascii) == "vary" end)
+    |> Enum.any?(fn {_name, value} ->
+      value
+      |> Plug.Conn.Utils.list()
+      |> Enum.any?(&(String.downcase(&1, :ascii) == "accept-encoding"))
+    end)
   end
 
   defp response_has_strong_etag(headers) do

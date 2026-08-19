@@ -769,6 +769,85 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, String.duplicate("a", 10_000)}
     end
 
+    test "does not duplicate an existing vary: accept-encoding header", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_vary_accept_encoding"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false, resp_headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert {":status", "200"} in resp_headers
+      assert {"content-encoding", "deflate"} in resp_headers
+      assert Enum.count(resp_headers, &(elem(&1, 0) == "vary")) == 1
+      assert {"vary", "accept-encoding"} in resp_headers
+    end
+
+    def send_vary_accept_encoding(conn) do
+      conn
+      |> put_resp_header("vary", "accept-encoding")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "does not duplicate an existing vary header regardless of its casing", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_vary_mixed_case"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false, resp_headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert {":status", "200"} in resp_headers
+      assert {"content-encoding", "deflate"} in resp_headers
+      assert Enum.count(resp_headers, &(elem(&1, 0) == "vary")) == 1
+      assert {"vary", "Accept-Encoding"} in resp_headers
+    end
+
+    def send_vary_mixed_case(conn) do
+      conn
+      |> put_resp_header("vary", "Accept-Encoding")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    test "still adds vary: accept-encoding alongside an unrelated existing vary header",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/send_vary_accept_language"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "deflate"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false, resp_headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert {":status", "200"} in resp_headers
+      assert {"content-encoding", "deflate"} in resp_headers
+      assert {"vary", "accept-language"} in resp_headers
+      assert {"vary", "accept-encoding"} in resp_headers
+    end
+
+    def send_vary_accept_language(conn) do
+      conn
+      |> put_resp_header("vary", "accept-language")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
     test "falls back to no encoding if no encodings provided", context do
       socket = SimpleH2Client.setup_connection(context)
 
