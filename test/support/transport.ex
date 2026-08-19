@@ -13,15 +13,19 @@ defmodule Transport do
     {:client, %{socket: socket, transport: :gen_tcp}}
   end
 
-  def tls_client(context, protocols) do
+  def tls_client(context, protocols, opts \\ []) do
     {:ok, socket} =
-      :ssl.connect(~c"localhost", context[:port],
-        active: false,
-        mode: :binary,
-        nodelay: true,
-        verify: :verify_peer,
-        cacertfile: Path.join(__DIR__, "../support/ca.pem"),
-        alpn_advertised_protocols: protocols
+      :ssl.connect(
+        ~c"localhost",
+        context[:port],
+        [
+          active: false,
+          mode: :binary,
+          nodelay: true,
+          verify: :verify_peer,
+          cacertfile: Path.join(__DIR__, "../support/ca.pem"),
+          alpn_advertised_protocols: protocols
+        ] ++ opts
       )
 
     {:client, %{socket: socket, transport: :ssl}}

@@ -50,6 +50,20 @@ defmodule HTTP2ProtocolTest do
       Process.sleep(100)
     end
 
+    test "it should not log an error if the client aborts the connection during init " <>
+           "(https://github.com/mtrudel/bandit/issues/647)",
+         context do
+      # Force an abortive close (RST) rather than a graceful one, since it's an abortive close
+      # that can surface conn_data/peer_data errors as a posix reason other than :closed. Race
+      # this against connection init by closing as soon as the TLS handshake completes, before
+      # sending any HTTP/2 bytes.
+      socket = Transport.tls_client(context, ["h2"], linger: {true, 0})
+      Transport.close(socket)
+      Process.sleep(100)
+
+      refute_receive {:log, %{level: :error}}
+    end
+
     @tag :capture_log
     test "it should ignore unknown frame types", context do
       socket = SimpleH2Client.setup_connection(context)

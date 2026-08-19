@@ -76,7 +76,12 @@ defmodule HTTP1LoggingTest do
       Transport.close(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg == "** (Bandit.TransportError) Unrecoverable error: closed"
+
+      # An abortive close (which is what we force via linger: {true, 0} in
+      # SimpleHTTP1Client.tcp_client/1) can surface as any of a handful of posix reasons
+      # depending on platform and timing, not just :closed (see #647)
+      assert msg =~
+               ~r/^\*\* \(Bandit\.TransportError\) Unrecoverable error: (closed|enotconn|einval|econnaborted|econnreset)$/
     end
 
     @tag :capture_log
@@ -92,7 +97,10 @@ defmodule HTTP1LoggingTest do
       Transport.close(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg =~ "** (Bandit.TransportError) Unrecoverable error: closed"
+
+      assert msg =~
+               ~r/^\*\* \(Bandit\.TransportError\) Unrecoverable error: (closed|enotconn|einval|econnaborted|econnreset)/
+
       assert msg =~ "lib/bandit/pipeline.ex:"
     end
 

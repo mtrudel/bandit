@@ -3,10 +3,17 @@ defmodule Bandit.Logger do
 
   require Logger
 
+  # Posix reasons that a peer socket can surface as once the client has gone away.
+  # `:closed` is the common case, but an abortive close (RST) can also surface as
+  # `:enotconn` / `:einval` / `:econnaborted` / `:econnreset` depending on platform
+  # and on how far along the connection was when the peer disappeared.
+  @client_closure_errors [:closed, :enotconn, :einval, :econnaborted, :econnreset]
+
   def maybe_log_protocol_error(error, stacktrace, opts, metadata) do
     logging_verbosity =
       case error do
-        %Bandit.TransportError{error: :closed} ->
+        %Bandit.TransportError{error: transport_error}
+        when transport_error in @client_closure_errors ->
           Keyword.get(opts.http, :log_client_closures, false)
 
         _error ->
