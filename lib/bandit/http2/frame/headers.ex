@@ -104,6 +104,14 @@ defmodule Bandit.HTTP2.Frame.Headers do
      }}
   end
 
+  # A frame whose payload is too short to hold the fields implied by its flags (a PRIORITY
+  # section shorter than 5 octets, or a PADDED frame missing its pad length octet) (RFC9113§4.2,
+  # §6.2)
+  def deserialize(_flags, _stream_id, _payload) do
+    {:error, Bandit.HTTP2.Errors.frame_size_error(),
+     "HEADERS frame with insufficient data for its flags (RFC9113§6.2)"}
+  end
+
   defimpl Bandit.HTTP2.Frame.Serializable do
     @end_stream_bit 0
     @end_headers_bit 2
