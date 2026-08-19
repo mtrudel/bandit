@@ -517,6 +517,17 @@ defmodule HTTP2PlugTest do
       assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
     end
 
+    @tag :capture_log
+    test "rejects an :all length with an offset past EOF instead of a negative content-length",
+         context do
+      {:ok, response} = Req.get(context.req, url: "/send_file?offset=100&length=:all")
+      assert response.status == 500
+      refute Map.has_key?(response.headers, "content-length")
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Cannot read -94 bytes starting at 100"
+    end
+
     def send_file(conn) do
       conn = fetch_query_params(conn)
       offset = String.to_integer(conn.params["offset"])
@@ -539,6 +550,34 @@ defmodule HTTP2PlugTest do
 
     def send_large_file(conn) do
       send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile_large"]), 0, :all)
+    end
+
+    test "respects sendfile_chunk_size when sending files", context do
+      context =
+        context
+        |> https_server(http_2_options: [sendfile_chunk_size: 1_024])
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_large_file", context.port)
+
+      assert {:ok, 1, false, [{":status", "200"} | _rest], _ctx} =
+               SimpleH2Client.recv_headers(socket)
+
+      chunks = recv_body_chunks(socket)
+
+      # The 3008 byte file should be read & sent as 1024 + 1024 + 960 byte DATA frames
+      assert length(chunks) == 3
+      assert Enum.all?(chunks, fn chunk -> byte_size(chunk) <= 1_024 end)
+
+      expected_body = File.read!(Path.join([__DIR__, "../../support/sendfile_large"]))
+      assert IO.iodata_to_binary(chunks) == expected_body
+    end
+
+    defp recv_body_chunks(socket, chunks \\ []) do
+      {:ok, 1, end_stream, chunk} = SimpleH2Client.recv_body(socket)
+      chunks = chunks ++ [chunk]
+      if end_stream, do: chunks, else: recv_body_chunks(socket, chunks)
     end
 
     @tag :capture_log

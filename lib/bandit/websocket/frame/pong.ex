@@ -19,7 +19,7 @@ defmodule Bandit.WebSocket.Frame.Pong do
     {:error, "Cannot have a fragmented pong frame (RFC6455§5.5.3)"}
   end
 
-  def deserialize(true, true, _payload) do
+  def deserialize(_fin, true, _payload) do
     {:error, "Cannot have a compressed pong frame (RFC7692§6.1)"}
   end
 

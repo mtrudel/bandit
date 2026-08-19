@@ -81,6 +81,13 @@ defmodule HTTP2FrameDeserializationTest do
       assert Frame.deserialize(frame, 16_384) ==
                {{:error, 1, "DATA frame with invalid padding length (RFC9113§6.1)"}, <<>>}
     end
+
+    test "rejects padded frames too short to contain the pad length octet" do
+      frame = <<0, 0, 0, 0, 0x08, 0, 0, 0, 1>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error, 6, "DATA frame with insufficient padding data (RFC9113§6.1)"}, <<>>}
+    end
   end
 
   describe "HEADERS frames" do
@@ -187,6 +194,22 @@ defmodule HTTP2FrameDeserializationTest do
 
       assert Frame.deserialize(frame, 16_384) ==
                {{:error, 1, "HEADERS frame with invalid padding length (RFC9113§6.2)"}, <<>>}
+    end
+
+    test "rejects padded frames too short to contain the pad length octet" do
+      frame = <<0, 0, 0, 1, 0x08, 0, 0, 0, 1>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error, 6, "HEADERS frame with insufficient data for its flags (RFC9113§6.2)"},
+                <<>>}
+    end
+
+    test "rejects priority frames too short to contain the priority section" do
+      frame = <<0, 0, 4, 1, 0x20, 0, 0, 0, 1, 0, 0, 0, 0>>
+
+      assert Frame.deserialize(frame, 16_384) ==
+               {{:error, 6, "HEADERS frame with insufficient data for its flags (RFC9113§6.2)"},
+                <<>>}
     end
   end
 
@@ -403,7 +426,7 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame, 16_384) ==
-               {{:error, Errors.flow_control_error(),
+               {{:error, Errors.protocol_error(),
                  "Invalid WINDOW_UPDATE size increment (RFC9113§6.9)"}, <<>>}
     end
 
@@ -411,7 +434,7 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 4, 8, 0, 0, 0, 0, 123, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame, 16_384) ==
-               {{:error, Errors.flow_control_error(),
+               {{:error, Errors.protocol_error(),
                  "Invalid WINDOW_UPDATE size increment (RFC9113§6.9)"}, <<>>}
     end
 

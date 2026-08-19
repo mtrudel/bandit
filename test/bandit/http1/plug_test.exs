@@ -429,6 +429,17 @@ defmodule HTTP1PlugTest do
       assert msg =~ "** (RuntimeError) Cannot read 3000 bytes starting at 1"
     end
 
+    @tag :capture_log
+    test "rejects an :all length with an offset past EOF instead of a negative content-length",
+         context do
+      {:ok, response} = Req.get(context.req, url: "/send_file?offset=100&length=:all")
+      assert response.status == 500
+      refute Map.has_key?(response.headers, "content-length")
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Cannot read -94 bytes starting at 100"
+    end
+
     def send_file(conn) do
       conn = fetch_query_params(conn)
       offset = String.to_integer(conn.params["offset"])

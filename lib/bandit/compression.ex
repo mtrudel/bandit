@@ -58,7 +58,7 @@ defmodule Bandit.Compression do
   defp response_has_strong_etag(headers) do
     case Bandit.Headers.get_header(headers, "etag") do
       nil -> false
-      "\W" <> _rest -> false
+      "W/" <> _rest -> false
       _strong_etag -> true
     end
   end

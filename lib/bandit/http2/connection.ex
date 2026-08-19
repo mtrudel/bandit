@@ -250,6 +250,7 @@ defmodule Bandit.HTTP2.Connection do
             self(),
             stream_id,
             connection.remote_settings.initial_window_size,
+            connection.local_settings.initial_window_size,
             sendfile_chunk_size
           )
 
