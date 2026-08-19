@@ -2434,6 +2434,44 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
+    test "seeds the stream receive window from a configured initial_window_size", context do
+      context =
+        context
+        |> https_server(
+          http_2_options: [default_local_settings: [initial_window_size: 1_000_000]]
+        )
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Warm up and drain the connection-level window update (which is unaffected by
+      # initial_window_size) by fully closing out a first stream
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, true, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert {:ok, 1, false, [{":status", "200"} | _], ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      # With the connection window already refreshed well above the 2^30 update threshold, send
+      # a second stream's body as a non-final DATA frame (so its own window update, which is
+      # skipped when a DATA frame ends the stream, is actually emitted) followed by an empty
+      # end_stream frame. This isolates a stream-level update. With the fix, it is seeded from
+      # the advertised initial_window_size (1_000_000) rather than the hardcoded default of
+      # 65_535, so the client's send window (which started at the advertised value) lands at
+      # exactly 2^31-1 rather than being pushed past it.
+      SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 3, false, "OK")
+      SimpleH2Client.send_body(socket, 3, true, "")
+
+      expected_adjustment = (1 <<< 31) - 1 - 1_000_000 + 2
+      {:ok, 3, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
+
+      assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+    end
+
     @tag :slow
     test "does not issue a subsequent update until receive window goes below 2^30", context do
       socket = SimpleH2Client.setup_connection(context)
