@@ -375,6 +375,75 @@ defmodule WebSocketProtocolTest do
 
       assert output =~ "Received compressed frame inflating too much"
     end
+
+    test "respects max_inflate_ratio for received frames", context do
+      # Build a payload which inflates at a ratio of about 10:1; large enough that inflation
+      # spans several :zlib.safeInflate/2 calls, but comfortably within the default ratio of 25
+      block = for i <- 1..6_000, into: <<>>, do: <<i::32>>
+      inflated_payload = :binary.copy(block, 6)
+
+      zstream = :zlib.open()
+      :ok = :zlib.deflateInit(zstream, :default, :deflated, -15, 8, :default)
+      deflated = zstream |> :zlib.deflate(inflated_payload, :sync) |> IO.iodata_to_binary()
+      :zlib.close(zstream)
+      payload_size = byte_size(deflated) - 4
+      <<payload::binary-size(^payload_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
+
+      # Ensure that a server with default options is happy to inflate it
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+      SimpleWebSocketClient.send_binary_frame(client, payload, 0xC)
+      assert {:ok, _echoed_payload} = SimpleWebSocketClient.recv_deflated_binary_frame(client)
+
+      output =
+        capture_log(fn ->
+          # The same payload must be refused by a server configured with a stricter ratio
+          context = http_server(context, websocket_options: [max_inflate_ratio: 5])
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+          SimpleWebSocketClient.send_binary_frame(client, payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received compressed frame inflating too much"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received compressed frame inflating too much"
+    end
+
+    test "respects deflate_options when deflating frames", context do
+      context = http_server(context, websocket_options: [deflate_options: [level: 0]])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      payload = String.duplicate("a", 1_000)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+
+      {:ok, deflated_payload} = SimpleWebSocketClient.recv_deflated_text_frame(client)
+
+      # level: 0 emits stored (uncompressed) blocks, so the deflated payload must be larger
+      # than the original; the default level would compress it down to a handful of bytes
+      assert byte_size(deflated_payload) > byte_size(payload)
+
+      # Ensure that the payload still inflates back to the original
+      zstream = :zlib.open()
+      :ok = :zlib.inflateInit(zstream, -15)
+
+      inflated_payload =
+        zstream
+        |> :zlib.inflate(<<deflated_payload::binary, 0x00, 0x00, 0xFF, 0xFF>>)
+        |> IO.iodata_to_binary()
+
+      :zlib.close(zstream)
+
+      assert inflated_payload == payload
+    end
   end
 
   describe "ping frames" do
