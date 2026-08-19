@@ -2357,6 +2357,20 @@ defmodule HTTP1ProtocolTest do
       assert SimpleHTTP1Client.connection_closed_for_reading?(client)
     end
 
+    test "closes the connection when an HTTP/1.1 client requests it via a comma-separated list",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", [
+        "host: localhost",
+        "connection: keep-alive, close"
+      ])
+
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(headers, :connection) == ["close"]
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
     test "handles pipeline requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
@@ -2520,6 +2534,32 @@ defmodule HTTP1ProtocolTest do
         "GET",
         "/echo_components",
         ["host: localhost", "connection: Keep-Alive"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "keepalive is respected in HTTP/1.0 when listed alongside other connection options",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: keep-alive, x-custom"],
+        "1.0"
+      )
+
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(headers, :connection) == ["keep-alive"]
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/echo_components",
+        ["host: localhost", "connection: keep-alive, x-custom"],
         "1.0"
       )
 
