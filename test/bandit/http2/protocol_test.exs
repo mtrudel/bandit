@@ -2437,7 +2437,9 @@ defmodule HTTP2ProtocolTest do
     test "seeds the stream receive window from a configured initial_window_size", context do
       context =
         context
-        |> https_server(http_2_options: [default_local_settings: [initial_window_size: 1_000_000]])
+        |> https_server(
+          http_2_options: [default_local_settings: [initial_window_size: 1_000_000]]
+        )
         |> Enum.into(context)
 
       socket = SimpleH2Client.setup_connection(context)
