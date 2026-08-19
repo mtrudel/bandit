@@ -230,7 +230,7 @@ defmodule Bandit do
   @type deflate_options :: [
           {:level, :zlib.zlevel()}
           | {:window_bits, :zlib.zwindowbits()}
-          | {:memory_level, :zlib.zmemlevel()}
+          | {:mem_level, :zlib.zmemlevel()}
           | {:strategy, :zlib.zstrategy()}
         ]
 

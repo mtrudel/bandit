@@ -552,6 +552,34 @@ defmodule HTTP2PlugTest do
       send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile_large"]), 0, :all)
     end
 
+    test "respects sendfile_chunk_size when sending files", context do
+      context =
+        context
+        |> https_server(http_2_options: [sendfile_chunk_size: 1_024])
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/send_large_file", context.port)
+
+      assert {:ok, 1, false, [{":status", "200"} | _rest], _ctx} =
+               SimpleH2Client.recv_headers(socket)
+
+      chunks = recv_body_chunks(socket)
+
+      # The 3008 byte file should be read & sent as 1024 + 1024 + 960 byte DATA frames
+      assert length(chunks) == 3
+      assert Enum.all?(chunks, fn chunk -> byte_size(chunk) <= 1_024 end)
+
+      expected_body = File.read!(Path.join([__DIR__, "../../support/sendfile_large"]))
+      assert IO.iodata_to_binary(chunks) == expected_body
+    end
+
+    defp recv_body_chunks(socket, chunks \\ []) do
+      {:ok, 1, end_stream, chunk} = SimpleH2Client.recv_body(socket)
+      chunks = chunks ++ [chunk]
+      if end_stream, do: chunks, else: recv_body_chunks(socket, chunks)
+    end
+
     @tag :capture_log
     test "sending a file from another process works as expected", context do
       response = Req.get!(context.req, url: "/other_process_send_file")
