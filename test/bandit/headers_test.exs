@@ -106,4 +106,63 @@ defmodule Bandit.HeadersTest do
       end
     end
   end
+
+  describe "token_list_member?/2" do
+    test "returns false for a nil header value" do
+      refute Headers.token_list_member?(nil, "close")
+    end
+
+    test "matches a bare single-token value" do
+      assert Headers.token_list_member?("close", "close")
+      refute Headers.token_list_member?("keep-alive", "close")
+    end
+
+    test "matches a token within a comma-separated list, regardless of position" do
+      assert Headers.token_list_member?("keep-alive, close", "close")
+      assert Headers.token_list_member?("close, keep-alive", "close")
+      assert Headers.token_list_member?("keep-alive,close", "close")
+    end
+
+    test "compares tokens case-insensitively" do
+      assert Headers.token_list_member?("Close", "close")
+      assert Headers.token_list_member?("keep-alive, CLOSE", "close")
+    end
+
+    test "does not match a token that is only a substring of a list member" do
+      refute Headers.token_list_member?("closely", "close")
+    end
+  end
+
+  describe "header_contains_token?/3" do
+    test "returns false when the header is absent" do
+      refute Headers.header_contains_token?([], "vary", "accept-encoding")
+    end
+
+    test "matches a token within the header's value" do
+      assert Headers.header_contains_token?(
+               [{"vary", "accept-encoding"}],
+               "vary",
+               "accept-encoding"
+             )
+
+      refute Headers.header_contains_token?(
+               [{"vary", "accept-language"}],
+               "vary",
+               "accept-encoding"
+             )
+    end
+
+    test "matches the header name case-insensitively" do
+      assert Headers.header_contains_token?(
+               [{"Vary", "Accept-Encoding"}],
+               "vary",
+               "accept-encoding"
+             )
+    end
+
+    test "scans every instance of a repeated header" do
+      headers = [{"vary", "accept-language"}, {"vary", "accept-encoding"}]
+      assert Headers.header_contains_token?(headers, "vary", "accept-encoding")
+    end
+  end
 end

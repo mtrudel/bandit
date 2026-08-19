@@ -1885,6 +1885,22 @@ defmodule HTTP1ProtocolTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "does no encoding if cache-control: no-transform is present with mixed casing",
+         context do
+      response =
+        Req.get!(context.req,
+          url: "/send_mixed_case_no_transform",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      # Cache-Control directives are case-insensitive (RFC9111§5.2), so "No-Transform" must be
+      # recognized the same as "no-transform"
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     test "falls back to no encoding if no encodings match", context do
       response =
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "a, b, c"}])
@@ -2059,6 +2075,12 @@ defmodule HTTP1ProtocolTest do
     def send_no_transform(conn) do
       conn
       |> put_resp_header("cache-control", "no-transform")
+      |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_mixed_case_no_transform(conn) do
+      conn
+      |> put_resp_header("cache-control", "No-Transform")
       |> send_resp(200, String.duplicate("a", 10_000))
     end
   end
