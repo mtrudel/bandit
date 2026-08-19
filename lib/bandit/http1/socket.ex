@@ -50,6 +50,8 @@ defmodule Bandit.HTTP1.Socket do
 
     @max_chunk_size_byte_count 16
 
+    @invalid_field_value_pattern_key {__MODULE__, :invalid_field_value_pattern}
+
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 
     def sock_data(%@for{} = socket), do: Bandit.SocketHelpers.sock_data(socket.socket)
@@ -187,13 +189,27 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     # RFC9110§5.5: field values containing CR, LF, or NUL characters are invalid and
-    # dangerous (a common request-smuggling / response-splitting vector).
+    # dangerous (a common request-smuggling / response-splitting vector). The match
+    # pattern is compiled once (lazily, on first use) and cached in :persistent_term,
+    # since compiling it on every call is a measurable fraction of header parsing time.
     @spec validate_field_value!(binary()) :: :ok
     defp validate_field_value!(value) do
-      if String.contains?(value, ["\r", "\n", "\0"]) do
+      if :binary.match(value, invalid_field_value_pattern()) != :nomatch do
         request_error!("Field value contains invalid characters (RFC9110§5.5)")
       else
         :ok
+      end
+    end
+
+    defp invalid_field_value_pattern do
+      case :persistent_term.get(@invalid_field_value_pattern_key, :undefined) do
+        :undefined ->
+          pattern = :binary.compile_pattern(["\r", "\n", "\0"])
+          :persistent_term.put(@invalid_field_value_pattern_key, pattern)
+          pattern
+
+        pattern ->
+          pattern
       end
     end
 
