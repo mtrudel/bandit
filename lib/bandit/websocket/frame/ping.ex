@@ -19,7 +19,7 @@ defmodule Bandit.WebSocket.Frame.Ping do
     {:error, "Cannot have a fragmented ping frame (RFC6455§5.5.2)"}
   end
 
-  def deserialize(true, true, _payload) do
+  def deserialize(_fin, true, _payload) do
     {:error, "Cannot have a compressed ping frame (RFC7692§6.1)"}
   end
 
