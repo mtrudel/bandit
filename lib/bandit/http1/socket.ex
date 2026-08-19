@@ -358,36 +358,28 @@ defmodule Bandit.HTTP1.Socket do
       {parse_chunk_size!(chunk_size), rest}
     end
 
-    # RFC9112§7.1 defines chunk-size as 1*HEXDIG. Integer.parse/2 additionally
-    # accepts a leading '+' or '-', so the grammar has to be checked separately
-    # rather than inferred from the parse succeeding. Without this, '+10' reads
-    # as a sixteen byte chunk, and '-0' parses as zero and is taken for the
-    # terminating chunk, ending the body at a position no conforming parser
-    # would end it at. A negative size reaches read_exactly!/5, which is
-    # guarded on a non-negative length and so raises FunctionClauseError rather
-    # than returning a 400.
+    # RFC9112§7.1 defines chunk-size as 1*HEXDIG. Integer.parse/2 is close to that grammar but
+    # not equal to it: the only extra thing it will consume is a single leading '+' or '-'.
+    # Without ruling that out, '+10' reads as a sixteen byte chunk, and '-0' parses as zero and
+    # is taken for the terminating chunk, ending the body at a position no conforming parser
+    # would end it at. A negative size reaches read_exactly!/5, which is guarded on a
+    # non-negative length and so raises FunctionClauseError rather than returning a 400.
+    #
+    # A sign can only ever appear as the first byte, so anchoring the guard there closes the
+    # gap: once the first byte is a hex digit, the only remaining way Integer.parse/2 can
+    # disagree with the grammar is trailing junk (e.g. "5g"), which the {chunk_size, ""} match
+    # already rules out by requiring the parse to consume every byte. The empty string can't
+    # match the leading-byte pattern either, so it falls through to the catch-all clause.
     @spec parse_chunk_size!(binary()) :: non_neg_integer()
-    defp parse_chunk_size!(chunk_size) do
-      with true <- hex_digits?(chunk_size),
-           {chunk_size, ""} <- Integer.parse(chunk_size, 16) do
-        chunk_size
-      else
+    defp parse_chunk_size!(<<digit, _::binary>> = chunk_size)
+         when digit in ?0..?9 or digit in ?a..?f or digit in ?A..?F do
+      case Integer.parse(chunk_size, 16) do
+        {chunk_size, ""} -> chunk_size
         _ -> request_error!("Unable to parse chunk size")
       end
     end
 
-    @spec hex_digits?(binary()) :: boolean()
-    defp hex_digits?(<<>>), do: false
-    defp hex_digits?(chunk_size), do: all_hex_digits?(chunk_size)
-
-    @spec all_hex_digits?(binary()) :: boolean()
-    defp all_hex_digits?(<<>>), do: true
-
-    defp all_hex_digits?(<<digit, rest::binary>>)
-         when digit in ?0..?9 or digit in ?a..?f or digit in ?A..?F,
-         do: all_hex_digits?(rest)
-
-    defp all_hex_digits?(_chunk_size), do: false
+    defp parse_chunk_size!(_chunk_size), do: request_error!("Unable to parse chunk size")
 
     ##################
     # Internal Reading

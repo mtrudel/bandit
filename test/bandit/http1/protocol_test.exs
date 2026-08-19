@@ -1350,6 +1350,25 @@ defmodule HTTP1ProtocolTest do
       assert msg == "** (Bandit.HTTPError) Unable to parse chunk size"
     end
 
+    # RFC9112§7.1.1 chunk extensions come after the chunk-size, not in place of it. A line
+    # whose size portion is empty once extensions are split off (chunk-ext starting at the very
+    # first byte) is still required to satisfy chunk-size = 1*HEXDIG.
+    @tag :capture_log
+    test "rejects a chunk size that is empty once extensions are split off", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, ";ext=value\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to parse chunk size"
+    end
+
     # RFC9112§6.1 combines repeated transfer-encoding headers into one
     # comma-separated value; RFC9112§6.3 then requires rejecting the request,
     # since chunked is no longer the final encoding.
