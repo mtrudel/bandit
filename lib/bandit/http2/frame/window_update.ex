@@ -13,7 +13,7 @@ defmodule Bandit.HTTP2.Frame.WindowUpdate do
   @spec deserialize(Bandit.HTTP2.Frame.flags(), Bandit.HTTP2.Stream.stream_id(), iodata()) ::
           {:ok, t()} | {:error, Bandit.HTTP2.Errors.error_code(), binary()}
   def deserialize(_flags, _stream_id, <<_reserved::1, 0::31>>) do
-    {:error, Bandit.HTTP2.Errors.flow_control_error(),
+    {:error, Bandit.HTTP2.Errors.protocol_error(),
      "Invalid WINDOW_UPDATE size increment (RFC9113§6.9)"}
   end
 

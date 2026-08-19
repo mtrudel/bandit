@@ -426,7 +426,7 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 4, 8, 0, 0, 0, 0, 0, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame, 16_384) ==
-               {{:error, Errors.flow_control_error(),
+               {{:error, Errors.protocol_error(),
                  "Invalid WINDOW_UPDATE size increment (RFC9113§6.9)"}, <<>>}
     end
 
@@ -434,7 +434,7 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 4, 8, 0, 0, 0, 0, 123, 0, 0, 0, 0>>
 
       assert Frame.deserialize(frame, 16_384) ==
-               {{:error, Errors.flow_control_error(),
+               {{:error, Errors.protocol_error(),
                  "Invalid WINDOW_UPDATE size increment (RFC9113§6.9)"}, <<>>}
     end
 
