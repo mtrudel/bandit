@@ -508,14 +508,14 @@ defmodule Bandit.HTTP1.Socket do
 
           {headers, %{socket | keepalive: false}}
 
-        connection_option?(socket.request_connection_header, "close") ||
-            connection_option?(response_connection_header, "close") ->
+        Bandit.Headers.token_list_member?(socket.request_connection_header, "close") ||
+            Bandit.Headers.token_list_member?(response_connection_header, "close") ->
           # Per RFC9112§9.6, a party that intends to close the connection SHOULD send a
           # 'close' connection option in its final message. If the response hasn't already
           # declared this itself, do so now (this happens when the client, not the plug,
           # is the one that asked for the connection to close).
           headers =
-            if connection_option?(response_connection_header, "close") do
+            if Bandit.Headers.token_list_member?(response_connection_header, "close") do
               headers
             else
               [{"connection", "close"} | Enum.reject(headers, &(elem(&1, 0) == "connection"))]
@@ -527,21 +527,13 @@ defmodule Bandit.HTTP1.Socket do
           {headers, %{socket | keepalive: true}}
 
         socket.version == :"HTTP/1.0" &&
-            connection_option?(socket.request_connection_header, "keep-alive") ->
+            Bandit.Headers.token_list_member?(socket.request_connection_header, "keep-alive") ->
           {[{"connection", "keep-alive"} | headers], %{socket | keepalive: true}}
 
         true ->
           {[{"connection", "close"} | headers], %{socket | keepalive: false}}
       end
     end
-
-    # The connection header carries a comma-separated list of options (RFC9110§7.6.1), so we
-    # look for a token within the (already downcased) value rather than comparing the whole
-    # string. This ensures list forms like "keep-alive, close" are handled correctly.
-    defp connection_option?(nil, _option), do: false
-
-    defp connection_option?(header_value, option),
-      do: header_value |> String.split(",") |> Enum.any?(&(String.trim(&1) == option))
 
     defp safe_downcase(str) when is_binary(str), do: String.downcase(str, :ascii)
     defp safe_downcase(str), do: str

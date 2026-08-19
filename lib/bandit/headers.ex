@@ -13,6 +13,38 @@ defmodule Bandit.Headers do
     end
   end
 
+  # A number of headers (Connection, Vary, Cache-Control, ...) are defined as a comma-separated
+  # list of case-insensitive tokens (RFC9110§5.6.1), and field names are themselves
+  # case-insensitive (RFC9110§5.1). These two helpers centralize that "is this token present"
+  # check so each caller doesn't reimplement its own (subtly different) parsing.
+
+  @doc """
+  Returns whether `token` (expected to already be lowercase) appears as a comma-separated member
+  of `header_value`, compared case-insensitively. `header_value` may be `nil`, in which case this
+  always returns `false`.
+  """
+  @spec token_list_member?(header_value :: binary() | nil, token :: binary()) :: boolean()
+  def token_list_member?(nil, _token), do: false
+
+  def token_list_member?(header_value, token) do
+    header_value
+    |> Plug.Conn.Utils.list()
+    |> Enum.any?(&(String.downcase(&1, :ascii) == token))
+  end
+
+  @doc """
+  Returns whether any header named `header` (matched case-insensitively, and scanning every
+  instance if the header appears more than once) contains `token` (expected to already be
+  lowercase) as a comma-separated member of its value.
+  """
+  @spec header_contains_token?(Plug.Conn.headers(), header :: binary(), token :: binary()) ::
+          boolean()
+  def header_contains_token?(headers, header, token) do
+    headers
+    |> Enum.filter(fn {name, _value} -> String.downcase(name, :ascii) == header end)
+    |> Enum.any?(fn {_name, value} -> token_list_member?(value, token) end)
+  end
+
   # Host is special-cased (rather than using get_header/2) because, per RFC9112§3.2 /
   # RFC9110§7.2, a request MUST be rejected if it contains more than one host header,
   # even if the values are identical (unlike content-length, which tolerates duplicates
