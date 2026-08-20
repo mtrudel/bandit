@@ -8,9 +8,11 @@ defmodule Bandit.Adapter do
 
   @behaviour Plug.Conn.Adapter
   @already_sent {:plug_conn, :sent}
+  @owner_ref_key {__MODULE__, :owner_ref}
 
   defstruct transport: nil,
             owner_pid: nil,
+            owner_ref: nil,
             method: nil,
             status: nil,
             content_encoding: nil,
@@ -24,6 +26,7 @@ defmodule Bandit.Adapter do
   @type t :: %__MODULE__{
           transport: Bandit.HTTPTransport.t(),
           owner_pid: pid() | nil,
+          owner_ref: reference() | nil,
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
           content_encoding: String.t(),
@@ -38,6 +41,9 @@ defmodule Bandit.Adapter do
         }
 
   def init(owner_pid, transport, method, headers, opts) do
+    owner_ref = make_ref()
+    Process.put(@owner_ref_key, owner_ref)
+
     content_encoding =
       Bandit.Compression.negotiate_content_encoding(
         Bandit.Headers.get_header(headers, "accept-encoding"),
@@ -47,6 +53,7 @@ defmodule Bandit.Adapter do
     %__MODULE__{
       transport: transport,
       owner_pid: owner_pid,
+      owner_ref: owner_ref,
       method: method,
       content_encoding: content_encoding,
       expect_continue: expect_continue?(headers, Bandit.HTTPTransport.version(transport)),
@@ -82,7 +89,8 @@ defmodule Bandit.Adapter do
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
           |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
-        {:ok, body, %{adapter | transport: transport, metrics: metrics}}
+        adapter = rebind(%{adapter | transport: transport, metrics: metrics})
+        {:ok, body, adapter}
 
       {:more, body, transport} ->
         body = IO.iodata_to_binary(body)
@@ -91,7 +99,8 @@ defmodule Bandit.Adapter do
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
 
-        {:more, body, %{adapter | transport: transport, metrics: metrics}}
+        adapter = rebind(%{adapter | transport: transport, metrics: metrics})
+        {:more, body, adapter}
     end
   end
 
@@ -329,6 +338,18 @@ defmodule Bandit.Adapter do
   def get_http_protocol(%__MODULE__{} = adapter),
     do: Bandit.HTTPTransport.version(adapter.transport)
 
-  defp validate_calling_process!(%{owner_pid: owner}) when owner == self(), do: :ok
+  defp rebind(adapter) do
+    owner_ref = make_ref()
+    Process.put(@owner_ref_key, owner_ref)
+    %{adapter | owner_ref: owner_ref}
+  end
+
+  defp validate_calling_process!(%{owner_pid: owner, owner_ref: owner_ref})
+       when owner == self() do
+    if Process.get(@owner_ref_key) == owner_ref,
+      do: :ok,
+      else: raise("Adapter is not bound to the current request")
+  end
+
   defp validate_calling_process!(_), do: raise("Adapter functions must be called by stream owner")
 end
