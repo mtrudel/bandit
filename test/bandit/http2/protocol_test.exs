@@ -2321,6 +2321,93 @@ defmodule HTTP2ProtocolTest do
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Path does not start with /"
     end
 
+    @tag :capture_log
+    test "returns a stream error if multiple :authority pseudo headers are received", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "HEAD"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected at most 1 :authority headers"
+    end
+
+    @tag :capture_log
+    test "returns a stream error if a header value contains a bare CR (RFC9113§8.2.1)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"x-foo", "a\rb"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Field value contains invalid characters (RFC9113§8.2.1)"
+    end
+
+    @tag :capture_log
+    test "returns a stream error if a header value contains a bare LF (RFC9113§8.2.1)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"x-foo", "a\nx-injected: yes"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Field value contains invalid characters (RFC9113§8.2.1)"
+    end
+
+    @tag :capture_log
+    test "returns a stream error if a header value contains a NUL byte (RFC9113§8.2.1)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"x-foo", "a\0b"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Field value contains invalid characters (RFC9113§8.2.1)"
+    end
+
     test "combines Cookie headers per RFC9113§8.2.3", context do
       socket = SimpleH2Client.setup_connection(context)
 
