@@ -1,0 +1,193 @@
+diff --git a/lib/bandit/compression.ex b/lib/bandit/compression.ex
+index 9d721d9..f45a24c 100644
+--- a/lib/bandit/compression.ex
++++ b/lib/bandit/compression.ex
+@@ -21,15 +21,57 @@ defmodule Bandit.Compression do
+ 
+   def negotiate_content_encoding(accept_encoding, http_opts) do
+     if Keyword.get(http_opts, :compress, true) do
+-      client_accept_encoding = Plug.Conn.Utils.list(accept_encoding)
++      # Parse Accept-Encoding per RFC9110§12.5.3, honoring q-values (a value of q=0 means 'not
++      # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Among the
++      # codings the client is willing to accept, we pick the first in our own preference order
++      accepted = parse_accept_encoding(accept_encoding)
++      wildcard_q = Enum.find_value(accepted, fn {coding, q} -> if coding == "*", do: q end)
+ 
+       Keyword.get(http_opts, :response_encodings, @accepted_encodings)
+-      |> Enum.find(&(&1 in client_accept_encoding))
++      |> Enum.find(fn encoding ->
++        case List.keyfind(accepted, encoding, 0) do
++          {_coding, q} -> q > 0
++          nil -> wildcard_q != nil and wildcard_q > 0
++        end
++      end)
+     else
+       nil
+     end
+   end
+ 
++  @spec parse_accept_encoding(binary()) :: [{binary(), float()}]
++  defp parse_accept_encoding(accept_encoding) do
++    accept_encoding
++    |> Plug.Conn.Utils.list()
++    |> Enum.map(fn element ->
++      case String.split(element, ";") do
++        [coding] -> {normalize_coding(coding), 1.0}
++        [coding | params] -> {normalize_coding(coding), quality_value(params)}
++      end
++    end)
++  end
++
++  @spec normalize_coding(binary()) :: binary()
++  defp normalize_coding(coding), do: coding |> String.trim() |> String.downcase(:ascii)
++
++  # Per RFC9110§12.4.2. Malformed q values are leniently read as 1.0 rather than refusing the
++  # coding, since a client that bothered to list a coding presumably accepts it
++  @spec quality_value([binary()]) :: float()
++  defp quality_value(params) do
++    Enum.find_value(params, 1.0, fn param ->
++      case param |> String.trim() |> String.downcase(:ascii) |> String.split("=") do
++        ["q", value] ->
++          case Float.parse(value) do
++            {q, _rest} -> q
++            :error -> 1.0
++          end
++
++        _ ->
++          nil
++      end
++    end)
++  end
++
+   def new(adapter, status, headers, empty_body?, streamable \\ false) do
+     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
+ 
+diff --git a/test/bandit/compression_test.exs b/test/bandit/compression_test.exs
+new file mode 100644
+index 0000000..a6e22c6
+--- /dev/null
++++ b/test/bandit/compression_test.exs
+@@ -0,0 +1,72 @@
++defmodule CompressionTest do
++  use ExUnit.Case, async: true
++
++  alias Bandit.Compression
++
++  describe "negotiate_content_encoding/2" do
++    # The default response_encodings list is platform dependent (zstd is included when the
++    # :zstd module is available), so tests which exercise the wildcard pin an explicit
++    # preference order to stay deterministic across OTP versions
++    @encodings ~w(gzip x-gzip deflate)
++
++    defp negotiate(accept_encoding, opts \\ []),
++      do: Compression.negotiate_content_encoding(accept_encoding, opts)
++
++    test "returns nil when no accept-encoding header is present" do
++      assert negotiate(nil) == nil
++    end
++
++    test "selects a plainly listed encoding in server preference order" do
++      assert negotiate("gzip, deflate") == "gzip"
++      assert negotiate("deflate, gzip") == "gzip"
++      assert negotiate("deflate") == "deflate"
++    end
++
++    test "compares codings case-insensitively (RFC9110§8.4.1)" do
++      assert negotiate("GZIP") == "gzip"
++      assert negotiate("Deflate") == "deflate"
++    end
++
++    test "honors q-values on listed encodings (any q>0 is acceptable)" do
++      assert negotiate("gzip;q=1.0") == "gzip"
++      assert negotiate("gzip;q=0.5") == "gzip"
++      assert negotiate("br;q=1.0, gzip;q=0.5") == "gzip"
++    end
++
++    test "treats q=0 as a refusal" do
++      assert negotiate("gzip;q=0, deflate") == "deflate"
++      assert negotiate("gzip;q=0") == nil
++      assert negotiate("gzip;q=0.0, deflate;q=0.000") |> is_nil()
++    end
++
++    test "honors the '*' wildcard" do
++      assert negotiate("*", response_encodings: @encodings) == "gzip"
++      assert negotiate("*;q=0, deflate", response_encodings: @encodings) == "deflate"
++      assert negotiate("*;q=0", response_encodings: @encodings) == nil
++    end
++
++    test "tolerates optional whitespace and mixed case around the q parameter" do
++      assert negotiate("gzip ; q=0.8") == "gzip"
++      assert negotiate("gzip; Q=0") |> is_nil()
++    end
++
++    test "reads malformed q values leniently as acceptance" do
++      assert negotiate("gzip;q=abc") == "gzip"
++      assert negotiate("gzip;q=") == "gzip"
++    end
++
++    test "does not compress when only identity is acceptable" do
++      assert negotiate("identity") == nil
++      assert negotiate("identity;q=1.0, *;q=0", response_encodings: @encodings) == nil
++      assert negotiate("identity;q=0, gzip") == "gzip"
++    end
++
++    test "returns nil when compression is disabled" do
++      assert negotiate("gzip", compress: false) == nil
++    end
++
++    test "respects a configured response_encodings preference order" do
++      assert negotiate("gzip, deflate", response_encodings: ["deflate", "gzip"]) == "deflate"
++    end
++  end
++end
+diff --git a/test/bandit/http1/compression_negotiation_test.exs b/test/bandit/http1/compression_negotiation_test.exs
+new file mode 100644
+index 0000000..482dc32
+--- /dev/null
++++ b/test/bandit/http1/compression_negotiation_test.exs
+@@ -0,0 +1,45 @@
++defmodule HTTP1CompressionNegotiationTest do
++  use ExUnit.Case, async: true
++  use ServerHelpers
++
++  setup :http_server
++
++  def hello(conn), do: send_resp(conn, 200, String.duplicate("a", 10_000))
++
++  defp get_with_accept_encoding(context, accept_encoding) do
++    client = SimpleHTTP1Client.tcp_client(context)
++
++    SimpleHTTP1Client.send(client, "GET", "/hello", [
++      "host: localhost",
++      "accept-encoding: #{accept_encoding}"
++    ])
++
++    {:ok, "200 OK", headers, body} = SimpleHTTP1Client.recv_reply(client)
++    {Keyword.get(headers, :"content-encoding"), body}
++  end
++
++  test "compresses for a q-valued accept-encoding (Ruby net/http style)", context do
++    {encoding, body} =
++      get_with_accept_encoding(context, "gzip;q=1.0,deflate;q=0.6,identity;q=0.3")
++
++    assert encoding == "gzip"
++    assert :zlib.gunzip(body) == String.duplicate("a", 10_000)
++  end
++
++  test "compresses for an uppercase coding", context do
++    {encoding, _body} = get_with_accept_encoding(context, "GZIP")
++    assert encoding == "gzip"
++  end
++
++  test "honors a q=0 refusal end to end", context do
++    {encoding, body} = get_with_accept_encoding(context, "gzip;q=0, x-gzip;q=0, deflate;q=0")
++    assert encoding == nil
++    assert body == String.duplicate("a", 10_000)
++  end
++
++  test "plain accept-encoding lists behave exactly as before", context do
++    {encoding, body} = get_with_accept_encoding(context, "gzip, deflate")
++    assert encoding == "gzip"
++    assert :zlib.gunzip(body) == String.duplicate("a", 10_000)
++  end
++end
