@@ -21,13 +21,55 @@ defmodule Bandit.Compression do
 
   def negotiate_content_encoding(accept_encoding, http_opts) do
     if Keyword.get(http_opts, :compress, true) do
-      client_accept_encoding = Plug.Conn.Utils.list(accept_encoding)
+      # Parse Accept-Encoding per RFC9110§12.5.3, honoring q-values (a value of q=0 means 'not
+      # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Among the
+      # codings the client is willing to accept, we pick the first in our own preference order
+      accepted = parse_accept_encoding(accept_encoding)
+      wildcard_q = Enum.find_value(accepted, fn {coding, q} -> if coding == "*", do: q end)
 
       Keyword.get(http_opts, :response_encodings, @accepted_encodings)
-      |> Enum.find(&(&1 in client_accept_encoding))
+      |> Enum.find(fn encoding ->
+        case List.keyfind(accepted, encoding, 0) do
+          {_coding, q} -> q > 0
+          nil -> wildcard_q != nil and wildcard_q > 0
+        end
+      end)
     else
       nil
     end
+  end
+
+  @spec parse_accept_encoding(binary()) :: [{binary(), float()}]
+  defp parse_accept_encoding(accept_encoding) do
+    accept_encoding
+    |> Plug.Conn.Utils.list()
+    |> Enum.map(fn element ->
+      case String.split(element, ";") do
+        [coding] -> {normalize_coding(coding), 1.0}
+        [coding | params] -> {normalize_coding(coding), quality_value(params)}
+      end
+    end)
+  end
+
+  @spec normalize_coding(binary()) :: binary()
+  defp normalize_coding(coding), do: coding |> String.trim() |> String.downcase(:ascii)
+
+  # Per RFC9110§12.4.2. Malformed q values are leniently read as 1.0 rather than refusing the
+  # coding, since a client that bothered to list a coding presumably accepts it
+  @spec quality_value([binary()]) :: float()
+  defp quality_value(params) do
+    Enum.find_value(params, 1.0, fn param ->
+      case param |> String.trim() |> String.downcase(:ascii) |> String.split("=") do
+        ["q", value] ->
+          case Float.parse(value) do
+            {q, _rest} -> q
+            :error -> 1.0
+          end
+
+        _ ->
+          nil
+      end
+    end)
   end
 
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
