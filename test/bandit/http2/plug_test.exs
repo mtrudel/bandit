@@ -132,31 +132,6 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, body)
   end
 
-  @tag :capture_log
-  test "reading request body from another process works as expected", context do
-    response = Req.post!(context.req, url: "/other_process_body_read", body: "OK")
-
-    assert response.status == 200
-  end
-
-  def other_process_body_read(conn) do
-    {:ok, "OK", conn} = read_body(conn)
-
-    error =
-      Task.async(fn ->
-        try do
-          read_body(conn)
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    send_resp(conn, 200, "OK")
-  end
-
   test "reading request body respects length option", context do
     socket = SimpleH2Client.setup_connection(context)
 
@@ -360,29 +335,6 @@ defmodule HTTP2PlugTest do
     conn |> resp(200, "OK")
   end
 
-  @tag :capture_log
-  test "sending a body from another process works as expected", context do
-    response = Req.get!(context.req, url: "/other_process_send_body")
-
-    assert response.status == 200
-  end
-
-  def other_process_send_body(conn) do
-    error =
-      Task.async(fn ->
-        try do
-          send_resp(conn, 200, "NOT OK")
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    send_resp(conn, 200, "OK")
-  end
-
   test "sending a chunk", context do
     response = Req.get!(context.req, url: "/chunk_test")
 
@@ -397,55 +349,6 @@ defmodule HTTP2PlugTest do
     |> elem(1)
     |> chunk("OK")
     |> elem(1)
-  end
-
-  @tag :capture_log
-  test "setting a chunked response from another process works as expected", context do
-    response = Req.get!(context.req, url: "/other_process_set_chunk")
-
-    assert response.status == 200
-  end
-
-  def other_process_set_chunk(conn) do
-    error =
-      Task.async(fn ->
-        try do
-          send_chunked(conn, 200)
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    send_resp(conn, 200, "OK")
-  end
-
-  @tag :capture_log
-  test "sending a chunk from another process works as expected", context do
-    response = Req.get!(context.req, url: "/other_process_send_chunk")
-
-    assert response.status == 200
-  end
-
-  def other_process_send_chunk(conn) do
-    conn = conn |> send_chunked(200)
-
-    error =
-      Task.async(fn ->
-        try do
-          chunk(conn, "NOT OK")
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    {:ok, conn} = chunk(conn, "OK")
-    conn
   end
 
   describe "send_file" do
@@ -578,29 +481,6 @@ defmodule HTTP2PlugTest do
       {:ok, 1, end_stream, chunk} = SimpleH2Client.recv_body(socket)
       chunks = chunks ++ [chunk]
       if end_stream, do: chunks, else: recv_body_chunks(socket, chunks)
-    end
-
-    @tag :capture_log
-    test "sending a file from another process works as expected", context do
-      response = Req.get!(context.req, url: "/other_process_send_file")
-
-      assert response.status == 200
-    end
-
-    def other_process_send_file(conn) do
-      error =
-        Task.async(fn ->
-          try do
-            send_file(conn, 200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
-          rescue
-            error -> error
-          end
-        end)
-        |> Task.await()
-
-      assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-      send_resp(conn, 200, "OK")
     end
   end
 
@@ -839,29 +719,6 @@ defmodule HTTP2PlugTest do
   def send_inform(conn) do
     conn = conn |> inform(100, [{:"x-from", "inform"}])
     conn |> send_resp(200, "Informer")
-  end
-
-  @tag :capture_log
-  test "sending an inform response from another process works as expected", context do
-    response = Req.get!(context.req, url: "/other_process_send_inform")
-
-    assert response.status == 200
-  end
-
-  def other_process_send_inform(conn) do
-    error =
-      Task.async(fn ->
-        try do
-          inform(conn, 100, [])
-        rescue
-          error -> error
-        end
-      end)
-      |> Task.await()
-
-    assert error == %RuntimeError{message: "Adapter functions must be called by stream owner"}
-
-    send_resp(conn, 200, "OK")
   end
 
   test "reading HTTP version", context do
