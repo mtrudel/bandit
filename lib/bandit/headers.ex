@@ -2,8 +2,33 @@ defmodule Bandit.Headers do
   @moduledoc false
   # Conveniences for dealing with headers.
 
+  @invalid_field_value_pattern_key {__MODULE__, :invalid_field_value_pattern}
+
   @spec is_port_number(integer()) :: Macro.t()
   defguardp is_port_number(port) when Bitwise.band(port, 0xFFFF) === port
+
+  # RFC9110§5.5 / RFC9113§8.2.1: field values containing CR, LF, or NUL characters
+  # are invalid and dangerous (a common request-smuggling / response-splitting /
+  # log-injection vector). Shared by both HTTP/1 and HTTP/2 so that neither
+  # transport can drift from the other's validation. The match pattern is
+  # compiled once (lazily, on first use) and cached in :persistent_term, since
+  # compiling it on every call is a measurable fraction of header parsing time.
+  @spec field_value_valid?(binary()) :: boolean()
+  def field_value_valid?(value) do
+    :binary.match(value, invalid_field_value_pattern()) == :nomatch
+  end
+
+  defp invalid_field_value_pattern do
+    case :persistent_term.get(@invalid_field_value_pattern_key, :undefined) do
+      :undefined ->
+        pattern = :binary.compile_pattern(["\r", "\n", "\0"])
+        :persistent_term.put(@invalid_field_value_pattern_key, pattern)
+        pattern
+
+      pattern ->
+        pattern
+    end
+  end
 
   @spec get_header(Plug.Conn.headers(), header :: binary()) :: binary() | nil
   def get_header(headers, header) do

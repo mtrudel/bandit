@@ -132,9 +132,11 @@ defmodule Bandit.HTTP2.Stream do
           exactly_one_instance_of!(pseudo_headers, ":scheme", stream)
           exactly_one_instance_of!(pseudo_headers, ":method", stream)
           exactly_one_instance_of!(pseudo_headers, ":path", stream)
+          at_most_one_instance_of!(pseudo_headers, ":authority", stream)
           headers_all_lowercase!(headers, stream)
           no_connection_headers!(headers, stream)
           valid_te_header!(headers, stream)
+          valid_field_values!(headers, stream)
           content_length = get_content_length!(headers, stream)
           headers = combine_cookie_crumbs(headers)
           stream = %{stream | bytes_remaining: content_length}
@@ -195,6 +197,13 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Expected 1 #{header} headers", stream)
     end
 
+    # RFC9113§8.3 - a pseudo header field name (such as :authority, which is optional
+    # and so cannot use exactly_one_instance_of!/3) must not appear more than once
+    defp at_most_one_instance_of!(headers, header, stream) do
+      if Enum.count(headers, fn {key, _value} -> key == header end) > 1,
+        do: stream_error!("Expected at most 1 #{header} headers", stream)
+    end
+
     # RFC9113§8.2 - all headers name fields must be lowercsae
     defp headers_all_lowercase!(headers, stream) do
       if !Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
@@ -220,6 +229,13 @@ defmodule Bandit.HTTP2.Stream do
     defp valid_te_header!(headers, stream) do
       if Bandit.Headers.get_header(headers, "te") not in [nil, "trailers"],
         do: stream_error!("Received invalid TE header", stream)
+    end
+
+    # RFC9113§8.2.1 - field values containing CR, LF, or NUL characters are invalid and
+    # dangerous (a common request-smuggling / response-splitting / log-injection vector)
+    defp valid_field_values!(headers, stream) do
+      if Enum.any?(headers, fn {_key, value} -> not Bandit.Headers.field_value_valid?(value) end),
+        do: stream_error!("Field value contains invalid characters (RFC9113§8.2.1)", stream)
     end
 
     defp get_content_length!(headers, stream) do
