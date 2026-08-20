@@ -11,6 +11,7 @@ defmodule Bandit.Adapter do
 
   defstruct transport: nil,
             owner_pid: nil,
+            usage_counter: nil,
             method: nil,
             status: nil,
             content_encoding: nil,
@@ -24,6 +25,7 @@ defmodule Bandit.Adapter do
   @type t :: %__MODULE__{
           transport: Bandit.HTTPTransport.t(),
           owner_pid: pid() | nil,
+          usage_counter: {:counters.counters_ref(), non_neg_integer()},
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
           content_encoding: String.t(),
@@ -51,7 +53,8 @@ defmodule Bandit.Adapter do
       content_encoding: content_encoding,
       expect_continue: expect_continue?(headers, Bandit.HTTPTransport.version(transport)),
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
-      opts: opts
+      opts: opts,
+      usage_counter: {:counters.new(1, []), 0}
     }
   end
 
@@ -67,6 +70,7 @@ defmodule Bandit.Adapter do
   @impl Plug.Conn.Adapter
   def read_req_body(%__MODULE__{} = adapter, opts) do
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
     adapter = maybe_send_continue(adapter)
 
     metrics =
@@ -82,7 +86,8 @@ defmodule Bandit.Adapter do
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
           |> Map.put(:req_body_end_time, Bandit.Telemetry.monotonic_time())
 
-        {:ok, body, %{adapter | transport: transport, metrics: metrics}}
+        {:ok, body,
+         %{adapter | transport: transport, metrics: metrics} |> advance_usage_counter()}
 
       {:more, body, transport} ->
         body = IO.iodata_to_binary(body)
@@ -91,7 +96,8 @@ defmodule Bandit.Adapter do
           metrics
           |> Map.update(:req_body_bytes, byte_size(body), &(&1 + byte_size(body)))
 
-        {:more, body, %{adapter | transport: transport, metrics: metrics}}
+        {:more, body,
+         %{adapter | transport: transport, metrics: metrics} |> advance_usage_counter()}
     end
   end
 
@@ -112,6 +118,7 @@ defmodule Bandit.Adapter do
   @impl Plug.Conn.Adapter
   def send_resp(%__MODULE__{} = adapter, status, headers, body) do
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
 
     # Save an extra iodata_length by checking common cases
@@ -136,6 +143,7 @@ defmodule Bandit.Adapter do
       %{adapter | metrics: metrics}
       |> send_headers(status, headers, :raw)
       |> send_data(encoded_body, true)
+      |> advance_usage_counter()
 
     send(adapter.owner_pid, @already_sent)
     {:ok, nil, adapter}
@@ -154,6 +162,7 @@ defmodule Bandit.Adapter do
     if is_number(length) && length <= 0, do: raise("Length cannot be zero or negative")
 
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
     {:ok, fileinfo} = :file.read_file_info(path, [:raw, time: :universal])
     %File.Stat{type: :regular, size: size} = File.Stat.from_record(fileinfo)
@@ -175,7 +184,7 @@ defmodule Bandit.Adapter do
         |> Map.put(:resp_end_time, Bandit.Telemetry.monotonic_time())
 
       send(adapter.owner_pid, @already_sent)
-      {:ok, nil, %{adapter | transport: socket, metrics: metrics}}
+      {:ok, nil, %{adapter | transport: socket, metrics: metrics} |> advance_usage_counter()}
     else
       raise "Cannot read #{length} bytes starting at #{offset} as #{path} is only #{size} octets in length"
     end
@@ -184,6 +193,7 @@ defmodule Bandit.Adapter do
   @impl Plug.Conn.Adapter
   def send_chunked(%__MODULE__{} = adapter, status, headers) do
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
     metrics = Map.put(adapter.metrics, :resp_start_time, start_time)
 
@@ -204,7 +214,9 @@ defmodule Bandit.Adapter do
 
     adapter = %{adapter | metrics: metrics, compression_context: compression_context}
     send(adapter.owner_pid, @already_sent)
-    {:ok, nil, send_headers(adapter, status, headers, :chunk_encoded)}
+
+    {:ok, nil,
+     adapter |> send_headers(status, headers, :chunk_encoded) |> advance_usage_counter()}
   end
 
   @impl Plug.Conn.Adapter
@@ -216,9 +228,13 @@ defmodule Bandit.Adapter do
     # this entire section of the API is a bit slanty regardless.
 
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
 
     # chunk/2 is unique among Plug.Conn.Adapter's sending callbacks in that it can return an error
-    # tuple instead of just raising or dying on error. Rescue here to implement this
+    # tuple instead of just raising or dying on error. Rescue here to implement this. On that
+    # error path no new adapter is returned, so advance_usage_counter/1 is deliberately not
+    # called - Plug's documented behaviour there is for the caller to keep using its
+    # already-current conn
     try do
       if Bandit.SocketHelpers.iodata_empty?(chunk) do
         {encoded_chunk, compression_metrics} =
@@ -233,13 +249,13 @@ defmodule Bandit.Adapter do
             adapter
           end
 
-        {:ok, nil, send_data(adapter, "", true)}
+        {:ok, nil, adapter |> send_data("", true) |> advance_usage_counter()}
       else
         {encoded_chunk, compression_context} =
           Bandit.Compression.compress_chunk(chunk, adapter.compression_context)
 
         adapter = %{adapter | compression_context: compression_context}
-        {:ok, nil, send_data(adapter, encoded_chunk, false)}
+        {:ok, nil, adapter |> send_data(encoded_chunk, false) |> advance_usage_counter()}
       end
     rescue
       error in Bandit.TransportError -> {:error, error.error}
@@ -250,6 +266,7 @@ defmodule Bandit.Adapter do
   @impl Plug.Conn.Adapter
   def inform(%__MODULE__{} = adapter, status, headers) do
     validate_calling_process!(adapter)
+    validate_usage_counter!(adapter)
     # It's a bit weird to be casing on the underlying version here, but whether or not to send
     # an informational response is actually defined in RFC9110§15.2 so we consider it as an aspect
     # of semantics that belongs here and not in the underlying transport
@@ -258,7 +275,7 @@ defmodule Bandit.Adapter do
     else
       # inform/3 is unique in that headers comes in as a keyword list
       headers = Enum.map(headers, fn {header, value} -> {to_string(header), value} end)
-      {:ok, send_headers(adapter, status, headers, :inform)}
+      {:ok, adapter |> send_headers(status, headers, :inform) |> advance_usage_counter()}
     end
   end
 
@@ -304,9 +321,14 @@ defmodule Bandit.Adapter do
 
   @impl Plug.Conn.Adapter
   def upgrade(%__MODULE__{} = adapter, protocol, opts) do
+    validate_usage_counter!(adapter)
+
     if Keyword.get(adapter.opts.websocket, :enabled, true) &&
          Bandit.HTTPTransport.supported_upgrade?(adapter.transport, protocol),
-       do: {:ok, %{adapter | upgrade: {protocol, opts, adapter.opts.websocket}}},
+       do:
+         {:ok,
+          %{adapter | upgrade: {protocol, opts, adapter.opts.websocket}}
+          |> advance_usage_counter()},
        else: {:error, :not_supported}
   end
 
@@ -331,4 +353,42 @@ defmodule Bandit.Adapter do
 
   defp validate_calling_process!(%{owner_pid: owner}) when owner == self(), do: :ok
   defp validate_calling_process!(_), do: raise("Adapter functions must be called by stream owner")
+
+  # Every Plug.Conn.Adapter callback that returns an updated conn bumps the shared side of
+  # usage_counter and stamps the returned adapter's local side to match. If a later call comes
+  # in with an adapter whose local count is behind the shared count's current value, some other
+  # (newer) copy of the conn already advanced the connection - which can only happen if this
+  # adapter is a stale conn that should have been discarded. Using the conn at that point would
+  # otherwise let Bandit silently misinterpret leftover socket state (e.g. treating unread
+  # request body as already consumed, or vice versa), corrupting this request or the next one on
+  # the connection.
+  #
+  # validate_usage_counter! is called unconditionally at the top of every callback, since a
+  # stale conn is a bug no matter what the call ends up doing. advance_usage_counter is called
+  # separately, only at the point a callback actually commits to returning a new adapter - some
+  # callbacks (inform/3, upgrade/3, chunk/2) have paths that report failure without producing a
+  # new conn, and Plug's documented behaviour in that case is for the caller to keep using the
+  # same (still current) conn.
+  defp validate_usage_counter!(%__MODULE__{usage_counter: {shared, local}}) do
+    case :counters.get(shared, 1) do
+      ^local ->
+        :ok
+
+      _stale ->
+        raise """
+        Stale conn passed to a Plug.Conn function.
+
+        This conn is not the one most recently returned by read_body/2, send_resp/3, or another \
+        Plug.Conn function that returns an updated conn. Every such function returns an updated \
+        conn that must be threaded through to the rest of your pipeline - discarding it and \
+        reusing an older conn will corrupt this connection, and potentially the next request on \
+        it if the connection is kept alive.
+        """
+    end
+  end
+
+  defp advance_usage_counter(%__MODULE__{usage_counter: {shared, local}} = adapter) do
+    :counters.add(shared, 1, 1)
+    %{adapter | usage_counter: {shared, local + 1}}
+  end
 end
