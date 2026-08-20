@@ -41,6 +41,9 @@ defmodule Bandit.HTTP2.StreamCollection do
     end
   end
 
+  @spec get_stream_id(t(), pid()) :: Bandit.HTTP2.Stream.stream_id() | nil
+  def get_stream_id(collection, pid), do: Map.get(collection.pid_to_id, pid)
+
   @spec insert(t(), Bandit.HTTP2.Stream.stream_id(), pid()) :: t()
   def insert(collection, stream_id, pid) do
     %__MODULE__{

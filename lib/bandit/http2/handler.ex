@@ -19,6 +19,12 @@ defmodule Bandit.HTTP2.Handler do
 
   @impl ThousandIsland.Handler
   def handle_data(data, socket, state) do
+    # Any inbound data (including PING keepalives that would otherwise defeat the transport-level
+    # read timeout) is an opportunity to release sends that have been queued too long waiting on
+    # the connection send window.
+    connection = Bandit.HTTP2.Connection.expire_pending_sends(state.connection)
+    state = %{state | connection: connection}
+
     (state.buffer <> data)
     |> Stream.unfold(
       &Bandit.HTTP2.Frame.deserialize(&1, state.connection.local_settings.max_frame_size)
@@ -78,7 +84,8 @@ defmodule Bandit.HTTP2.Handler do
     # In 'normal' cases where there is sufficient space in the send windows for this message to be
     # sent, Connection will call `unblock` synchronously in the `Connection.send_data` call below.
     # In cases where there is not enough space in the connection window, Connection will call
-    # `unblock` at some point in the future once space opens up in the window. This
+    # `unblock` at some point in the future once space opens up in the window, the queued send
+    # expires (Connection.expire_pending_sends/1), or the client resets the stream. This
     # keeps this code simple in that we can blindly send noreply here and let Connection handle
     # the separate cases. This ensures that we have backpressure all the way back to the
     # stream's handler process in the event of window overruns.
@@ -87,7 +94,7 @@ defmodule Bandit.HTTP2.Handler do
     # are managed internally by the stream and are not considered here at all. If the stream has
     # managed to send this message, it is because there was enough room in the stream's send
     # window to do so.
-    unblock = fn -> GenServer.reply(from, :ok) end
+    unblock = fn reply -> GenServer.reply(from, reply) end
 
     connection =
       Bandit.HTTP2.Connection.send_data(

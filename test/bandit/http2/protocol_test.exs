@@ -1762,6 +1762,116 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  # GHSA-xj8g-532w-jv94: a stream blocked writing against the *connection* send window used to
+  # sit in a `GenServer.call(connection_pid, ..., :infinity)` that neither RST_STREAM nor any
+  # timeout could release, pinning the stream process (and any resources its Plug held) forever.
+  describe "connection send window blocking (GHSA-xj8g-532w-jv94)" do
+    setup do
+      Process.register(self(), __MODULE__)
+      :ok
+    end
+
+    def blocking_test(conn) do
+      data = String.duplicate("a", 10_000)
+
+      send(__MODULE__, {:plug_ready, self()})
+      receive do: (:go -> :ok)
+
+      conn = send_chunked(conn, 200)
+
+      conn =
+        Enum.reduce(1..6, conn, fn _i, conn ->
+          {:ok, conn} = chunk(conn, data)
+          conn
+        end)
+
+      send(__MODULE__, {:blocking_chunk_started, self()})
+
+      case chunk(conn, data) do
+        {:ok, conn} ->
+          send(__MODULE__, {:blocking_chunk_returned, self()})
+          conn
+
+        {:error, reason} ->
+          send(__MODULE__, {:blocking_chunk_error, self(), reason})
+          conn
+      end
+    end
+
+    # Grants a generous stream-level window (so the default 65_535 byte connection window is the
+    # one that ends up blocking) and drives the plug until it is stuck mid-write, with 4_465 bytes
+    # of its 7th 10_000 byte chunk still unsent
+    defp start_blocked_stream(socket, context) do
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/blocking_test", context[:port])
+
+      assert_receive {:plug_ready, plug_pid}, 1_000
+
+      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
+
+      # The window update is only observable once the plug produces frames, so let the connection
+      # process apply it before any body is written
+      Process.sleep(100)
+      send(plug_pid, :go)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      Enum.each(1..6, fn _i -> SimpleH2Client.recv_body(socket) end)
+      assert {:ok, 1, false, chunk} = SimpleH2Client.recv_body(socket)
+      assert byte_size(chunk) == 5_535
+
+      assert_receive {:blocking_chunk_started, ^plug_pid}, 1_000
+      refute_receive {:blocking_chunk_returned, ^plug_pid}, 500
+
+      plug_pid
+    end
+
+    @tag :capture_log
+    test "RST_STREAM releases a stream blocked on the connection send window", context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      plug_pid = start_blocked_stream(socket, context)
+      ref = Process.monitor(plug_pid)
+
+      SimpleH2Client.send_rst_stream(socket, 1, Bandit.HTTP2.Errors.cancel())
+
+      assert_receive {:blocking_chunk_error, ^plug_pid, :closed}, 1_000
+      assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
+    end
+
+    @tag :slow
+    @tag :capture_log
+    @tag timeout: 120_000
+    test "a stream blocked on the connection send window is eventually released even when kept alive by PINGs",
+         context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      plug_pid = start_blocked_stream(socket, context)
+      ref = Process.monitor(plug_pid)
+
+      # Well past the timeout that now bounds a connection-window block; a send-only keepalive so
+      # we don't consume the frame the final assertion below relies on
+      ping_until(socket, 16_000)
+
+      assert_receive {:blocking_chunk_error, ^plug_pid,
+                      "Timeout waiting for space in the connection send_window"},
+                     1_000
+
+      assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
+    end
+
+    defp ping_until(socket, duration) do
+      deadline = System.monotonic_time(:millisecond) + duration
+
+      Stream.repeatedly(fn ->
+        SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+        Process.sleep(250)
+        System.monotonic_time(:millisecond)
+      end)
+      |> Enum.find(&(&1 >= deadline))
+    end
+  end
+
   describe "HEADERS frames" do
     test "sends non-end of stream headers when there is a body", context do
       socket = SimpleH2Client.setup_connection(context)
