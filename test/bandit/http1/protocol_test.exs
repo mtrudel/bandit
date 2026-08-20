@@ -1697,6 +1697,120 @@ defmodule HTTP1ProtocolTest do
       assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
     end
 
+    test "honors q-values in accept-encoding", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "gzip;q=1.0,deflate;q=0.6,identity;q=0.3"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
+    end
+
+    test "treats a q=0 in accept-encoding as a refusal of that coding", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "gzip;q=0, deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
+    end
+
+    test "does not encode if accept-encoding refuses all supported codings", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "zstd;q=0, gzip;q=0, x-gzip;q=0, deflate;q=0"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "matches accept-encoding codings case insensitively", context do
+      response =
+        Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "GZIP"}])
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
+    end
+
+    test "honors a wildcard in accept-encoding", context do
+      # The default response_encodings list is platform dependent (zstd joins it when the :zstd
+      # module is available), so pin an explicit preference order to stay deterministic
+      context =
+        context
+        |> http_server(http_options: [response_encodings: ~w(gzip x-gzip deflate)])
+        |> Enum.into(context)
+
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "*"}],
+          base_url: context.base
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == :zlib.gzip(String.duplicate("a", 10_000))
+    end
+
+    test "treats a q=0 wildcard in accept-encoding as a refusal", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "*;q=0, deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-encoding"] == ["deflate"]
+      assert response.headers["vary"] == ["accept-encoding"]
+    end
+
+    test "does not encode if accept-encoding only accepts identity", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "identity"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "reads malformed q-values in accept-encoding leniently as acceptance", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "gzip;q=huh"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+    end
+
     test "does not duplicate an existing vary: accept-encoding header", context do
       response =
         Req.get!(context.req,
