@@ -1,3 +1,34 @@
+# 1.12.5 (20 Aug 2026)
+
+### Changes
+
+* Bound and cancel HTTP/2 sends blocked on the connection window (GHSA-xj8g-532w-jv94) (#671)
+* Honor Accept-Encoding q-values, the wildcard, and case-insensitive codings (#665)
+* Treat proxy-connection as a connection-specific header in HTTP/2 (#632)
+* Return FRAME_SIZE_ERROR for HEADERS/DATA frames too short for their flags (#652)
+* Treat abortive-close posix reasons as client closures in logging (#663)
+
+### Fixes
+
+* Validate HTTP/2 header field values for CR/LF/NUL (GHSA-x3gh-xhj4-3vq8) (#670)
+* Use PROTOCOL_ERROR for a zero WINDOW_UPDATE increment (#656)
+* Reject send_file ranges past EOF instead of emitting a negative Content-Length (#653)
+* Reject compressed WebSocket control frames regardless of the fin bit (#651)
+* Enforce the RFC9112 chunk-size grammar and reject repeated transfer-encoding (#631)
+* Fix typos (#627)
+* Fix non-deterministic compile-time code (#646)
+
+### Enhancements
+
+* Lazily precompile the invalid-field-value match pattern (#662)
+* Add tests for untested configuration options (#659)
+* Match the weak-etag prefix W/ explicitly (#657)
+* Do not duplicate an existing vary: accept-encoding header (#658)
+* Honor the close/keep-alive token inside a comma-separated Connection header (#655)
+* Initialize the per-stream receive window from the advertised initial_window_size (#654)
+* Keep track of body_length to avoid list iterations (#645)
+* Avoid per-header length/1 and option lookups in do_read_headers! (#614) (#626)
+
 # 1.12.4 (27 July 2026)
 
 ### Fixes
