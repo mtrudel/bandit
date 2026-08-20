@@ -6,6 +6,11 @@ defmodule Bandit.HTTP2.Connection do
 
   require Logger
 
+  # A stream blocked on the connection send window is bounded by the same 15s that already
+  # bounds a block on the stream send window (`Bandit.HTTP2.Stream`'s `read_timeout`), so that
+  # neither path can pin a stream process (and any resources it holds) indefinitely.
+  @pending_send_timeout 15_000
+
   defstruct local_settings: %Bandit.HTTP2.Settings{},
             remote_settings: %Bandit.HTTP2.Settings{},
             fragment_frame: nil,
@@ -31,7 +36,9 @@ defmodule Bandit.HTTP2.Connection do
           send_window_size: non_neg_integer(),
           recv_window_size: non_neg_integer(),
           streams: Bandit.HTTP2.StreamCollection.t(),
-          pending_sends: [{Bandit.HTTP2.Stream.stream_id(), iodata(), boolean(), fun()}],
+          pending_sends: [
+            {Bandit.HTTP2.Stream.stream_id(), iodata(), boolean(), fun(), integer()}
+          ],
           conn_data: Bandit.Pipeline.conn_data(),
           telemetry_span: ThousandIsland.Telemetry.t(),
           plug: Bandit.Pipeline.plug_def(),
@@ -213,6 +220,14 @@ defmodule Bandit.HTTP2.Connection do
   def handle_frame(%Bandit.HTTP2.Frame.Priority{}, _socket, connection), do: connection
 
   def handle_frame(%Bandit.HTTP2.Frame.RstStream{} = frame, _socket, connection) do
+    # A stream blocked sending on the connection window is stuck inside a synchronous call to
+    # this connection process, so it cannot itself observe the message that deliver_rst_stream/2
+    # sends below; explicitly release any pending send for this stream so RST_STREAM actually
+    # frees the resources it pins instead of being silently queued until the block eventually
+    # clears (or never does).
+    connection =
+      purge_pending_send(connection, frame.stream_id, {:error, {:rst_stream, frame.error_code}})
+
     streams =
       with_stream(connection, frame.stream_id, fn stream ->
         Bandit.HTTP2.Stream.deliver_rst_stream(stream, frame.error_code)
@@ -343,9 +358,43 @@ defmodule Bandit.HTTP2.Connection do
     |> Enum.reverse()
     |> Enum.reduce(connection, fn pending_send, connection ->
       connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
-      {stream_id, rest, end_stream, on_unblock} = pending_send
+      {stream_id, rest, end_stream, on_unblock, _expires_at} = pending_send
       send_data(stream_id, [], rest, end_stream, on_unblock, socket, connection)
     end)
+  end
+
+  # Releases a queued pending send for `stream_id` (if any), replying to its blocked caller with
+  # `reply` instead of leaving it to be written later against a stream that may no longer exist.
+  @spec purge_pending_send(t(), Bandit.HTTP2.Stream.stream_id(), term()) :: t()
+  defp purge_pending_send(connection, stream_id, reply) do
+    case List.keytake(connection.pending_sends, stream_id, 0) do
+      nil ->
+        connection
+
+      {{_stream_id, _rest, _end_stream, on_unblock, _expires_at}, pending_sends} ->
+        on_unblock.(reply)
+        %{connection | pending_sends: pending_sends}
+    end
+  end
+
+  # Bounds how long a send can sit in pending_sends waiting on the connection send window. Called
+  # whenever data arrives on the connection (see `Bandit.HTTP2.Handler.handle_data/3`), so a
+  # client that only ever sends keepalive PINGs (defeating the transport-level read timeout)
+  # cannot pin a blocked stream's process, Plug state, and any resources it holds indefinitely.
+  @spec expire_pending_sends(t()) :: t()
+  def expire_pending_sends(connection) do
+    now = :erlang.monotonic_time(:millisecond)
+
+    {expired, live} =
+      Enum.split_with(connection.pending_sends, fn {_, _, _, _, expires_at} ->
+        expires_at <= now
+      end)
+
+    Enum.each(expired, fn {_stream_id, _rest, _end_stream, on_unblock, _expires_at} ->
+      on_unblock.({:error, :timeout})
+    end)
+
+    %{connection | pending_sends: live}
   end
 
   #
@@ -440,12 +489,17 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp finish_data(_stream_id, <<>>, _end_stream, on_unblock, connection) do
-    on_unblock.()
+    on_unblock.(:ok)
     connection
   end
 
   defp finish_data(stream_id, rest, end_stream, on_unblock, connection) do
-    pending_sends = [{stream_id, rest, end_stream, on_unblock} | connection.pending_sends]
+    expires_at = :erlang.monotonic_time(:millisecond) + @pending_send_timeout
+
+    pending_sends = [
+      {stream_id, rest, end_stream, on_unblock, expires_at} | connection.pending_sends
+    ]
+
     %{connection | pending_sends: pending_sends}
   end
 
@@ -484,6 +538,16 @@ defmodule Bandit.HTTP2.Connection do
 
   @spec stream_terminated(pid(), t()) :: t()
   def stream_terminated(pid, connection) do
+    # If this stream had a pending send queued, its process is by definition the one that just
+    # exited (that's what an :EXIT for `pid` means), so there is no longer a live caller to hear
+    # the reply; the purge here is only to drop the queued bytes so they can't be written later
+    # against a stream nothing is running anymore. The reply value itself is never observed.
+    connection =
+      case Bandit.HTTP2.StreamCollection.get_stream_id(connection.streams, pid) do
+        nil -> connection
+        stream_id -> purge_pending_send(connection, stream_id, {:error, :closed})
+      end
+
     %{connection | streams: Bandit.HTTP2.StreamCollection.delete(connection.streams, pid)}
   end
 

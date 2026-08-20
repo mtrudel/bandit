@@ -444,13 +444,25 @@ defmodule Bandit.HTTP2.Stream do
       stream =
         if stream.pending_headers != nil or end_stream or bytes_to_send > 0 do
           headers = stream.pending_headers || []
-          call(stream, {:send_data, headers, data_to_send, end_stream_to_send}, :infinity)
 
-          %{
-            stream
-            | pending_headers: nil,
-              send_window_size: stream.send_window_size - bytes_to_send
-          }
+          case call(stream, {:send_data, headers, data_to_send, end_stream_to_send}, :infinity) do
+            :ok ->
+              %{
+                stream
+                | pending_headers: nil,
+                  send_window_size: stream.send_window_size - bytes_to_send
+              }
+
+            {:error, :timeout} ->
+              stream_error!(
+                "Timeout waiting for space in the connection send_window",
+                stream,
+                Bandit.HTTP2.Errors.flow_control_error()
+              )
+
+            {:error, {:rst_stream, error_code}} ->
+              do_recv_rst_stream!(stream, error_code)
+          end
         else
           stream
         end
