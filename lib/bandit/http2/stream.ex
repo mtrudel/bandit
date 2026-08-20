@@ -551,6 +551,11 @@ defmodule Bandit.HTTP2.Stream do
       )
     end
 
+    # HTTP/2 stream processes already receive `{:bandit, {:rst_stream, error_code}}` messages when
+    # the client cancels a stream, and are linked to the connection process (and so die) when the
+    # client goes away entirely. There is nothing extra to arm here
+    def set_disconnect_notifications(%@for{} = stream, _enabled), do: stream
+
     def supported_upgrade?(%@for{} = _stream, _protocol), do: false
 
     def send_on_error(%@for{} = stream, %Bandit.HTTP2.Errors.StreamError{} = error) do

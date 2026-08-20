@@ -34,6 +34,7 @@ defmodule Bandit.Pipeline do
       {:ok, method, request_target, headers, transport} =
         Bandit.HTTPTransport.read_headers(transport)
 
+      transport = Bandit.HTTPTransport.set_disconnect_notifications(transport, true)
       conn = build_conn!(transport, method, request_target, headers, conn_data, opts)
       span = Bandit.Telemetry.start_span(:request, measurements, Map.put(metadata, :conn, conn))
 
@@ -43,6 +44,7 @@ defmodule Bandit.Pipeline do
         |> maybe_upgrade!()
         |> case do
           {:no_upgrade, conn} ->
+            conn = reset_disconnect_notifications(conn)
             %Plug.Conn{adapter: {_mod, adapter}} = conn = commit_response!(conn)
             Bandit.Telemetry.stop_span(span, adapter.metrics, %{conn: conn})
             {:ok, adapter.transport}
@@ -164,6 +166,17 @@ defmodule Bandit.Pipeline do
   end
 
   defp maybe_upgrade!(conn), do: {:no_upgrade, conn}
+
+  # Return the transport to a fully passive state before we consider the response committed. Any
+  # socket-level messages that the plug did not consume are recovered here (see
+  # `Bandit.HTTPTransport.set_disconnect_notifications/2`). Upgrade and error paths don't come
+  # through here; neither of them goes on to reuse the connection for reading, so there is
+  # nothing for them to recover
+  @spec reset_disconnect_notifications(Plug.Conn.t()) :: Plug.Conn.t()
+  defp reset_disconnect_notifications(%Plug.Conn{adapter: {mod, adapter}} = conn) do
+    transport = Bandit.HTTPTransport.set_disconnect_notifications(adapter.transport, false)
+    %{conn | adapter: {mod, %{adapter | transport: transport}}}
+  end
 
   @spec commit_response!(Plug.Conn.t()) :: Plug.Conn.t() | no_return()
   defp commit_response!(conn) do

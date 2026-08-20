@@ -39,6 +39,9 @@ defprotocol Bandit.HTTPTransport do
   @spec ensure_completed(t()) :: t()
   def ensure_completed(transport)
 
+  @spec set_disconnect_notifications(t(), boolean()) :: t()
+  def set_disconnect_notifications(transport, enabled)
+
   @spec supported_upgrade?(t(), atom()) :: boolean()
   def supported_upgrade?(transport, protocol)
 

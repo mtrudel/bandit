@@ -19,6 +19,7 @@ defmodule Bandit.HTTP1.Socket do
             request_connection_header: nil,
             close_after_response: false,
             keepalive: nil,
+            notify_disconnect: false,
             opts: %{}
 
   @typedoc "An HTTP/1 read state"
@@ -40,6 +41,7 @@ defmodule Bandit.HTTP1.Socket do
           request_connection_header: binary(),
           close_after_response: boolean(),
           keepalive: boolean(),
+          notify_disconnect: boolean(),
           opts: %{
             required(:http_1) => Bandit.http_1_options()
           }
@@ -240,7 +242,7 @@ defmodule Bandit.HTTP1.Socket do
       socket = %{socket | buffer: buffer, unread_content_length: remaining_unread_content_length}
 
       if remaining_unread_content_length == 0 do
-        {:ok, body, %{socket | read_state: :read}}
+        {:ok, body, maybe_arm_disconnect_notifications(%{socket | read_state: :read})}
       else
         {:more, body, socket}
       end
@@ -249,7 +251,10 @@ defmodule Bandit.HTTP1.Socket do
     def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
       case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, 0, opts) do
         {:ok, body, buffer} ->
-          {:ok, IO.iodata_to_binary(body), %{socket | read_state: :read, buffer: buffer}}
+          socket =
+            maybe_arm_disconnect_notifications(%{socket | read_state: :read, buffer: buffer})
+
+          {:ok, IO.iodata_to_binary(body), socket}
 
         {:more, body, buffer} ->
           {:more, IO.iodata_to_binary(body), %{socket | buffer: buffer}}
@@ -610,6 +615,52 @@ defmodule Bandit.HTTP1.Socket do
         else
           reraise e, __STACKTRACE__
         end
+    end
+
+    def set_disconnect_notifications(%@for{} = socket, true) do
+      if Keyword.get(socket.opts.http_1, :notify_disconnect, false),
+        do: maybe_arm_disconnect_notifications(%{socket | notify_disconnect: true}),
+        else: socket
+    end
+
+    def set_disconnect_notifications(%@for{notify_disconnect: true} = socket, false) do
+      _ = ThousandIsland.Socket.setopts(socket.socket, active: false)
+      drain_disconnect_notifications(%{socket | notify_disconnect: false})
+    end
+
+    def set_disconnect_notifications(%@for{} = socket, false), do: socket
+
+    # Active mode and the passive reads done elsewhere in this module do not mix, so we only ever
+    # arm the socket once the request body has been completely consumed (or was never there to
+    # begin with). From that point until the response is complete, the only things the client can
+    # legitimately send us are the start of a pipelined next request or a connection close, both
+    # of which we recover in drain_disconnect_notifications/1 once the plug has finished
+    defp maybe_arm_disconnect_notifications(
+           %@for{notify_disconnect: true, read_state: :read} = socket
+         ) do
+      _ = ThousandIsland.Socket.setopts(socket.socket, active: :once)
+      socket
+    end
+
+    defp maybe_arm_disconnect_notifications(%@for{} = socket), do: socket
+
+    # Return the socket to a fully passive state: any data the client sent while we were in
+    # active mode is re-injected into our read buffer (it is the start of the next pipelined
+    # request), and any close/error notification the plug did not consume is turned into a
+    # close_after_response so that we don't try to reuse a dead connection for keepalive
+    defp drain_disconnect_notifications(%@for{} = socket) do
+      receive do
+        {tag, _sock, data} when tag in [:tcp, :ssl] ->
+          drain_disconnect_notifications(%{socket | buffer: socket.buffer <> data})
+
+        {tag, _sock} when tag in [:tcp_closed, :ssl_closed] ->
+          drain_disconnect_notifications(%{socket | close_after_response: true})
+
+        {tag, _sock, _error} when tag in [:tcp_error, :ssl_error] ->
+          drain_disconnect_notifications(%{socket | close_after_response: true})
+      after
+        0 -> socket
+      end
     end
 
     def supported_upgrade?(%@for{} = _socket, protocol), do: protocol == :websocket

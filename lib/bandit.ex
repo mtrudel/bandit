@@ -139,6 +139,17 @@ defmodule Bandit do
     Defaults to 50 headers
   * `max_requests`: The maximum number of requests to serve in a single
     HTTP/1.1 connection before closing the connection. Defaults to 0 (no limit)
+  * `notify_disconnect`: Whether to notify the process executing your Plug when the client
+    disconnects while the Plug is still running. Once the request body has been completely read
+    (or if there is none), Bandit will watch the socket and standard `{:tcp_closed, _}` /
+    `{:ssl_closed, _}` messages will arrive in the process running your Plug if the client goes
+    away; `Bandit.client_disconnect_message?/1` can be used to match them. This is useful for
+    long-running requests such as server-sent events or proxied upstream calls, where the work
+    should be abandoned as soon as the client is gone. Notification is best-effort (it is
+    delivered while Bandit is between reads on the socket, which is the case for the entire time
+    your Plug is running after the body has been read). Plugs which use `receive` while this
+    option is enabled must be careful to not consume & discard these messages (or messages
+    starting with the tag of the next pipelined request). Defaults to `false`
   * `clear_process_dict`: Whether to clear the process dictionary of all non-internal entries
     between subsequent keepalive requests. If set, all keys not starting with `$` are removed from
     the process dictionary between requests. Defaults to `true`
@@ -154,6 +165,7 @@ defmodule Bandit do
           | {:max_header_length, pos_integer()}
           | {:max_header_count, pos_integer()}
           | {:max_requests, pos_integer()}
+          | {:notify_disconnect, boolean()}
           | {:clear_process_dict, boolean()}
           | {:gc_every_n_keepalive_requests, pos_integer()}
           | {:log_unknown_messages, boolean()}
@@ -243,6 +255,38 @@ defmodule Bandit do
 
   require Logger
 
+  @doc """
+  Returns whether the given message indicates that the client has disconnected.
+
+  When the `notify_disconnect` HTTP/1 option is enabled, the process executing your Plug will
+  receive standard socket close messages if the client disconnects while your Plug is running.
+  Since the exact shape of these messages depends on the transport in use (TCP or TLS for HTTP/1,
+  stream resets for HTTP/2), this function provides a transport-agnostic way to recognize them
+  within a `receive` block:
+
+  ```elixir
+  def call(conn, _opts) do
+    conn = send_chunked(conn, 200)
+
+    receive do
+      msg ->
+        if Bandit.client_disconnect_message?(msg), do: raise("client went away")
+    after
+      30_000 -> :ok
+    end
+
+    ...
+  end
+  ```
+  """
+  @spec client_disconnect_message?(term()) :: boolean()
+  def client_disconnect_message?({:tcp_closed, _port}), do: true
+  def client_disconnect_message?({:ssl_closed, _sslsocket}), do: true
+  def client_disconnect_message?({:tcp_error, _port, _error}), do: true
+  def client_disconnect_message?({:ssl_error, _sslsocket, _error}), do: true
+  def client_disconnect_message?({:bandit, {:rst_stream, _error_code}}), do: true
+  def client_disconnect_message?(_msg), do: false
+
   @doc false
   @spec child_spec(options()) :: Supervisor.child_spec()
   def child_spec(arg) do
@@ -256,7 +300,7 @@ defmodule Bandit do
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
   @http_keys ~w(compress response_encodings deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests notify_disconnect clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size max_fragmented_message_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module log_protocol_errors)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
