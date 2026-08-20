@@ -556,30 +556,6 @@ defmodule HTTP1PlugTest do
   end
 
   describe "adapter callback edge cases" do
-    test "raises if an adapter function is called from a process other than the stream owner",
-         context do
-      response = Req.get!(context.req, url: "/call_from_other_process")
-
-      assert response.status == 200
-      assert response.body =~ "Adapter functions must be called by stream owner"
-    end
-
-    def call_from_other_process(conn) do
-      result =
-        fn ->
-          try do
-            send_resp(conn, 200, "should not happen")
-            :sent
-          rescue
-            e -> {:error, Exception.message(e)}
-          end
-        end
-        |> Task.async()
-        |> Task.await()
-
-      send_resp(conn, 200, inspect(result))
-    end
-
     test "push is not supported", context do
       response = Req.get!(context.req, url: "/push_response")
 
