@@ -6,13 +6,13 @@ defmodule ReqHelpers do
       def req_http1_client(context) do
         name = Module.concat(context.module, context.test)
         start_finch(name)
-        [req: build_req(base_url: context.base, finch: name)]
+        [req: build_req(base_url: context.base, finch: [name: name])]
       end
 
       def req_h2_client(context) do
         name = Module.concat(context.module, context.test)
         start_finch(name, protocols: [:http2])
-        [req: build_req(base_url: context.base, finch: name)]
+        [req: build_req(base_url: context.base, finch: [name: name])]
       end
 
       defp start_finch(name, overrides \\ []) do

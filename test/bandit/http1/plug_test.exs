@@ -565,7 +565,8 @@ defmodule HTTP1PlugTest do
 
     def push_response(conn) do
       try do
-        push!(conn, "/static/style.css")
+        # Avoid compiler warning for quieter tests
+        apply(Plug.Conn, :push!, [conn, "/static/style.css"])
         send_resp(conn, 200, "should not happen")
       rescue
         e -> send_resp(conn, 200, Exception.message(e))
