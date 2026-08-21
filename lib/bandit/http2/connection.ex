@@ -356,8 +356,7 @@ defmodule Bandit.HTTP2.Connection do
   defp do_pending_sends(socket, connection) do
     connection.pending_sends
     |> Enum.reverse()
-    |> Enum.reduce(connection, fn pending_send, connection ->
-      connection = connection |> Map.update!(:pending_sends, &List.delete(&1, pending_send))
+    |> Enum.reduce(%{connection | pending_sends: []}, fn pending_send, connection ->
       {stream_id, rest, end_stream, on_unblock, _expires_at} = pending_send
       send_data(stream_id, [], rest, end_stream, on_unblock, socket, connection)
     end)
