@@ -17,6 +17,29 @@ defmodule Bandit.PrimitiveOps.WebSocket do
     ws_mask(<<>>, payload, mask)
   end
 
+  defp ws_mask(
+         acc,
+         <<a::32, b::32, c::32, d::32, e::32, f::32, g::32, h::32, rest::binary>>,
+         mask
+       ) do
+    ws_mask(
+      <<acc::binary, Bitwise.bxor(a, mask)::32, Bitwise.bxor(b, mask)::32,
+        Bitwise.bxor(c, mask)::32, Bitwise.bxor(d, mask)::32, Bitwise.bxor(e, mask)::32,
+        Bitwise.bxor(f, mask)::32, Bitwise.bxor(g, mask)::32, Bitwise.bxor(h, mask)::32>>,
+      rest,
+      mask
+    )
+  end
+
+  defp ws_mask(acc, <<a::32, b::32, c::32, d::32, rest::binary>>, mask) do
+    ws_mask(
+      <<acc::binary, Bitwise.bxor(a, mask)::32, Bitwise.bxor(b, mask)::32,
+        Bitwise.bxor(c, mask)::32, Bitwise.bxor(d, mask)::32>>,
+      rest,
+      mask
+    )
+  end
+
   defp ws_mask(acc, <<h::32, rest::binary>>, mask) do
     ws_mask(<<acc::binary, (<<Bitwise.bxor(h, mask)::32>>)>>, rest, mask)
   end
