@@ -121,7 +121,7 @@ https://thousand-island.hexdocs.pm/changelog.html#1-5-0-1-jun-2026)
   which defines the maximum allowed WebSocket frame size (inclusive of
   continuation frames). Defaults to 8MB
 
-# Changes
+### Changes
 
 * The default value of the `max_frame_size` WebSocket option has changed from `:infinity` to 8MB
 * Zero length non-fin continuation frames are now disallowed (we now skip Autobahn 6.1.2 as a result)
@@ -650,18 +650,18 @@ sent in HTTP/2 (#483)
 
 ## 1.0.0-pre.12 (12 Aug 2023)
 
-## Fixes
+### Fixes
 
 * Bump ThousandIsland to 1.0.0-pre.7 to fix leaking file descriptors on
   `Plug.Conn.sendfile/5` calls (thanks @Hermanverschooten!)
 
 ## 1.0.0-pre.11 (11 Aug 2023)
 
-## Changes
+### Changes
 
 * **BREAKING CHANGE** Move `conn` value in telemetry events from measurements to metadata
 
-## Enhancements
+### Enhancements
 
 * Add `method`, `request_target` and `status` fields to telemetry metadata on HTTP stop events
 * Improve RFC compliance regarding cache-related headers on deflated responses (#207, thanks @tanguilp!)
@@ -671,20 +671,20 @@ sent in HTTP/2 (#483)
 
 ## 1.0.0-pre.10 (28 Jun 2023)
 
-## Enhancements
+### Enhancements
 
 * Add support for `Plug.Conn.inform/3` on HTTP/1 connections (#180)
 * Add support for h2c upgrades (#186, thanks @alisinabh!)
 * Internal refactoring of HTTP/1 content-length encoded body reads (#184, #190,
   thanks @asakura & @moogle19!)
 
-## Changes
+### Changes
 
 * Bump Thousand Island to 1.0.0-pre.6 (gaining support for suspend/resume API)
 * Drop Elixir 1.12 as a supported target (it should continue to work, but is no
   longer covered by CI)
 
-## Fixes
+### Fixes
 
 * Fix crash when Plug used `Plug.Conn.get_peer_data/1` function on HTTP/1
   connections (#170, thanks @moogle19!)
@@ -693,33 +693,33 @@ sent in HTTP/2 (#483)
 
 ## 1.0.0-pre.9 (16 Jun 2023)
 
-## Changes
+### Changes
 
 * Use new ThousandIsland APIs for socket info (#167, thanks @asakura!)
 
-## Fixes
+### Fixes
 
 * Handle nil connection close reason when closing a WebSocket
 
 ## 1.0.0-pre.8 (15 Jun 2023)
 
-## Fixes
+### Fixes
 
 * Further improve logging on WebSocket upgrade errors (#149)
 
 ## 1.0.0-pre.7 (14 Jun 2023)
 
-## Enhancements
+### Enhancements
 
 * Refactor HTTP/1 read routines (#158 & #166, thanks @asakura!)
 * Improve logging on WebSocket upgrade errors (#149)
 
-## Changes
+### Changes
 
 * Override any content-length headers that may have been set by Plug (#165)
 * Send content-length on HTTP/2 responses where appropriate (#165)
 
-## Fixes
+### Fixes
 
 * Send correct content-length header when sending deflated response (#151)
 * Do not attempt to deflate if Plug sends a content-encoding header (#165)
@@ -922,7 +922,7 @@ sent in HTTP/2 (#483)
 * Fix parsing of host / request headers which contain IPv6 addresses (#97).
   Thanks @derekkraan!
 
-# Changes
+### Changes
 
 * Use Plug's list of response code reason phrases (#96). Thanks @jclem!
 * Minor doc updates
