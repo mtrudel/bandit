@@ -1,4 +1,4 @@
-# 1.12.5 (20 Aug 2026)
+## 1.12.5 (20 Aug 2026)
 
 ### Changes
 
@@ -29,7 +29,7 @@
 * Keep track of body_length to avoid list iterations (#645)
 * Avoid per-header length/1 and option lookups in do_read_headers! (#614) (#626)
 
-# 1.12.4 (27 July 2026)
+## 1.12.4 (27 July 2026)
 
 ### Fixes
 
@@ -46,13 +46,13 @@
 * Tolerate a leading newline on HTTP/1 requests (#622)
 * Send "100 Continue" interim response before reading body if client requests it (#624)
 
-# 1.12.3 (25 July 2026)
+## 1.12.3 (25 July 2026)
 
 ### Enhancements
 
 * Cache connection-level data between HTTP/1 keepalives (#603, thanks @preciz!)
 
-# 1.12.2 (25 July 2026)
+## 1.12.2 (25 July 2026)
 
 ### Enhancements
 
@@ -71,13 +71,13 @@
   (https://github.com/mtrudel/bandit/security/advisories/GHSA-9q5m-g6v3-6772,
   thanks @lukaszsamson!)
 
-# 1.12.1 (24 July 2026)
+## 1.12.1 (24 July 2026)
 
 ### Fixes
 
 * Fix DoS issue with fragmented WebSocket frames (CVE-2026-65623, thanks @PJUllrich!)
 
-# 1.12.0 (5 June 2026)
+## 1.12.0 (5 June 2026)
 
 ### Changes
 
@@ -93,7 +93,7 @@ https://thousand-island.hexdocs.pm/changelog.html#1-5-0-1-jun-2026)
 
 * Internal improvements to HTTP/1 body read functions (#588)
 
-# 1.11.1 (13 May 2026)
+## 1.11.1 (13 May 2026)
 
 ### Fixes
 
@@ -104,7 +104,7 @@ https://thousand-island.hexdocs.pm/changelog.html#1-5-0-1-jun-2026)
 
 * We no longer disallow `.` and `..` path components in HTTP/2 absolute paths (#581)
 
-# 1.11.0 (1 May 2026)
+## 1.11.0 (1 May 2026)
 
 ### Fixes
 
