@@ -455,6 +455,7 @@ defmodule Bandit.HTTP1.Socket do
       resp_line = "#{socket.version} #{status} #{Plug.Conn.Status.reason_phrase(status)}\r\n"
 
       {headers, socket} = handle_keepalive(status, headers, socket)
+      headers = remove_http_1_0_transfer_encoding(headers, socket)
 
       has_content_length = Bandit.Headers.get_header(headers, "content-length") != nil
 
@@ -464,6 +465,15 @@ defmodule Bandit.HTTP1.Socket do
           # and coalesces the header and body send calls into a single ThousandIsland.Socket.send/2
           # call. This makes a _substantial_ difference in practice
           %{socket | write_state: :writing, send_buffer: [resp_line | encode_headers(headers)]}
+
+        :chunk_encoded when not has_content_length and socket.version == :"HTTP/1.0" ->
+          # HTTP/1.0 has no chunked transfer coding. Delimit the response body by closing the
+          # connection, even if the client requested a persistent connection.
+          headers =
+            [{"connection", "close"} | Enum.reject(headers, &(elem(&1, 0) == "connection"))]
+
+          send!(socket.socket, [resp_line | encode_headers(headers)])
+          %{socket | write_state: :chunk_streaming, keepalive: false}
 
         :chunk_encoded when not has_content_length ->
           headers = [{"transfer-encoding", "chunked"} | headers]
@@ -483,6 +493,14 @@ defmodule Bandit.HTTP1.Socket do
           %{socket | write_state: :unsent}
       end
     end
+
+    # RFC9112§6.1 prohibits Transfer-Encoding in every response to an HTTP/1.0 request,
+    # including a field supplied explicitly by the application.
+    defp remove_http_1_0_transfer_encoding(headers, %@for{version: :"HTTP/1.0"}) do
+      Enum.reject(headers, &(elem(&1, 0) == "transfer-encoding"))
+    end
+
+    defp remove_http_1_0_transfer_encoding(headers, _socket), do: headers
 
     defp handle_keepalive(status, headers, socket) do
       response_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
