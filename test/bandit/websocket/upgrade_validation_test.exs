@@ -112,6 +112,53 @@ defmodule UpgradeValidationTest do
                SimpleHTTP1Client.recv_reply(client)
     end
 
+    test "does not accept request keys that are not valid base64", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/validate_upgrade", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: not-base64!",
+        "Sec-WebSocket-Version: 13"
+      ])
+
+      assert {:ok, "200 OK", _headers, "'sec-websocket-key' header must decode to 16 bytes"} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "does not accept request keys that decode to a length other than 16 bytes", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/validate_upgrade", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: #{Base.encode64(<<0::120>>)}",
+        "Sec-WebSocket-Version: 13"
+      ])
+
+      assert {:ok, "200 OK", _headers, "'sec-websocket-key' header must decode to 16 bytes"} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "does not accept multiple request keys", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/validate_upgrade", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Key: MDEyMzQ1Njc4OWFiY2RlZg==",
+        "Sec-WebSocket-Version: 13"
+      ])
+
+      assert {:ok, "200 OK", _headers,
+              "'sec-websocket-key' header must occur exactly once, got 2 values"} =
+               SimpleHTTP1Client.recv_reply(client)
+    end
+
     test "does not accept requests without a version of 13", context do
       client = SimpleHTTP1Client.tcp_client(context)
 

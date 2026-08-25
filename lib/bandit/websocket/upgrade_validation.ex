@@ -24,7 +24,7 @@ defmodule Bandit.WebSocket.UpgradeValidation do
          :ok <- assert_header_nonempty(conn, "host"),
          :ok <- assert_header_contains(conn, "connection", "upgrade"),
          :ok <- assert_header_contains(conn, "upgrade", "websocket"),
-         :ok <- assert_header_nonempty(conn, "sec-websocket-key"),
+         :ok <- assert_websocket_key(conn),
          :ok <- assert_header_equals(conn, "sec-websocket-version", "13") do
       :ok
     end
@@ -41,6 +41,22 @@ defmodule Bandit.WebSocket.UpgradeValidation do
     case Plug.Conn.get_req_header(conn, header) do
       [] -> {:error, "'#{header}' header is absent"}
       _ -> :ok
+    end
+  end
+
+  defp assert_websocket_key(conn) do
+    case Plug.Conn.get_req_header(conn, "sec-websocket-key") do
+      [] ->
+        {:error, "'sec-websocket-key' header is absent"}
+
+      [key] ->
+        case Base.decode64(key) do
+          {:ok, decoded} when byte_size(decoded) == 16 -> :ok
+          _ -> {:error, "'sec-websocket-key' header must decode to 16 bytes"}
+        end
+
+      keys ->
+        {:error, "'sec-websocket-key' header must occur exactly once, got #{length(keys)} values"}
     end
   end
 
