@@ -126,17 +126,18 @@ defmodule Bandit.HTTP2.Stream do
       case do_recv(stream, stream.read_timeout) do
         {:headers, headers, stream} ->
           method = Bandit.Headers.get_header(headers, ":method")
-          request_target = build_request_target!(headers, stream)
           {pseudo_headers, headers} = split_headers!(headers, stream)
+          headers = normalize_empty_field_values(headers)
           pseudo_headers_all_request!(pseudo_headers, stream)
+          headers_all_lowercase!(headers, stream)
+          valid_field_values!(pseudo_headers ++ headers, stream)
+          request_target = build_request_target!(pseudo_headers, stream)
           exactly_one_instance_of!(pseudo_headers, ":scheme", stream)
           exactly_one_instance_of!(pseudo_headers, ":method", stream)
           exactly_one_instance_of!(pseudo_headers, ":path", stream)
           at_most_one_instance_of!(pseudo_headers, ":authority", stream)
-          headers_all_lowercase!(headers, stream)
           no_connection_headers!(headers, stream)
           valid_te_header!(headers, stream)
-          valid_field_values!(headers, stream)
           content_length = get_content_length!(headers, stream)
           headers = combine_cookie_crumbs(headers)
           stream = %{stream | bytes_remaining: content_length}
@@ -204,15 +205,35 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Expected at most 1 #{header} headers", stream)
     end
 
-    # RFC9113§8.2 - all headers name fields must be lowercsae
+    # RFC9110§5.1 defines a field name as a non-empty token, and RFC9113§8.2.1 additionally
+    # prohibits uppercase characters in HTTP/2 field names. Check uppercase first so that the
+    # more specific existing diagnostic is preserved.
     defp headers_all_lowercase!(headers, stream) do
-      if !Enum.all?(headers, fn {key, _value} -> lowercase?(key) end),
-        do: stream_error!("Received uppercase header", stream)
+      cond do
+        Enum.any?(headers, fn {key, _value} -> not lowercase?(key) end) ->
+          stream_error!("Received uppercase header", stream)
+
+        Enum.any?(headers, fn {key, _value} -> not valid_field_name?(key) end) ->
+          stream_error!("Received invalid header field name (RFC9113§8.2.1)", stream)
+
+        true ->
+          :ok
+      end
     end
 
     defp lowercase?(<<char, _rest::bits>>) when char >= ?A and char <= ?Z, do: false
     defp lowercase?(<<_char, rest::bits>>), do: lowercase?(rest)
     defp lowercase?(<<>>), do: true
+
+    defp valid_field_name?(<<>>), do: false
+    defp valid_field_name?(name), do: valid_field_name_bytes?(name)
+
+    defp valid_field_name_bytes?(<<char, rest::binary>>)
+         when char in ?a..?z or char in ?0..?9 or char in ~c"!#$%&'*+-.^_`|~",
+         do: valid_field_name_bytes?(rest)
+
+    defp valid_field_name_bytes?(<<_char, _rest::binary>>), do: false
+    defp valid_field_name_bytes?(<<>>), do: true
 
     # RFC9113§8.2.2 - no hop-by-hop headers
     # Note that we do not filter out the TE header here, since it is allowed in
@@ -231,11 +252,31 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Received invalid TE header", stream)
     end
 
-    # RFC9113§8.2.1 - field values containing CR, LF, or NUL characters are invalid and
-    # dangerous (a common request-smuggling / response-splitting / log-injection vector)
+    # RFC9113§8.2.1 - field values containing CR, LF, or NUL characters, or beginning or
+    # ending with SP or HTAB, are malformed.
     defp valid_field_values!(headers, stream) do
-      if Enum.any?(headers, fn {_key, value} -> not Bandit.Headers.field_value_valid?(value) end),
+      if Enum.any?(headers, fn {_key, value} -> not valid_field_value?(value) end),
         do: stream_error!("Field value contains invalid characters (RFC9113§8.2.1)", stream)
+    end
+
+    # HPAX decodes an indexed static-table entry with no value (for example a bare
+    # `user-agent` at index 58) to a nil value. Regular fields are normalized to the empty
+    # binary they represent before reaching the Plug; drop this and the nil clause below
+    # once we depend on a hpax release with elixir-mint/hpax#27
+    defp normalize_empty_field_values(headers),
+      do:
+        Enum.map(headers, fn
+          {name, nil} -> {name, ""}
+          header -> header
+        end)
+
+    defp valid_field_value?(nil), do: true
+    defp valid_field_value?(<<>>), do: true
+
+    defp valid_field_value?(value) do
+      Bandit.Headers.field_value_valid?(value) and
+        :binary.first(value) not in [0x09, 0x20] and
+        :binary.last(value) not in [0x09, 0x20]
     end
 
     defp get_content_length!(headers, stream) do

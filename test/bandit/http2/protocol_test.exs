@@ -2159,6 +2159,34 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag :capture_log
+    test "returns a stream error for forbidden bytes in regular field names", context do
+      for invalid_name <- [
+            "",
+            "bad name",
+            "bad\tname",
+            "bad:name",
+            "bad/name",
+            "bad(name",
+            "bad" <> <<0x7F>>,
+            "bad" <> <<0xFF>>
+          ] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"},
+          {invalid_name, "value"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+      end
+    end
+
+    @tag :capture_log
     test "returns a stream error if sent headers with invalid pseudo headers", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -2518,6 +2546,115 @@ defmodule HTTP2ProtocolTest do
                "** (Bandit.HTTP2.Errors.StreamError) Field value contains invalid characters (RFC9113§8.2.1)"
     end
 
+    @tag :capture_log
+    test "returns a stream error if a field value begins or ends with SP or HTAB", context do
+      for invalid_value <- [" leading", "trailing ", "\tleading", "trailing\t"] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"},
+          {"x-test", invalid_value}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+      end
+    end
+
+    @tag :capture_log
+    test "returns a stream error for control bytes and DEL in regular field values", context do
+      for invalid_byte <- [0x01, 0x0B, 0x0C, 0x1F, 0x7F] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", "/"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"},
+          {"x-test", "before" <> <<invalid_byte>> <> "after"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+      end
+    end
+
+    @tag :capture_log
+    test "returns a stream error for control bytes in pseudo-field values", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/before" <> <<0x01>> <> "after"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "applies field-value validation to pseudo-header fields", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/\t"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "validates :authority before parsing it", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port} "}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    test "accepts an indexed static-table field with no value as an empty value", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {:store, ":method", "GET"},
+        {:store, ":path", "/echo_user_agent"},
+        {:store, ":scheme", "https"},
+        {:store, ":authority", "localhost:#{context.port}"}
+      ]
+
+      {block, _} = HPAX.encode(headers, HPAX.new(4096))
+
+      # Append static-table index 58 (`user-agent`) as an indexed field, which HPAX
+      # decodes with a nil value (elixir-mint/hpax#27)
+      fragment = IO.iodata_to_binary(block) <> <<0xBA>>
+      SimpleH2Client.send_frame(socket, 1, 0x05, 1, fragment)
+
+      assert {:ok, 1, false, [{":status", "200"} | _], _ctx} =
+               SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ~s([""])}
+    end
+
     test "combines Cookie headers per RFC9113§8.2.3", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -2541,6 +2678,10 @@ defmodule HTTP2ProtocolTest do
       assert get_req_header(conn, "cookie") == ["a=b; c=d; e=f"]
 
       conn |> send_resp(200, "OK")
+    end
+
+    def echo_user_agent(conn) do
+      conn |> send_resp(200, inspect(get_req_header(conn, "user-agent")))
     end
 
     test "breaks Cookie headers up per RFC9113§8.2.3", context do
