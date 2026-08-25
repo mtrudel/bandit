@@ -2483,6 +2483,31 @@ defmodule HTTP1ProtocolTest do
     end
 
     @tag :capture_log
+    test "returns a 400 when a WebSocket key does not decode to 16 bytes", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/upgrade_websocket",
+        [
+          "Host: server.example.com",
+          "Upgrade: WebSocket",
+          "Connection: Upgrade",
+          "Sec-WebSocket-Key: eA==",
+          "Sec-WebSocket-Version: 13"
+        ]
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) 'sec-websocket-key' header must decode to 16 bytes"
+    end
+
+    @tag :capture_log
     test "returns a 400 and errors loudly in cases where an upgrade is indicated but version header is incorrect",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
