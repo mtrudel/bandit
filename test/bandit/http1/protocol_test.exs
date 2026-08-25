@@ -1529,6 +1529,58 @@ defmodule HTTP1ProtocolTest do
   end
 
   describe "transfer-encoding edge cases (RFC9112§6.1, §7.1.1)" do
+    test "rejects a non-chunked final transfer coding before invoking Plug", context do
+      test_pid = self()
+
+      context =
+        context
+        |> http_server(
+          plug: fn conn, _opts ->
+            send(test_pid, :plug_called)
+            send_resp(conn, 200, "unexpected")
+          end
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/", [
+        "host: localhost",
+        "transfer-encoding: gzip"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
+      refute_receive :plug_called, 100
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "rejects an unsupported transfer coding before invoking Plug", context do
+      test_pid = self()
+
+      context =
+        context
+        |> http_server(
+          plug: fn conn, _opts ->
+            send(test_pid, :plug_called)
+            send_resp(conn, 200, "unexpected")
+          end
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/", [
+        "host: localhost",
+        "transfer-encoding: gzip, chunked"
+      ])
+
+      assert {:ok, "501 Not Implemented", _headers, ""} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      refute_receive :plug_called, 100
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
     @tag :capture_log
     test "rejects a request with transfer-encoding applied twice", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -1554,7 +1606,7 @@ defmodule HTTP1ProtocolTest do
 
       Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
       assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
-      assert status in ["400 Bad Request", "501 Not Implemented"]
+      assert status == "400 Bad Request"
     end
 
     test "ignores unrecognized chunk extensions", context do
@@ -1567,6 +1619,18 @@ defmodule HTTP1ProtocolTest do
 
       Transport.send(client, "3;ext=value\r\n123\r\n")
       Transport.send(client, "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+    end
+
+    test "accepts optional whitespace after a single chunked transfer coding", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_case_insensitive_chunked_body", [
+        "host: localhost",
+        "transfer-encoding: chunked  \t"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n0\r\n\r\n")
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
     end
 

@@ -62,7 +62,7 @@ defmodule Bandit.HTTP1.Socket do
       {method, request_target, socket} = do_read_request_line!(socket)
       {headers, socket} = do_read_headers!(socket)
       content_length = get_content_length!(headers)
-      body_encoding = get_transfer_encoding!(headers)
+      body_encoding = headers |> get_transfer_encoding!() |> validate_transfer_encoding!()
       request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
       socket = %{socket | request_connection_header: request_connection_header}
 
@@ -206,6 +206,31 @@ defmodule Bandit.HTTP1.Socket do
       case Bandit.Headers.get_transfer_encoding(headers) do
         {:ok, transfer_encoding} -> safe_downcase(transfer_encoding)
         {:error, reason} -> request_error!("Transfer encoding unknown error: #{inspect(reason)}")
+      end
+    end
+
+    # RFC9112§6.3 requires a 400 response when a request's final transfer coding
+    # is not chunked. Reject it while reading the headers so the request cannot be
+    # dispatched to Plug before its framing has been validated.
+    defp validate_transfer_encoding!(nil), do: nil
+
+    defp validate_transfer_encoding!(encoding) do
+      codings = Plug.Conn.Utils.list(encoding)
+
+      cond do
+        codings == ["chunked"] ->
+          "chunked"
+
+        Enum.count(codings, &(&1 == "chunked")) > 1 ->
+          request_error!("Transfer-encoding cannot apply chunked more than once (RFC9112§6.1)")
+
+        List.last(codings) != "chunked" ->
+          request_error!(
+            "Final transfer coding in a request must be chunked (RFC9112§6.3 rule 4)"
+          )
+
+        true ->
+          request_error!("Unsupported transfer-encoding", :not_implemented)
       end
     end
 
