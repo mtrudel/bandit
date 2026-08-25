@@ -1992,6 +1992,21 @@ defmodule HTTP1ProtocolTest do
       assert response.body == String.duplicate("a", 10_000)
     end
 
+    test "does no encoding for 206 responses", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_206_response",
+          headers: [{"accept-encoding", "deflate"}]
+        )
+
+      # Assert that we did not try to compress the body, since doing so would
+      # invalidate the range the response advertises via content-range
+      assert response.status == 206
+      assert response.headers["content-length"] == ["10000"]
+      assert response.headers["content-encoding"] == nil
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
     test "does no encoding if a malformed etag starting with W but not W/ is present", context do
       response =
         Req.get!(context.req,
@@ -2214,6 +2229,12 @@ defmodule HTTP1ProtocolTest do
       conn
       |> put_resp_header("etag", "\"1234\"")
       |> send_resp(200, String.duplicate("a", 10_000))
+    end
+
+    def send_206_response(conn) do
+      conn
+      |> put_resp_header("content-range", "bytes 0-9999/20000")
+      |> send_resp(206, String.duplicate("a", 10_000))
     end
 
     def send_weak_etag(conn) do
