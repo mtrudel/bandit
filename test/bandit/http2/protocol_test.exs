@@ -3500,6 +3500,34 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "e"}
     end
 
+    test "promptly unblocks a stream blocked on the stream send window when the client resets it",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # Give ourselves lots of room on the connection
+      SimpleH2Client.send_window_update(socket, 0, 1_000_000)
+
+      # Set our initial stream window size to something small
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 100::32>>)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, true, String.duplicate("a", 16_384))
+
+      assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+
+      # Expect 100 bytes as that is our initial stream window; the stream is now
+      # blocked waiting for stream window space
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, String.duplicate("a", 100)}
+
+      # Reset the stream and expect the blocked stream to unwind promptly (well before
+      # its read_timeout) without sending an RST_STREAM of its own (RFC9113§6.4)
+      SimpleH2Client.send_rst_stream(socket, 1, 8)
+
+      assert_receive {:telemetry, [:bandit, :request, :stop], _, %{error: _}}, 1_000
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
     test "respects both stream and connection windows in complex scenarios", context do
       socket = SimpleH2Client.setup_connection(context)
 
