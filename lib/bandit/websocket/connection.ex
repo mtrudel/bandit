@@ -111,7 +111,7 @@ defmodule Bandit.WebSocket.Connection do
         frame_size = IO.iodata_length(frame.data)
 
         if frame_size == 0 do
-          do_error(1008, "Received zero byte non-fin continuation frame", socket, connection)
+          {:continue, connection}
         else
           fragment_size = connection.fragment_size + frame_size
 
