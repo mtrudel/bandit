@@ -274,6 +274,28 @@ defmodule WebSocketHTTP1HandshakeTest do
       refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
+    test "does not negotiate permessage-deflate when the client offers max_inflate_ratio",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;max_inflate_ratio=25"
+      ])
+
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+      refute Keyword.get(headers, :"sec-websocket-extensions")
+    end
+
     test "does not negotiate permessage-deflate if the client sends repeat option values",
          context do
       client = SimpleWebSocketClient.tcp_client(context)

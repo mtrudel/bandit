@@ -21,7 +21,7 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
             deflate_context: nil,
             max_inflate_ratio: nil
 
-  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits max_inflate_ratio]
+  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
 
   def negotiate(requested_extensions, opts) do
     :proplists.get_all_values("permessage-deflate", requested_extensions)
