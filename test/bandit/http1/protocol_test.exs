@@ -1671,6 +1671,57 @@ defmodule HTTP1ProtocolTest do
       conn
     end
 
+    test "uses close-delimited streaming for an HTTP/1.0 response", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/send_chunked_200",
+        ["host: localhost", "connection: keep-alive"],
+        "1.0"
+      )
+
+      response = recv_until_closed(client)
+      assert {:ok, "200 OK", headers, "OK"} = SimpleHTTP1Client.parse_response(client, response)
+
+      refute Bandit.Headers.get_header(headers, :"transfer-encoding")
+      assert Bandit.Headers.get_header(headers, :connection) == "close"
+    end
+
+    defp recv_until_closed(client, response \\ "") do
+      case Transport.recv(client, 0) do
+        {:ok, data} -> recv_until_closed(client, response <> data)
+        {:error, :closed} -> response
+      end
+    end
+
+    test "removes an application-supplied transfer-encoding from HTTP/1.0", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(
+        client,
+        "GET",
+        "/send_chunked_200_with_transfer_encoding",
+        ["host: localhost"],
+        "1.0"
+      )
+
+      response = recv_until_closed(client)
+      assert {:ok, "200 OK", headers, "OK"} = SimpleHTTP1Client.parse_response(client, response)
+      refute Bandit.Headers.get_header(headers, :"transfer-encoding")
+    end
+
+    def send_chunked_200_with_transfer_encoding(conn) do
+      {:ok, conn} =
+        conn
+        |> put_resp_header("transfer-encoding", "chunked")
+        |> send_chunked(200)
+        |> chunk("OK")
+
+      conn
+    end
+
     test "streams a content-length delimited response if content-length is set before chunking",
          context do
       response = Req.get!(context.req, url: "/send_chunked_200_with_content_length")
