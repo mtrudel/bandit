@@ -140,6 +140,10 @@ defmodule Bandit.HTTP2.Stream do
           content_length = get_content_length!(headers, stream)
           headers = combine_cookie_crumbs(headers)
           stream = %{stream | bytes_remaining: content_length}
+
+          if stream.state in [:remote_closed, :closed] and content_length not in [nil, 0],
+            do: stream_error!("Received END_STREAM with byte still pending", stream)
+
           {:ok, method, request_target, headers, stream}
 
         :timeout ->

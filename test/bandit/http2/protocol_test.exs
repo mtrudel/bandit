@@ -1736,6 +1736,46 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag :capture_log
+    test "returns a stream error if HEADERS ends a request before its content-length", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "3"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Received END_STREAM with byte still pending"
+    end
+
+    test "accepts a zero content-length when HEADERS ends the request", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/echo"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"content-length", "0"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    end
+
+    @tag :capture_log
     test "rejects DATA frames received on a zero stream id", context do
       socket = SimpleH2Client.setup_connection(context)
 
