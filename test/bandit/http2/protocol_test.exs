@@ -2073,7 +2073,9 @@ defmodule HTTP2ProtocolTest do
 
       {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, false, "OK")
-      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "trailer"}], ctx)
+      # An extension field named "trailers" is not one of RFC9113§8.2.2's
+      # connection-specific fields and must not be rejected merely by name.
+      SimpleH2Client.send_headers(socket, 1, true, [{"trailers", "extension-value"}], ctx)
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
@@ -2081,6 +2083,136 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.successful_response?(socket, 1, false)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "accepts a trailer field encoded as an indexed entry with no value", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, _ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      # Static-table index 58 (`user-agent`) as an indexed field, which HPAX decodes with
+      # a nil value (elixir-mint/hpax#27); as a trailer it must validate as an empty value
+      SimpleH2Client.send_frame(socket, 1, 0x05, 1, <<0xBA>>)
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "rejects trailer HEADERS without END_STREAM", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, false, [{"x-trailer", "trailer"}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received trailers without END_STREAM"
+    end
+
+    @tag :capture_log
+    test "validates connection-specific fields in trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{"connection", "close"}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received connection-specific header"
+    end
+
+    @tag :capture_log
+    test "validates every TE field line in trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{"te", "trailers"}, {"te", "gzip"}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid TE header"
+    end
+
+    @tag :capture_log
+    test "validates field values in trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "bad\rvalue"}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.StreamError) Field value contains invalid characters (RFC9113§8.2.1)"
+    end
+
+    @tag :capture_log
+    test "validates regular field-name grammar in trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{"bad/name", "value"}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "rejects edge whitespace in trailer field values", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
+      SimpleH2Client.send_body(socket, 1, false, "OK")
+
+      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "trailing "}], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
       assert SimpleH2Client.connection_alive?(socket)
     end
 

@@ -219,7 +219,7 @@ defmodule Bandit.HTTP2.Stream do
     # specific cases by RFC9113§8.2.2. We check those cases in a separate filter
     defp no_connection_headers!(headers, stream) do
       connection_headers =
-        ~w[connection keep-alive proxy-authenticate proxy-authorization proxy-connection trailers transfer-encoding upgrade]
+        ~w[connection keep-alive proxy-connection transfer-encoding upgrade]
 
       if Enum.any?(headers, fn {key, _value} -> key in connection_headers end),
         do: stream_error!("Received connection-specific header", stream)
@@ -227,7 +227,17 @@ defmodule Bandit.HTTP2.Stream do
 
     # RFC9113§8.2.2 - TE header may be present if it contains exactly 'trailers'
     defp valid_te_header!(headers, stream) do
-      if Bandit.Headers.get_header(headers, "te") not in [nil, "trailers"],
+      invalid? =
+        headers
+        |> Enum.filter(fn {name, _value} -> name == "te" end)
+        |> Enum.any?(fn {"te", value} ->
+          case Plug.Conn.Utils.list(value) do
+            [] -> true
+            members -> Enum.any?(members, &(String.downcase(&1, :ascii) != "trailers"))
+          end
+        end)
+
+      if invalid?,
         do: stream_error!("Received invalid TE header", stream)
     end
 
@@ -266,7 +276,6 @@ defmodule Bandit.HTTP2.Stream do
          when state in [:open, :local_closed] do
       case do_recv(stream, timeout) do
         {:headers, trailers, stream} ->
-          no_pseudo_headers!(trailers, stream)
           Logger.warning("Ignoring trailers #{inspect(trailers)}", domain: [:bandit])
           do_read_data(stream, max_bytes, timeout, acc)
 
@@ -297,6 +306,56 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Received trailers with pseudo headers", stream)
     end
 
+    defp validate_trailers!(_headers, false, stream) do
+      stream_error!("Received trailers without END_STREAM", stream)
+    end
+
+    # RFC9113§8.1 - a trailer field section terminates the stream and is subject
+    # to the same field-name and field-value requirements as other field sections
+    defp validate_trailers!(headers, true, stream) do
+      # HPAX decodes an indexed static-table entry with no value to a nil value; treat it
+      # as the empty binary it represents (elixir-mint/hpax#27)
+      headers =
+        Enum.map(headers, fn
+          {name, nil} -> {name, ""}
+          header -> header
+        end)
+
+      no_pseudo_headers!(headers, stream)
+      headers_all_lowercase!(headers, stream)
+      valid_trailer_field_names!(headers, stream)
+      no_connection_headers!(headers, stream)
+      valid_te_header!(headers, stream)
+      valid_field_values!(headers, stream)
+      valid_trailer_edge_whitespace!(headers, stream)
+    end
+
+    defp valid_trailer_field_names!(headers, stream) do
+      if Enum.any?(headers, fn {key, _value} -> not valid_trailer_field_name?(key) end),
+        do: stream_error!("Received invalid trailer field name (RFC9113§8.2.1)", stream)
+    end
+
+    defp valid_trailer_field_name?(<<>>), do: false
+    defp valid_trailer_field_name?(name), do: valid_trailer_field_name_bytes?(name)
+
+    defp valid_trailer_field_name_bytes?(<<char, rest::binary>>)
+         when char in ?a..?z or char in ?0..?9 or char in ~c"!#$%&'*+-.^_`|~",
+         do: valid_trailer_field_name_bytes?(rest)
+
+    defp valid_trailer_field_name_bytes?(<<_char, _rest::binary>>), do: false
+    defp valid_trailer_field_name_bytes?(<<>>), do: true
+
+    defp valid_trailer_edge_whitespace!(headers, stream) do
+      if Enum.any?(headers, fn
+           {_key, <<>>} ->
+             false
+
+           {_key, value} ->
+             :binary.first(value) in [0x09, 0x20] or :binary.last(value) in [0x09, 0x20]
+         end),
+         do: stream_error!("Field value contains invalid characters (RFC9113§8.2.1)", stream)
+    end
+
     defp do_recv(%@for{state: :idle} = stream, timeout) do
       receive do
         {:bandit, {:headers, headers, end_stream}} ->
@@ -319,6 +378,7 @@ defmodule Bandit.HTTP2.Stream do
          when state in [:open, :local_closed] do
       receive do
         {:bandit, {:headers, headers, end_stream}} ->
+          validate_trailers!(headers, end_stream, stream)
           {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
 
         {:bandit, {:data, data, end_stream}} ->
@@ -560,8 +620,9 @@ defmodule Bandit.HTTP2.Stream do
 
     def ensure_completed(%@for{state: :local_closed} = stream) do
       receive do
-        {:bandit, {:headers, _headers, true}} ->
-          do_recv_end_stream(stream, true)
+        {:bandit, {:headers, headers, end_stream}} ->
+          validate_trailers!(headers, end_stream, stream)
+          do_recv_end_stream(stream, end_stream)
 
         {:bandit, {:data, data, true}} ->
           do_recv_data(stream, data, true) |> do_recv_end_stream(true)
