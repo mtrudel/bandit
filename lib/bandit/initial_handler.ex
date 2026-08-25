@@ -41,6 +41,13 @@ defmodule Bandit.InitialHandler do
       {true, _, :no_match, {:no_match, data}} ->
         {:switch, Bandit.HTTP1.Handler, data, state}
 
+      {_, _, _, :idle_timeout} ->
+        # The connection sent no bytes at all within the read timeout (an idle probe, port
+        # scan or similar). Close silently rather than handing an empty buffer to the HTTP/1
+        # handler, which would block for a second read timeout and then answer with an
+        # unsolicited 408
+        {:close, state}
+
       _other ->
         {:close, state}
     end
@@ -63,6 +70,7 @@ defmodule Bandit.InitialHandler do
   @spec sniff_wire(ThousandIsland.Socket.t()) ::
           Bandit.HTTP2.Handler
           | :likely_tls
+          | :idle_timeout
           | {:no_match, binary()}
           | {:error, :closed | :timeout | :inet.posix()}
   defp sniff_wire(socket) do
@@ -70,7 +78,7 @@ defmodule Bandit.InitialHandler do
       {:ok, "PRI" = buffer} -> sniff_wire_for_http2(socket, buffer)
       {:ok, <<22::8, 3::8, minor::8>>} when minor in [1, 3] -> :likely_tls
       {:ok, data} -> {:no_match, data}
-      {:error, :timeout} -> {:no_match, <<>>}
+      {:error, :timeout} -> :idle_timeout
       {:error, error} -> {:error, error}
     end
   end
