@@ -29,6 +29,31 @@ defmodule Bandit.HeadersTest do
       end
     end
 
+    test "parses RFC 3986 uri-host forms" do
+      assert {"example.com", nil} = Headers.parse_hostlike_header!("example.com")
+      assert {"example%2Ecom", nil} = Headers.parse_hostlike_header!("example%2Ecom")
+      assert {"example.com", nil} = Headers.parse_hostlike_header!("example.com:")
+      assert {"[2001:db8::1]", nil} = Headers.parse_hostlike_header!("[2001:db8::1]")
+
+      assert {"[v1.example:transport]", nil} =
+               Headers.parse_hostlike_header!("[v1.example:transport]")
+    end
+
+    test "rejects values outside the RFC 3986 uri-host grammar" do
+      for host <- [
+            "example.com/path",
+            "user@example.com",
+            "bad%2",
+            "[not-an-ip-literal]",
+            "[::1]suffix",
+            "2001:db8::1"
+          ] do
+        assert_raise(Bandit.HTTPError, "Header contains invalid host", fn ->
+          Headers.parse_hostlike_header!(host)
+        end)
+      end
+    end
+
     test "returns error for invalid ports" do
       for port <- @invalid_ports do
         assert_raise(Bandit.HTTPError, @error_msg, fn ->
