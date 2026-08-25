@@ -274,6 +274,31 @@ defmodule WebSocketHTTP1HandshakeTest do
       refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
+    test "declines permessage-deflate offers containing the internal max_inflate_ratio option",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate;max_inflate_ratio=5"
+      ])
+
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert Keyword.get(headers, :upgrade) == "websocket"
+      assert Keyword.get(headers, :connection) == "Upgrade"
+      assert Keyword.get(headers, :"sec-websocket-accept") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
+
+      # max_inflate_ratio is a Bandit config option, not an RFC7692 extension parameter;
+      # an offer containing it is declined (and it must never be echoed in the response)
+      refute Keyword.get(headers, :"sec-websocket-extensions")
+    end
+
     test "does not negotiate permessage-deflate if the client sends repeat option values",
          context do
       client = SimpleWebSocketClient.tcp_client(context)

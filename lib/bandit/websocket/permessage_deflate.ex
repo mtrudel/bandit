@@ -21,7 +21,12 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
             deflate_context: nil,
             max_inflate_ratio: nil
 
-  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits max_inflate_ratio]
+  # The four extension parameters defined by RFC7692§7. Note that max_inflate_ratio is a
+  # Bandit-internal option (sourced from server config in init/2), NOT a wire parameter:
+  # including it here would both accept it in client offers and echo it back in the
+  # handshake response, and RFC7692§7 forbids a server from including parameters not
+  # defined for the extension
+  @valid_params ~w[server_no_context_takeover client_no_context_takeover server_max_window_bits client_max_window_bits]
 
   def negotiate(requested_extensions, opts) do
     :proplists.get_all_values("permessage-deflate", requested_extensions)
