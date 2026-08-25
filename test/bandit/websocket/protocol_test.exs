@@ -164,6 +164,844 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
     end
 
+    test "empty non-final continuation frames do not grow fragment state" do
+      # Regression guard for GHSA-pf94-94m9-536p: an empty fragment must not add
+      # an iodata cell (invisible to max_fragmented_message_size) to the accumulator
+      connection = %Bandit.WebSocket.Connection{
+        websock: EchoWebSock,
+        fragment_frame: %Bandit.WebSocket.Frame.Text{fin: false, data: ["AB"]},
+        fragment_size: 2
+      }
+
+      frame = %Bandit.WebSocket.Frame.Continuation{fin: false, data: <<>>}
+
+      assert {:continue, %{fragment_frame: %{data: ["AB"]}, fragment_size: 2}} =
+               Bandit.WebSocket.Connection.handle_frame(frame, nil, connection)
+    end
+
+    test "zero byte non-fin continuation frames are accepted", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_binary_frame(client, "AB", 0x0)
+
+      for _ <- 1..3 do
+        SimpleWebSocketClient.send_continuation_frame(client, <<>>, 0x0)
+      end
+
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "ABCD"}
+    end
+
+    test "max_fragmented_message_size enforced for continuation frames", context do
+      output =
+        capture_log(fn ->
+          context =
+            http_server(context, websocket_options: [max_fragmented_message_size: 2_000_000])
+
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          payload = String.duplicate("0123456789", 99_999)
+          SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
+          SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+
+          # We should still be alive here
+          refute_receive {:error, "Received oversize fragmented message"}, 50
+
+          # This should send us over the edge
+          SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received oversize fragmented message"}, 500
+
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received oversize fragmented message"
+    end
+
+    test "max_fragmented_message_size enforced for continuation fin frames", context do
+      output =
+        capture_log(fn ->
+          context =
+            http_server(context, websocket_options: [max_fragmented_message_size: 2_000_000])
+
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          payload = String.duplicate("0123456789", 99_999)
+          SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
+
+          SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+
+          # We should still be alive here
+          refute_receive {:error, "Received oversize fragmented message"}, 50
+
+          # This should send us over the edge
+          SimpleWebSocketClient.send_continuation_frame(client, payload)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received oversize fragmented message"}, 500
+
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received oversize fragmented message"
+    end
+  end
+
+  describe "compressed frames" do
+    test "negotiates compression if globally configured to", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      assert {:ok,
+              [
+                "sec-websocket-extensions: permessage-deflate",
+                "cache-control: max-age=0, private, must-revalidate"
+              ]} =
+               SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "does not negotiate compression if not globally configured to", context do
+      context = http_server(context, websocket_options: [compress: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      assert {:ok, ["cache-control: max-age=0, private, must-revalidate"]} =
+               SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+    end
+
+    test "correctly decompresses text frames and sends compressed frames back", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses binary frames and sends compressed frames back", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0xC)
+
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses fragmented text frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5>>
+      deflated_payload_continuation = <<163, 96, 20, 12>>
+      deflated_payload_continuation_2 = <<119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0x4)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_text_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "correctly decompresses fragmented binary frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      deflated_payload = <<74, 76, 28, 5>>
+      deflated_payload_continuation = <<163, 96, 20, 12>>
+      deflated_payload_continuation_2 = <<119, 0, 0>>
+      SimpleWebSocketClient.send_binary_frame(client, deflated_payload, 0x4)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, deflated_payload_continuation_2)
+
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      assert SimpleWebSocketClient.recv_deflated_binary_frame(client) == {:ok, deflated_payload}
+    end
+
+    test "does not compress ping or pong frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
+    end
+
+    test "server sends a 1009 on an overly compressed frame", context do
+      output =
+        capture_log(fn ->
+          zstream = :zlib.open()
+          :ok = :zlib.deflateInit(zstream, :default, :deflated, -15, 8, :default)
+
+          deflated_chunks =
+            Enum.map(
+              1..1_000_000,
+              fn _ -> :zlib.deflate(zstream, "aaaaaaaaaa", :none) end
+            )
+
+          final_flush = :zlib.deflate(zstream, <<>>, :sync)
+          :zlib.close(zstream)
+          deflated = IO.iodata_to_binary([deflated_chunks, final_flush])
+          trailer_size = byte_size(deflated) - 4
+          <<payload::binary-size(^trailer_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
+
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+          SimpleWebSocketClient.send_text_frame(client, payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received compressed frame inflating too much"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received compressed frame inflating too much"
+    end
+
+    test "respects max_inflate_ratio for received frames", context do
+      # Build a payload which inflates at a ratio of about 10:1; large enough that inflation
+      # spans several :zlib.safeInflate/2 calls, but comfortably within the default ratio of 25
+      block = for i <- 1..6_000, into: <<>>, do: <<i::32>>
+      inflated_payload = :binary.copy(block, 6)
+
+      zstream = :zlib.open()
+      :ok = :zlib.deflateInit(zstream, :default, :deflated, -15, 8, :default)
+      deflated = zstream |> :zlib.deflate(inflated_payload, :sync) |> IO.iodata_to_binary()
+      :zlib.close(zstream)
+      payload_size = byte_size(deflated) - 4
+      <<payload::binary-size(^payload_size), 0x00, 0x00, 0xFF, 0xFF>> = deflated
+
+      # Ensure that a server with default options is happy to inflate it
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+      SimpleWebSocketClient.send_binary_frame(client, payload, 0xC)
+      assert {:ok, _echoed_payload} = SimpleWebSocketClient.recv_deflated_binary_frame(client)
+
+      output =
+        capture_log(fn ->
+          # The same payload must be refused by a server configured with a stricter ratio
+          context = http_server(context, websocket_options: [max_inflate_ratio: 5])
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+          SimpleWebSocketClient.send_binary_frame(client, payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received compressed frame inflating too much"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received compressed frame inflating too much"
+    end
+
+    test "respects deflate_options when deflating frames", context do
+      context = http_server(context, websocket_options: [deflate_options: [level: 0]])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, [], true)
+
+      payload = String.duplicate("a", 1_000)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+
+      {:ok, deflated_payload} = SimpleWebSocketClient.recv_deflated_text_frame(client)
+
+      # level: 0 emits stored (uncompressed) blocks, so the deflated payload must be larger
+      # than the original; the default level would compress it down to a handful of bytes
+      assert byte_size(deflated_payload) > byte_size(payload)
+
+      # Ensure that the payload still inflates back to the original
+      zstream = :zlib.open()
+      :ok = :zlib.inflateInit(zstream, -15)
+
+      inflated_payload =
+        zstream
+        |> :zlib.inflate(<<deflated_payload::binary, 0x00, 0x00, 0xFF, 0xFF>>)
+        |> IO.iodata_to_binary()
+
+      :zlib.close(zstream)
+
+      assert inflated_payload == payload
+    end
+  end
+
+  describe "ping frames" do
+    test "send a pong per RFC6455§5.5.2", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
+    end
+
+    test "are processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      SimpleWebSocketClient.send_ping_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+      assert SimpleWebSocketClient.recv_ping_frame(client) == {:ok, "OK"}
+
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
+    end
+  end
+
+  describe "pong frames" do
+    test "are processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      SimpleWebSocketClient.send_pong_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "OK"}
+
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ABCD"}
+    end
+  end
+
+  describe "server-side connection close" do
+    defmodule ServerSideCloseWebSock do
+      use NoopWebSock
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+    end
+
+    test "server does a proper shutdown handshake when closing a connection", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ServerSideCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Get the websock to tell bandit to shut down
+      SimpleWebSocketClient.send_text_frame(client, "normal")
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      # Wait a bit and validate that the server is still very much alive
+      Process.sleep(10)
+      assert Process.alive?(pid)
+
+      # Now send our half of the handshake and verify that the server has shut down
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      Process.sleep(10)
+      refute Process.alive?(pid)
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+  end
+
+  describe "client-side connection close" do
+    defmodule ClientSideCloseWebSock do
+      use NoopWebSock
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+    end
+
+    test "shuts down on dirty client shutdown", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Close the connection from the client
+      Transport.close(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(500)
+      refute Process.alive?(pid)
+    end
+
+    test "returns a corresponding connection close frame on clean client shutdown", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Close the connection from the client
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      # Now ensure that we see the server's half of the shutdown handshake
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(500)
+      refute Process.alive?(pid)
+    end
+
+    test "client closes are are processed when interleaved with continuation frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, ClientSideCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Note that we don't expect this to send back a pid since it won't make it to the WebSock
+      SimpleWebSocketClient.send_text_frame(client, "whoami", 0x0)
+
+      # Close the connection from the client
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      # Now ensure that we see the server's half of the shutdown handshake
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Wait a bit and validate that the server is closed
+      Process.sleep(500)
+      refute Process.alive?(pid)
+    end
+  end
+
+  describe "error handling" do
+    test "server sends a 1002 on an unexpected continuation frame", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_continuation_frame(client, <<1, 2, 3>>)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected continuation frame (RFC6455§5.4)"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received unexpected continuation frame (RFC6455§5.4)"
+    end
+
+    test "server sends a 1002 on a text frame during continuation", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>, 0x0)
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_text_frame(client, <<1, 2, 3>>)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected text frame (RFC6455§5.4)"}, 500
+
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received unexpected text frame (RFC6455§5.4)"
+    end
+
+    test "server sends a 1002 on a binary frame during continuation", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>, 0x0)
+          # This is not allowed by RFC6455§5.4
+          SimpleWebSocketClient.send_binary_frame(client, <<1, 2, 3>>)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected binary frame (RFC6455§5.4)"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received unexpected binary frame (RFC6455§5.4)"
+    end
+
+    test "server sends a 1002 on a compressed frame when deflate not negotiated", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+          SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received unexpected compressed frame (RFC6455§5.2)"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received unexpected compressed frame (RFC6455§5.2)"
+    end
+
+    test "server sends a 1007 on a malformed compressed frame", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, [], true)
+
+          deflated_payload = <<1, 2, 3>>
+          SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Inflation error"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Inflation error"
+    end
+
+    test "server sends a 1007 on a non UTF-8 text frame", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
+    end
+
+    test "server sends a 1007 on fragmented non UTF-8 text frame", context do
+      output =
+        capture_log(fn ->
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          SimpleWebSocketClient.send_text_frame(client, <<0xE2::8>>, 0x0)
+          SimpleWebSocketClient.send_continuation_frame(client, <<0x82::8, 0x28::8>>)
+
+          # Get the error that terminate saw, to ensure we're closing for the expected reason
+          assert_receive {:error, "Received non UTF-8 text frame (RFC6455§8.1)"}, 500
+
+          # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
+
+          # Verify that the server didn't send any extraneous frames
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
+    end
+
+    test "server does NOT send a 1007 on a non UTF-8 text frame when so configured", context do
+      context = http_server(context, websocket_options: [validate_text_frames: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<0xE2::8, 0x82::8, 0x28::8>>}
+    end
+  end
+
+  describe "protocol error logging" do
+    defmodule MonitoredWebSock do
+      use NoopWebSock
+
+      def init(opts) do
+        WebSocketProtocolTest.send(self())
+        {:ok, opts}
+      end
+
+      def terminate(reason, _state), do: WebSocketProtocolTest.send(reason)
+    end
+
+    @tag :capture_log
+    test "frame deserialization errors are short logged by default", context do
+      ref = make_ref() |> inspect() |> String.to_atom()
+
+      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
+      assert_receive connection_pid when is_pid(connection_pid), 500
+      monitor_ref = Process.monitor(connection_pid)
+
+      # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
+      SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive {:error, "Received unsupported RSV flags 2"}, 500
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+      # Verify that the error is logged in a controlled manner
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (exit) {:deserializing, \"Received unsupported RSV flags 2\"}"
+
+      # Verify that the connection process exits quietly, without a crash report
+      assert_receive {:DOWN, ^monitor_ref, :process, ^connection_pid,
+                      {:shutdown, {:deserializing, "Received unsupported RSV flags 2"}}},
+                     500
+    end
+
+    @tag :capture_log
+    test "frame deserialization errors are not logged if so configured", context do
+      context = http_server(context, websocket_options: [log_protocol_errors: false])
+
+      ref = make_ref() |> inspect() |> String.to_atom()
+
+      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
+      assert_receive connection_pid when is_pid(connection_pid), 500
+      monitor_ref = Process.monitor(connection_pid)
+
+      # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
+      SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
+
+      assert_receive {:error, "Received unsupported RSV flags 2"}, 500
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      assert_receive {:DOWN, ^monitor_ref, :process, ^connection_pid,
+                      {:shutdown, {:deserializing, "Received unsupported RSV flags 2"}}},
+                     500
+
+      refute_receive {:log, %{level: :error}}
+    end
+  end
+
+  describe "timeout conditions" do
+    test "server sends a 1002 if no frames sent at all", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive :timeout, 1500
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    test "server sends a 1002 on timeout between frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      # Get the error that terminate saw, to ensure we're closing for the expected reason
+      assert_receive :timeout, 1500
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1002::16>>}
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+
+    defmodule TimeoutCloseWebSock do
+      use NoopWebSock
+      def handle_in({"normal", opcode: :text}, state), do: {:stop, :normal, state}
+      def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
+    end
+
+    test "server times out waiting for client connection close", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TimeoutCloseWebSock)
+
+      # Find out the server process pid
+      SimpleWebSocketClient.send_text_frame(client, "whoami")
+      {:ok, pid} = SimpleWebSocketClient.recv_text_frame(client)
+      pid = pid |> String.to_charlist() |> :erlang.list_to_pid()
+
+      # Get the websock to tell bandit to shut down
+      SimpleWebSocketClient.send_text_frame(client, "normal")
+
+      # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      # Wait a bit and validate that the server is still very much alive
+      Process.sleep(10)
+      assert Process.alive?(pid)
+
+      # Now wait for the server to timeout
+      Process.sleep(110)
+
+      # Verify that the server has shut down
+      refute Process.alive?(pid)
+
+      # Verify that the server didn't send any extraneous frames
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+  end
+end
+  end
+
+  describe "s/m/l frame sizes" do
+    test "small (7 bit) frames are received properly", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      SimpleWebSocketClient.send_text_frame(client, "OK")
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "OK"}
+    end
+
+    test "mid-sized (16 bit) frames are received properly", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 1_000)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
+    end
+
+    test "large-sized (64 bit) frames are received properly", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 100_000)
+      SimpleWebSocketClient.send_text_frame(client, payload)
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, payload}
+    end
+
+    test "over-sized frames are rejected", context do
+      output =
+        capture_log(fn ->
+          context = http_server(context, websocket_options: [max_frame_size: 2_000_000])
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+          payload = String.duplicate("0123456789", 200_001)
+          SimpleWebSocketClient.send_text_frame(client, payload)
+          Process.sleep(500)
+        end)
+
+      assert_receive {:error, :max_frame_size_exceeded}, 500
+      assert output =~ "{:deserializing, :max_frame_size_exceeded}"
+    end
+  end
+
+  describe "frame fragmentation" do
+    test "handle_in is called once when fragmented text frames are sent", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 1_000)
+      SimpleWebSocketClient.send_text_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload)
+
+      expected_payload = String.duplicate(payload, 3)
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, expected_payload}
+    end
+
+    test "handle_in is called once when fragmented binary frames are sent", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 1_000)
+      SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload)
+
+      expected_payload = String.duplicate(payload, 3)
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
+    end
+
+    test "zero byte fin continuation frames are accepted", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
+
+      payload = String.duplicate("0123456789", 1_000)
+      SimpleWebSocketClient.send_binary_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, payload, 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, <<>>)
+
+      expected_payload = String.duplicate(payload, 2)
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
+    end
+
     test "zero byte non-fin continuation frames are accepted", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
