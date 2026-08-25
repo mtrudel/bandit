@@ -87,6 +87,15 @@ defmodule Bandit.Pipeline do
 
   @spec determine_host_and_port!(binary(), atom(), request_target(), Plug.Conn.headers()) ::
           {Plug.Conn.host(), Plug.Conn.port_number()}
+  defp determine_host_and_port!(scheme, :"HTTP/1.1", {_, target_host, target_port, _}, headers) do
+    {header_host, header_port} = required_host_header!(headers)
+
+    case target_host do
+      nil -> {header_host, header_port || URI.default_port(scheme)}
+      target_host -> {to_string(target_host), target_port || URI.default_port(scheme)}
+    end
+  end
+
   defp determine_host_and_port!(scheme, version, {_, nil, nil, _}, headers) do
     case {Bandit.Headers.get_host_header(headers), version} do
       {{:ok, nil}, :"HTTP/1.0"} ->
@@ -106,6 +115,14 @@ defmodule Bandit.Pipeline do
 
   defp determine_host_and_port!(scheme, _version, {_, host, port, _}, _headers),
     do: {to_string(host), port || URI.default_port(scheme)}
+
+  defp required_host_header!(headers) do
+    case Bandit.Headers.get_host_header(headers) do
+      {:ok, nil} -> request_error!("Unable to obtain host and port: No host header")
+      {:ok, host_header} -> Bandit.Headers.parse_hostlike_header!(host_header)
+      {:error, reason} -> request_error!("Unable to obtain host and port: #{reason}")
+    end
+  end
 
   @spec determine_path_and_query(request_target()) :: {String.t(), nil | String.t()}
   defp determine_path_and_query({_, _, _, :*}), do: {"*", nil}

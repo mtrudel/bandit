@@ -102,38 +102,112 @@ defmodule Bandit.Headers do
     end
   end
 
-  # Covers IPv6 addresses, like `[::1]:4000` as defined in RFC3986.
+  # RFC9110§7.2 defines Host as uri-host [ ":" port ], importing uri-host from
+  # RFC3986§3.2.2. Bracketed hosts therefore have to be IPv6 or IPvFuture literals, while
+  # unbracketed hosts have to match reg-name (IPv4 addresses are also valid reg-names).
   @spec parse_hostlike_header!(host_header :: binary()) ::
           {Plug.Conn.host(), nil | Plug.Conn.port_number()}
-  def parse_hostlike_header!("[" <> _ = host_header) do
-    host_header
-    |> :binary.split("]:")
-    |> case do
-      [host, port] ->
-        case parse_integer(port) do
-          {port, ""} when is_port_number(port) -> {host <> "]", port}
-          _ -> raise Bandit.HTTPError, "Header contains invalid port"
+  def parse_hostlike_header!("[" <> rest) do
+    case :binary.split(rest, "]") do
+      [literal, suffix] ->
+        if valid_ip_literal?(literal) do
+          {"[" <> literal <> "]", parse_port_suffix!(suffix)}
+        else
+          raise Bandit.HTTPError, "Header contains invalid host"
         end
 
-      [host] ->
-        {host, nil}
+      _ ->
+        raise Bandit.HTTPError, "Header contains invalid host"
     end
   end
 
   def parse_hostlike_header!(host_header) do
-    host_header
-    |> :binary.split(":")
-    |> case do
+    case :binary.split(host_header, ":", [:global]) do
       [host, port] ->
-        case parse_integer(port) do
-          {port, ""} when is_port_number(port) -> {host, port}
-          _ -> raise Bandit.HTTPError, "Header contains invalid port"
-        end
+        validate_reg_name!(host)
+        {host, parse_port!(port)}
 
       [host] ->
+        validate_reg_name!(host)
         {host, nil}
+
+      _ ->
+        raise Bandit.HTTPError, "Header contains invalid host"
     end
   end
+
+  defp parse_port_suffix!(""), do: nil
+  defp parse_port_suffix!(":" <> port), do: parse_port!(port)
+  defp parse_port_suffix!(_suffix), do: raise(Bandit.HTTPError, "Header contains invalid host")
+
+  # RFC3986§3.2.3 permits an empty port. HTTP and HTTPS assign the scheme's default in that
+  # case; callers that require an explicit port (such as CONNECT) enforce that separately.
+  defp parse_port!(""), do: nil
+
+  defp parse_port!(port) do
+    case parse_integer(port) do
+      {port, ""} when is_port_number(port) -> port
+      _ -> raise Bandit.HTTPError, "Header contains invalid port"
+    end
+  end
+
+  defp validate_reg_name!(host) do
+    if valid_reg_name?(host),
+      do: :ok,
+      else: raise(Bandit.HTTPError, "Header contains invalid host")
+  end
+
+  defp valid_reg_name?(<<>>), do: true
+
+  defp valid_reg_name?(<<"%", first, second, rest::binary>>)
+       when first in ?0..?9 or first in ?a..?f or first in ?A..?F do
+    if second in ?0..?9 or second in ?a..?f or second in ?A..?F,
+      do: valid_reg_name?(rest),
+      else: false
+  end
+
+  defp valid_reg_name?(<<char, rest::binary>>)
+       when char in ?a..?z or char in ?A..?Z or char in ?0..?9 or
+              char in ~c"-._~!$&'()*+,;=",
+       do: valid_reg_name?(rest)
+
+  defp valid_reg_name?(_host), do: false
+
+  defp valid_ip_literal?(literal) do
+    case :inet.parse_ipv6_address(:binary.bin_to_list(literal)) do
+      {:ok, _address} -> true
+      {:error, _reason} -> valid_ipvfuture?(literal)
+    end
+  end
+
+  defp valid_ipvfuture?(<<prefix, rest::binary>>) when prefix in [?v, ?V] do
+    case :binary.split(rest, ".") do
+      [version, address] when byte_size(version) > 0 and byte_size(address) > 0 ->
+        all_hexdigits?(version) and valid_ipvfuture_address?(address)
+
+      _ ->
+        false
+    end
+  end
+
+  defp valid_ipvfuture?(_literal), do: false
+
+  defp all_hexdigits?(<<>>), do: true
+
+  defp all_hexdigits?(<<char, rest::binary>>)
+       when char in ?0..?9 or char in ?a..?f or char in ?A..?F,
+       do: all_hexdigits?(rest)
+
+  defp all_hexdigits?(_value), do: false
+
+  defp valid_ipvfuture_address?(<<>>), do: true
+
+  defp valid_ipvfuture_address?(<<char, rest::binary>>)
+       when char in ?a..?z or char in ?A..?Z or char in ?0..?9 or
+              char in ~c"-._~!$&'()*+,;=:",
+       do: valid_ipvfuture_address?(rest)
+
+  defp valid_ipvfuture_address?(_address), do: false
 
   @spec get_content_length(Plug.Conn.headers()) ::
           {:ok, nil | non_neg_integer()} | {:error, String.t()}

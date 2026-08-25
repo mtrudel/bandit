@@ -149,16 +149,18 @@ defmodule Bandit.HTTP2.Stream do
 
     defp build_request_target!(headers, stream) do
       scheme = Bandit.Headers.get_header(headers, ":scheme")
-      {host, port} = get_host_and_port!(headers)
+      {host, port} = get_host_and_port!(headers, stream)
       path = get_path!(headers, stream)
       {scheme, host, port, path}
     end
 
-    defp get_host_and_port!(headers) do
+    defp get_host_and_port!(headers, stream) do
       case Bandit.Headers.get_header(headers, ":authority") do
         authority when not is_nil(authority) -> Bandit.Headers.parse_hostlike_header!(authority)
         nil -> {nil, nil}
       end
+    rescue
+      _error in Bandit.HTTPError -> stream_error!("Received invalid :authority", stream)
     end
 
     # RFC9113§8.3.1 - path should be non-empty and absolute

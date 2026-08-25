@@ -265,7 +265,7 @@ defmodule HTTP1ProtocolTest do
   describe "absolute-form request target (RFC9112§3.2.2)" do
     test "uses transport scheme even if it does not match request-line scheme", context do
       client = SimpleHTTP1Client.tcp_client(context)
-      SimpleHTTP1Client.send(client, "GET", "https://banana/echo_components")
+      SimpleHTTP1Client.send(client, "GET", "https://banana/echo_components", ["host: banana"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
       assert Jason.decode!(body)["scheme"] == "http"
     end
@@ -295,11 +295,59 @@ defmodule HTTP1ProtocolTest do
       assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     end
 
-    test "does not require a host header set in HTTP/1.1 (RFC9112§3.2.2)", context do
+    @tag :capture_log
+    test "requires a host header in HTTP/1.1 (RFC9112§3.2)", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components")
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Unable to obtain host and port: No host header"
+    end
+
+    @tag :capture_log
+    test "rejects multiple host headers in HTTP/1.1", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", [
+        "host: banana",
+        "host: banana"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "validates Host even when the absolute target supplies the authority", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", [
+        "host: banana:not-a-port"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "rejects invalid uri-host syntax in absolute-form Host fields", context do
+      for invalid_host <- ["bad/host", "user@host", "bad%2", "[not-an-ip]"] do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "GET", "http://banana/echo_components", [
+          "host: #{invalid_host}"
+        ])
+
+        assert {:ok, "400 Bad Request", _headers, _body} =
+                 SimpleHTTP1Client.recv_reply(client)
+      end
+    end
+
+    test "treats an empty port as the scheme default", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: example.com:"])
+
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["host"] == "banana"
+      assert Jason.decode!(body)["port"] == 80
     end
 
     test "derives port from the URI, even if it differs from host header", context do
@@ -386,6 +434,14 @@ defmodule HTTP1ProtocolTest do
 
     def no_path_provided(conn) do
       echo_components(conn)
+    end
+
+    @tag :capture_log
+    test "requires a host header in HTTP/1.1", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80")
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
     end
 
     @tag :capture_log
