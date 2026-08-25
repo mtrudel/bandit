@@ -77,7 +77,10 @@ defmodule Bandit.Compression do
 
     headers = maybe_add_vary_header(adapter, status, headers)
 
-    if status not in [204, 304] && not is_nil(adapter.content_encoding) &&
+    # 206 responses are excluded since compressing them would change the bytes relative to the
+    # content-range the response advertises against the identity representation, corrupting
+    # range reassembly at the client
+    if status not in [204, 206, 304] && not is_nil(adapter.content_encoding) &&
          is_nil(response_content_encoding_header) &&
          !response_has_strong_etag(headers) && !response_indicates_no_transform(headers) &&
          !empty_body? do
