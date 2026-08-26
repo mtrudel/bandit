@@ -88,6 +88,19 @@ defmodule InitialHandlerTest do
     end
   end
 
+  describe "idle connections" do
+    setup :http_server
+
+    test "closes silently when no data is sent before the read timeout", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      # Expect a silent close after the server's read timeout: no unsolicited 408
+      # response bytes and no error logged
+      assert Transport.recv(client, 0) == {:error, :closed}
+      refute_receive {:log, %{level: :error}}
+    end
+  end
+
   describe "unknown protocols" do
     setup :http_server
     setup :req_http1_client
