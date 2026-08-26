@@ -298,12 +298,14 @@ defmodule Bandit.Adapter do
   end
 
   defp send_data(adapter, data, end_request) do
-    socket =
-      if send_resp_body?(adapter),
-        do: Bandit.HTTPTransport.send_data(adapter.transport, data, end_request),
-        else: adapter.transport
+    {socket, data_size} =
+      if send_resp_body?(adapter) do
+        {Bandit.HTTPTransport.send_data(adapter.transport, data, end_request),
+         IO.iodata_length(data)}
+      else
+        {adapter.transport, 0}
+      end
 
-    data_size = IO.iodata_length(data)
     metrics = Map.update(adapter.metrics, :resp_body_bytes, data_size, &(&1 + data_size))
 
     metrics =
