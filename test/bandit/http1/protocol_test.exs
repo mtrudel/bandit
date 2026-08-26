@@ -1346,6 +1346,28 @@ defmodule HTTP1ProtocolTest do
       send_resp(conn, 200, "OK")
     end
 
+    test "handles a read_body call with length: 0 without falsely completing the body", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/zero_length_chunked_read", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "5\r\nhello\r\n0\r\n\r\n")
+      assert {:ok, "200 OK", _headers, "hello"} = SimpleHTTP1Client.recv_reply(client)
+
+      # Make sure the connection is still in sync by trying another request
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def zero_length_chunked_read(conn) do
+      {:more, "", conn} = Plug.Conn.read_body(conn, length: 0)
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, body)
+    end
+
     test "reads a chunked body properly", context do
       stream =
         Stream.repeatedly(fn -> String.duplicate("0123456789", 100_000) end)

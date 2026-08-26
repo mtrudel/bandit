@@ -280,16 +280,26 @@ defmodule Bandit.HTTP1.Socket do
     # do_read_chunked_data! reads up to the configured length, reading multiple
     # chunks to do so. It accumulates data in the 'body' list, adding to it
     # chunk by (possibly partial) chunk until either the end of the body is reached
-    # or the configured length is exceeded
-    @dialyzer {:no_improper_lists, do_read_chunked_data!: 5}
+    # or the configured length is exceeded. Note that an exhausted read budget must
+    # be checked before attempting to read a chunk, since a zero-byte chunk read is
+    # otherwise indistinguishable from the terminal chunk
     defp do_read_chunked_data!(socket, buffer, body, body_length, opts) do
       max_to_read = Keyword.get(opts, :length, 8_000_000) - body_length
 
+      if max_to_read <= 0 do
+        {:more, body, buffer}
+      else
+        do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, opts)
+      end
+    end
+
+    @dialyzer {:no_improper_lists, do_read_next_chunk!: 6}
+    defp do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, opts) do
       case do_read_chunk!(socket, buffer, max_to_read, opts) do
-        {<<>>, rest} ->
+        {:done, rest} ->
           {:ok, body, rest}
 
-        {chunk, rest} ->
+        {:chunk, chunk, rest} ->
           length = IO.iodata_length(chunk)
 
           if length < max_to_read do
@@ -319,7 +329,7 @@ defmodule Bandit.HTTP1.Socket do
           if trailers != [],
             do: Logger.warning("Encountered trailers in chunked request; ignoring")
 
-          {<<>>, fake_socket.buffer}
+          {:done, fake_socket.buffer}
 
         {chunk_size, rest} ->
           to_read = min(chunk_size, max_to_read)
@@ -335,11 +345,11 @@ defmodule Bandit.HTTP1.Socket do
               if IO.iodata_to_binary(newline) != "\r\n",
                 do: request_error!("Malformed chunked encoding request body")
 
-              {to_return, rest}
+              {:chunk, to_return, rest}
 
             remaining when remaining > 0 ->
               # Build a binary since we'll be passing it to read_chunk_size! which expects a binary
-              {to_return, Integer.to_string(remaining, 16) <> "\r\n" <> rest}
+              {:chunk, to_return, Integer.to_string(remaining, 16) <> "\r\n" <> rest}
           end
       end
     end
