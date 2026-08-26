@@ -815,6 +815,58 @@ defmodule HTTP1ProtocolTest do
       send_resp(conn, 200, "#{first},#{second},#{third}")
     end
 
+    @tag :capture_log
+    test "rejects a stale conn after an incremental body read", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /respond_with_stale_conn HTTP/1.1\r\nhost: localhost\r\ncontent-length: 5\r\n\r\nAB"
+      )
+
+      Process.sleep(10)
+
+      Transport.send(
+        client,
+        "CDEGET /echo_method HTTP/1.1\r\nhost: localhost\r\n\r\n"
+      )
+
+      assert {:ok, "500 Internal Server Error", headers, ""} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert Bandit.Headers.get_header(headers, :connection) == "close"
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Stale conn passed to a Plug.Conn function."
+    end
+
+    def respond_with_stale_conn(conn) do
+      {:more, "ABC", _conn} = Plug.Conn.read_body(conn, length: 3)
+      send_resp(conn, 200, "should not be sent")
+    end
+
+    @tag :capture_log
+    test "rejects an earlier conn for another body read", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /read_body_with_stale_conn HTTP/1.1\r\nhost: localhost\r\ncontent-length: 2\r\n\r\nAB"
+      )
+
+      assert {:ok, "500 Internal Server Error", _, ""} = SimpleHTTP1Client.recv_reply(client)
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg =~ "** (RuntimeError) Stale conn passed to a Plug.Conn function."
+    end
+
+    def read_body_with_stale_conn(conn) do
+      {:more, "A", _conn} = Plug.Conn.read_body(conn, length: 1)
+      Plug.Conn.read_body(conn)
+    end
+
     test "handles the case where we read from the network in smaller chunks than we return",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
