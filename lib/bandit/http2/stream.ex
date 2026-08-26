@@ -582,6 +582,12 @@ defmodule Bandit.HTTP2.Stream do
             stream
             |> do_recv_send_window_update(delta)
             |> send_data(rest, end_stream)
+
+          # Observe a client reset promptly rather than sitting blocked until read_timeout
+          # (after which we would send an RST_STREAM of our own, which RFC9113§6.4 forbids
+          # after receiving one). Mirrors the handling in do_recv/2
+          {:bandit, {:rst_stream, error_code}} ->
+            do_recv_rst_stream!(stream, error_code)
         after
           stream.read_timeout ->
             stream_error!(
