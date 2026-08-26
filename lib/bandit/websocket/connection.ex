@@ -111,7 +111,12 @@ defmodule Bandit.WebSocket.Connection do
         frame_size = IO.iodata_length(frame.data)
 
         if frame_size == 0 do
-          do_error(1008, "Received zero byte non-fin continuation frame", socket, connection)
+          # An empty non-final continuation is a legal no-op (RFC6455§5.4). It is deliberately
+          # NOT appended to the accumulated fragments: retaining a list cell per empty frame
+          # would let a peer grow fragment state without ever increasing fragment_size, which
+          # is the growth max_fragmented_message_size bounds (GHSA-pf94-94m9-536p). Leaving
+          # the connection untouched keeps that mitigation intact
+          {:continue, connection}
         else
           fragment_size = connection.fragment_size + frame_size
 

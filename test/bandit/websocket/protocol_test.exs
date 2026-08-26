@@ -164,26 +164,34 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected_payload}
     end
 
-    test "zero byte non-fin continuation frames are rejected", context do
-      output =
-        capture_log(fn ->
-          client = SimpleWebSocketClient.tcp_client(context)
-          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+    test "empty non-final continuation frames do not grow fragment state" do
+      # Regression guard for GHSA-pf94-94m9-536p: an empty fragment must not add
+      # an iodata cell (invisible to max_fragmented_message_size) to the accumulator
+      connection = %Bandit.WebSocket.Connection{
+        websock: EchoWebSock,
+        fragment_frame: %Bandit.WebSocket.Frame.Text{fin: false, data: ["AB"]},
+        fragment_size: 2
+      }
 
-          SimpleWebSocketClient.send_binary_frame(client, "0123456789", 0x0)
-          SimpleWebSocketClient.send_continuation_frame(client, <<>>, 0x0)
+      frame = %Bandit.WebSocket.Frame.Continuation{fin: false, data: <<>>}
 
-          # Get the error that terminate saw, to ensure we're closing for the expected reason
-          assert_receive {:error, "Received zero byte non-fin continuation frame"}, 500
+      assert {:continue, %{fragment_frame: %{data: ["AB"]}, fragment_size: 2}} =
+               Bandit.WebSocket.Connection.handle_frame(frame, nil, connection)
+    end
 
-          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1008::16>>}
+    test "zero byte non-fin continuation frames are accepted", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock)
 
-          # Verify that the server didn't send any extraneous frames
-          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(500)
-        end)
+      SimpleWebSocketClient.send_binary_frame(client, "AB", 0x0)
 
-      assert output =~ "Received zero byte non-fin continuation frame"
+      for _ <- 1..3 do
+        SimpleWebSocketClient.send_continuation_frame(client, <<>>, 0x0)
+      end
+
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, "ABCD"}
     end
 
     test "max_fragmented_message_size enforced for continuation frames", context do
