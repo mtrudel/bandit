@@ -239,6 +239,28 @@ defmodule HTTP1TelemetryTest do
       |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
+    test "it should not count suppressed response bodies in `stop` events for HEAD requests",
+         context do
+      Req.head!(context.req, url: "/do_read_body")
+
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, _metadata}, 500
+
+      # The response body is suppressed for HEAD requests, so no body bytes were
+      # actually written (mirroring what send_file responses already report)
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
+               req_body_start_time: integer(roughly: System.monotonic_time()),
+               req_body_end_time: integer(roughly: System.monotonic_time()),
+               req_body_bytes: 0,
+               resp_body_bytes: 0,
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
+             }
+    end
+
     @tag :capture_log
     test "it should send `stop` events for malformed requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
