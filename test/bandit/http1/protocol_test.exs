@@ -3138,5 +3138,28 @@ defmodule HTTP1ProtocolTest do
     def echo_method(conn) do
       send_resp(conn, 200, conn.method)
     end
+
+    test "closes without draining when a plug responds to expect: 100-continue without reading the body",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_reject", [
+        "host: localhost",
+        "expect: 100-continue",
+        "content-length: 5"
+      ])
+
+      assert {:ok, "401 Unauthorized", headers, "denied"} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(headers, :connection) == ["close"]
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      # The request completed cleanly rather than erroring out in a drain timeout
+      assert_receive {:telemetry, [:bandit, :request, :stop], _, metadata}, 500
+      refute Map.has_key?(metadata, :error)
+    end
+
+    def expect_continue_reject(conn) do
+      send_resp(conn, 401, "denied")
+    end
   end
 end
