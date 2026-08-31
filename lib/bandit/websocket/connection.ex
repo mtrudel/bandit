@@ -53,9 +53,13 @@ defmodule Bandit.WebSocket.Connection do
     websock.init(websock_state) |> handle_continuation(socket, instance)
   end
 
-  def handle_frame(frame, socket, %{fragment_frame: nil} = connection) do
-    connection = do_recv_metrics(frame, connection)
+  # Recv metrics are recorded here and only here: dispatch_frame/3 re-enters itself with
+  # synthesized frames (inflated payloads, reassembled fragmented messages) which never
+  # arrived on the wire and so must not be counted a second time
+  def handle_frame(frame, socket, connection),
+    do: dispatch_frame(frame, socket, do_recv_metrics(frame, connection))
 
+  defp dispatch_frame(frame, socket, %{fragment_frame: nil} = connection) do
     case frame do
       %Frame.Continuation{} ->
         do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
@@ -91,10 +95,8 @@ defmodule Bandit.WebSocket.Connection do
     end
   end
 
-  def handle_frame(frame, socket, %{fragment_frame: fragment_frame} = connection)
-      when not is_nil(fragment_frame) do
-    connection = do_recv_metrics(frame, connection)
-
+  defp dispatch_frame(frame, socket, %{fragment_frame: fragment_frame} = connection)
+       when not is_nil(fragment_frame) do
     case frame do
       %Frame.Continuation{fin: true} = frame ->
         fragment_size = connection.fragment_size + IO.iodata_length(frame.data)
@@ -104,7 +106,7 @@ defmodule Bandit.WebSocket.Connection do
         else
           data = IO.iodata_to_binary([connection.fragment_frame.data | frame.data])
           frame = %{connection.fragment_frame | fin: true, data: data}
-          handle_frame(frame, socket, %{connection | fragment_frame: nil, fragment_size: 0})
+          dispatch_frame(frame, socket, %{connection | fragment_frame: nil, fragment_size: 0})
         end
 
       %Frame.Continuation{fin: false} = frame ->
@@ -342,7 +344,7 @@ defmodule Bandit.WebSocket.Connection do
       {:ok, data, compress} ->
         frame = %{frame | data: data, compressed: false}
         connection = %{connection | compress: compress}
-        handle_frame(frame, socket, connection)
+        dispatch_frame(frame, socket, connection)
 
       {:error, :no_compress} ->
         do_error(1002, "Received unexpected compressed frame (RFC6455§5.2)", socket, connection)

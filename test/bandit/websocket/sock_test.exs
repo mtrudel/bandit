@@ -10,7 +10,8 @@ defmodule WebSocketWebSockTest do
   def call(conn, _opts) do
     conn = Plug.Conn.fetch_query_params(conn)
     websock = conn.query_params["websock"] |> String.to_atom()
-    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, [], []})
+    compress = conn.query_params["compress"]
+    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, [], compress: compress})
   end
 
   describe "init" do
@@ -1418,6 +1419,66 @@ defmodule WebSocketWebSockTest do
                websock: TelemetrySock,
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference()
+             }
+    end
+
+    test "it should count each wire frame exactly once for fragmented messages", context do
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock)
+      SimpleWebSocketClient.send_text_frame(client, "AB", 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, "CD")
+      _ = SimpleWebSocketClient.recv_text_frame(client)
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, _metadata}, 500
+
+      # The wire carried one 2-byte text frame and one 2-byte continuation; the
+      # reassembled 4-byte message dispatched to the websock must not be counted
+      # as an additional received frame
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               recv_text_frame_count: 1,
+               recv_text_frame_bytes: 2,
+               recv_continuation_frame_count: 1,
+               recv_continuation_frame_bytes: 2,
+               recv_connection_close_frame_count: 1,
+               recv_connection_close_frame_bytes: 0,
+               send_text_frame_count: 1,
+               send_text_frame_bytes: 4
+             }
+    end
+
+    test "it should count a compressed frame once, at its wire size", context do
+      TelemetryHelpers.attach_all_events(TelemetrySock) |> on_exit()
+
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, TelemetrySock, [], true)
+
+      # A pre-deflated payload, as used by the permessage-deflate protocol tests
+      deflated_payload = <<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>
+      SimpleWebSocketClient.send_text_frame(client, deflated_payload, 0xC)
+      _ = SimpleWebSocketClient.recv_deflated_text_frame(client)
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+
+      assert_receive {:telemetry, [:bandit, :websocket, :stop], measurements, _metadata}, 500
+
+      # Recv metrics see the frame as it arrived on the wire; the inflated frame
+      # dispatched to the websock afterwards must not be counted a second time,
+      # nor may its (larger) inflated size be added to the byte total
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               recv_text_frame_count: 1,
+               recv_text_frame_bytes: 11,
+               recv_connection_close_frame_count: 1,
+               recv_connection_close_frame_bytes: 0,
+               send_text_frame_count: 1,
+               send_text_frame_bytes: integer()
              }
     end
 
