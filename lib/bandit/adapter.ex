@@ -273,6 +273,8 @@ defmodule Bandit.Adapter do
     if get_http_protocol(adapter) == :"HTTP/1.0" do
       {:error, :not_supported}
     else
+      adapter = if status == 100, do: %{adapter | expect_continue: false}, else: adapter
+
       # inform/3 is unique in that headers comes in as a keyword list
       headers = Enum.map(headers, fn {header, value} -> {to_string(header), value} end)
       {:ok, adapter |> send_headers(status, headers, :inform) |> advance_usage_counter()}
@@ -286,6 +288,8 @@ defmodule Bandit.Adapter do
       else
         headers
       end
+
+    headers = maybe_close_for_unhonored_expect(headers, adapter, status)
 
     adapter = %{adapter | status: status}
 
@@ -314,6 +318,20 @@ defmodule Bandit.Adapter do
         else: metrics
 
     %{adapter | transport: socket, metrics: metrics}
+  end
+
+  # Per RFC9110§10.1.1, a client that asked for a 100 Continue and never got one may never
+  # send the request body, so close rather than trying to drain a body that may never arrive.
+  # HTTP/1.1 only: an HTTP/2 stream's ensure_completed already handles an unread body without
+  # draining
+  defp maybe_close_for_unhonored_expect(headers, adapter, status) do
+    if adapter.expect_continue and status not in 100..199 and
+         get_http_protocol(adapter) == :"HTTP/1.1" and
+         is_nil(Bandit.Headers.get_header(headers, "connection")) do
+      [{"connection", "close"} | headers]
+    else
+      headers
+    end
   end
 
   defp send_resp_body?(%{method: "HEAD"}), do: false
