@@ -53,9 +53,9 @@ defmodule Bandit.Headers do
   @spec header_contains_token?(Plug.Conn.headers(), header :: binary(), token :: binary()) ::
           boolean()
   def header_contains_token?(headers, header, token) do
-    headers
-    |> Enum.filter(fn {name, _value} -> String.downcase(name, :ascii) == header end)
-    |> Enum.any?(fn {_name, value} -> token_list_member?(value, token) end)
+    Enum.any?(headers, fn {name, value} ->
+      String.downcase(name, :ascii) == header and token_list_member?(value, token)
+    end)
   end
 
   # Host is special-cased (rather than using get_header/2) because, per RFC9112§3.2 /
