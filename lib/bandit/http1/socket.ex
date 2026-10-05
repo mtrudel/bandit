@@ -658,8 +658,13 @@ defmodule Bandit.HTTP1.Socket do
         0 ->
           status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
 
+          # Empty error responses finish at the headers, without relying on a clean
+          # EOF to delimit their body if the connection subsequently fails.
+          headers = [{"connection", "close"}]
+          headers = if status in 400..599, do: [{"content-length", "0"} | headers], else: headers
+
           try do
-            send_headers(socket, status, [{"connection", "close"}], :no_body)
+            send_headers(socket, status, headers, :no_body)
           rescue
             _e in [Bandit.TransportError, Bandit.HTTPError] -> :ok
           end

@@ -34,6 +34,10 @@ defmodule Bandit.HTTP1.Handler do
   end
 
   defp maybe_keepalive(transport, state) do
+    # Sent notifications belong to the completed request, not the next request
+    # (which may already be buffered and processed without returning to the mailbox).
+    discard_sent_notifications()
+
     if !transport.close_after_response && transport.keepalive do
       if Keyword.get(state.opts.http_1, :clear_process_dict, true), do: clear_process_dict()
       requests_processed = Map.get(state, :requests_processed, 0) + 1
@@ -51,6 +55,14 @@ defmodule Bandit.HTTP1.Handler do
       end
     else
       {:close, state}
+    end
+  end
+
+  defp discard_sent_notifications do
+    receive do
+      {:plug_conn, :sent} -> discard_sent_notifications()
+    after
+      0 -> :ok
     end
   end
 
