@@ -92,24 +92,20 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag :capture_log
-    test "it should shut down the connection gracefully (rather than crash) when an unexpected, non-Bandit exception is raised while handling a frame",
+    test "closes with a compression error on a header block with invalid Huffman coding",
          context do
       socket = SimpleH2Client.setup_connection(context)
 
       # A HEADERS frame whose sole header field is a literal with a new name that is declared
       # as Huffman-coded (H=1) but whose 16 bits don't correspond to any valid Huffman code (a
-      # real encoder never produces such output; see hpax's HPAX.Huffman.decode/1). This raises
-      # a bare FunctionClauseError deep within the (as of this writing, unpatched) hpax
-      # dependency -- an exception with no :error_code field, unlike the ConnectionError /
-      # StreamError structs Bandit raises itself -- and the connection must still close
-      # gracefully via GOAWAY rather than crash a second time trying to handle it
+      # real encoder never produces such output)
       header_block = <<0x40, 0x82, 0xFF, 0xFF, 0x00>>
       SimpleH2Client.send_frame(socket, 1, 0x05, 1, header_block)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 2}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 9}
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
-      assert msg =~ "FunctionClauseError"
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Header decode error"
     end
 
     @tag :capture_log
@@ -2133,8 +2129,8 @@ defmodule HTTP2ProtocolTest do
       {:ok, _ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, false, "OK")
 
-      # Static-table index 58 (`user-agent`) as an indexed field, which HPAX decodes with
-      # a nil value (elixir-mint/hpax#27); as a trailer it must validate as an empty value
+      # Static-table index 58 (`user-agent`) as an indexed field, which has no value; as a
+      # trailer it must validate as an empty value
       SimpleH2Client.send_frame(socket, 1, 0x05, 1, <<0xBA>>)
 
       {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
@@ -2836,8 +2832,7 @@ defmodule HTTP2ProtocolTest do
 
       {block, _} = HPAX.encode(headers, HPAX.new(4096))
 
-      # Append static-table index 58 (`user-agent`) as an indexed field, which HPAX
-      # decodes with a nil value (elixir-mint/hpax#27)
+      # Append static-table index 58 (`user-agent`) as an indexed field, which has no value
       fragment = IO.iodata_to_binary(block) <> <<0xBA>>
       SimpleH2Client.send_frame(socket, 1, 0x05, 1, fragment)
 

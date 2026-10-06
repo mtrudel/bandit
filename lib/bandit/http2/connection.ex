@@ -316,8 +316,7 @@ defmodule Bandit.HTTP2.Connection do
   # Header list size per RFC9113§6.5.2
   defp header_list_size(headers) do
     Enum.reduce(headers, 0, fn {name, value}, acc ->
-      # drop the `|| ""` once we depend on a hpax release with elixir-mint/hpax#27,
-      acc + byte_size(name) + byte_size(value || "") + 32
+      acc + byte_size(name) + byte_size(value) + 32
     end)
   end
 

@@ -35,7 +35,7 @@ defmodule Bandit.MixProject do
       {:thousand_island, "~> 1.5"},
       {:plug, "~> 1.18"},
       {:websock, "~> 0.5"},
-      {:hpax, "~> 1.0"},
+      {:hpax, "~> 1.1"},
       {:telemetry, "~> 0.4 or ~> 1.0"},
       {:req, "~> 0.3", only: [:dev, :test]},
       # finch pin is needed until https://github.com/sneako/finch/issues/375 gets resolved

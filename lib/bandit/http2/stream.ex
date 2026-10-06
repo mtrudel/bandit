@@ -127,7 +127,6 @@ defmodule Bandit.HTTP2.Stream do
         {:headers, headers, stream} ->
           method = Bandit.Headers.get_header(headers, ":method")
           {pseudo_headers, headers} = split_headers!(headers, stream)
-          headers = normalize_empty_field_values(headers)
           pseudo_headers_all_request!(pseudo_headers, stream)
           headers_all_lowercase!(headers, stream)
           valid_field_values!(pseudo_headers ++ headers, stream)
@@ -275,18 +274,6 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Field value contains invalid characters (RFC9113§8.2.1)", stream)
     end
 
-    # HPAX decodes an indexed static-table entry with no value (for example a bare
-    # `user-agent` at index 58) to a nil value. Regular fields are normalized to the empty
-    # binary they represent before reaching the Plug; drop this and the nil clause below
-    # once we depend on a hpax release with elixir-mint/hpax#27
-    defp normalize_empty_field_values(headers),
-      do:
-        Enum.map(headers, fn
-          {name, nil} -> {name, ""}
-          header -> header
-        end)
-
-    defp valid_field_value?(nil), do: true
     defp valid_field_value?(<<>>), do: true
 
     defp valid_field_value?(value) do
@@ -360,14 +347,6 @@ defmodule Bandit.HTTP2.Stream do
     # RFC9113§8.1 - a trailer field section terminates the stream and is subject
     # to the same field-name and field-value requirements as other field sections
     defp validate_trailers!(headers, true, stream) do
-      # HPAX decodes an indexed static-table entry with no value to a nil value; treat it
-      # as the empty binary it represents (elixir-mint/hpax#27)
-      headers =
-        Enum.map(headers, fn
-          {name, nil} -> {name, ""}
-          header -> header
-        end)
-
       no_pseudo_headers!(headers, stream)
       headers_all_lowercase!(headers, stream)
       valid_trailer_field_names!(headers, stream)
