@@ -1967,7 +1967,7 @@ defmodule HTTP1ProtocolTest do
         Req.get!(context.req, url: "/send_big_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-length"] == ["34"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
@@ -2061,7 +2061,7 @@ defmodule HTTP1ProtocolTest do
         )
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-length"] == ["34"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
     end
@@ -2121,7 +2121,7 @@ defmodule HTTP1ProtocolTest do
         )
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-length"] == ["34"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
     end
@@ -2249,7 +2249,7 @@ defmodule HTTP1ProtocolTest do
         Req.get!(context.req, url: "/send_iolist_body", headers: [{"accept-encoding", "deflate"}])
 
       assert response.status == 200
-      assert response.headers["content-length"] == ["40"]
+      assert response.headers["content-length"] == ["34"]
       assert response.headers["content-encoding"] == ["deflate"]
       assert response.headers["vary"] == ["accept-encoding"]
 
@@ -2281,7 +2281,7 @@ defmodule HTTP1ProtocolTest do
       assert inflated_body == String.duplicate("a", 10_000)
     end
 
-    test "does not gzip encode chunk responses", context do
+    test "gzip encodes chunk responses", context do
       response =
         Req.get!(context.req,
           url: "/send_big_body_chunked",
@@ -2289,9 +2289,69 @@ defmodule HTTP1ProtocolTest do
         )
 
       assert response.status == 200
-      assert response.headers["content-encoding"] == nil
+      assert response.headers["content-encoding"] == ["gzip"]
       assert response.headers["vary"] == ["accept-encoding"]
-      assert response.body == String.duplicate("a", 10_000)
+      assert :zlib.gunzip(response.body) == String.duplicate("a", 10_000)
+    end
+
+    test "x-gzip encodes chunk responses", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_chunked",
+          headers: [{"accept-encoding", "x-gzip"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["x-gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert :zlib.gunzip(response.body) == String.duplicate("a", 10_000)
+    end
+
+    # TODO Remove once Erlang v29 is required
+    if Code.ensure_loaded?(:zstd) and not function_exported?(:zstd, :flush, 1) do
+      test "falls back to the next accepted encoding when zstd can't encode chunk responses",
+           context do
+        response =
+          Req.get!(context.req,
+            url: "/send_big_body_chunked",
+            headers: [{"accept-encoding", "zstd, gzip"}]
+          )
+
+        assert response.status == 200
+        assert response.headers["content-encoding"] == ["gzip"]
+        assert response.headers["vary"] == ["accept-encoding"]
+        assert :zlib.gunzip(response.body) == String.duplicate("a", 10_000)
+      end
+    end
+
+    # TODO Remove conditional once Erlang v29 is required
+    if Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1) do
+      test "zstd encodes chunk responses", context do
+        response =
+          Req.get!(context.req,
+            url: "/send_big_body_chunked",
+            headers: [{"accept-encoding", "zstd"}]
+          )
+
+        assert response.status == 200
+        assert response.headers["content-encoding"] == ["zstd"]
+        assert response.headers["vary"] == ["accept-encoding"]
+
+        assert :zstd.decompress(response.body) |> IO.iodata_to_binary() ==
+                 String.duplicate("a", 10_000)
+      end
+
+      test "zstd encodes chunks too large to be compressed in a single pass", context do
+        response =
+          Req.get!(context.req,
+            url: "/send_incompressible_chunk",
+            headers: [{"accept-encoding", "zstd"}]
+          )
+
+        assert response.status == 200
+        assert response.headers["content-encoding"] == ["zstd"]
+        assert :zstd.decompress(response.body) |> IO.iodata_to_binary() == incompressible_data()
+      end
     end
 
     test "falls back to no encoding if no encodings provided", context do
@@ -2456,7 +2516,7 @@ defmodule HTTP1ProtocolTest do
       assert response.headers["content-encoding"] == ["deflate"]
 
       # level: 0 disables compression, so the "compressed" body is only a few bytes
-      # larger than the raw input, rather than the 40 bytes achieved at the default level
+      # larger than the raw input, rather than the 34 bytes achieved at the default level
       # (see the "writes out a response with deflate encoding" test above)
       assert String.to_integer(hd(response.headers["content-length"])) > 10_000
 
@@ -2515,17 +2575,19 @@ defmodule HTTP1ProtocolTest do
     test "length-delimited send_chunked is not compressed even when negotiated", context do
       # Compression would rewrite the body and break the declared content-length,
       # so it must be disabled in this mode.
-      response =
-        Req.get!(context.req,
-          url: "/send_known_length_stream",
-          headers: [{"accept-encoding", "deflate"}]
-        )
+      for encoding <- ~w(zstd gzip x-gzip deflate) do
+        response =
+          Req.get!(context.req,
+            url: "/send_known_length_stream",
+            headers: [{"accept-encoding", encoding}]
+          )
 
-      assert response.status == 200
-      assert response.headers["content-length"] == ["10000"]
-      assert response.headers["content-encoding"] == nil
-      assert response.headers["transfer-encoding"] == nil
-      assert response.body == String.duplicate("a", 10_000)
+        assert response.status == 200
+        assert response.headers["content-length"] == ["10000"]
+        assert response.headers["content-encoding"] == nil
+        assert response.headers["transfer-encoding"] == nil
+        assert response.body == String.duplicate("a", 10_000)
+      end
     end
 
     def send_known_length_stream(conn) do
@@ -2552,6 +2614,18 @@ defmodule HTTP1ProtocolTest do
       {:ok, conn} = chunk(conn, String.duplicate("a", 1_000))
 
       conn
+    end
+
+    def send_incompressible_chunk(conn) do
+      conn = send_chunked(conn, 200)
+      {:ok, conn} = chunk(conn, incompressible_data())
+      conn
+    end
+
+    # Seeded so that the plug and the test generate the same bytes
+    defp incompressible_data do
+      {data, _state} = :rand.bytes_s(1_000_000, :rand.seed_s(:exsss, 1))
+      data
     end
 
     def send_iolist_body(conn) do

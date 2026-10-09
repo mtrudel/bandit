@@ -104,7 +104,10 @@ defmodule Bandit do
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `response_encodings`: A list of compression encodings, expressed in order of preference.
     Defaults to `~w(zstd gzip x-gzip deflate)`, with `zstd` only being present on platforms which
-    have the zstd library compiled in
+    have the zstd library compiled in. Prior to OTP 29, chunked responses use the next encoding
+    the client accepts instead of `zstd` due to missing `:zstd.flush/1`. Compressed chunked
+    responses hold their compressor's state until they complete, which takes a few hundred KB for
+    gzip and deflate and up to about 3 MB for zstd at its default settings (see `zstd_options`)
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
     'deflate' content encoding; 'gzip' does not have any configurable options (this is a
