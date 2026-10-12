@@ -9,6 +9,8 @@ env:
 
 jobs:
   benchmark:
+    permissions:
+      contents: read
     if: contains(github.event.pull_request.labels.*.name, 'benchmark')
     runs-on: ubuntu-latest
     steps:
@@ -18,6 +20,7 @@ jobs:
       uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
         repository: mtrudel/benchmark
+        persist-credentials: false
     - name: Setup Elixir
       uses: erlef/setup-beam@54075bcc5e249e4758d363f27d099f55d843f124 # v1.24.1
       with:
