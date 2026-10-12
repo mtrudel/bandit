@@ -700,6 +700,224 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, <<>>)
   end
 
+  describe "unread request bodies" do
+    test "drains multiple queued DATA frames of a body with a content-length", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=3", [{"content-length", "9"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+      SimpleH2Client.send_body(socket, 1, true, "GHI")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "drains multiple queued DATA frames of a body without a content-length", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=3", [])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+      SimpleH2Client.send_body(socket, 1, true, "GHI")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "drains a large number of queued DATA frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=50", [{"content-length", "50"}])
+      for _ <- 1..49, do: SimpleH2Client.send_body(socket, 1, false, "A")
+      SimpleH2Client.send_body(socket, 1, true, "A")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "drains a final empty DATA frame", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=2", [{"content-length", "3"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, true, "")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "drains queued DATA frames larger than the stream window threshold", context do
+      socket = SimpleH2Client.setup_connection(context)
+      chunk = String.duplicate("A", 16_384)
+
+      send_unread_request(context, socket, "queued=4", [{"content-length", "65535"}])
+      for _ <- 1..3, do: SimpleH2Client.send_body(socket, 1, false, chunk)
+      SimpleH2Client.send_body(socket, 1, true, binary_part(chunk, 0, 16_383))
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "accepts trailers after queued DATA frames", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=3", [{"content-length", "6"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "value"}])
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "tolerates a body shorter than its content-length ending in trailers", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=3", [{"content-length", "9"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "value"}])
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "drains the remainder of a partially read body", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(
+        context,
+        socket,
+        "queued=2",
+        [{"content-length", "9"}],
+        "/partial_read_body"
+      )
+
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+      SimpleH2Client.send_body(socket, 1, true, "GHI")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "tolerates a body shorter than its content-length once the response is sent",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=2", [{"content-length", "9"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, true, "DEF")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      refute Enum.any?(frames, &match?({:ok, :rst_stream, _, _, _}, &1))
+    end
+
+    test "resets the stream if the body has not ended once queued DATA frames are drained",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=2", [{"content-length", "9"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, false, "DEF")
+
+      frames = recv_frames_through_ping(socket)
+      assert response_completed?(frames)
+      assert {:ok, :rst_stream, 0, 1, <<0::32>>} in frames
+    end
+
+    test "serves further requests on the connection after draining", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      send_unread_request(context, socket, "queued=2", [{"content-length", "6"}])
+      SimpleH2Client.send_body(socket, 1, false, "ABC")
+      SimpleH2Client.send_body(socket, 1, true, "DEF")
+      frames = recv_frames_through_ping(socket)
+      {:ok, :headers, _, 1, block} = Enum.find(frames, &match?({:ok, :headers, _, 1, _}, &1))
+      {:ok, _headers, ctx} = HPAX.decode(block, HPAX.new(4096))
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/hello_world", context.port)
+
+      assert {:ok, 3, false, [{":status", "200"} | _], _ctx} =
+               SimpleH2Client.recv_headers(socket, ctx)
+
+      assert {:ok, 3, true, "OK module"} = SimpleH2Client.recv_body(socket)
+    end
+
+    def unread_body(conn) do
+      wait_for_queued_messages(queued_count(conn.query_string))
+      send_resp(conn, 200, "OK")
+    end
+
+    def partial_read_body(conn) do
+      {:more, "ABC", conn} = read_body(conn, length: 1)
+      wait_for_queued_messages(queued_count(conn.query_string))
+      send_resp(conn, 200, "OK")
+    end
+
+    defp send_unread_request(context, socket, query, headers, path \\ "/unread_body") do
+      SimpleH2Client.send_headers(
+        socket,
+        1,
+        false,
+        [
+          {":method", "POST"},
+          {":path", "#{path}?#{query}"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"}
+        ] ++ headers
+      )
+    end
+
+    defp queued_count("queued=" <> count), do: String.to_integer(count)
+
+    defp wait_for_queued_messages(count) do
+      {:message_queue_len, len} = Process.info(self(), :message_queue_len)
+
+      if len < count do
+        Process.sleep(1)
+        wait_for_queued_messages(count)
+      end
+    end
+
+    defp recv_frames_through_ping(socket) do
+      response = recv_frames_until(socket, &(&1 == {:ok, :data, 1, 1, "OK"}), [])
+      response ++ recv_trailing_frames(socket, [])
+    end
+
+    defp recv_frames_until(socket, done?, acc) do
+      frame = SimpleH2Client.recv_frame(socket)
+
+      if done?.(frame),
+        do: Enum.reverse([frame | acc]),
+        else: recv_frames_until(socket, done?, [frame | acc])
+    end
+
+    defp recv_trailing_frames({:client, %{socket: raw}} = socket, acc) do
+      case :ssl.recv(raw, 9, 50) do
+        {:ok, <<length::24, type::8, flags::8, 0::1, stream_id::31>>} ->
+          body = if length > 0, do: elem(Transport.recv(socket, length), 1), else: <<>>
+          frame = {:ok, SimpleH2Client.map_type(type), flags, stream_id, body}
+          recv_trailing_frames(socket, [frame | acc])
+
+        {:error, :timeout} ->
+          Enum.reverse(acc)
+      end
+    end
+
+    defp response_completed?(frames), do: {:ok, :data, 1, 1, "OK"} in frames
+  end
+
   test "sending informational responses", context do
     socket = SimpleH2Client.setup_connection(context)
 

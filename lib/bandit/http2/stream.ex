@@ -674,10 +674,16 @@ defmodule Bandit.HTTP2.Stream do
       receive do
         {:bandit, {:headers, headers, end_stream}} ->
           validate_trailers!(headers, end_stream, stream)
-          do_recv_end_stream(stream, end_stream)
+          %{stream | state: :closed}
 
-        {:bandit, {:data, data, true}} ->
-          do_recv_data(stream, data, true) |> do_recv_end_stream(true)
+        {:bandit, {:data, data, end_stream}} ->
+          stream = do_recv_data(stream, data, end_stream)
+
+          if end_stream do
+            %{stream | state: :closed}
+          else
+            ensure_completed(stream)
+          end
       after
         # RFC9113§8.1 - hint the client to stop sending data
         0 -> do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})

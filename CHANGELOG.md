@@ -2,6 +2,8 @@
 
 ### Fixes
 
+* Drain all queued HTTP/2 request DATA frames of an unread body once a response has been sent,
+  rather than falsely raising `Received END_STREAM with byte still pending`
 * Bound HTTP/2 sends blocked on a connection or stream send window by progress rather than
   resetting the bound on every window update, so that a peer which dribbles out tiny window
   increments (or sends frames that grant no window) cannot keep a stream process pinned
