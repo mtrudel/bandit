@@ -2,6 +2,11 @@
 
 ### Fixes
 
+* Bound HTTP/2 sends blocked on a connection or stream send window by progress rather than
+  resetting the bound on every window update, so that a peer which dribbles out tiny window
+  increments (or sends frames that grant no window) cannot keep a stream process pinned
+  indefinitely (GHSA-69m6-wcv4-rwcf). Sends being drained at a reasonable rate (1KiB/s or
+  faster) are unaffected, regardless of how long they take overall
 * Preserve independent error responses on HTTP/1 keep-alive and pipelined requests
   by discarding completed requests' sent-response notifications
 * Explicitly frame empty HTTP/1 4xx/5xx error responses with `Content-Length: 0`

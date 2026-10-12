@@ -513,8 +513,15 @@ defmodule Bandit.HTTP2.Stream do
       end)
     end
 
-    def send_data(%@for{state: state} = stream, data, end_stream)
-        when state in [:open, :remote_closed] do
+    def send_data(%@for{} = stream, data, end_stream),
+      do: do_send_data(stream, data, end_stream, nil)
+
+    # `deadline` bounds how long we will wait on the stream send window; it is nil until we first
+    # have to wait, and is then extended only as the peer actually lets us send data (see
+    # `Bandit.HTTP2.FlowControl.extend_send_deadline/4`) rather than being reset by every
+    # window update, so that a trickle of window updates cannot keep us waiting indefinitely
+    defp do_send_data(%@for{state: state} = stream, data, end_stream, deadline)
+         when state in [:open, :remote_closed] do
       stream =
         receive do
           {:bandit, {:send_window_update, delta}} -> do_recv_send_window_update(stream, delta)
@@ -556,11 +563,24 @@ defmodule Bandit.HTTP2.Stream do
       if byte_size(rest) == 0 do
         set_state_on_send_end_stream(stream, end_stream)
       else
+        now = :erlang.monotonic_time(:millisecond)
+
+        deadline =
+          if deadline,
+            do:
+              Bandit.HTTP2.FlowControl.extend_send_deadline(
+                deadline,
+                bytes_to_send,
+                now,
+                stream.read_timeout
+              ),
+            else: now + stream.read_timeout
+
         receive do
           {:bandit, {:send_window_update, delta}} ->
             stream
             |> do_recv_send_window_update(delta)
-            |> send_data(rest, end_stream)
+            |> do_send_data(rest, end_stream, deadline)
 
           # Observe a client reset promptly rather than sitting blocked until read_timeout
           # (after which we would send an RST_STREAM of our own, which RFC9113§6.4 forbids
@@ -568,7 +588,7 @@ defmodule Bandit.HTTP2.Stream do
           {:bandit, {:rst_stream, error_code}} ->
             do_recv_rst_stream!(stream, error_code)
         after
-          stream.read_timeout ->
+          max(deadline - :erlang.monotonic_time(:millisecond), 0) ->
             stream_error!(
               "Timeout waiting for space in the send_window",
               stream,

@@ -8,6 +8,10 @@ defmodule Bandit.HTTP2.FlowControl do
   @max_window_size (1 <<< 31) - 1
   @min_window_size 1 <<< 30
 
+  # The slowest rate (in bytes per second) at which a peer may drain a blocked send before we stop
+  # waiting on it. See `extend_send_deadline/4`
+  @min_send_rate 1_024
+
   @spec compute_recv_window(non_neg_integer(), non_neg_integer()) ::
           {non_neg_integer(), non_neg_integer()}
   def compute_recv_window(recv_window_size, data_size) do
@@ -39,5 +43,24 @@ defmodule Bandit.HTTP2.FlowControl do
     else
       {:ok, current_send_window + increment}
     end
+  end
+
+  # Sends which block on a send window (connection or stream level) are bounded by a deadline,
+  # so that a peer cannot pin the stream process (and any resources it holds) indefinitely.
+  #
+  # The deadline starts as `timeout` ms after the send first blocks. It is *not* reset when the
+  # peer makes progress, since a peer which dribbles tiny window increments (or sends frames that
+  # grant nothing at all, such as an empty SETTINGS) would otherwise keep a send blocked forever.
+  # Instead, it is pushed back only in proportion to the bytes the peer actually lets us send: one
+  # second for every `@min_send_rate` bytes, never beyond `timeout` ms from now (so that credit
+  # cannot be banked up). A peer draining at or above `@min_send_rate` (ie: any honest client,
+  # however slow) never reaches the deadline, no matter how large the send is; a peer draining
+  # below it does. This is the same approach as Apache's mod_reqtimeout `MinRate`.
+  #
+  # All times are in ms of `:erlang.monotonic_time(:millisecond)`
+  @spec extend_send_deadline(integer(), non_neg_integer(), integer(), pos_integer()) :: integer()
+  def extend_send_deadline(deadline, bytes_sent, now, timeout) do
+    credit = div(bytes_sent * 1000, @min_send_rate)
+    Enum.min([deadline + credit, now + timeout])
   end
 end

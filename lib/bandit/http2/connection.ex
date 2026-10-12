@@ -8,7 +8,9 @@ defmodule Bandit.HTTP2.Connection do
 
   # A stream blocked on the connection send window is bounded by the same 15s that already
   # bounds a block on the stream send window (`Bandit.HTTP2.Stream`'s `read_timeout`), so that
-  # neither path can pin a stream process (and any resources it holds) indefinitely.
+  # neither path can pin a stream process (and any resources it holds) indefinitely. The bound
+  # is progress-based rather than being reset by every window update; see
+  # `Bandit.HTTP2.FlowControl.extend_send_deadline/4`
   @pending_send_timeout 15_000
 
   defstruct local_settings: %Bandit.HTTP2.Settings{},
@@ -356,8 +358,8 @@ defmodule Bandit.HTTP2.Connection do
     connection.pending_sends
     |> Enum.reverse()
     |> Enum.reduce(%{connection | pending_sends: []}, fn pending_send, connection ->
-      {stream_id, rest, end_stream, on_unblock, _expires_at} = pending_send
-      send_data(stream_id, [], rest, end_stream, on_unblock, socket, connection)
+      {stream_id, rest, end_stream, on_unblock, expires_at} = pending_send
+      do_send_data(stream_id, [], rest, end_stream, on_unblock, expires_at, socket, connection)
     end)
   end
 
@@ -430,20 +432,34 @@ defmodule Bandit.HTTP2.Connection do
           ThousandIsland.Socket.t(),
           t()
         ) :: t()
-  def send_data(stream_id, headers, data, end_stream, on_unblock, socket, connection) do
+  def send_data(stream_id, headers, data, end_stream, on_unblock, socket, connection),
+    do: do_send_data(stream_id, headers, data, end_stream, on_unblock, nil, socket, connection)
+
+  # `expires_at` is the deadline of a send which has already been queued, or nil for a new send
+  defp do_send_data(
+         stream_id,
+         headers,
+         data,
+         end_stream,
+         on_unblock,
+         expires_at,
+         socket,
+         connection
+       ) do
     {prefix_iodata, connection} =
       if headers == [],
         do: {[], connection},
         else: encode_headers(stream_id, headers, false, connection)
 
-    {data_iodata, rest, connection} = split_window(stream_id, data, end_stream, connection)
+    {data_iodata, rest, bytes_sent, connection} =
+      split_window(stream_id, data, end_stream, connection)
 
     if !Bandit.SocketHelpers.iodata_empty?(prefix_iodata) ||
          !Bandit.SocketHelpers.iodata_empty?(data_iodata) do
       ThousandIsland.Socket.send(socket, [prefix_iodata, data_iodata])
     end
 
-    finish_data(stream_id, rest, end_stream, on_unblock, connection)
+    finish_data(stream_id, rest, end_stream, on_unblock, expires_at, bytes_sent, connection)
   end
 
   defp encode_headers(stream_id, headers, end_stream, connection) do
@@ -483,16 +499,30 @@ defmodule Bandit.HTTP2.Connection do
         []
       end
 
-    {iodata, rest, connection}
+    {iodata, rest, bytes_to_send, connection}
   end
 
-  defp finish_data(_stream_id, <<>>, _end_stream, on_unblock, connection) do
+  defp finish_data(_stream_id, <<>>, _end_stream, on_unblock, _expires_at, _bytes_sent, conn) do
     on_unblock.(:ok)
-    connection
+    conn
   end
 
-  defp finish_data(stream_id, rest, end_stream, on_unblock, connection) do
-    expires_at = :erlang.monotonic_time(:millisecond) + @pending_send_timeout
+  defp finish_data(stream_id, rest, end_stream, on_unblock, expires_at, bytes_sent, connection) do
+    now = :erlang.monotonic_time(:millisecond)
+
+    # Only a send which is being re-queued after making (some) progress has a deadline to extend;
+    # a send which is blocking for the first time gets a fresh one
+    expires_at =
+      if expires_at do
+        Bandit.HTTP2.FlowControl.extend_send_deadline(
+          expires_at,
+          bytes_sent,
+          now,
+          @pending_send_timeout
+        )
+      else
+        now + @pending_send_timeout
+      end
 
     pending_sends = [
       {stream_id, rest, end_stream, on_unblock, expires_at} | connection.pending_sends

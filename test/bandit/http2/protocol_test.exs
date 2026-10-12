@@ -1896,6 +1896,143 @@ defmodule HTTP2ProtocolTest do
       assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
     end
 
+    # The bound on a blocked send is progress based; a peer which only dribbles out window
+    # increments (or sends frames that grant none at all) must not be able to keep resetting it
+    for {name, frame} <- [
+          {"WINDOW_UPDATE", {8, <<0::1, 1::31>>}},
+          {"empty SETTINGS", {4, <<>>}}
+        ] do
+      @trickle_frame frame
+
+      @tag :slow
+      @tag :capture_log
+      @tag timeout: 120_000
+      test "a stream blocked on the connection send window is not kept alive by a #{name} trickle",
+           context do
+        context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+        socket = SimpleH2Client.setup_connection(context)
+
+        plug_pid = start_blocked_stream(socket, context)
+        ref = Process.monitor(plug_pid)
+
+        {type, body} = @trickle_frame
+        send_until(socket, 16_000, fn -> SimpleH2Client.send_frame(socket, type, 0, 0, body) end)
+
+        assert_receive {:blocking_chunk_error, ^plug_pid,
+                        "Timeout waiting for space in the connection send_window"},
+                       1_000
+
+        assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
+      end
+    end
+
+    @tag :slow
+    @tag :capture_log
+    @tag timeout: 120_000
+    test "a stream blocked on the stream send window is not kept alive by a WINDOW_UPDATE trickle",
+         context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      # A 5 byte per-stream window, so that it is the stream window which blocks
+      SimpleH2Client.exchange_client_settings(socket, <<4::16, 5::32>>)
+
+      SimpleH2Client.send_simple_headers(
+        socket,
+        1,
+        :get,
+        "/stream_window_blocking_test",
+        context[:port]
+      )
+
+      assert_receive {:plug_ready, plug_pid}, 1_000
+      ref = Process.monitor(plug_pid)
+      send(plug_pid, :go)
+
+      assert_receive {:blocking_chunk_started, ^plug_pid}, 1_000
+      refute_receive {:blocking_chunk_returned, ^plug_pid}, 100
+
+      send_until(socket, 16_000, fn -> SimpleH2Client.send_window_update(socket, 1, 1) end)
+
+      assert_receive {:blocking_chunk_error, ^plug_pid,
+                      "Timeout waiting for space in the send_window"},
+                     1_000
+
+      assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
+    end
+
+    # The flip side of the above: a slow client which is nevertheless draining a large send at
+    # a reasonable rate must be allowed to finish, even though it takes much longer than the bound
+    @tag :slow
+    @tag :capture_log
+    @tag timeout: 120_000
+    test "a stream blocked on the connection send window is not cut off while the client keeps draining it",
+         context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/slow_drain_test", context[:port])
+      assert_receive {:plug_ready, plug_pid}, 1_000
+      SimpleH2Client.send_window_update(socket, 1, 1_000_000)
+      Process.sleep(100)
+      send(plug_pid, :go)
+      assert_receive {:blocking_chunk_started, ^plug_pid}, 1_000
+
+      # 100_000 bytes less the 65_535 byte connection window leaves 34_465 bytes, which at 2KiB/s
+      # takes ~17s: longer than the 15s bound, but at a rate well above the minimum
+      send_until(
+        socket,
+        18_000,
+        fn -> SimpleH2Client.send_window_update(socket, 0, 2_048) end,
+        1_000
+      )
+
+      assert_receive {:blocking_chunk_returned, ^plug_pid}, 1_000
+      refute_received {:blocking_chunk_error, ^plug_pid, _reason}
+    end
+
+    def slow_drain_test(conn) do
+      send(__MODULE__, {:plug_ready, self()})
+      receive do: (:go -> :ok)
+
+      conn = send_chunked(conn, 200)
+      send(__MODULE__, {:blocking_chunk_started, self()})
+      blocking_chunk(conn, String.duplicate("a", 100_000))
+    end
+
+    def stream_window_blocking_test(conn) do
+      send(__MODULE__, {:plug_ready, self()})
+      receive do: (:go -> :ok)
+
+      conn = send_chunked(conn, 200)
+      send(__MODULE__, {:blocking_chunk_started, self()})
+      blocking_chunk(conn, String.duplicate("a", 100))
+    end
+
+    defp blocking_chunk(conn, data) do
+      case chunk(conn, data) do
+        {:ok, conn} ->
+          send(__MODULE__, {:blocking_chunk_returned, self()})
+          conn
+
+        {:error, reason} ->
+          send(__MODULE__, {:blocking_chunk_error, self(), reason})
+          conn
+      end
+    end
+
+    defp send_until(socket, duration, fun, interval \\ 250) do
+      _ = socket
+      deadline = System.monotonic_time(:millisecond) + duration
+
+      Stream.repeatedly(fn ->
+        fun.()
+        Process.sleep(interval)
+        System.monotonic_time(:millisecond)
+      end)
+      |> Enum.find(&(&1 >= deadline))
+    end
+
     defp ping_until(socket, duration) do
       deadline = System.monotonic_time(:millisecond) + duration
 
