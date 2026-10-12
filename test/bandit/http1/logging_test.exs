@@ -57,8 +57,7 @@ defmodule HTTP1LoggingTest do
 
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
+      close_after_request_started(client)
 
       refute_receive {:log, %{level: :error}}
     end
@@ -72,8 +71,7 @@ defmodule HTTP1LoggingTest do
 
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
+      close_after_request_started(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
@@ -93,8 +91,7 @@ defmodule HTTP1LoggingTest do
 
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
-      Process.sleep(20)
-      Transport.close(client)
+      close_after_request_started(client)
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
@@ -130,6 +127,15 @@ defmodule HTTP1LoggingTest do
 
       Logger.error("IMPOSSIBLE")
       conn
+    end
+
+    defp close_after_request_started(client) do
+      # Exercise the response-write failure, not a close during connection setup.
+      assert_receive {:telemetry, [:bandit, :request, :start], _,
+                      %{conn: %Plug.Conn{request_path: "/sleep_and_send"}}},
+                     500
+
+      Transport.close(client)
     end
   end
 

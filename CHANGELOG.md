@@ -1,3 +1,12 @@
+## Unreleased
+
+### Fixes
+
+* Preserve independent error responses on HTTP/1 keep-alive and pipelined requests
+  by discarding completed requests' sent-response notifications
+* Explicitly frame empty HTTP/1 4xx/5xx error responses with `Content-Length: 0`
+  so response completion does not depend on a clean connection close
+
 ## 1.12.5 (20 Aug 2026)
 
 ### Changes

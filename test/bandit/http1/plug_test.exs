@@ -434,7 +434,8 @@ defmodule HTTP1PlugTest do
          context do
       {:ok, response} = Req.get(context.req, url: "/send_file?offset=100&length=:all")
       assert response.status == 500
-      refute Map.has_key?(response.headers, "content-length")
+      assert response.headers["content-length"] == ["0"]
+      assert response.body == ""
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg =~ "** (RuntimeError) Cannot read -94 bytes starting at 100"
