@@ -39,9 +39,12 @@ defmodule Bandit do
   * `inet`: Only bind to IPv4 interfaces. This option is offered as a convenience and actually sets the
     option of the same name within `thousand_island_options.transport_options`. Must be specified
     as a bare atom `:inet`
-  * `inet6`: Only bind to IPv6 interfaces. This option is offered as a convenience and actually sets the
+  * `inet6`: Bind to IPv6 interfaces. This option is offered as a convenience and actually sets the
     option of the same name within `thousand_island_options.transport_options`. Must be specified
-    as a bare atom `:inet6`
+    as a bare atom `:inet6`. Note that whether the resulting socket also accepts IPv4 connections
+    is decided by the operating system; on Linux it does by default (see the `net.ipv6.bindv6only`
+    sysctl). To get a socket which only accepts IPv6 connections regardless of platform defaults,
+    also set `ipv6_v6only: true` within `thousand_island_options.transport_options`
   * `keyfile`: The path to a file containing the SSL key to use for this server. This option is
     offered as a convenience and actually sets the option of the same name within
     `thousand_island_options.transport_options`. If a relative path is used here, you will also
