@@ -109,6 +109,11 @@ defmodule Bandit.Adapter do
   defp maybe_send_continue(%__MODULE__{expect_continue: true, status: nil} = adapter),
     do: send_headers(%{adapter | expect_continue: false}, 100, [], :inform)
 
+  # Any other body read also means the expectation is no longer pending, even if we didn't send
+  # the 100 ourselves (eg: the plug already sent an informational response other than 100)
+  defp maybe_send_continue(%__MODULE__{expect_continue: true} = adapter),
+    do: %{adapter | expect_continue: false}
+
   defp maybe_send_continue(adapter), do: adapter
 
   ##################
@@ -323,7 +328,7 @@ defmodule Bandit.Adapter do
   # Per RFC9110§10.1.1, a client that asked for a 100 Continue and never got one may never
   # send the request body, so close rather than trying to drain a body that may never arrive.
   # HTTP/1.1 only: an HTTP/2 stream's ensure_completed already handles an unread body without
-  # draining
+  # draining. (This check is only needed to exclude HTTP/2)
   defp maybe_close_for_unhonored_expect(headers, adapter, status) do
     if adapter.expect_continue and status not in 100..199 and
          get_http_protocol(adapter) == :"HTTP/1.1" and
