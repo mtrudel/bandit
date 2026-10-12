@@ -420,7 +420,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "40"},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -604,7 +604,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "40"},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -725,7 +725,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "40"},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -888,7 +888,7 @@ defmodule HTTP2ProtocolTest do
               [
                 {":status", "200"},
                 {"date", _date},
-                {"content-length", "40"},
+                {"content-length", "34"},
                 {"content-encoding", "deflate"},
                 {"vary", "accept-encoding"},
                 {"cache-control", "max-age=0, private, must-revalidate"}
@@ -1440,7 +1440,7 @@ defmodule HTTP2ProtocolTest do
       assert inflated_body == "OKDOKEE"
     end
 
-    test "does not gzip encode DATA frames when chunking", context do
+    test "does not gzip encode DATA frames when chunking by default", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1463,6 +1463,90 @@ defmodule HTTP2ProtocolTest do
 
       assert {:ok, 1, false, "OK"} == SimpleH2Client.recv_body(socket)
       assert {:ok, 1, false, "DOKEE"} == SimpleH2Client.recv_body(socket)
+    end
+
+    test "gzip encodes multiple DATA frames when chunking", context do
+      context =
+        context
+        |> https_server(http_options: [compress_chunked: true])
+        |> Enum.into(context)
+
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-encoding", "gzip"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      {:ok, 1, false, chunk_1} = SimpleH2Client.recv_body(socket)
+      {:ok, 1, false, chunk_2} = SimpleH2Client.recv_body(socket)
+      {:ok, 1, false, chunk_3} = SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, true, ""} == SimpleH2Client.recv_body(socket)
+
+      # Each chunk is flushed, so it can be decoded without waiting for the rest of the body
+      inflate_context = :zlib.open()
+      :ok = :zlib.inflateInit(inflate_context, 31)
+      assert :zlib.inflate(inflate_context, chunk_1) |> IO.iodata_to_binary() == "OK"
+      assert :zlib.inflate(inflate_context, chunk_2) |> IO.iodata_to_binary() == "DOKEE"
+      assert :zlib.inflate(inflate_context, chunk_3) |> IO.iodata_to_binary() == ""
+      :ok = :zlib.inflateEnd(inflate_context)
+      :ok = :zlib.close(inflate_context)
+    end
+
+    # TODO Remove conditional once Erlang v29 is required
+    if Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1) do
+      test "zstd encodes multiple DATA frames when chunking", context do
+        context =
+          context
+          |> https_server(http_options: [compress_chunked: true])
+          |> Enum.into(context)
+
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", "/chunk_response"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"},
+          {"accept-encoding", "zstd"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert {:ok, 1, false,
+                [
+                  {":status", "200"},
+                  {"date", _date},
+                  {"content-encoding", "zstd"},
+                  {"vary", "accept-encoding"},
+                  {"cache-control", "max-age=0, private, must-revalidate"}
+                ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+        {:ok, 1, false, chunk_1} = SimpleH2Client.recv_body(socket)
+        {:ok, 1, false, chunk_2} = SimpleH2Client.recv_body(socket)
+        {:ok, 1, false, chunk_3} = SimpleH2Client.recv_body(socket)
+        assert {:ok, 1, true, ""} == SimpleH2Client.recv_body(socket)
+
+        # Each chunk is flushed, so it can be decoded without waiting for the rest of the body
+        {:ok, zstd_context} = :zstd.context(:decompress)
+        assert :zstd.stream(zstd_context, chunk_1) == {:continue, "OK"}
+        assert :zstd.stream(zstd_context, chunk_2) == {:continue, "DOKEE"}
+        assert :zstd.stream(zstd_context, chunk_3) == {:continue, ""}
+      end
     end
 
     test "does not write out a body for a chunked response to a HEAD request", context do

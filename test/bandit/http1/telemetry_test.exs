@@ -201,6 +201,34 @@ defmodule HTTP1TelemetryTest do
              }
     end
 
+    test "it should add resp metrics to `stop` events for chunked responses with content encoding",
+         context do
+      context =
+        context
+        |> http_server(http_options: [compress_chunked: true])
+        |> Enum.into(context)
+
+      Req.get!(context.req,
+        url: "/send_chunked_200",
+        base_url: context.base,
+        headers: [{"accept-encoding", "gzip"}]
+      )
+
+      assert_receive {:telemetry, [:bandit, :request, :stop], measurements, _metadata}, 500
+
+      assert measurements
+             ~> %{
+               monotonic_time: integer(roughly: System.monotonic_time()),
+               duration: integer(max: System.convert_time_unit(1, :second, :native)),
+               req_header_end_time: integer(roughly: System.monotonic_time()),
+               resp_uncompressed_body_bytes: 2,
+               resp_body_bytes: 28,
+               resp_compression_method: "gzip",
+               resp_start_time: integer(roughly: System.monotonic_time()),
+               resp_end_time: integer(roughly: System.monotonic_time())
+             }
+    end
+
     def send_chunked_200(conn) do
       {:ok, conn} =
         conn

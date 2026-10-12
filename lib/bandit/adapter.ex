@@ -14,7 +14,7 @@ defmodule Bandit.Adapter do
             usage_counter: nil,
             method: nil,
             status: nil,
-            content_encoding: nil,
+            content_encodings: [],
             compression_context: nil,
             upgrade: nil,
             expect_continue: false,
@@ -28,7 +28,7 @@ defmodule Bandit.Adapter do
           usage_counter: {:counters.counters_ref(), non_neg_integer()},
           method: Plug.Conn.method() | nil,
           status: Plug.Conn.status() | nil,
-          content_encoding: String.t(),
+          content_encodings: [String.t()],
           compression_context: Bandit.Compression.t() | nil,
           upgrade: nil | {:websocket, opts :: keyword(), websocket_opts :: keyword()},
           expect_continue: boolean(),
@@ -40,8 +40,8 @@ defmodule Bandit.Adapter do
         }
 
   def init(owner_pid, transport, method, headers, opts) do
-    content_encoding =
-      Bandit.Compression.negotiate_content_encoding(
+    content_encodings =
+      Bandit.Compression.negotiate_content_encodings(
         Bandit.Headers.get_header(headers, "accept-encoding"),
         opts.http
       )
@@ -50,7 +50,7 @@ defmodule Bandit.Adapter do
       transport: transport,
       owner_pid: owner_pid,
       method: method,
-      content_encoding: content_encoding,
+      content_encodings: content_encodings,
       expect_continue: expect_continue?(headers, Bandit.HTTPTransport.version(transport)),
       metrics: %{req_header_end_time: Bandit.Telemetry.monotonic_time()},
       opts: opts,
@@ -129,13 +129,7 @@ defmodule Bandit.Adapter do
     # Save an extra iodata_length by checking common cases
     empty_body? = Bandit.SocketHelpers.iodata_empty?(body)
     {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
-
-    {compress_chunk, compression_context} =
-      Bandit.Compression.compress_chunk(body, compression_context)
-
-    {close_chunk, compression_metrics} = Bandit.Compression.close(compression_context)
-
-    encoded_body = [compress_chunk | close_chunk]
+    {encoded_body, compression_metrics} = Bandit.Compression.close(compression_context, body)
     encoded_length = IO.iodata_length(encoded_body)
     headers = Bandit.Headers.add_content_length(headers, encoded_length, status, adapter.method)
 

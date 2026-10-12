@@ -16,26 +16,29 @@ defmodule Bandit.Compression do
     @accepted_encodings ~w(zstd) ++ @accepted_encodings
   end
 
-  @spec negotiate_content_encoding(nil | binary(), keyword()) :: String.t() | nil
-  def negotiate_content_encoding(nil, _), do: nil
+  # Compressing chunked responses with zstd relies on :zstd.flush/1, which was added in OTP 29
+  @zstd_streaming? Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1)
 
-  def negotiate_content_encoding(accept_encoding, http_opts) do
+  @spec negotiate_content_encodings(nil | binary(), keyword()) :: [String.t()]
+  def negotiate_content_encodings(nil, _), do: []
+
+  def negotiate_content_encodings(accept_encoding, http_opts) do
     if Keyword.get(http_opts, :compress, true) do
       # Parse Accept-Encoding per RFC9110§12.5.3, honoring q-values (a value of q=0 means 'not
-      # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Among the
-      # codings the client is willing to accept, we pick the first in our own preference order
+      # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Returns the
+      # codings the client is willing to accept, in our own preference order
       accepted = parse_accept_encoding(accept_encoding)
       wildcard_q = Enum.find_value(accepted, fn {coding, q} -> if coding == "*", do: q end)
 
       Keyword.get(http_opts, :response_encodings, @accepted_encodings)
-      |> Enum.find(fn encoding ->
+      |> Enum.filter(fn encoding ->
         case List.keyfind(accepted, encoding, 0) do
           {_coding, q} -> q > 0
           nil -> wildcard_q != nil and wildcard_q > 0
         end
       end)
     else
-      nil
+      []
     end
   end
 
@@ -80,18 +83,34 @@ defmodule Bandit.Compression do
     # 206 responses are excluded since compressing them would change the bytes relative to the
     # content-range the response advertises against the identity representation, corrupting
     # range reassembly at the client
-    if status not in [204, 206, 304] && not is_nil(adapter.content_encoding) &&
+    if status not in [204, 206, 304] && adapter.content_encodings != [] &&
          is_nil(response_content_encoding_header) &&
          !response_has_strong_etag(headers) && !response_indicates_no_transform(headers) &&
          !empty_body? do
-      case start_stream(adapter.content_encoding, adapter.opts.http, streamable) do
-        {:ok, context} -> {[{"content-encoding", adapter.content_encoding} | headers], context}
-        {:error, :unsupported_encoding} -> {headers, %__MODULE__{method: :identity}}
-      end
+      # Not every encoding can be used for every response (zstd can't compress chunked responses
+      # before OTP 29), so use the first acceptable encoding that can
+      identity = {headers, %__MODULE__{method: :identity}}
+
+      Enum.find_value(candidate_encodings(adapter, streamable), identity, fn encoding ->
+        case start_stream(encoding, adapter.opts.http, streamable) do
+          {:ok, context} -> {[{"content-encoding", encoding} | headers], context}
+          {:error, :unsupported_encoding} -> nil
+        end
+      end)
     else
       {headers, %__MODULE__{method: :identity}}
     end
   end
+
+  # Unless compress_chunked is set, chunked responses are only compressed when deflate is the
+  # preferred encoding, so that enabling gzip and zstd for them is opt-in
+  defp candidate_encodings(adapter, true = _streamable) do
+    if Keyword.get(adapter.opts.http, :compress_chunked, false),
+      do: adapter.content_encodings,
+      else: Enum.take_while(adapter.content_encodings, &(&1 == "deflate"))
+  end
+
+  defp candidate_encodings(adapter, false = _streamable), do: adapter.content_encodings
 
   defp maybe_add_vary_header(adapter, status, headers) do
     if status != 204 && Keyword.get(adapter.opts.http, :compress, true) &&
@@ -114,6 +133,25 @@ defmodule Bandit.Compression do
 
   defp start_stream("deflate", http_opts, _streamable) do
     opts = Keyword.get(http_opts, :deflate_options, [])
+    {:ok, %__MODULE__{method: :deflate, lib_context: deflate_init(opts)}}
+  end
+
+  # Adding 16 to window_bits makes zlib write a gzip header and trailer instead of zlib ones
+  defp start_stream(encoding, _opts, _streamable) when encoding in ~w(gzip x-gzip),
+    do: {:ok, %__MODULE__{method: :gzip, lib_context: deflate_init(window_bits: 16 + 15)}}
+
+  if Code.ensure_loaded?(:zstd) do
+    defp start_stream("zstd", http_opts, streamable) when not streamable or @zstd_streaming? do
+      opts = Keyword.get(http_opts, :zstd_options, %{})
+      {:ok, zstd_context} = :zstd.context(:compress, opts)
+
+      {:ok, %__MODULE__{method: :zstd, lib_context: zstd_context}}
+    end
+  end
+
+  defp start_stream(_encoding, _opts, _streamable), do: {:error, :unsupported_encoding}
+
+  defp deflate_init(opts) do
     deflate_context = :zlib.open()
 
     :zlib.deflateInit(
@@ -125,87 +163,63 @@ defmodule Bandit.Compression do
       Keyword.get(opts, :strategy, :default)
     )
 
-    {:ok, %__MODULE__{method: :deflate, lib_context: deflate_context}}
+    deflate_context
   end
 
-  defp start_stream("x-gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
-  defp start_stream("gzip", _opts, false), do: {:ok, %__MODULE__{method: :gzip}}
+  def compress_chunk(chunk, %__MODULE__{method: :identity} = context), do: {chunk, context}
 
-  if Code.ensure_loaded?(:zstd) do
-    defp start_stream("zstd", http_opts, false) do
-      opts = Keyword.get(http_opts, :zstd_options, %{})
-      {:ok, zstd_context} = :zstd.context(:compress, opts)
+  def compress_chunk(chunk, %__MODULE__{} = context) do
+    context = %{context | bytes_in: context.bytes_in + IO.iodata_length(chunk)}
+    {compress_and_flush(context, chunk), context}
+  end
 
-      {:ok, %__MODULE__{method: :zstd, lib_context: zstd_context}}
+  # Chunks are flushed so that the client can decode each one as soon as it arrives
+  defp compress_and_flush(%__MODULE__{method: method, lib_context: lib_context}, chunk)
+       when method in [:deflate, :gzip],
+       do: :zlib.deflate(lib_context, chunk, :sync)
+
+  if @zstd_streaming? do
+    defp compress_and_flush(%__MODULE__{method: :zstd, lib_context: lib_context}, chunk) do
+      compressed = zstd_stream(lib_context, chunk)
+      {:continue, flushed} = :zstd.flush(lib_context)
+      [compressed, flushed]
+    end
+
+    # :zstd.stream/2 returns whatever input it could not consume in a single call
+    defp zstd_stream(zstd_context, data) do
+      case :zstd.stream(zstd_context, data) do
+        {:continue, output} -> [output]
+        {:continue, remainder, output} -> [output | zstd_stream(zstd_context, remainder)]
+      end
     end
   end
 
-  defp start_stream(_encoding, _opts, _streamable), do: {:error, :unsupported_encoding}
+  # Finishes the compressed stream, with last_chunk as its final input
+  def close(context, last_chunk \\ [])
 
-  def compress_chunk(chunk, %__MODULE__{method: :deflate} = context) do
-    result = :zlib.deflate(context.lib_context, chunk, :sync)
+  def close(%__MODULE__{method: :identity}, last_chunk), do: {last_chunk, %{}}
 
-    context =
-      context
-      |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
-
-    {result, context}
+  def close(%__MODULE__{} = context, last_chunk) do
+    {close_context(context, last_chunk),
+     %{
+       resp_compression_method: to_string(context.method),
+       resp_uncompressed_body_bytes: context.bytes_in + IO.iodata_length(last_chunk)
+     }}
   end
 
-  if Code.ensure_loaded?(:zstd) do
-    def compress_chunk(chunk, %__MODULE__{method: :zstd} = context) do
-      result = :zstd.compress(chunk, context.lib_context)
-
-      context =
-        context
-        |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
-
-      {result, context}
-    end
-  end
-
-  def compress_chunk(chunk, %__MODULE__{method: :gzip, lib_context: nil} = context) do
-    result = :zlib.gzip(chunk)
-
-    context =
-      context
-      |> Map.update!(:bytes_in, &(&1 + IO.iodata_length(chunk)))
-      |> Map.put(:lib_context, :done)
-
-    {result, context}
-  end
-
-  def compress_chunk(chunk, %__MODULE__{method: :identity} = context) do
-    {chunk, context}
-  end
-
-  def close(%__MODULE__{} = context) do
-    chunk = close_context(context)
-
-    if context.method == :identity do
-      {chunk, %{}}
-    else
-      {chunk,
-       %{
-         resp_compression_method: to_string(context.method),
-         resp_uncompressed_body_bytes: context.bytes_in
-       }}
-    end
-  end
-
-  defp close_context(%__MODULE__{method: :deflate, lib_context: lib_context}) do
-    last = :zlib.deflate(lib_context, [], :finish)
+  defp close_context(%__MODULE__{method: method, lib_context: lib_context}, last_chunk)
+       when method in [:deflate, :gzip] do
+    last = :zlib.deflate(lib_context, last_chunk, :finish)
     :ok = :zlib.deflateEnd(lib_context)
     :zlib.close(lib_context)
     last
   end
 
   if Code.ensure_loaded?(:zstd) do
-    defp close_context(%__MODULE__{method: :zstd, lib_context: lib_context}) do
+    defp close_context(%__MODULE__{method: :zstd, lib_context: lib_context}, last_chunk) do
+      {:done, last} = :zstd.finish(lib_context, last_chunk)
       :zstd.close(lib_context)
-      []
+      last
     end
   end
-
-  defp close_context(_context), do: []
 end
