@@ -1440,7 +1440,37 @@ defmodule HTTP2ProtocolTest do
       assert inflated_body == "OKDOKEE"
     end
 
+    test "does not gzip encode DATA frames when chunking by default", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      headers = [
+        {":method", "GET"},
+        {":path", "/chunk_response"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"accept-encoding", "gzip"}
+      ]
+
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert {:ok, 1, false, "OK"} == SimpleH2Client.recv_body(socket)
+      assert {:ok, 1, false, "DOKEE"} == SimpleH2Client.recv_body(socket)
+    end
+
     test "gzip encodes multiple DATA frames when chunking", context do
+      context =
+        context
+        |> https_server(http_options: [compress_chunked: true])
+        |> Enum.into(context)
+
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -1480,6 +1510,11 @@ defmodule HTTP2ProtocolTest do
     # TODO Remove conditional once Erlang v29 is required
     if Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1) do
       test "zstd encodes multiple DATA frames when chunking", context do
+        context =
+          context
+          |> https_server(http_options: [compress_chunked: true])
+          |> Enum.into(context)
+
         socket = SimpleH2Client.setup_connection(context)
 
         headers = [

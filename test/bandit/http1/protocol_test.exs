@@ -2281,9 +2281,35 @@ defmodule HTTP1ProtocolTest do
       assert inflated_body == String.duplicate("a", 10_000)
     end
 
-    test "gzip encodes chunk responses", context do
+    test "does not gzip encode chunk responses by default", context do
       response =
         Req.get!(context.req,
+          url: "/send_big_body_chunked",
+          headers: [{"accept-encoding", "gzip"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "does not fall back to deflate for chunk responses by default", context do
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body_chunked",
+          headers: [{"accept-encoding", "gzip, deflate"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == nil
+      assert response.headers["vary"] == ["accept-encoding"]
+      assert response.body == String.duplicate("a", 10_000)
+    end
+
+    test "gzip encodes chunk responses", context do
+      response =
+        Req.get!(compress_chunked_req(context),
           url: "/send_big_body_chunked",
           headers: [{"accept-encoding", "gzip"}]
         )
@@ -2296,7 +2322,7 @@ defmodule HTTP1ProtocolTest do
 
     test "x-gzip encodes chunk responses", context do
       response =
-        Req.get!(context.req,
+        Req.get!(compress_chunked_req(context),
           url: "/send_big_body_chunked",
           headers: [{"accept-encoding", "x-gzip"}]
         )
@@ -2312,7 +2338,7 @@ defmodule HTTP1ProtocolTest do
       test "falls back to the next accepted encoding when zstd can't encode chunk responses",
            context do
         response =
-          Req.get!(context.req,
+          Req.get!(compress_chunked_req(context),
             url: "/send_big_body_chunked",
             headers: [{"accept-encoding", "zstd, gzip"}]
           )
@@ -2328,7 +2354,7 @@ defmodule HTTP1ProtocolTest do
     if Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1) do
       test "zstd encodes chunk responses", context do
         response =
-          Req.get!(context.req,
+          Req.get!(compress_chunked_req(context),
             url: "/send_big_body_chunked",
             headers: [{"accept-encoding", "zstd"}]
           )
@@ -2343,7 +2369,7 @@ defmodule HTTP1ProtocolTest do
 
       test "zstd encodes chunks too large to be compressed in a single pass", context do
         response =
-          Req.get!(context.req,
+          Req.get!(compress_chunked_req(context),
             url: "/send_incompressible_chunk",
             headers: [{"accept-encoding", "zstd"}]
           )
@@ -2577,7 +2603,7 @@ defmodule HTTP1ProtocolTest do
       # so it must be disabled in this mode.
       for encoding <- ~w(zstd gzip x-gzip deflate) do
         response =
-          Req.get!(context.req,
+          Req.get!(compress_chunked_req(context),
             url: "/send_known_length_stream",
             headers: [{"accept-encoding", encoding}]
           )
@@ -2588,6 +2614,15 @@ defmodule HTTP1ProtocolTest do
         assert response.headers["transfer-encoding"] == nil
         assert response.body == String.duplicate("a", 10_000)
       end
+    end
+
+    defp compress_chunked_req(context) do
+      context =
+        context
+        |> http_server(http_options: [compress_chunked: true])
+        |> Enum.into(context)
+
+      Req.merge(context.req, base_url: context.base)
     end
 
     def send_known_length_stream(conn) do

@@ -104,10 +104,16 @@ defmodule Bandit do
     [RFC9110§8.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-8.4). Defaults to true
   * `response_encodings`: A list of compression encodings, expressed in order of preference.
     Defaults to `~w(zstd gzip x-gzip deflate)`, with `zstd` only being present on platforms which
-    have the zstd library compiled in. Prior to OTP 29, chunked responses use the next encoding
-    the client accepts instead of `zstd` due to missing `:zstd.flush/1`. Compressed chunked
-    responses hold their compressor's state until they complete, which takes a few hundred KB for
-    gzip and deflate and up to about 3 MB for zstd at its default settings (see `zstd_options`)
+    have the zstd library compiled in
+  * `compress_chunked`: Whether chunked responses (those sent via `Plug.Conn.send_chunked/2`) may
+    be compressed with any of the `response_encodings`. When false, chunked responses are only
+    compressed if `deflate` is the preferred encoding. Prior to OTP 29, chunked responses use the
+    next encoding the client accepts instead of `zstd` due to missing `:zstd.flush/1`. Compressed
+    chunked responses hold their compressor's state until they complete, which takes a few
+    hundred KB for gzip and deflate and up to about 3 MB for zstd at its default settings (see
+    `zstd_options`). Note that compressing a response in individually flushed chunks may make it
+    more susceptible to compression side-channel attacks such as
+    [BREACH](https://www.breachattack.com). Defaults to false
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
     be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
     'deflate' content encoding; 'gzip' does not have any configurable options (this is a
@@ -126,6 +132,7 @@ defmodule Bandit do
   @type http_options :: [
           {:compress, boolean()}
           | {:response_encodings, list()}
+          | {:compress_chunked, boolean()}
           | {:deflate_options, deflate_options()}
           | {:zstd_options, zstd_options()}
           | {:log_exceptions_with_status_codes, list() | Range.t()}
@@ -261,7 +268,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
-  @http_keys ~w(compress response_encodings deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
+  @http_keys ~w(compress response_encodings compress_chunked deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size max_fragmented_message_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module log_protocol_errors)a

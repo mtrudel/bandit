@@ -91,7 +91,7 @@ defmodule Bandit.Compression do
       # before OTP 29), so use the first acceptable encoding that can
       identity = {headers, %__MODULE__{method: :identity}}
 
-      Enum.find_value(adapter.content_encodings, identity, fn encoding ->
+      Enum.find_value(candidate_encodings(adapter, streamable), identity, fn encoding ->
         case start_stream(encoding, adapter.opts.http, streamable) do
           {:ok, context} -> {[{"content-encoding", encoding} | headers], context}
           {:error, :unsupported_encoding} -> nil
@@ -101,6 +101,16 @@ defmodule Bandit.Compression do
       {headers, %__MODULE__{method: :identity}}
     end
   end
+
+  # Unless compress_chunked is set, chunked responses are only compressed when deflate is the
+  # preferred encoding, so that enabling gzip and zstd for them is opt-in
+  defp candidate_encodings(adapter, true = _streamable) do
+    if Keyword.get(adapter.opts.http, :compress_chunked, false),
+      do: adapter.content_encodings,
+      else: Enum.take_while(adapter.content_encodings, &(&1 == "deflate"))
+  end
+
+  defp candidate_encodings(adapter, false = _streamable), do: adapter.content_encodings
 
   defp maybe_add_vary_header(adapter, status, headers) do
     if status != 204 && Keyword.get(adapter.opts.http, :compress, true) &&
