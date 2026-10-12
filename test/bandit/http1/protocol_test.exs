@@ -1353,6 +1353,29 @@ defmodule HTTP1ProtocolTest do
 
     def expect_continue_body_unread(conn), do: send_resp(conn, 200, "")
 
+    test "closes without draining when a plug responds to expect: 100-continue without reading the body",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_continue_reject", [
+        "host: localhost",
+        "expect: 100-continue",
+        "content-length: 5"
+      ])
+
+      assert {:ok, "401 Unauthorized", headers, "denied"} = SimpleHTTP1Client.recv_reply(client)
+      assert Keyword.get_values(headers, :connection) == ["close"]
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+      # The request completed cleanly rather than erroring out in a drain timeout
+      assert_receive {:telemetry, [:bandit, :request, :stop], _, metadata}, 500
+      refute Map.has_key?(metadata, :error)
+    end
+
+    def expect_continue_reject(conn) do
+      send_resp(conn, 401, "denied")
+    end
+
     test "does not send a duplicate 100 Continue if the plug already sent its own informational response",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -1369,7 +1392,10 @@ defmodule HTTP1ProtocolTest do
       assert {:ok, status, _headers, rest} = SimpleHTTP1Client.recv_reply(client)
       assert status =~ "103"
 
-      assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.parse_response(client, rest)
+      assert {:ok, "200 OK", headers, "123"} = SimpleHTTP1Client.parse_response(client, rest)
+
+      # The body was read, so the expectation was satisfied and the connection stays open
+      assert Keyword.get_values(headers, :connection) == []
     end
 
     def expect_continue_after_own_inform(conn) do
