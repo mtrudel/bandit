@@ -2,6 +2,11 @@
 
 ### Fixes
 
+* Return a 400 for HTTP/1 requests whose request target (path, query or absolute-form authority)
+  contains control bytes (CR, NUL, DEL and the rest of 0x00-0x1F), instead of passing them
+  through to `conn.request_path`, `conn.query_string` and `conn.host` where they could be used
+  to forge log lines (#711). The HTTP/2 equivalent was fixed by the completed HTTP/2 field
+  validation (see #680)
 * Drain all queued HTTP/2 request DATA frames of an unread body once a response has been sent,
   rather than falsely raising `Received END_STREAM with byte still pending`
 * Bound HTTP/2 sends blocked on a connection or stream send window by progress rather than

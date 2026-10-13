@@ -106,6 +106,7 @@ defmodule Bandit.HTTP1.Socket do
           # decode_packet is inconsistent about atom/string method returns
           method = to_string(method)
           request_target = resolve_request_target!(request_target, method)
+          validate_request_line!(method, request_target)
           socket = %{socket | buffer: rest, version: version}
           {method, request_target, socket}
 
@@ -124,6 +125,28 @@ defmodule Bandit.HTTP1.Socket do
           request_error!("Request line unknown error: #{inspect(reason)}")
       end
     end
+
+    # RFC9112§3.2 - the request-target may not contain CTLs or whitespace. We check the method
+    # and every component of the request-target, since all of them reach the Plug.Conn
+    defp validate_request_line!(method, {scheme, host, port, path}) do
+      [method, scheme, host, port, path]
+      |> Enum.all?(&request_line_component_valid?/1)
+      |> if do
+        :ok
+      else
+        request_error!("Request line contains invalid characters (RFC9112§3.2)")
+      end
+    end
+
+    defp request_line_component_valid?(<<>>), do: true
+
+    defp request_line_component_valid?(<<char, rest::binary>>) when char > 0x20 and char != 0x7F,
+      do: request_line_component_valid?(rest)
+
+    defp request_line_component_valid?(<<_char, _rest::binary>>), do: false
+
+    # Request line components which are not binaries (ports, the :* path) cannot contain bytes
+    defp request_line_component_valid?(_component), do: true
 
     defp get_version!({1, 1}), do: :"HTTP/1.1"
     defp get_version!({1, 0}), do: :"HTTP/1.0"

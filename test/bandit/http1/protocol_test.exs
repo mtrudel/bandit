@@ -504,6 +504,66 @@ defmodule HTTP1ProtocolTest do
     end
   end
 
+  describe "request line (RFC9112§3.2)" do
+    @tag :capture_log
+    test "rejects a request target containing a bare CR", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET /a\rb HTTP/1.1\r\nhost: localhost\r\n\r\n")
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "rejects a request target containing a NUL byte", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET /a\0b HTTP/1.1\r\nhost: localhost\r\n\r\n")
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "rejects an absolute-form host containing a control character", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET http://a\rb/ HTTP/1.1\r\nhost: localhost\r\n\r\n")
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    for {name, target} <- [
+          {"a DEL byte in the path", "/a\x7Fb"},
+          {"another control byte in the path", "/a\x01b"},
+          {"a bare CR in the query", "/a?x=\r1"},
+          {"a NUL byte in the query", "/a?x=\0"},
+          {"a bare CR in an absolute-form path", "http://localhost/a\rb"}
+        ] do
+      @target target
+
+      @tag :capture_log
+      test "rejects a request target containing #{name}", context do
+        client = SimpleHTTP1Client.tcp_client(context)
+        Transport.send(client, "GET #{@target} HTTP/1.1\r\nhost: localhost\r\n\r\n")
+
+        assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTPError) Request line contains invalid characters (RFC9112§3.2)"
+      end
+    end
+
+    test "still accepts non-ASCII bytes in the request target", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components/caf\xC3\xA9?q=\xC3\xA9", [
+        "host: localhost"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["query_string"] == "q=\u00E9"
+    end
+  end
+
   describe "request headers (RFC9112§5)" do
     @tag :capture_log
     test "rejects a header value containing a bare CR (RFC9110§5.5)", context do
