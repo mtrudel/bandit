@@ -7,6 +7,10 @@ defmodule Bandit.HTTP1.Handler do
   @impl ThousandIsland.Handler
   def handle_connection(socket, state) do
     {:continue, Map.put(state, :conn_data, Bandit.SocketHelpers.conn_data(socket))}
+  rescue
+    error in Bandit.TransportError ->
+      Bandit.Logger.maybe_log_protocol_error(error, __STACKTRACE__, state.opts, plug: state.plug)
+      {:close, state}
   end
 
   @impl ThousandIsland.Handler

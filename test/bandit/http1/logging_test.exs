@@ -4,6 +4,8 @@ defmodule HTTP1LoggingTest do
   use ReqHelpers
   use Machete
 
+  import ExUnit.CaptureLog
+
   require Logger
 
   setup :http_server
@@ -59,6 +61,23 @@ defmodule HTTP1LoggingTest do
       SimpleHTTP1Client.send(client, "GET", "/sleep_and_send", ["host: localhost"])
       close_after_request_started(client)
 
+      refute_receive {:log, %{level: :error}}
+    end
+
+    test "it should not log an error if the client aborts the connection during init", context do
+      # Wait for protocol sniffing to block, then send just enough to select HTTP/1 and abort,
+      # so the peer is gone when the handler reads conn_data. A raise there crashes the
+      # connection process, which the plug-scoped log handler can't see
+      log =
+        capture_log(fn ->
+          client = SimpleHTTP1Client.tcp_client(context)
+          Process.sleep(50)
+          Transport.send(client, "GET")
+          Transport.close(client)
+          Process.sleep(100)
+        end)
+
+      refute log =~ "Unable to obtain conn_data"
       refute_receive {:log, %{level: :error}}
     end
 
