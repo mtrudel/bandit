@@ -132,6 +132,43 @@ defmodule HTTP2PlugTest do
     conn |> send_resp(200, body)
   end
 
+  # Plug.Parsers reads (some of) a body and then raises, without a conn on its exception, so error
+  # rendering (ie: Phoenix.Endpoint.RenderErrors) happens on the conn from before the body was
+  # read. https://github.com/elixir-plug/plug/issues/1331
+  test "allows a response to be sent on a conn from before a body read", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(
+      socket,
+      1,
+      :post,
+      "/respond_on_conn_from_before_read",
+      context.port
+    )
+
+    SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 2_000))
+
+    frames = for _ <- 1..4, do: SimpleH2Client.recv_frame(socket)
+
+    assert frames
+           ~> in_any_order([
+             {:ok, :window_update, term(), 0, term()},
+             {:ok, :window_update, term(), 1, term()},
+             {:ok, :headers, term(), 1, term()},
+             {:ok, :data, term(), 1, "too large"}
+           ])
+
+    {:ok, :headers, _flags, 1, headers_block} =
+      Enum.find(frames, &match?({:ok, :headers, _, 1, _}, &1))
+
+    assert headers_block =~ "413"
+  end
+
+  def respond_on_conn_from_before_read(conn) do
+    {:more, _body, _newer_conn} = read_body(conn, length: 1_000)
+    conn |> send_resp(413, "too large")
+  end
+
   test "reading request body respects length option", context do
     socket = SimpleH2Client.setup_connection(context)
 
