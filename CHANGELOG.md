@@ -1,32 +1,51 @@
-## Unreleased
+## 1.13.0 (15 Oct 2026)
+
+### Enhancements
+
+* Add a `compress_chunked` option to compress chunked responses with gzip and zstd (#707, thanks @iStefo!)
+* Clarify `inet6` option behaviour on dual-stack platforms (#709, #700, thanks @adelton!)
+* Unroll WebSocket masking over 32-byte blocks (#674, thanks @mpettibone!)
+* Drain HTTP/2 pending sends without repeated List.delete/2 (#673, thanks @mpettibone!)
+* Short-circuit header token lookup on the first match (#699, thanks @claytongentry!)
+* Scope the workflow tokens to what each job actually uses (#702, thanks @Totara-thib!)
+* Add a Plumber check and score badge (#712, thanks @Totara-thib!)
+* Fix recent releases changelog headings in docs (#672, thanks @dinokovac-river!)
+
+### Changes
+
+* Require Thousand Island 1.6, and use the peername it now captures when it accepts a connection
+  (#718)
+* Require hpax 1.1 and drop the nil field value workaround (#706, thanks @acrogenesis!)
+* Report `conn.port` as an integer for `CONNECT` requests, as `Plug.Conn` requires
+* Close idle connections which send no bytes silently instead of answering 408 (#689, thanks @tomciopp!)
+* RFC Conformance: Enforce Host requirements for HTTP/1.1 targets (#679, thanks @mpettibone!)
+* RFC Conformance: Complete HTTP/2 field validation (#680, thanks @mpettibone!)
+* RFC Conformance: Validate HTTP/2 content length on initial END_STREAM (#681, thanks @mpettibone!)
+* RFC Conformance: Enforce HTTP/2 trailer field section requirements (#682, thanks @mpettibone!)
+* RFC Conformance: Validate request transfer coding before Plug dispatch (#683, thanks @mpettibone!)
+* RFC Conformance: Fix HTTP/1.0 streaming response framing (#684, thanks @mpettibone!)
+* RFC Conformance: Accept empty non-final WebSocket continuation frames (#685, thanks @mpettibone!)
+* RFC Conformance: Validate WebSocket client keys (#686, thanks @mpettibone!)
 
 ### Fixes
 
-* Require Thousand Island 1.6 and use the peername it now captures when it accepts a connection.
-  A client which resets a connection after sending a few bytes (commonly seen behind cloud load
-  balancers) no longer crashes the HTTP/1 connection process with
-  `Unable to obtain conn_data` (#647, #717)
 * Validate the authority of HTTP/1 absolute-form and authority-form request targets against the
-  same RFC3986§3.2.2 host grammar as the `Host` header (and HTTP/2 `:authority`), returning a 400
-  for malformed values, as these take precedence over `Host` in determining `conn.host` and
-  `conn.port` (GHSA-v53v-9hvg-37jf)
-* Report `conn.port` as an integer, as `Plug.Conn` requires, for `CONNECT` requests
-* Return a 400 for HTTP/1 requests whose request target (path, query or absolute-form authority)
-  contains control bytes (CR, NUL, DEL and the rest of 0x00-0x1F), instead of passing them
-  through to `conn.request_path`, `conn.query_string` and `conn.host` where they could be used
-  to forge log lines (#711). The HTTP/2 equivalent was fixed by the completed HTTP/2 field
-  validation (see #680)
-* Drain all queued HTTP/2 request DATA frames of an unread body once a response has been sent,
-  rather than falsely raising `Received END_STREAM with byte still pending`
-* Bound HTTP/2 sends blocked on a connection or stream send window by progress rather than
-  resetting the bound on every window update, so that a peer which dribbles out tiny window
-  increments (or sends frames that grant no window) cannot keep a stream process pinned
-  indefinitely (GHSA-69m6-wcv4-rwcf). Sends being drained at a reasonable rate (1KiB/s or
-  faster) are unaffected, regardless of how long they take overall
-* Preserve independent error responses on HTTP/1 keep-alive and pipelined requests
-  by discarding completed requests' sent-response notifications
-* Explicitly frame empty HTTP/1 4xx/5xx error responses with `Content-Length: 0`
-  so response completion does not depend on a clean connection close
+  same grammar as the `Host` header (GHSA-v53v-9hvg-37jf, thanks @euriconicacio!)
+* Bound HTTP/2 sends blocked on a send window by progress, so that a trickle of window updates
+  can no longer keep a stream pinned indefinitely (GHSA-69m6-wcv4-rwcf, thanks @tomciopp!)
+* Reject control bytes in HTTP/1 request targets (#713, #711, thanks @PJUllrich!)
+* Fix crash when a client resets an HTTP/1 connection before Bandit reads its peer address (#718, #717, thanks @mhsdef!)
+* Drain all queued HTTP/2 DATA frames of an unread body once a response has been sent (#710, #697, thanks @jamilbk!)
+* Preserve independent error responses on HTTP/1 keep-alive and pipelined requests, and frame empty
+  4xx/5xx error responses with `Content-Length: 0` (#705, thanks @jeregrine!)
+* Close instead of draining when a plug never honors Expect: 100-continue (#695, thanks @tomciopp!)
+* Fix chunked read_body(length: 0) falsely completing the body (#691, thanks @tomciopp!)
+* Observe RST_STREAM while blocked on the stream send window (#688, thanks @tomciopp!)
+* Report only actually written bytes in resp_body_bytes (#692, thanks @tomciopp!)
+* Count each received WebSocket wire frame exactly once in telemetry (#693, thanks @tomciopp!)
+* Don't treat max_inflate_ratio as a permessage deflate wire parameter (#678, thanks @tomciopp!)
+* Don't compress 206 Partial Content responses (#677, thanks @tomciopp!)
+* Guard against stale conn reuse in Bandit.Adapter (#668)
 
 ## 1.12.5 (20 Aug 2026)
 
