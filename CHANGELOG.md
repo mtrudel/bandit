@@ -1,3 +1,11 @@
+## Unreleased
+
+### Fixes
+
+* Revert the stale conn check added in 1.13.0 (#668), which turned responses sent on a conn from
+  before a body read (as `Plug.Parsers` errors rendered by `Phoenix.Endpoint.RenderErrors` do)
+  into 500s (https://github.com/elixir-plug/plug/issues/1331)
+
 ## 1.13.0 (15 Oct 2026)
 
 ### Enhancements

@@ -310,6 +310,22 @@ defmodule HTTP1PlugTest do
       assert IO.iodata_to_binary([body | body_2]) == String.duplicate("0123456789", 100_000)
       send_resp(conn, 200, "#{inspect(encoding)}-#{inspect(content_length)}")
     end
+
+    # Plug.Parsers reads (some of) a body and then raises, without a conn on its exception, so
+    # error rendering (ie: Phoenix.Endpoint.RenderErrors) happens on the conn from before the body
+    # was read. https://github.com/elixir-plug/plug/issues/1331
+    test "allows a response to be sent on a conn from before a body read", context do
+      body = String.duplicate("0123456789", 10_000)
+      response = Req.post!(context.req, url: "/respond_on_conn_from_before_read", body: body)
+
+      assert response.status == 413
+      assert response.body == "too large"
+    end
+
+    def respond_on_conn_from_before_read(conn) do
+      {:more, _body, _newer_conn} = Plug.Conn.read_body(conn, length: 1_000)
+      send_resp(conn, 413, "too large")
+    end
   end
 
   describe "upgrade handling" do
