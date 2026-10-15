@@ -2,6 +2,10 @@
 
 ### Fixes
 
+* Require Thousand Island 1.6 and use the peername it now captures when it accepts a connection.
+  A client which resets a connection after sending a few bytes (commonly seen behind cloud load
+  balancers) no longer crashes the HTTP/1 connection process with
+  `Unable to obtain conn_data` (#647, #717)
 * Validate the authority of HTTP/1 absolute-form and authority-form request targets against the
   same RFC3986§3.2.2 host grammar as the `Host` header (and HTTP/2 `:authority`), returning a 400
   for malformed values, as these take precedence over `Host` in determining `conn.host` and
