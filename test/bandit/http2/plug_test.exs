@@ -222,7 +222,7 @@ defmodule HTTP2PlugTest do
              "date" => [date],
              "vary" => ["accept-encoding"],
              "cache-control" => ["max-age=0, private, must-revalidate"],
-             "X-Response-Header" => ["Response"]
+             "x-response-header" => ["Response"]
            } = response.headers
 
     assert DateHelpers.valid_date_header?(date)
@@ -230,7 +230,9 @@ defmodule HTTP2PlugTest do
 
   def header_write_test(conn) do
     conn
-    |> put_resp_header("X-Response-Header", "Response")
+    # HTTP/2 requires lowercase field names (RFC9113§8.2.1), and clients reject responses with
+    # anything else, as plugs are expected to only use lowercase header names anyway
+    |> put_resp_header("x-response-header", "Response")
     |> send_resp(200, <<>>)
   end
 

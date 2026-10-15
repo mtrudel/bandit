@@ -10,22 +10,22 @@ defmodule Bandit.SocketHelpers do
   def conn_data(socket) do
     secure? = ThousandIsland.Socket.secure?(socket)
 
-    {peer_address, _port} =
-      case ThousandIsland.Socket.peername(socket) do
-        {:ok, peername} -> map_address(peername)
-        {:error, reason} -> transport_error!("Unable to obtain conn_data", reason)
-      end
+    # Thousand Island captures the peername when it accepts the connection, so this still works if
+    # the client has already closed or reset it (which is the whole point of doing it this way; a
+    # live lookup would fail here with :enotconn / :einval and crash the connection process)
+    {:ok, peername} = ThousandIsland.Socket.peername(socket)
+    {peer_address, _port} = map_address(peername)
 
     {secure?, peer_address}
   end
 
   @spec peer_data(ThousandIsland.Socket.t()) :: Plug.Conn.Adapter.peer_data()
   def peer_data(socket) do
-    with {:ok, peername} <- ThousandIsland.Socket.peername(socket),
-         {address, port} <- map_address(peername),
-         {:ok, ssl_cert} <- peercert(socket) do
-      %{address: address, port: port, ssl_cert: ssl_cert}
-    else
+    {:ok, peername} = ThousandIsland.Socket.peername(socket)
+    {address, port} = map_address(peername)
+
+    case peercert(socket) do
+      {:ok, ssl_cert} -> %{address: address, port: port, ssl_cert: ssl_cert}
       {:error, reason} -> transport_error!("Unable to obtain peer_data", reason)
     end
   end
