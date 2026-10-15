@@ -277,6 +277,60 @@ defmodule HTTP1ProtocolTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
+    test "derives port from the URI as an integer", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana:8080/echo_components", ["host: orange"])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "banana"
+      assert Jason.decode!(body)["port"] == 8080
+    end
+
+    # The authority of an absolute-form target takes precedence over the Host header, so it must be
+    # held to the same grammar (RFC3986§3.2.2) as that header, which rejects each of these
+    for {name, authority} <- [
+          {"userinfo", "good.example@evil.example"},
+          {"a fragment delimiter", "ex#am.com"},
+          {"a query delimiter", "ex?am.com"},
+          {"a NUL byte", "ex\0am.com"},
+          {"a DEL byte", "ex\x7Fam.com"},
+          {"a high byte", "ex\xFFam.com"},
+          {"a backslash", "ex\\am.com"},
+          {"an invalid IP literal", "[zz::1]"},
+          {"an out of range port", "ex.com:99999"}
+        ] do
+      @authority authority
+
+      @tag :capture_log
+      test "returns 400 for an authority containing #{name}", context do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "GET", "http://#{@authority}/echo_components", [
+          "host: good.example"
+        ])
+
+        assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+        # ...which is exactly what the same bytes get when sent as the Host header
+        client = SimpleHTTP1Client.tcp_client(context)
+        SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: #{@authority}"])
+        assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      end
+
+      @tag :capture_log
+      test "returns 400 for an HTTP/1.0 authority containing #{name}", context do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        Transport.send(
+          client,
+          "GET http://#{@authority}/echo_components HTTP/1.0\r\n\r\n"
+        )
+
+        assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      end
+    end
+
     # Skip this test since there is a bug in :erlang.decode_packet. See https://github.com/mtrudel/bandit/pull/97
     # This has been fixed upstream in OTP26+; see OTP-18540 for details. Reintroduce this test
     # once we support OTP26+
@@ -427,9 +481,27 @@ defmodule HTTP1ProtocolTest do
       # control both sides here
       SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
-      assert Jason.decode!(body)["port"] == "80"
+      assert Jason.decode!(body)["port"] == 80
       assert Jason.decode!(body)["host"] == "www.example.com"
       assert Jason.decode!(body)["path_info"] == []
+    end
+
+    @tag :capture_log
+    test "returns 400 for an authority containing userinfo", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "CONNECT", "good.example@evil.example:443", [
+        "host: localhost"
+      ])
+
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    @tag :capture_log
+    test "returns 400 for an authority containing an out of range port", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:99999", ["host: localhost"])
+      assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
     end
 
     def no_path_provided(conn) do

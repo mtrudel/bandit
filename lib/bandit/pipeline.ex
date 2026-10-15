@@ -5,8 +5,9 @@ defmodule Bandit.Pipeline do
 
   @type plug_def :: {function() | module(), Plug.opts()}
   @type conn_data :: {boolean(), :inet.ip_address()}
+  # The port of an authority-form (CONNECT) target is the unparsed text following the first colon
   @type request_target ::
-          {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number(), path()}
+          {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number() | binary(), path()}
   @type scheme :: String.t() | nil
   @type path :: String.t() | :*
 
@@ -91,8 +92,14 @@ defmodule Bandit.Pipeline do
     {header_host, header_port} = required_host_header!(headers)
 
     case target_host do
-      nil -> {header_host, header_port || URI.default_port(scheme)}
-      target_host -> {to_string(target_host), target_port || URI.default_port(scheme)}
+      nil ->
+        {header_host, header_port || URI.default_port(scheme)}
+
+      target_host ->
+        # RFC9112§3.2.2 - the request target's authority takes precedence over the Host header,
+        # which makes it the value that must satisfy the host grammar
+        {host, port} = parse_target_authority!(target_host, target_port)
+        {host, port || URI.default_port(scheme)}
     end
   end
 
@@ -113,8 +120,23 @@ defmodule Bandit.Pipeline do
     end
   end
 
-  defp determine_host_and_port!(scheme, _version, {_, host, port, _}, _headers),
-    do: {to_string(host), port || URI.default_port(scheme)}
+  defp determine_host_and_port!(scheme, _version, {_, host, port, _}, _headers) do
+    {host, port} = parse_target_authority!(host, port)
+    {host, port || URI.default_port(scheme)}
+  end
+
+  # The request target's authority arrives from :erlang.decode_packet/3 already split into a host
+  # and a port (an integer for absolute-form targets, or the unparsed text following the first
+  # colon for authority-form ones), and it is not validated at all by decode_packet. Join it back
+  # up and hold it to the same grammar as the Host header
+  @spec parse_target_authority!(binary(), nil | Plug.Conn.port_number() | binary()) ::
+          {Plug.Conn.host(), nil | Plug.Conn.port_number()}
+  defp parse_target_authority!(host, port) do
+    authority = if is_nil(port), do: host, else: [host, ":", to_string(port)]
+    Bandit.Headers.parse_hostlike_header!(IO.iodata_to_binary(authority))
+  rescue
+    _error in Bandit.HTTPError -> request_error!("Request target contains invalid host")
+  end
 
   defp required_host_header!(headers) do
     case Bandit.Headers.get_host_header(headers) do

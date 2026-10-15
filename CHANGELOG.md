@@ -2,6 +2,11 @@
 
 ### Fixes
 
+* Validate the authority of HTTP/1 absolute-form and authority-form request targets against the
+  same RFC3986§3.2.2 host grammar as the `Host` header (and HTTP/2 `:authority`), returning a 400
+  for malformed values, as these take precedence over `Host` in determining `conn.host` and
+  `conn.port` (GHSA-v53v-9hvg-37jf)
+* Report `conn.port` as an integer, as `Plug.Conn` requires, for `CONNECT` requests
 * Return a 400 for HTTP/1 requests whose request target (path, query or absolute-form authority)
   contains control bytes (CR, NUL, DEL and the rest of 0x00-0x1F), instead of passing them
   through to `conn.request_path`, `conn.query_string` and `conn.host` where they could be used
