@@ -91,7 +91,7 @@ defmodule Bandit.MixProject do
       ],
       skip_undefined_reference_warnings_on: Path.wildcard("**/*.md"),
       main: "Bandit",
-      logo: "assets/ex_doc_logo.png"
+      logo: "assets/logo.svg"
     ]
   end
 end
