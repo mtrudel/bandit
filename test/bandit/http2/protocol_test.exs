@@ -1918,6 +1918,14 @@ defmodule HTTP2ProtocolTest do
       end
     end
 
+    def killed_stream(conn) do
+      conn = send_chunked(conn, 200)
+      {:ok, conn} = chunk(conn, "hello\n")
+      send(__MODULE__, {:killed_stream_pid, self()})
+      Process.sleep(:infinity)
+      conn
+    end
+
     # Grants a generous stream-level window (so the default 65_535 byte connection window is the
     # one that ends up blocking) and drives the plug until it is stuck mid-write, with 4_465 bytes
     # of its 7th 10_000 byte chunk still unsent
@@ -1956,6 +1964,21 @@ defmodule HTTP2ProtocolTest do
 
       assert_receive {:blocking_chunk_error, ^plug_pid, :closed}, 1_000
       assert_receive {:DOWN, ^ref, :process, ^plug_pid, _reason}, 1_000
+    end
+
+    test "a killed stream process sends RST_STREAM before it is removed", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/killed_stream", context[:port])
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert {:ok, 1, false, "hello\n"} = SimpleH2Client.recv_body(socket)
+      assert_receive {:killed_stream_pid, plug_pid}, 1_000
+
+      Process.exit(plug_pid, :kill)
+
+      assert SimpleH2Client.recv_rst_stream(socket) ==
+               {:ok, 1, Bandit.HTTP2.Errors.internal_error()}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     @tag :slow
