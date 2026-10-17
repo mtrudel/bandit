@@ -59,8 +59,7 @@ defmodule Bandit.HTTP1.Socket do
     def version(%@for{} = socket), do: socket.version
 
     def read_headers(%@for{read_state: :unread} = socket) do
-      {method, request_target, socket} = do_read_request_line!(socket)
-      {headers, socket} = do_read_headers!(socket)
+      {method, request_target, headers, socket} = read_head!(socket)
       content_length = get_content_length!(headers)
       body_encoding = headers |> get_transfer_encoding!() |> validate_transfer_encoding!()
       request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
@@ -91,6 +90,43 @@ defmodule Bandit.HTTP1.Socket do
             "Request cannot contain both 'content-length' and 'transfer-encoding' (RFC9112§6.3.3)"
           )
       end
+    end
+
+    # Bandit.HTTP1.HeadParser reads the common shape of request head in one
+    # pass; anything else goes through the decode_packet loop below, which
+    # makes every decision about it and raises every error.
+    @doc false
+    def read_head!(socket) do
+      http_1 = socket.opts.http_1
+
+      limits =
+        {Keyword.get(http_1, :max_request_line_length, 10_000),
+         Keyword.get(http_1, :max_header_length, 10_000),
+         Keyword.get(http_1, :max_header_count, 50)}
+
+      read_head!(socket, limits)
+    end
+
+    defp read_head!(socket, limits) do
+      case Bandit.HTTP1.HeadParser.parse(socket.buffer, limits) do
+        {:ok, {method, request_target, version}, headers, rest} ->
+          socket = %{socket | buffer: rest, version: version, read_state: :headers_read}
+          {method, request_target, headers, socket}
+
+        :more ->
+          chunk = read_available!(socket.socket, socket.socket.read_timeout)
+          read_head!(%{socket | buffer: socket.buffer <> chunk}, limits)
+
+        :fallback ->
+          read_head_decode_packet!(socket)
+      end
+    end
+
+    @doc false
+    def read_head_decode_packet!(socket) do
+      {method, request_target, socket} = do_read_request_line!(socket)
+      {headers, socket} = do_read_headers!(socket)
+      {method, request_target, headers, socket}
     end
 
     defp do_read_request_line!(socket, request_target \\ nil) do
