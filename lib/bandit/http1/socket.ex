@@ -94,17 +94,24 @@ defmodule Bandit.HTTP1.Socket do
 
     # Bandit.HTTP1.HeadParser reads the common shape of request head in one
     # pass; anything else goes through the decode_packet loop below, which
-    # makes every decision about it and raises every error.
+    # makes every decision about it and raises every error. Setting
+    # fast_path_header_read to false sends every head through that loop.
+    # Bandit.init/1 defaults it from the VM's word size; the true here only
+    # applies to opts built without it.
     @doc false
     def read_head!(socket) do
       http_1 = socket.opts.http_1
 
-      limits =
-        {Keyword.get(http_1, :max_request_line_length, 10_000),
-         Keyword.get(http_1, :max_header_length, 10_000),
-         Keyword.get(http_1, :max_header_count, 50)}
+      if Keyword.get(http_1, :fast_path_header_read, true) do
+        limits =
+          {Keyword.get(http_1, :max_request_line_length, 10_000),
+           Keyword.get(http_1, :max_header_length, 10_000),
+           Keyword.get(http_1, :max_header_count, 50)}
 
-      read_head!(socket, limits)
+        read_head!(socket, limits)
+      else
+        read_head_decode_packet!(socket)
+      end
     end
 
     defp read_head!(socket, limits) do
