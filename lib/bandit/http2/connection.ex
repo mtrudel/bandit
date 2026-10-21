@@ -535,19 +535,30 @@ defmodule Bandit.HTTP2.Connection do
     |> send_frame(socket, connection)
   end
 
-  @spec stream_terminated(pid(), t()) :: t()
-  def stream_terminated(pid, connection) do
-    # If this stream had a pending send queued, its process is by definition the one that just
-    # exited (that's what an :EXIT for `pid` means), so there is no longer a live caller to hear
-    # the reply; the purge here is only to drop the queued bytes so they can't be written later
-    # against a stream nothing is running anymore. The reply value itself is never observed.
-    connection =
-      case Bandit.HTTP2.StreamCollection.get_stream_id(connection.streams, pid) do
-        nil -> connection
-        stream_id -> purge_pending_send(connection, stream_id, {:error, :closed})
-      end
+  @spec stream_terminated(pid(), term(), ThousandIsland.Socket.t(), t()) :: t()
+  def stream_terminated(pid, reason, socket, connection) do
+    case Bandit.HTTP2.StreamCollection.get_stream_id(connection.streams, pid) do
+      nil ->
+        connection
 
-    %{connection | streams: Bandit.HTTP2.StreamCollection.delete(connection.streams, pid)}
+      stream_id ->
+        # If this stream had a pending send queued, its process is by definition the one that
+        # just exited, so purge the bytes before they can be written against a dead stream. The
+        # reply value is never observed.
+        connection = purge_pending_send(connection, stream_id, {:error, :closed})
+
+        if reason != :normal do
+          # A process can exit just after sending END_STREAM, so this reset may race with a
+          # completed stream. Sending it is harmless; it also prevents clients waiting forever
+          # when a stream exits abnormally before END_STREAM.
+          send_rst_stream(stream_id, Bandit.HTTP2.Errors.internal_error(), socket, connection)
+        end
+
+        %{
+          connection
+          | streams: Bandit.HTTP2.StreamCollection.delete(connection.streams, pid)
+        }
+    end
   end
 
   #

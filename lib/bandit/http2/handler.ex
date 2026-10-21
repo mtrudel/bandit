@@ -152,27 +152,11 @@ defmodule Bandit.HTTP2.Handler do
     {:stop, :normal, {socket, state}}
   end
 
-  def handle_info({:EXIT, pid, :killed}, {socket, state}) do
-    case Bandit.HTTP2.StreamCollection.get_stream_id(state.connection.streams, pid) do
-      nil ->
-        :ok
-
-      stream_id ->
-        Bandit.HTTP2.Connection.send_rst_stream(
-          stream_id,
-          Bandit.HTTP2.Errors.internal_error(),
-          socket,
-          state.connection
-        )
-    end
-
-    connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
+  def handle_info({:EXIT, pid, reason}, {socket, state}) do
+    connection = Bandit.HTTP2.Connection.stream_terminated(pid, reason, socket, state.connection)
     {:noreply, {socket, %{state | connection: connection}}}
-  end
-
-  def handle_info({:EXIT, pid, _reason}, {socket, state}) do
-    connection = Bandit.HTTP2.Connection.stream_terminated(pid, state.connection)
-    {:noreply, {socket, %{state | connection: connection}}}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   defp rescue_stream_error(error, socket, state) do
