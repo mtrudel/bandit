@@ -232,6 +232,41 @@ defmodule WebSocketHTTP1HandshakeTest do
       refute Keyword.get(headers, :"sec-websocket-extensions")
     end
 
+    test "answers a malformed Sec-WebSocket-Extensions header with a 400", context do
+      for extensions <- [";", ",;,", "permessage-deflate; =", "permessage-deflate; =15"] do
+        client = SimpleWebSocketClient.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "GET", "/compress", [
+          "Host: server.example.com",
+          "Upgrade: WeBsOcKeT",
+          "Connection: UpGrAdE",
+          "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+          "Sec-WebSocket-Version: 13",
+          "Sec-WebSocket-Extensions: #{extensions}"
+        ])
+
+        assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+      end
+    end
+
+    test "declines a permessage-deflate offer whose parameter value is not a token", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/compress", [
+        "Host: server.example.com",
+        "Upgrade: WeBsOcKeT",
+        "Connection: UpGrAdE",
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Version: 13",
+        "Sec-WebSocket-Extensions: permessage-deflate; client_max_window_bits=1=2"
+      ])
+
+      assert {:ok, "101 Switching Protocols", headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      refute Keyword.get(headers, :"sec-websocket-extensions")
+    end
+
     test "does not negotiate unknown extensions", context do
       client = SimpleWebSocketClient.tcp_client(context)
 
