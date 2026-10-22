@@ -317,7 +317,10 @@ defmodule Bandit.HTTP2.Stream do
           acc = [data | acc]
           max_bytes = max_bytes - byte_size(data)
 
-          if max_bytes >= 0 do
+          # Stop as soon as `length` bytes have been read, as HTTP/1 does, instead of waiting for
+          # more data until the read times out. A stream whose remote end has closed has nothing
+          # left to wait for, so it falls through to the clause below and reports `:ok`.
+          if max_bytes > 0 or (max_bytes == 0 and stream.state == :remote_closed) do
             do_read_data(stream, max_bytes, timeout, acc)
           else
             {:more, Enum.reverse(acc), stream}

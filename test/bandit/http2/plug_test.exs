@@ -188,9 +188,38 @@ defmodule HTTP2PlugTest do
 
   def length_body_read(conn) do
     {:more, body, conn} = read_body(conn, length: 2)
-    assert body == "ABC"
+    assert body == "AB"
     {:ok, body, conn} = read_body(conn)
-    assert body == "DE"
+    assert body == "CDE"
+    conn |> send_resp(200, <<>>)
+  end
+
+  test "reading request body returns once the length option has been reached", context do
+    # Keep the connection open for longer than the read_timeout used by the plug below
+    context =
+      context
+      |> https_server(thousand_island_options: [read_timeout: 5_000])
+      |> Enum.into(context)
+
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :post, "/exact_length_body_read", context.port)
+    SimpleH2Client.send_body(socket, 1, false, "A")
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+  end
+
+  def exact_length_body_read(conn) do
+    # The body is not complete, but its first `length` bytes have arrived, so the read must
+    # return right away instead of waiting out its read_timeout
+    {elapsed_us, {:more, body, conn}} =
+      :timer.tc(fn -> read_body(conn, length: 1, read_timeout: 2_000) end)
+
+    assert body == "A"
+    assert elapsed_us < 1_000_000
     conn |> send_resp(200, <<>>)
   end
 
