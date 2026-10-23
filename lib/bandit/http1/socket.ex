@@ -121,11 +121,43 @@ defmodule Bandit.HTTP1.Socket do
           {method, request_target, headers, socket}
 
         :more ->
-          chunk = read_available!(socket.socket, socket.socket.read_timeout)
-          read_head!(%{socket | buffer: socket.buffer <> chunk}, limits)
+          read_head_line!(socket, limits, line_start(socket.buffer, 0))
 
         :fallback ->
           read_head_decode_packet!(socket)
+      end
+    end
+
+    # HeadParser parses from the start of the buffer. If we parsed again after
+    # each read, a head sent a few bytes at a time would cost time in
+    # proportion to the square of its size. Thus parse again only when a read
+    # completes a line. The fast path takes at most max_header_count + 2
+    # lines, so this limits the parses for each head. Until a line is
+    # complete, only make sure that the partial line stays inside the fast
+    # path's limit, as HeadParser does.
+    defp read_head_line!(socket, limits, line_start) do
+      chunk = read_available!(socket.socket, socket.socket.read_timeout)
+      socket = %{socket | buffer: socket.buffer <> chunk}
+      line = if line_start == 0, do: :request_line, else: :header
+      length = byte_size(socket.buffer) - line_start
+
+      cond do
+        :binary.match(chunk, "\n") != :nomatch ->
+          read_head!(socket, limits)
+
+        Bandit.HTTP1.HeadParser.partial_line?(line, length, limits) ->
+          read_head_line!(socket, limits, line_start)
+
+        true ->
+          read_head_decode_packet!(socket)
+      end
+    end
+
+    # Where the last line in buffer starts, searching from the from offset
+    defp line_start(buffer, from) do
+      case :binary.match(buffer, "\n", scope: {from, byte_size(buffer) - from}) do
+        {pos, 1} -> line_start(buffer, pos + 1)
+        :nomatch -> from
       end
     end
 

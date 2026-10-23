@@ -122,10 +122,20 @@ defmodule Bandit.HTTP1.HeadParser do
   @spec parse(binary(), limits()) :: result()
   def parse(bin, limits) when is_binary(bin), do: request(bin, bin, limits)
 
+  @doc """
+  Returns whether a partial request line or header line of `length` bytes is
+  still inside the fast path's limit for that line. `parse/2` applies the same
+  test before it returns `:more`.
+  """
+  @spec partial_line?(:request_line | :header, non_neg_integer(), limits()) :: boolean()
+  def partial_line?(:request_line, length, {max_line, _, _}), do: length + @margin <= max_line
+  def partial_line?(:header, length, {_, max_header, _}), do: length + @margin <= max_header
+
   ## Request line
 
-  defp more_line(buf, {max_line, _, _}) when byte_size(buf) + @margin <= max_line, do: :more
-  defp more_line(_, _), do: :fallback
+  defp more_line(buf, limits) do
+    if partial_line?(:request_line, byte_size(buf), limits), do: :more, else: :fallback
+  end
 
   for m <- @methods do
     size = byte_size(m)
@@ -184,8 +194,8 @@ defmodule Bandit.HTTP1.HeadParser do
 
   ## Headers
 
-  defp more({buf, _, {_, max_header, _}}, line) do
-    if byte_size(buf) - line + @margin <= max_header, do: :more, else: :fallback
+  defp more({buf, _, limits}, line) do
+    if partial_line?(:header, byte_size(buf) - line, limits), do: :more, else: :fallback
   end
 
   for name <- @known_headers,

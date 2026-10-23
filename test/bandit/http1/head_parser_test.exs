@@ -216,6 +216,35 @@ defmodule HTTP1HeadParserTest do
     end
   end
 
+  test "requests sent one byte per read" do
+    reqs =
+      Map.values(HTTP1HeadCorpus.requests()) ++
+        [
+          "GET / HTTP/1.1\nhost: x\n\n",
+          "GET / HTTP/1.1\r\nhost: x\r\n\n",
+          "GET / HTTP/1.1\r\nhost: x\r\n folded\r\n\r\n",
+          "GET / HTTP/1.1\r\nhost: x\rfoo\r\n\r\n",
+          "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n",
+          "GET / HTTP/1.1\r\nhost: x\r\n\r\nGET / HTTP/1.1\r\n\r\n"
+        ]
+
+    for req <- reqs do
+      assert_same(for <<b <- req>>, do: <<b>>)
+    end
+  end
+
+  test "partial lines sent one byte per read, at and around the limits" do
+    for max <- 20..40, len <- 0..40 do
+      limits = {max, max, 50}
+      value = String.duplicate("v", len)
+      target = "/" <> String.duplicate("a", len)
+
+      for req <- ["GET / HTTP/1.1\r\nfoo: #{value}", "GET #{target}"] do
+        assert_same(for(<<b <- req>>, do: <<b>>), limits)
+      end
+    end
+  end
+
   test "randomly mutated corpus requests" do
     :rand.seed(:exsss, {1, 2, 3})
     reqs = Map.values(HTTP1HeadCorpus.requests())
