@@ -14,50 +14,69 @@ defmodule Bandit.WebSocket.Handshake do
     end
   end
 
-  @spec do_handshake(Plug.Conn.t(), keyword(), keyword()) :: {:ok, Plug.Conn.t(), keyword()}
+  @spec do_handshake(Plug.Conn.t(), keyword(), keyword()) ::
+          {:ok, Plug.Conn.t(), keyword()} | {:error, String.t()}
   defp do_handshake(conn, opts, websocket_opts) do
-    requested_extensions = requested_extensions(conn)
+    with {:ok, requested_extensions} <- requested_extensions(conn) do
+      {negotiated_params, returned_data} =
+        if Keyword.get(opts, :compress) && Keyword.get(websocket_opts, :compress, true) do
+          Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions, websocket_opts)
+        else
+          {nil, []}
+        end
 
-    {negotiated_params, returned_data} =
-      if Keyword.get(opts, :compress) && Keyword.get(websocket_opts, :compress, true) do
-        Bandit.WebSocket.PerMessageDeflate.negotiate(requested_extensions, websocket_opts)
-      else
-        {nil, []}
-      end
-
-    conn = send_handshake(conn, returned_data)
-    {:ok, conn, Keyword.put(opts, :compress, negotiated_params)}
+      conn = send_handshake(conn, returned_data)
+      {:ok, conn, Keyword.put(opts, :compress, negotiated_params)}
+    end
   end
 
-  @spec requested_extensions(Plug.Conn.t()) :: extensions()
+  # Parses the extension offers per RFC6455§9.1: a comma separated list of extensions, each a
+  # name followed by semicolon separated parameters which are either a bare name or name=value.
+  # A header that does not fit that grammar (an empty extension name, or a parameter with an
+  # empty name or value) is an error, which the caller answers with a 400 rather than a crash
+  @spec requested_extensions(Plug.Conn.t()) :: {:ok, extensions()} | {:error, String.t()}
   defp requested_extensions(%Plug.Conn{} = conn) do
     conn
     |> get_req_header("sec-websocket-extensions")
     |> Enum.flat_map(&Plug.Conn.Utils.list/1)
-    |> Enum.map(fn extension ->
-      [name | params] =
-        extension
-        |> String.split(";", trim: true)
-        |> Enum.map(&String.trim/1)
-
-      params = split_params(params)
-
-      {name, params}
-    end)
-  end
-
-  @spec split_params([String.t()]) :: [{String.t(), String.t() | true}]
-  defp split_params(params) do
-    params
-    |> Enum.map(fn param ->
-      param
-      |> String.split("=", trim: true)
-      |> Enum.map(&String.trim/1)
-      |> case do
-        [key, value] -> {key, value}
-        [key] -> {key, true}
+    |> Enum.reduce_while({:ok, []}, fn extension, {:ok, extensions} ->
+      case parse_extension(extension) do
+        {:ok, extension} -> {:cont, {:ok, [extension | extensions]}}
+        :error -> {:halt, {:error, "Invalid sec-websocket-extensions header (RFC6455§9.1)"}}
       end
     end)
+    |> case do
+      {:ok, extensions} -> {:ok, Enum.reverse(extensions)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  @spec parse_extension(String.t()) ::
+          {:ok, {String.t(), [{String.t(), String.t() | true}]}} | :error
+  defp parse_extension(extension) do
+    case extension |> String.split(";") |> Enum.map(&String.trim/1) |> Enum.reject(&(&1 == "")) do
+      [name | params] ->
+        with {:ok, params} <- parse_params(params), do: {:ok, {name, params}}
+
+      [] ->
+        :error
+    end
+  end
+
+  @spec parse_params([String.t()]) :: {:ok, [{String.t(), String.t() | true}]} | :error
+  defp parse_params(params) do
+    params
+    |> Enum.reduce_while({:ok, []}, fn param, {:ok, params} ->
+      case param |> String.split("=", parts: 2) |> Enum.map(&String.trim/1) do
+        [key] when key != "" -> {:cont, {:ok, [{key, true} | params]}}
+        [key, value] when key != "" and value != "" -> {:cont, {:ok, [{key, value} | params]}}
+        _ -> {:halt, :error}
+      end
+    end)
+    |> case do
+      {:ok, params} -> {:ok, Enum.reverse(params)}
+      :error -> :error
+    end
   end
 
   @spec send_handshake(Plug.Conn.t(), extensions()) :: Plug.Conn.t()

@@ -57,10 +57,12 @@ defmodule Bandit.WebSocket.PerMessageDeflate do
     end)
   end
 
+  # A value that is not entirely an integer is left as it is, so that validate_params/1 declines
+  # the offer rather than this crashing on it
   defp parse(value) do
     case Integer.parse(value) do
       {int_value, ""} -> int_value
-      :error -> value
+      _ -> value
     end
   end
 
