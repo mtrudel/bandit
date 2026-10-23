@@ -212,6 +212,54 @@ defmodule HTTP2PlugTest do
     assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
   end
 
+  test "reading a body of exactly the length option accepts a separate empty END_STREAM DATA frame",
+       context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_headers(socket, 1, false, [
+      {":method", "POST"},
+      {":path", "/exact_length_body_then_end_stream"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"},
+      {"content-length", "1"}
+    ])
+
+    SimpleH2Client.send_body(socket, 1, false, "A")
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+    SimpleH2Client.send_body(socket, 1, true, "")
+
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+  end
+
+  @tag :capture_log
+  test "reading a body of exactly the length option accepts a trailers END_STREAM frame",
+       context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_headers(socket, 1, false, [
+      {":method", "POST"},
+      {":path", "/exact_length_body_then_end_stream"},
+      {":scheme", "https"},
+      {":authority", "localhost:#{context.port}"},
+      {"content-length", "1"}
+    ])
+
+    SimpleH2Client.send_body(socket, 1, false, "A")
+    {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+    SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "value"}])
+
+    assert SimpleH2Client.successful_response?(socket, 1, false)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+  end
+
+  def exact_length_body_then_end_stream(conn) do
+    {:ok, "A", conn} = read_body(conn, length: 1)
+    conn |> send_resp(200, <<>>)
+  end
+
   def exact_length_body_read(conn) do
     # The body is not complete, but its first `length` bytes have arrived, so the read must
     # return right away instead of waiting out its read_timeout

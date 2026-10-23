@@ -320,7 +320,15 @@ defmodule Bandit.HTTP2.Stream do
           # Stop as soon as `length` bytes have been read, as HTTP/1 does, instead of waiting for
           # more data until the read times out. A stream whose remote end has closed has nothing
           # left to wait for, so it falls through to the clause below and reports `:ok`.
-          if max_bytes > 0 or (max_bytes == 0 and stream.state == :remote_closed) do
+          #
+          # A body that is exactly `length` bytes long may still be missing its END_STREAM (an
+          # empty DATA frame or a trailers HEADERS frame can carry it). If `content-length` tells
+          # us the body is complete (`bytes_remaining == 0`), we wait for that END_STREAM, since a
+          # compliant client sends it right away. Without a `content-length` we cannot know the
+          # body is complete without waiting, and waiting is the bug this guards against, so we
+          # return `:more` there, even if END_STREAM turns out to arrive in a separate frame.
+          if max_bytes > 0 or
+               (max_bytes == 0 and (stream.state == :remote_closed or stream.bytes_remaining == 0)) do
             do_read_data(stream, max_bytes, timeout, acc)
           else
             {:more, Enum.reverse(acc), stream}
