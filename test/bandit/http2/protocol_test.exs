@@ -1882,6 +1882,47 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "stream process lifecycle" do
+    setup do
+      Process.register(self(), __MODULE__)
+      :ok
+    end
+
+    def abnormal_exit_stream(conn) do
+      conn = send_chunked(conn, 200)
+      {:ok, conn} = chunk(conn, "hello\n")
+      send(__MODULE__, {:abnormal_stream_pid, self()})
+      Process.sleep(:infinity)
+      conn
+    end
+
+    defp assert_stream_reset_on_exit(context, exit_reason) do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/abnormal_exit_stream", context[:port])
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert {:ok, 1, false, "hello\n"} = SimpleH2Client.recv_body(socket)
+      assert_receive {:abnormal_stream_pid, plug_pid}, 1_000
+
+      Process.exit(plug_pid, exit_reason)
+
+      assert SimpleH2Client.recv_rst_stream(socket) ==
+               {:ok, 1, Bandit.HTTP2.Errors.internal_error()}
+
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :stream_process_lifecycle
+    test "a killed stream process sends RST_STREAM before it is removed", context do
+      assert_stream_reset_on_exit(context, :kill)
+    end
+
+    @tag :stream_process_lifecycle
+    test "a shut down stream process sends RST_STREAM before it is removed", context do
+      assert_stream_reset_on_exit(context, :shutdown)
+    end
+  end
+
   # GHSA-xj8g-532w-jv94: a stream blocked writing against the *connection* send window used to
   # sit in a `GenServer.call(connection_pid, ..., :infinity)` that neither RST_STREAM nor any
   # timeout could release, pinning the stream process (and any resources its Plug held) forever.
