@@ -279,6 +279,7 @@ defmodule Bandit.Adapter do
 
     socket =
       Bandit.HTTPTransport.send_headers(adapter.transport, status, headers, body_disposition)
+      |> maybe_close_for_connect(adapter.method, status)
 
     %{adapter | transport: socket}
   end
@@ -315,6 +316,13 @@ defmodule Bandit.Adapter do
       headers
     end
   end
+
+  # RFC9110§9.3.6 ends HTTP after a successful CONNECT. We do not implement tunneling.
+  defp maybe_close_for_connect(%Bandit.HTTP1.Socket{} = socket, "CONNECT", status)
+       when status in 200..299,
+       do: %{socket | keepalive: false}
+
+  defp maybe_close_for_connect(socket, _method, _status), do: socket
 
   defp send_resp_body?(%{method: "HEAD"}), do: false
   defp send_resp_body?(%{status: 204}), do: false

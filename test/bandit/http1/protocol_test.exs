@@ -601,6 +601,54 @@ defmodule HTTP1ProtocolTest do
       assert Jason.decode!(body)["path_info"] == []
     end
 
+    test "closes connection after a successful CONNECT response", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
+      assert {:ok, "200 OK", headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      refute Keyword.has_key?(headers, :connection)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: localhost"])
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+    end
+
+    test "does not serve pipelined requests after a successful CONNECT response", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(client, [
+        "CONNECT www.example.com:80 HTTP/1.1\r\nhost: localhost\r\n\r\n",
+        "GET /echo_method HTTP/1.1\r\nhost: localhost\r\n\r\n"
+      ])
+
+      response = recv_until_closed(client)
+      assert response =~ "HTTP/1.1 200 OK\r\n"
+      assert length(Regex.scan(~r/HTTP\/1\.1 200 OK\r\n/, response)) == 1
+    end
+
+    test "keeps connection alive after an unsuccessful CONNECT response", context do
+      context =
+        context
+        |> http_server(
+          plug: fn conn, _opts ->
+            status = if conn.method == "CONNECT", do: 405, else: 200
+            send_resp(conn, status, conn.method)
+          end
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "CONNECT", "www.example.com:80", ["host: localhost"])
+
+      assert {:ok, "405 Method Not Allowed", headers, "CONNECT"} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      refute Keyword.has_key?(headers, :connection)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: localhost"])
+      assert {:ok, "200 OK", _headers, "GET"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
     @tag :capture_log
     test "returns 400 for an authority containing userinfo", context do
       client = SimpleHTTP1Client.tcp_client(context)
