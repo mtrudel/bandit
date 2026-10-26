@@ -287,6 +287,7 @@ defmodule Bandit.HTTP1.Socket do
 
         {:ok, {:http_header, _, header, _, value}, rest} ->
           validate_line_ending!(line_ending, socket.buffer, rest)
+          value = trim_trailing_ows(value)
           validate_field_value!(value)
           socket = %{socket | buffer: rest}
           headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
@@ -332,6 +333,20 @@ defmodule Bandit.HTTP1.Socket do
       else
         request_error!("Trailer section line does not end in CRLF (RFC9112§7.1.2)")
       end
+    end
+
+    # RFC9110§5.5 - a field value does not include leading or trailing whitespace, and a parser MUST
+    # exclude such whitespace before evaluating the value (RFC9112§5.1 says the same of the OWS
+    # either side of a field line value). :erlang.decode_packet/3 drops the OWS before the value but
+    # keeps any OWS after it, so remove that here. Nearly every value ends in a non-whitespace
+    # byte, which makes this a single byte comparison; a value which does end in OWS is narrowed
+    # with sub-binaries, so nothing is copied in either case
+    defp trim_trailing_ows(value) do
+      size = byte_size(value)
+
+      if size > 0 and :binary.at(value, size - 1) in [?\s, ?\t],
+        do: trim_trailing_ows(binary_part(value, 0, size - 1)),
+        else: value
     end
 
     @spec validate_field_value!(binary()) :: :ok

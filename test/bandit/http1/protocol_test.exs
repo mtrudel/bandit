@@ -791,6 +791,41 @@ defmodule HTTP1ProtocolTest do
       assert status == "400 Bad Request"
     end
 
+    test "excludes optional whitespace around a field value (RFC9112§5.1, RFC9110§5.5)",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "GET /echo_header_values HTTP/1.1\r\nhost: localhost\r\n" <>
+          "x-spaces:   bar   \r\nx-tab: baz\t\r\nx-mixed: \t a  b \t \r\nx-empty:   \r\n\r\n"
+      )
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+
+      assert Jason.decode!(body) == %{
+               "x-spaces" => "bar",
+               "x-tab" => "baz",
+               "x-mixed" => "a  b",
+               "x-empty" => ""
+             }
+    end
+
+    def echo_header_values(conn) do
+      values = for {"x-" <> _ = name, value} <- conn.req_headers, into: %{}, do: {name, value}
+      send_resp(conn, 200, Jason.encode!(values))
+    end
+
+    test "accepts a host header value followed by optional whitespace (RFC9112§5.1)", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana:1234 \t"])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "banana"
+      assert Jason.decode!(body)["port"] == 1234
+    end
+
     @tag :capture_log
     test "does not silently accept obsolete line folding in a header value (RFC9112§5.2)",
          context do
