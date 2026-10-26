@@ -1,3 +1,41 @@
+## Unreleased
+
+### Changes
+
+* Advertise a default HTTP/2 `max_concurrent_streams` of 500 and a default `max_header_list_size`
+  of 262144 bytes in the initial SETTINGS frame. Before, both were unlimited. The entries of a
+  SETTINGS frame are now sorted
+* Refill the HTTP/2 connection receive window to 16 MiB as data arrives. Refill a stream receive
+  window to 1 MiB only after the stream reads data. Before, the server granted 2^31-1 bytes on the
+  first DATA frame
+* Join HTTP/2 DATA frames into larger messages when a stream is slow to read. As a result,
+  `read_body` can return more than `:length` bytes, up to the stream receive window
+* Reset an HTTP/2 stream with ENHANCE_YOUR_CALM when it has 100 unread messages, and close the
+  connection with ENHANCE_YOUR_CALM when a client sends more than 100 non-ACK SETTINGS frames in
+  10 seconds
+* Reset an HTTP/2 stream with STREAM_CLOSED when the client sends DATA or HEADERS after
+  END_STREAM
+* Send PROTOCOL_ERROR for DATA, WINDOW_UPDATE and RST_STREAM on an idle HTTP/2 stream, and report
+  the last stream that the server started in the GOAWAY frame
+
+### Fixes
+
+* Enforce the HTTP/2 connection and stream receive windows, and count padding against them, so
+  that a client cannot queue DATA without bound in a stream (CVE-2026-108525, thanks
+  @PJUllrich!, GHSA-pxfw-2r8w-g3jv, thanks @manus-pi!)
+* Limit concurrent HTTP/2 streams by default (GHSA-fmr8-qrvr-4ww5, thanks @neilberkman!)
+* Bound an HTTP/2 body read with one deadline, which frames that carry no data do not restart
+  (CVE-2026-115269, thanks @manus-pi!)
+* Do not send work to every HTTP/2 stream on SETTINGS frames that do not change the initial window
+  size, and keep pending sends in a queue (CVE-2026-108529, thanks @PJUllrich!)
+* Limit the decoded HTTP/2 header list size by default (CVE-2026-109584, thanks @PJUllrich!,
+  GHSA-ggpf-wvx5-f4h8, thanks @neilberkman!)
+* Cap the HTTP/2 HPACK encoder table at 4096 bytes, whatever size the client requests
+  (CVE-2026-110499, thanks @PJUllrich!)
+* Keep the HTTP/2 connection state and HPACK decoder state when a stream error occurs in the
+  middle of a read, so that per-connection limits still apply (CVE-2026-111103, thanks
+  @PJUllrich!, GHSA-q48c-59mm-jx3c, thanks @neilberkman!)
+
 ## 1.13.1 (15 Oct 2026)
 
 ### Reverts

@@ -20,7 +20,9 @@ defmodule HTTP2ProtocolTest do
       end)
       |> Enum.each(fn byte -> Transport.send(socket, byte) end)
 
-      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<0, 3, 0, 0, 1, 244, 0, 6, 0, 4, 0, 0>>} ==
+               SimpleH2Client.recv_frame(socket)
+
       assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
       assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
@@ -35,7 +37,9 @@ defmodule HTTP2ProtocolTest do
           <<0, 0, 0, 4, 0, 0, 0, 0, 0>> <> <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>
       )
 
-      assert {:ok, :settings, 0, 0, <<>>} == SimpleH2Client.recv_frame(socket)
+      assert {:ok, :settings, 0, 0, <<0, 3, 0, 0, 1, 244, 0, 6, 0, 4, 0, 0>>} ==
+               SimpleH2Client.recv_frame(socket)
+
       assert {:ok, :settings, 1, 0, <<>>} == SimpleH2Client.recv_frame(socket)
       assert {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>} == SimpleH2Client.recv_frame(socket)
     end
@@ -117,7 +121,7 @@ defmodule HTTP2ProtocolTest do
       # Send a WINDOW_UPDATE on an idle stream
       SimpleH2Client.send_window_update(socket, 1, 1234)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
 
@@ -281,7 +285,9 @@ defmodule HTTP2ProtocolTest do
     test "the server should send a SETTINGS frame at start of the connection", context do
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<>>}
+
+      assert SimpleH2Client.recv_frame(socket) ==
+               {:ok, :settings, 0, 0, <<0, 3, 0, 0, 1, 244, 0, 6, 0, 4, 0, 0>>}
     end
 
     test "the server advertises overridden default_local_settings in its initial SETTINGS frame",
@@ -293,7 +299,9 @@ defmodule HTTP2ProtocolTest do
 
       socket = SimpleH2Client.tls_client(context)
       Transport.send(socket, "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n")
-      assert SimpleH2Client.recv_frame(socket) == {:ok, :settings, 0, 0, <<6::16, 1000::32>>}
+
+      assert SimpleH2Client.recv_frame(socket) ==
+               {:ok, :settings, 0, 0, <<3::16, 500::32, 6::16, 1000::32>>}
     end
 
     test "the server respects SETTINGS_MAX_FRAME_SIZE as sent by the client", context do
@@ -1658,9 +1666,8 @@ defmodule HTTP2ProtocolTest do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_body(socket, 1, true, "OK")
-      {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received DATA in idle state"
@@ -3355,7 +3362,7 @@ defmodule HTTP2ProtocolTest do
 
       SimpleH2Client.send_rst_stream(socket, 1, 0)
 
-      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 1}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
 
       assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
       assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received RST_STREAM in idle state"
@@ -3545,13 +3552,14 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "WINDOW_UPDATE frames (upload direction)" do
-    test "issues a large receive window update on first uploaded DATA frame", context do
+    test "tops the connection receive window up to its target on first uploaded DATA frame",
+         context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
+      expected_adjustment = 16_777_216 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
@@ -3565,7 +3573,7 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 1, true, "OK")
 
-      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
+      expected_adjustment = 16_777_216 - 65_535 + 2
 
       {:ok, 0, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
@@ -3576,9 +3584,8 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 3, false, "OK")
       SimpleH2Client.send_body(socket, 3, true, "")
 
-      expected_adjustment = (1 <<< 31) - 1 - 65_535 + 2
-
-      # We should only see a stream update here
+      # We should only see a stream update here, which tops the stream window up to its target
+      expected_adjustment = 1_048_576 - 65_535 + 2
       {:ok, 3, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
       assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
@@ -3588,9 +3595,7 @@ defmodule HTTP2ProtocolTest do
     test "seeds the stream receive window from a configured initial_window_size", context do
       context =
         context
-        |> https_server(
-          http_2_options: [default_local_settings: [initial_window_size: 1_000_000]]
-        )
+        |> https_server(http_2_options: [default_local_settings: [initial_window_size: 100_000]])
         |> Enum.into(context)
 
       socket = SimpleH2Client.setup_connection(context)
@@ -3605,75 +3610,120 @@ defmodule HTTP2ProtocolTest do
       assert {:ok, 1, false, [{":status", "200"} | _], ctx} = SimpleH2Client.recv_headers(socket)
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
 
-      # With the connection window already refreshed well above the 2^30 update threshold, send
+      # With the connection window already refreshed well above its update threshold, send
       # a second stream's body as a non-final DATA frame (so its own window update, which is
       # skipped when a DATA frame ends the stream, is actually emitted) followed by an empty
       # end_stream frame. This isolates a stream-level update. With the fix, it is seeded from
-      # the advertised initial_window_size (1_000_000) rather than the hardcoded default of
+      # the advertised initial_window_size (100_000) rather than the hardcoded default of
       # 65_535, so the client's send window (which started at the advertised value) lands at
-      # exactly 2^31-1 rather than being pushed past it.
+      # exactly the stream's target rather than being pushed past it.
       SimpleH2Client.send_simple_headers(socket, 3, :post, "/echo", context.port)
       SimpleH2Client.send_body(socket, 3, false, "OK")
       SimpleH2Client.send_body(socket, 3, true, "")
 
-      expected_adjustment = (1 <<< 31) - 1 - 1_000_000 + 2
+      expected_adjustment = 1_048_576 - 100_000 + 2
       {:ok, 3, ^expected_adjustment} = SimpleH2Client.recv_window_update(socket)
 
       assert SimpleH2Client.successful_response?(socket, 3, false, ctx)
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
-    @tag :slow
-    test "does not issue a subsequent update until receive window goes below 2^30", context do
+    test "does not issue a subsequent connection update until receive window falls to half its target",
+         context do
       socket = SimpleH2Client.setup_connection(context)
 
       SimpleH2Client.send_simple_headers(socket, 1, :post, "/large_post", context.port)
 
       window = 65_535
+      Process.put(:stream_credit, 65_535)
 
       # Send a single byte to get the window moved up and ensure we see a window update
-      SimpleH2Client.send_body(socket, 1, false, "a")
+      upload(socket, false, "a")
       window = window - 1
 
-      {:ok, 0, adjustment} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, ^adjustment} = SimpleH2Client.recv_window_update(socket)
+      {:ok, 0, adjustment} = recv_connection_window_update(socket)
 
       window = window + adjustment
-      assert window == (1 <<< 31) - 1
+      assert window == 16_777_216
 
-      # Send 2^16 - 1 chunks of 2^14 bytes to end up just shy of expecting a
-      # window update (we expect one when our window goes below 2^30).
-      iters = (1 <<< 16) - 1
+      # Send 511 chunks of 2^14 bytes to end up just shy of expecting a window update (we expect
+      # one when our window falls to 2^23)
+      iters = 511
       # Our duplicated string is 2^3 bytes long, so dupe is 2^11 times to get 2^14 bytes
       chunk = String.duplicate("01234567", 1 <<< 11)
 
       for _n <- 1..iters do
-        SimpleH2Client.send_body(socket, 1, false, chunk)
+        upload(socket, false, chunk)
       end
 
       # Adjust our window down for the frames we just sent
       window = window - iters * IO.iodata_length(chunk)
 
-      assert window >= 1 <<< 30
+      assert window > 1 <<< 23
 
-      # Ensure we have not received a window update by pinging
-      assert SimpleH2Client.connection_alive?(socket)
+      # Ensure we have not received a connection window update by pinging
+      Transport.send(socket, <<0, 0, 8, 6, 0, 0, 0, 0, 0, 1, 2, 3, 4, 5, 6, 7, 8>>)
+      assert recv_connection_window_update(socket) == :ping_ack
 
       # Now send one more chunk and update our window size
-      SimpleH2Client.send_body(socket, 1, true, chunk)
+      upload(socket, true, chunk)
       window = window - IO.iodata_length(chunk)
 
-      # We should now be below 2^30 and so we expect an update
-      assert window < 1 <<< 30
-      {:ok, 0, adjustment} = SimpleH2Client.recv_window_update(socket)
-      {:ok, 1, ^adjustment} = SimpleH2Client.recv_window_update(socket)
+      # We should now be at or below 2^23 and so we expect an update
+      assert window <= 1 <<< 23
+      {:ok, 0, adjustment} = recv_connection_window_update(socket)
       window = window + adjustment
-      assert window == (1 <<< 31) - 1
+      assert window == 16_777_216
 
-      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert {:ok, 1, true, body} = recv_body_skipping_window_updates(socket)
+      assert body == "#{1 + (iters + 1) * IO.iodata_length(chunk)}"
+    end
 
-      assert SimpleH2Client.recv_body(socket) ==
-               {:ok, 1, true, "#{1 + (iters + 1) * IO.iodata_length(chunk)}"}
+    # Sends a DATA frame on stream 1, first waiting for stream window if the server has not yet
+    # granted enough of it. The stream window is replenished by the server as the stream consumes
+    # data; we track it in the process dictionary as stream-level WINDOW_UPDATEs go by
+    defp upload(socket, end_stream, data) do
+      size = byte_size(data)
+
+      if Process.get(:stream_credit) < size do
+        case SimpleH2Client.recv_frame(socket) do
+          {:ok, :window_update, _flags, 1, <<0::1, update::31>>} ->
+            Process.put(:stream_credit, Process.get(:stream_credit) + update)
+            upload(socket, end_stream, data)
+
+          other ->
+            flunk("Unexpected frame while waiting for stream window: #{inspect(other)}")
+        end
+      else
+        Process.put(:stream_credit, Process.get(:stream_credit) - size)
+        SimpleH2Client.send_body(socket, 1, end_stream, data)
+      end
+    end
+
+    # Returns the next connection-level WINDOW_UPDATE, or :ping_ack if a PING ack arrives first.
+    # Stream-level WINDOW_UPDATEs (which are tallied) and response frames are skipped
+    defp recv_connection_window_update(socket) do
+      case SimpleH2Client.recv_frame(socket) do
+        {:ok, :window_update, _flags, 0, <<0::1, update::31>>} ->
+          {:ok, 0, update}
+
+        {:ok, :window_update, _flags, 1, <<0::1, update::31>>} ->
+          Process.put(:stream_credit, Process.get(:stream_credit) + update)
+          recv_connection_window_update(socket)
+
+        {:ok, :ping, _flags, 0, _body} ->
+          :ping_ack
+
+        {:ok, _type, _flags, _stream_id, _body} ->
+          recv_connection_window_update(socket)
+      end
+    end
+
+    defp recv_body_skipping_window_updates(socket) do
+      case SimpleH2Client.recv_frame(socket) do
+        {:ok, :data, flags, stream_id, body} -> {:ok, stream_id, (flags &&& 0x01) == 0x01, body}
+        {:ok, _type, _flags, _stream_id, _body} -> recv_body_skipping_window_updates(socket)
+      end
     end
 
     def large_post(conn) do
@@ -3700,11 +3750,13 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("b", 16_384))
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("c", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_384))
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("e", 100))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_383))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      # We must wait for the server to return stream window before sending the rest
+      SimpleH2Client.send_body(socket, 1, true, "d" <> String.duplicate("e", 100))
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 65_535 bytes as that is our initial connection window
@@ -3734,11 +3786,13 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("a", 16_384))
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("b", 16_384))
       SimpleH2Client.send_body(socket, 1, false, String.duplicate("c", 16_384))
-      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_384))
-      SimpleH2Client.send_body(socket, 1, true, String.duplicate("e", 100))
+      SimpleH2Client.send_body(socket, 1, false, String.duplicate("d", 16_383))
 
       assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
       assert {:ok, 1, _} = SimpleH2Client.recv_window_update(socket)
+
+      # We must wait for the server to return stream window before sending the rest
+      SimpleH2Client.send_body(socket, 1, true, "d" <> String.duplicate("e", 100))
       assert SimpleH2Client.successful_response?(socket, 1, false)
 
       # Expect 65_535 bytes as that is our initial stream window
@@ -4557,6 +4611,481 @@ defmodule HTTP2ProtocolTest do
       SimpleH2Client.exchange_prefaces(socket)
       SimpleH2Client.exchange_client_settings(socket)
       socket
+    end
+  end
+
+  # GHSA-c3g7-2pg5-qvwh and related HTTP/2 hardening
+  describe "HTTP/2 limits hardening" do
+    setup do
+      Process.register(self(), __MODULE__)
+      :ok
+    end
+
+    def hold_open(conn) do
+      receive do
+        :never -> :ok
+      after
+        5_000 -> :ok
+      end
+
+      send_resp(conn, 200, "OK")
+    end
+
+    def hold_reading(conn) do
+      {:ok, _body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, "OK")
+    end
+
+    def timed_read(conn) do
+      started = System.monotonic_time(:millisecond)
+      result = Plug.Conn.read_body(conn, read_timeout: 500)
+      elapsed = System.monotonic_time(:millisecond) - started
+      send(__MODULE__, {:read_done, elapsed, elem(result, 0)})
+      send_resp(conn, 200, "OK")
+    end
+
+    def small_response(conn), do: send_resp(conn, 200, "OK")
+
+    defp request_headers(path, port),
+      do: [
+        {":method", "GET"},
+        {":path", path},
+        {":scheme", "https"},
+        {":authority", "localhost:#{port}"}
+      ]
+
+    defp recv_until(socket, type) do
+      case SimpleH2Client.recv_frame(socket) do
+        {:ok, ^type, _flags, _stream_id, _body} = frame -> frame
+        {:ok, _other, _flags, _stream_id, _body} -> recv_until(socket, type)
+      end
+    end
+
+    @tag :capture_log
+    test "resets a stream which sends DATA beyond its receive window (GHSA-c3g7-2pg5-qvwh)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+
+      # The plug never reads the body, so no window is ever returned to the client. The initial
+      # stream window is 65_535 bytes, so the fifth 16_384 byte frame overruns it
+      chunk = String.duplicate("a", 16_384)
+      Enum.each(1..5, fn _ -> SimpleH2Client.send_body(socket, 1, false, chunk) end)
+
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.flow_control_error()
+
+      # The connection itself remains usable
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/small_response", context[:port])
+      assert {:ok, :headers, _, 3, _} = recv_until(socket, :headers)
+    end
+
+    test "bounds the size of a decoded header list by default (GHSA-7gfj-7gvq-3xqj)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      cookie = String.duplicate("a", 4_000)
+      ctx = HPAX.new(4096)
+
+      {first, ctx} =
+        (request_headers("/small_response", context[:port]) ++ [{"cookie", cookie}])
+        |> Enum.map(fn {k, v} -> {:store, k, v} end)
+        |> HPAX.encode(ctx)
+
+      # Every further reference to the same table entry is a single byte on the wire, but
+      # contributes the entire value to the decoded header list
+      refs =
+        Enum.map_reduce(1..80, ctx, fn _, ctx ->
+          HPAX.encode([{:store, "cookie", cookie}], ctx)
+        end)
+        |> elem(0)
+
+      block = IO.iodata_to_binary([first | refs])
+      SimpleH2Client.send_frame(socket, 1, 0x05, 1, block)
+
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.enhance_your_calm()
+    end
+
+    test "caps the response header table regardless of the client's setting (GHSA-47x4-3fxf-82fr)",
+         context do
+      socket = SimpleH2Client.tls_client(context)
+      SimpleH2Client.exchange_prefaces(socket)
+      # SETTINGS_HEADER_TABLE_SIZE = 1_000_000
+      SimpleH2Client.exchange_client_settings(socket, <<1::16, 1_000_000::32>>)
+
+      block_size = fn stream_id, path ->
+        SimpleH2Client.send_headers(
+          socket,
+          stream_id,
+          true,
+          request_headers(path, context[:port])
+        )
+
+        {:ok, :headers, _flags, ^stream_id, block} = recv_until(socket, :headers)
+        byte_size(block)
+      end
+
+      first = block_size.(1, "/header_a")
+      # A header larger than the capped table empties it; a table sized to the client's setting
+      # would have kept the header from the first response
+      _ = block_size.(3, "/header_big")
+      third = block_size.(5, "/header_a")
+
+      assert first > 100
+      assert third > 100
+    end
+
+    def header_a(conn),
+      do: conn |> put_resp_header("x-a", String.duplicate("a", 150)) |> send_resp(200, "")
+
+    def header_big(conn),
+      do: conn |> put_resp_header("x-big", String.duplicate("b", 5_000)) |> send_resp(200, "")
+
+    @tag :capture_log
+    test "a refused stream does not corrupt the HPACK state (GHSA-2238-pgfc-w82m)", context do
+      context =
+        https_server(context,
+          thousand_island_options: [read_timeout: 2_000],
+          http_2_options: [default_local_settings: [max_concurrent_streams: 1]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      ctx = HPAX.new(4096)
+
+      encode = fn headers, ctx ->
+        headers |> Enum.map(fn {k, v} -> {:store, k, v} end) |> HPAX.encode(ctx)
+      end
+
+      # Stream 1 stays open, waiting on a request body which never arrives, until it is reset
+      headers1 =
+        List.keyreplace(
+          request_headers("/hold_reading", context[:port]),
+          ":method",
+          0,
+          {":method", "POST"}
+        )
+
+      {block1, ctx} = encode.(headers1, ctx)
+      SimpleH2Client.send_frame(socket, 1, 0x04, 1, IO.iodata_to_binary(block1))
+
+      # Refused for exceeding max_concurrent_streams, but it still adds "x-custom" to the table
+      headers = request_headers("/small_response", context[:port]) ++ [{"x-custom", "value"}]
+      {block3, ctx} = encode.(headers, ctx)
+      SimpleH2Client.send_frame(socket, 1, 0x05, 3, IO.iodata_to_binary(block3))
+
+      assert {:ok, :rst_stream, 0, 3, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.refused_stream()
+
+      SimpleH2Client.send_rst_stream(socket, 1, Bandit.HTTP2.Errors.cancel())
+      Process.sleep(100)
+
+      # Encoded against the table as the client sees it, so it refers to entries from stream 3
+      {block5, _ctx} = encode.(headers, ctx)
+      SimpleH2Client.send_frame(socket, 1, 0x05, 5, IO.iodata_to_binary(block5))
+
+      assert {:ok, :headers, _, 5, _} = recv_until(socket, :headers)
+    end
+
+    test "a read timeout is not extended by frames which deliver no data (p2qv)", context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/timed_read", context[:port])
+
+      Enum.each(1..12, fn _ ->
+        SimpleH2Client.send_window_update(socket, 1, 1)
+        Process.sleep(100)
+      end)
+
+      assert_receive {:read_done, elapsed, :more}, 2_000
+      assert elapsed < 1_000
+    end
+
+    def count_body(conn), do: count_body(conn, 0)
+
+    defp count_body(conn, count) do
+      case Plug.Conn.read_body(conn) do
+        {:ok, body, conn} -> send_resp(conn, 200, Integer.to_string(count + byte_size(body)))
+        {:more, body, conn} -> count_body(conn, count + byte_size(body))
+      end
+    end
+
+    # Sends `count` copies of a padded DATA frame, waiting for WINDOW_UPDATEs as the client's view
+    # of the windows requires
+    defp padded_upload(_socket, _frame, 0, _windows), do: :ok
+
+    defp padded_upload(socket, frame, count, {connection_window, stream_window}) do
+      size = IO.iodata_length(frame)
+
+      if connection_window >= size and stream_window >= size do
+        SimpleH2Client.send_frame(socket, 0, 0x08, 1, frame)
+        padded_upload(socket, frame, count - 1, {connection_window - size, stream_window - size})
+      else
+        recv_padded_upload_window(socket, frame, count, {connection_window, stream_window})
+      end
+    end
+
+    defp recv_padded_upload_window(socket, frame, count, {connection_window, stream_window}) do
+      case SimpleH2Client.recv_window_update(socket) do
+        {:ok, 0, increment} ->
+          padded_upload(socket, frame, count, {connection_window + increment, stream_window})
+
+        {:ok, 1, increment} ->
+          padded_upload(socket, frame, count, {connection_window, stream_window + increment})
+      end
+    end
+
+    test "gives padding back to the client, so that padded uploads do not stall", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/count_body", context[:port])
+
+      # 1 byte of data, plus the Pad Length byte and 255 bytes of padding. In all, 2MiB of window
+      frame = [<<255>>, "a", :binary.copy(<<0>>, 255)]
+      padded_upload(socket, frame, 8_192, {65_535, 65_535})
+      SimpleH2Client.send_body(socket, 1, true, "")
+
+      assert {:ok, :headers, _, 1, _} = recv_until(socket, :headers)
+      assert {:ok, :data, _, 1, "8192"} = recv_until(socket, :data)
+    end
+
+    @tag :capture_log
+    test "counts padding against the stream receive window (GHSA-c3g7-2pg5-qvwh)", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+
+      # Each frame carries no data, but costs 256 bytes of window. The 256th one overruns the
+      # initial stream window of 65_535 bytes
+      frame = [<<255>>, :binary.copy(<<0>>, 255)]
+      Enum.each(1..256, fn _ -> SimpleH2Client.send_frame(socket, 0, 0x08, 1, frame) end)
+
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.flow_control_error()
+    end
+
+    test "does not queue empty DATA frames to a stream (GHSA-c3g7-2pg5-qvwh)", context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+
+      Enum.each(1..5_000, fn _ -> SimpleH2Client.send_body(socket, 1, false, "") end)
+
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1::64>>)
+      assert {:ok, :ping, 1, 0, <<1::64>>} = recv_until(socket, :ping)
+    end
+
+    def wait_then_count_body(conn) do
+      send(__MODULE__, {:plug_pid, self()})
+
+      receive do
+        :go -> :ok
+      end
+
+      {:message_queue_len, queued} = Process.info(self(), :message_queue_len)
+      send(__MODULE__, {:queued, queued})
+      count_body(conn)
+    end
+
+    test "buffers tiny DATA frames for a stream which does not read (GHSA-c3g7-2pg5-qvwh)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(
+        socket,
+        1,
+        :post,
+        "/wait_then_count_body",
+        context[:port]
+      )
+
+      assert_receive {:plug_pid, plug_pid}, 1_000
+
+      # Well within the stream window, but each frame would be a message to the stream
+      Enum.each(1..1_500, fn _ -> SimpleH2Client.send_body(socket, 1, false, "a") end)
+      SimpleH2Client.send_body(socket, 1, true, "")
+
+      # Once the PING is answered, the connection has handled every frame above
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1::64>>)
+      assert {:ok, :ping, 1, 0, <<1::64>>} = recv_until(socket, :ping)
+
+      send(plug_pid, :go)
+      assert_receive {:queued, queued}, 1_000
+      assert queued <= 20
+
+      # The buffered DATA still reaches the plug, in full and in order
+      assert {:ok, :headers, _, 1, _} = recv_until(socket, :headers)
+      assert {:ok, :data, _, 1, "1500"} = recv_until(socket, :data)
+    end
+
+    @tag :capture_log
+    test "bounds the WINDOW_UPDATEs queued to a stream which does not read (GHSA-j363-h72p-296m)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+
+      Enum.each(1..1_500, fn _ -> SimpleH2Client.send_window_update(socket, 1, 1) end)
+
+      # Only the stream is reset; the connection and its other streams carry on
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.enhance_your_calm()
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/small_response", context[:port])
+      assert {:ok, :headers, _, 3, _} = recv_until(socket, :headers)
+    end
+
+    @tag :capture_log
+    test "limits the rate of SETTINGS frames (GHSA-j363-h72p-296m)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      Enum.each(1..101, fn n ->
+        # Alternate the initial window size, so that each frame changes it
+        SimpleH2Client.send_frame(socket, 4, 0, 0, <<4::16, 65_535 + rem(n, 2)::32>>)
+      end)
+
+      assert {:ok, :goaway, 0, 0, <<_last_stream_id::32, code::32>>} =
+               recv_until(socket, :goaway)
+
+      assert code == Bandit.HTTP2.Errors.enhance_your_calm()
+    end
+
+    @tag :capture_log
+    test "GOAWAY reports streams started earlier in the same read (GHSA-2238-pgfc-w82m)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+      frames = headers_frames([1, 3, 5], "/small_response", context[:port])
+
+      # An unexpected CONTINUATION frame is a connection error
+      Transport.send(socket, [frames, <<0::24, 9, 0x04, 0::1, 7::31>>])
+
+      assert {:ok, :goaway, 0, 0, <<last_stream_id::32, code::32>>} =
+               recv_until(socket, :goaway)
+
+      assert last_stream_id == 5
+      assert code == Bandit.HTTP2.Errors.protocol_error()
+    end
+
+    @tag :capture_log
+    test "rejects DATA on an idle stream as a connection error at the stream limit", context do
+      context =
+        https_server(context,
+          thousand_island_options: [read_timeout: 2_000],
+          http_2_options: [default_local_settings: [max_concurrent_streams: 1]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_reading", context[:port])
+      SimpleH2Client.send_body(socket, 3, false, "a")
+
+      assert {:ok, :goaway, 0, 0, <<last_stream_id::32, code::32>>} =
+               recv_until(socket, :goaway)
+
+      assert last_stream_id == 1
+      assert code == Bandit.HTTP2.Errors.protocol_error()
+    end
+
+    @tag :capture_log
+    test "a refused stream cannot be opened again later", context do
+      context =
+        https_server(context,
+          thousand_island_options: [read_timeout: 2_000],
+          http_2_options: [default_local_settings: [max_concurrent_streams: 1]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_reading", context[:port])
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/small_response", context[:port])
+
+      assert {:ok, :rst_stream, 0, 3, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.refused_stream()
+
+      SimpleH2Client.send_rst_stream(socket, 1, Bandit.HTTP2.Errors.cancel())
+      Process.sleep(100)
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/small_response", context[:port])
+      SimpleH2Client.send_simple_headers(socket, 5, :get, "/small_response", context[:port])
+
+      assert {:ok, :headers, _, 5, _} = recv_until(socket, :headers)
+    end
+
+    defp headers_frames(stream_ids, path, port) do
+      {frames, _ctx} =
+        Enum.map_reduce(stream_ids, HPAX.new(4096), fn stream_id, ctx ->
+          {block, ctx} =
+            request_headers(path, port)
+            |> Enum.map(fn {k, v} -> {:store, k, v} end)
+            |> HPAX.encode(ctx)
+
+          block = IO.iodata_to_binary(block)
+          {[<<byte_size(block)::24, 1, 0x05, 0::1, stream_id::31>>, block], ctx}
+        end)
+
+      frames
+    end
+
+    test "a refused stream in the same read keeps earlier streams counted (GHSA-q48c-59mm-jx3c)",
+         context do
+      context =
+        https_server(context,
+          thousand_island_options: [read_timeout: 2_000],
+          http_2_options: [default_local_settings: [max_concurrent_streams: 2]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      Transport.send(socket, headers_frames([1, 3, 5], "/hold_open", context[:port]))
+
+      assert {:ok, :rst_stream, 0, 5, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.refused_stream()
+
+      # Streams 1 and 3 are still open, so the limit still applies
+      SimpleH2Client.send_simple_headers(socket, 7, :get, "/small_response", context[:port])
+
+      assert {:ok, :rst_stream, 0, 7, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.refused_stream()
+    end
+
+    test "limits concurrent streams by default (GHSA-fmr8-qrvr-4ww5)", context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      stream_ids = Enum.map(0..500, &(2 * &1 + 1))
+      Transport.send(socket, headers_frames(stream_ids, "/hold_open", context[:port]))
+
+      assert {:ok, :rst_stream, 0, 1001, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.refused_stream()
+    end
+
+    test "does not advertise a connection receive window beyond its target (GHSA-pxfw-2r8w-g3jv)",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_reading", context[:port])
+      SimpleH2Client.send_body(socket, 1, true, "a")
+
+      assert {:ok, 0, increment} = SimpleH2Client.recv_window_update(socket)
+      assert 65_535 - 1 + increment == 16_777_216
+    end
+
+    @tag :capture_log
+    test "resets a stream which sends DATA after END_STREAM", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+      SimpleH2Client.send_body(socket, 1, true, "a")
+      SimpleH2Client.send_body(socket, 1, false, "b")
+
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.stream_closed()
+    end
+
+    @tag :capture_log
+    test "resets a stream which sends HEADERS after END_STREAM", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :post, "/hold_open", context[:port])
+      SimpleH2Client.send_body(socket, 1, true, "a")
+      SimpleH2Client.send_headers(socket, 1, true, [{"x-trailer", "a"}])
+
+      assert {:ok, :rst_stream, 0, 1, <<code::32>>} = recv_until(socket, :rst_stream)
+      assert code == Bandit.HTTP2.Errors.stream_closed()
     end
   end
 end

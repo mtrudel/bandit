@@ -29,23 +29,52 @@ defmodule Bandit.HTTP2.Handler do
     |> Stream.unfold(
       &Bandit.HTTP2.Frame.deserialize(&1, state.connection.local_settings.max_frame_size)
     )
-    |> Enum.reduce_while(state, fn
-      {:ok, frame}, state ->
-        connection = Bandit.HTTP2.Connection.handle_frame(frame, socket, state.connection)
-        {:cont, %{state | connection: connection, buffer: <<>>}}
+    |> Enum.reduce_while({:ok, state}, fn
+      {:ok, frame}, {:ok, state} ->
+        case handle_frame(frame, socket, state.connection) do
+          {:ok, connection} -> {:cont, {:ok, %{state | connection: connection, buffer: <<>>}}}
+          {:error, error, stacktrace} -> {:halt, {:error, error, stacktrace, state}}
+        end
 
-      {:more, rest}, state ->
-        {:halt, %{state | buffer: rest}}
+      {:more, rest}, {:ok, state} ->
+        {:halt, {:ok, %{state | buffer: rest}}}
 
-      {:error, error_code, message}, _state ->
+      {:error, error_code, message}, {:ok, state} ->
         # We encountered an error while deserializing the frame. Let the connection figure out
         # how to respond to it
-        raise Bandit.HTTP2.Errors.ConnectionError, message: message, error_code: error_code
+        error = %Bandit.HTTP2.Errors.ConnectionError{message: message, error_code: error_code}
+        {:halt, {:error, error, [], state}}
     end)
-    |> then(&{:continue, &1})
+    |> case do
+      {:ok, state} ->
+        {:continue, state}
+
+      {:error, error, stacktrace, state} ->
+        rescue_connection_error(error, stacktrace, socket, state)
+    end
   rescue
-    error in Bandit.HTTP2.Errors.StreamError -> rescue_stream_error(error, socket, state)
     error -> rescue_connection_error(error, __STACKTRACE__, socket, state)
+  end
+
+  # Errors are rescued per frame, so that the connection state produced by the frames already
+  # handled is kept rather than reverted to what it was before this data arrived. A stream error
+  # only affects its own stream. Any other error closes the connection, and the GOAWAY we send
+  # must then report the streams which those earlier frames started (RFC9113§6.8)
+  defp handle_frame(frame, socket, connection) do
+    {:ok, Bandit.HTTP2.Connection.handle_frame(frame, socket, connection)}
+  rescue
+    error in Bandit.HTTP2.Errors.StreamError ->
+      Bandit.HTTP2.Connection.send_rst_stream(
+        error.stream_id,
+        error.error_code,
+        socket,
+        connection
+      )
+
+      {:ok, connection}
+
+    error ->
+      {:error, error, __STACKTRACE__}
   end
 
   @impl ThousandIsland.Handler
@@ -78,6 +107,15 @@ defmodule Bandit.HTTP2.Handler do
 
   def handle_call({:ssl_data, _stream_id}, _from, {socket, state}) do
     {:reply, Bandit.SocketHelpers.ssl_data(socket), {socket, state}}
+  end
+
+  def handle_call({{:messages_consumed, count}, stream_id}, _from, {socket, state}) do
+    connection =
+      Bandit.HTTP2.Connection.stream_messages_consumed(stream_id, count, socket, state.connection)
+
+    {:reply, :ok, {socket, %{state | connection: connection}}}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
 
   def handle_call({{:send_data, headers, data, end_stream}, stream_id}, from, {socket, state}) do
@@ -128,14 +166,24 @@ defmodule Bandit.HTTP2.Handler do
   end
 
   def handle_info({{:send_recv_window_update, size_increment}, stream_id}, {socket, state}) do
-    Bandit.HTTP2.Connection.send_recv_window_update(
-      stream_id,
-      size_increment,
-      socket,
-      state.connection
-    )
+    connection =
+      Bandit.HTTP2.Connection.send_recv_window_update(
+        stream_id,
+        size_increment,
+        socket,
+        state.connection
+      )
 
-    {:noreply, {socket, state}}
+    {:noreply, {socket, %{state | connection: connection}}}
+  rescue
+    error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
+  end
+
+  def handle_info({{:messages_consumed, count}, stream_id}, {socket, state}) do
+    connection =
+      Bandit.HTTP2.Connection.stream_messages_consumed(stream_id, count, socket, state.connection)
+
+    {:noreply, {socket, %{state | connection: connection}}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
   end
@@ -157,17 +205,6 @@ defmodule Bandit.HTTP2.Handler do
     {:noreply, {socket, %{state | connection: connection}}}
   rescue
     error -> rescue_error_handle_info(error, __STACKTRACE__, socket, state)
-  end
-
-  defp rescue_stream_error(error, socket, state) do
-    Bandit.HTTP2.Connection.send_rst_stream(
-      error.stream_id,
-      error.error_code,
-      socket,
-      state.connection
-    )
-
-    {:continue, state}
   end
 
   defp rescue_connection_error(error, stacktrace, socket, state) do

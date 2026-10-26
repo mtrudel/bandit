@@ -51,7 +51,9 @@ defmodule HTTP2FrameDeserializationTest do
       frame = <<0, 0, 6, 0, 0x08, 0, 0, 0, 1, 2, 1, 2, 3, 4, 5>>
 
       assert Frame.deserialize(frame, 16_384) ==
-               {{:ok, %Frame.Data{stream_id: 1, end_stream: false, data: <<1, 2, 3>>}}, <<>>}
+               {{:ok,
+                 %Frame.Data{stream_id: 1, end_stream: false, data: <<1, 2, 3>>, padding: 3}},
+                <<>>}
     end
 
     test "deserializes frames without padding" do

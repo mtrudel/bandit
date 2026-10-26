@@ -44,10 +44,12 @@ defmodule Bandit.HTTP2.Stream do
             stream_id: nil,
             state: :idle,
             recv_window_size: 65_535,
+            recv_window_target: 65_535,
             send_window_size: nil,
             sendfile_chunk_size: nil,
             bytes_remaining: nil,
             pending_headers: nil,
+            consumed_messages: 0,
             read_timeout: 15_000
 
   @typedoc "An HTTP/2 stream identifier"
@@ -64,11 +66,13 @@ defmodule Bandit.HTTP2.Stream do
           connection_pid: pid(),
           stream_id: non_neg_integer(),
           state: state(),
-          recv_window_size: non_neg_integer(),
+          recv_window_size: integer(),
+          recv_window_target: pos_integer(),
           send_window_size: non_neg_integer(),
           sendfile_chunk_size: pos_integer(),
           bytes_remaining: non_neg_integer() | nil,
           pending_headers: nil | Plug.Conn.headers(),
+          consumed_messages: non_neg_integer(),
           read_timeout: timeout()
         }
 
@@ -84,6 +88,8 @@ defmodule Bandit.HTTP2.Stream do
       stream_id: stream_id,
       send_window_size: initial_send_window_size,
       recv_window_size: initial_recv_window_size,
+      recv_window_target:
+        Bandit.HTTP2.FlowControl.stream_recv_window_target(initial_recv_window_size),
       sendfile_chunk_size: sendfile_chunk_size
     }
   end
@@ -99,9 +105,11 @@ defmodule Bandit.HTTP2.Stream do
   def deliver_headers(pid, headers, end_stream),
     do: send(pid, {:bandit, {:headers, headers, end_stream}})
 
-  @spec deliver_data(stream_handle(), iodata(), boolean()) :: term()
-  def deliver_data(:closed, _data, _end_stream), do: :ok
-  def deliver_data(pid, data, end_stream), do: send(pid, {:bandit, {:data, data, end_stream}})
+  @spec deliver_data(stream_handle(), iodata(), non_neg_integer(), boolean()) :: term()
+  def deliver_data(:closed, _data, _padding, _end_stream), do: :ok
+
+  def deliver_data(pid, data, padding, end_stream),
+    do: send(pid, {:bandit, {:data, data, padding, end_stream}})
 
   @spec deliver_send_window_update(stream_handle(), non_neg_integer()) :: term()
   def deliver_send_window_update(:closed, _delta), do: :ok
@@ -114,6 +122,10 @@ defmodule Bandit.HTTP2.Stream do
   def deliver_rst_stream(pid, error_code), do: send(pid, {:bandit, {:rst_stream, error_code}})
 
   defimpl Bandit.HTTPTransport do
+    # How many messages we consume from the connection between reports back to it. See
+    # `Bandit.HTTP2.Connection`'s `@max_queued_stream_messages`
+    @consumed_messages_report_interval 16
+
     def peer_data(%@for{} = stream), do: call(stream, :peer_data, :infinity)
 
     def sock_data(%@for{} = stream), do: call(stream, :sock_data, :infinity)
@@ -303,19 +315,38 @@ defmodule Bandit.HTTP2.Stream do
     def read_data(%@for{} = stream, opts) do
       max_bytes = Keyword.get(opts, :length, 8_000_000)
       timeout = Keyword.get(opts, :read_timeout, 15_000)
-      do_read_data(stream, max_bytes, timeout, [])
+
+      deadline =
+        if timeout == :infinity, do: :infinity, else: now() + timeout
+
+      do_read_data(stream, max_bytes, timeout, deadline, [])
     end
 
-    defp do_read_data(%@for{state: state} = stream, max_bytes, timeout, acc)
+    # `deadline` bounds this whole read. Like the send-side deadlines, it is only pushed back in
+    # proportion to the data the peer actually delivers, so that frames which deliver nothing
+    # (WINDOW_UPDATE, empty SETTINGS, PING) or a mere trickle of data cannot keep the read going
+    # forever. See `Bandit.HTTP2.FlowControl.extend_send_deadline/4`
+    defp do_read_data(%@for{state: state} = stream, max_bytes, timeout, deadline, acc)
          when state in [:open, :local_closed] do
-      case do_recv(stream, timeout) do
+      case do_recv(stream, remaining(deadline)) do
         {:headers, trailers, stream} ->
           Logger.warning("Ignoring trailers #{inspect(trailers)}", domain: [:bandit])
-          do_read_data(stream, max_bytes, timeout, acc)
+          do_read_data(stream, max_bytes, timeout, deadline, acc)
 
         {:data, data, stream} ->
           acc = [data | acc]
           max_bytes = max_bytes - byte_size(data)
+
+          deadline =
+            if deadline == :infinity,
+              do: :infinity,
+              else:
+                Bandit.HTTP2.FlowControl.extend_send_deadline(
+                  deadline,
+                  byte_size(data),
+                  now(),
+                  timeout
+                )
 
           # Stop as soon as `length` bytes have been read, as HTTP/1 does, instead of waiting for
           # more data until the read times out. A stream whose remote end has closed has nothing
@@ -329,7 +360,7 @@ defmodule Bandit.HTTP2.Stream do
           # return `:more` there, even if END_STREAM turns out to arrive in a separate frame.
           if max_bytes > 0 or
                (max_bytes == 0 and (stream.state == :remote_closed or stream.bytes_remaining == 0)) do
-            do_read_data(stream, max_bytes, timeout, acc)
+            do_read_data(stream, max_bytes, timeout, deadline, acc)
           else
             {:more, Enum.reverse(acc), stream}
           end
@@ -338,13 +369,18 @@ defmodule Bandit.HTTP2.Stream do
           {:more, Enum.reverse(acc), stream}
 
         %@for{} = stream ->
-          do_read_data(stream, max_bytes, timeout, acc)
+          do_read_data(stream, max_bytes, timeout, deadline, acc)
       end
     end
 
-    defp do_read_data(%@for{state: :remote_closed} = stream, _max_bytes, _timeout, acc) do
+    defp do_read_data(%@for{state: :remote_closed} = stream, _max_bytes, _timeout, _deadline, acc) do
       {:ok, Enum.reverse(acc), stream}
     end
+
+    defp now, do: :erlang.monotonic_time(:millisecond)
+
+    defp remaining(:infinity), do: :infinity
+    defp remaining(deadline), do: max(deadline - now(), 0)
 
     defp no_pseudo_headers!(headers, stream) do
       if Enum.any?(headers, fn {key, _value} -> String.starts_with?(key, ":") end),
@@ -393,51 +429,75 @@ defmodule Bandit.HTTP2.Stream do
          do: stream_error!("Field value contains invalid characters (RFC9113§8.2.1)", stream)
     end
 
-    defp do_recv(%@for{state: :idle} = stream, timeout) do
+    # The connection may be holding DATA back until we catch up on the messages it has sent us, so
+    # before we block waiting on it we let it know what we have consumed
+    defp do_recv(stream, timeout) do
       receive do
-        {:bandit, {:headers, headers, end_stream}} ->
-          {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
-
-        {:bandit, {:data, _data, _end_stream}} ->
-          connection_error!("Received DATA in idle state")
-
-        {:bandit, {:send_window_update, _delta}} ->
-          connection_error!("Received WINDOW_UPDATE in idle state")
-
-        {:bandit, {:rst_stream, _error_code}} ->
-          connection_error!("Received RST_STREAM in idle state")
+        {:bandit, message} -> do_recv_message(stream, message)
       after
-        timeout -> :timeout
+        0 ->
+          stream = report_consumed(stream)
+
+          receive do
+            {:bandit, message} -> do_recv_message(stream, message)
+          after
+            timeout -> :timeout
+          end
       end
     end
 
-    defp do_recv(%@for{state: state} = stream, timeout)
+    defp do_recv_message(%@for{state: :idle} = stream, message) do
+      case message do
+        {:headers, headers, end_stream} ->
+          {:headers, headers,
+           stream |> consumed() |> do_recv_headers() |> do_recv_end_stream(end_stream)}
+
+        {:data, _data, _padding, _end_stream} ->
+          connection_error!("Received DATA in idle state")
+
+        {:send_window_update, _delta} ->
+          connection_error!("Received WINDOW_UPDATE in idle state")
+
+        {:rst_stream, _error_code} ->
+          connection_error!("Received RST_STREAM in idle state")
+      end
+    end
+
+    defp do_recv_message(%@for{state: state} = stream, message)
          when state in [:open, :local_closed] do
-      receive do
-        {:bandit, {:headers, headers, end_stream}} ->
+      case message do
+        {:headers, headers, end_stream} ->
           validate_trailers!(headers, end_stream, stream)
-          {:headers, headers, stream |> do_recv_headers() |> do_recv_end_stream(end_stream)}
 
-        {:bandit, {:data, data, end_stream}} ->
+          {:headers, headers,
+           stream |> consumed() |> do_recv_headers() |> do_recv_end_stream(end_stream)}
+
+        {:data, data, padding, end_stream} ->
           {:data, data,
-           stream |> do_recv_data(data, end_stream) |> do_recv_end_stream(end_stream)}
+           stream
+           |> consumed()
+           |> do_recv_data(data, padding, end_stream)
+           |> do_recv_end_stream(end_stream)}
 
-        {:bandit, {:send_window_update, delta}} ->
-          do_recv_send_window_update(stream, delta)
+        {:send_window_update, delta} ->
+          stream |> consumed() |> do_recv_send_window_update(delta)
 
-        {:bandit, {:rst_stream, error_code}} ->
+        {:rst_stream, error_code} ->
           do_recv_rst_stream!(stream, error_code)
-      after
-        timeout -> :timeout
       end
     end
 
     defp do_recv_headers(%@for{state: :idle} = stream), do: %{stream | state: :open}
     defp do_recv_headers(stream), do: stream
 
-    defp do_recv_data(stream, data, end_stream) do
+    # Padding counts toward flow control, so it is given back to the peer along with the data
+    defp do_recv_data(stream, data, padding, end_stream) do
       {new_window, increment} =
-        Bandit.HTTP2.FlowControl.compute_recv_window(stream.recv_window_size, byte_size(data))
+        Bandit.HTTP2.FlowControl.compute_recv_window(
+          stream.recv_window_size,
+          byte_size(data) + padding,
+          stream.recv_window_target
+        )
 
       if increment > 0 && !end_stream, do: do_send(stream, {:send_recv_window_update, increment})
 
@@ -448,6 +508,22 @@ defmodule Bandit.HTTP2.Stream do
         end
 
       %{stream | recv_window_size: new_window, bytes_remaining: bytes_remaining}
+    end
+
+    # Lets the connection know (every so often) how many of its messages we have consumed
+    defp consumed(stream) do
+      stream = %{stream | consumed_messages: stream.consumed_messages + 1}
+
+      if stream.consumed_messages >= @consumed_messages_report_interval,
+        do: report_consumed(stream),
+        else: stream
+    end
+
+    defp report_consumed(%@for{consumed_messages: 0} = stream), do: stream
+
+    defp report_consumed(stream) do
+      do_send(stream, {:messages_consumed, stream.consumed_messages})
+      %{stream | consumed_messages: 0}
     end
 
     defp do_recv_end_stream(stream, false), do: stream
@@ -535,8 +611,11 @@ defmodule Bandit.HTTP2.Stream do
          when state in [:open, :remote_closed] do
       stream =
         receive do
-          {:bandit, {:send_window_update, delta}} -> do_recv_send_window_update(stream, delta)
-          {:bandit, {:rst_stream, error_code}} -> do_recv_rst_stream!(stream, error_code)
+          {:bandit, {:send_window_update, delta}} ->
+            stream |> consumed() |> do_recv_send_window_update(delta)
+
+          {:bandit, {:rst_stream, error_code}} ->
+            do_recv_rst_stream!(stream, error_code)
         after
           0 -> stream
         end
@@ -590,6 +669,7 @@ defmodule Bandit.HTTP2.Stream do
         receive do
           {:bandit, {:send_window_update, delta}} ->
             stream
+            |> consumed()
             |> do_recv_send_window_update(delta)
             |> do_send_data(rest, end_stream, deadline)
 
@@ -681,25 +761,8 @@ defmodule Bandit.HTTP2.Stream do
 
     def ensure_completed(%@for{state: :closed} = stream), do: stream
 
-    def ensure_completed(%@for{state: :local_closed} = stream) do
-      receive do
-        {:bandit, {:headers, headers, end_stream}} ->
-          validate_trailers!(headers, end_stream, stream)
-          %{stream | state: :closed}
-
-        {:bandit, {:data, data, end_stream}} ->
-          stream = do_recv_data(stream, data, end_stream)
-
-          if end_stream do
-            %{stream | state: :closed}
-          else
-            ensure_completed(stream)
-          end
-      after
-        # RFC9113§8.1 - hint the client to stop sending data
-        0 -> do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})
-      end
-    end
+    def ensure_completed(%@for{state: :local_closed} = stream),
+      do: drain_request(stream, false)
 
     def ensure_completed(%@for{state: state} = stream) do
       stream_error!(
@@ -707,6 +770,35 @@ defmodule Bandit.HTTP2.Stream do
         stream,
         Bandit.HTTP2.Errors.internal_error()
       )
+    end
+
+    # The connection may be holding back DATA for us (see `do_recv/2`). Before we decide that the
+    # request is incomplete, report what we have consumed synchronously, so that any DATA it then
+    # releases to us is already in our mailbox when the call returns
+    defp drain_request(stream, synced?) do
+      receive do
+        {:bandit, {:headers, headers, end_stream}} ->
+          validate_trailers!(headers, end_stream, stream)
+          %{stream | state: :closed}
+
+        {:bandit, {:data, data, padding, end_stream}} ->
+          stream = stream |> consumed() |> do_recv_data(data, padding, end_stream)
+
+          if end_stream do
+            %{stream | state: :closed}
+          else
+            drain_request(stream, false)
+          end
+      after
+        0 ->
+          if synced? do
+            # RFC9113§8.1 - hint the client to stop sending data
+            do_send(stream, {:send_rst_stream, Bandit.HTTP2.Errors.no_error()})
+          else
+            :ok = call(stream, {:messages_consumed, stream.consumed_messages}, :infinity)
+            drain_request(%{stream | consumed_messages: 0}, true)
+          end
+      end
     end
 
     def supported_upgrade?(%@for{} = _stream, _protocol), do: false

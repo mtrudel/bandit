@@ -14,7 +14,10 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   require Integer
 
+  # `last_stream_id` is the highest stream we have started processing (as reported in GOAWAY), and
+  # `highest_stream_id` is the highest stream the peer has opened, including any we refused
   defstruct last_stream_id: 0,
+            highest_stream_id: 0,
             stream_count: 0,
             id_to_pid: %{},
             pid_to_id: %{}
@@ -22,17 +25,18 @@ defmodule Bandit.HTTP2.StreamCollection do
   @typedoc "A map from stream id to pid"
   @type t :: %__MODULE__{
           last_stream_id: Bandit.HTTP2.Stream.stream_id(),
+          highest_stream_id: Bandit.HTTP2.Stream.stream_id(),
           stream_count: non_neg_integer(),
           id_to_pid: %{Bandit.HTTP2.Stream.stream_id() => pid()},
           pid_to_id: %{pid() => Bandit.HTTP2.Stream.stream_id()}
         }
 
-  @spec get_pids(t()) :: [pid()]
-  def get_pids(collection), do: Map.values(collection.id_to_pid)
+  @spec get_streams(t()) :: [{Bandit.HTTP2.Stream.stream_id(), pid()}]
+  def get_streams(collection), do: Map.to_list(collection.id_to_pid)
 
   @spec get_pid(t(), Bandit.HTTP2.Stream.stream_id()) :: pid() | :new | :closed | :invalid
   def get_pid(_collection, stream_id) when Integer.is_even(stream_id), do: :invalid
-  def get_pid(collection, stream_id) when stream_id > collection.last_stream_id, do: :new
+  def get_pid(collection, stream_id) when stream_id > collection.highest_stream_id, do: :new
 
   def get_pid(collection, stream_id) do
     case Map.get(collection.id_to_pid, stream_id) do
@@ -48,11 +52,17 @@ defmodule Bandit.HTTP2.StreamCollection do
   def insert(collection, stream_id, pid) do
     %__MODULE__{
       last_stream_id: stream_id,
+      highest_stream_id: stream_id,
       stream_count: collection.stream_count + 1,
       id_to_pid: Map.put(collection.id_to_pid, stream_id, pid),
       pid_to_id: Map.put(collection.pid_to_id, pid, stream_id)
     }
   end
+
+  # Records a stream which we refused to open, so that it counts as closed from now on
+  @spec refuse(t(), Bandit.HTTP2.Stream.stream_id()) :: t()
+  def refuse(collection, stream_id),
+    do: %{collection | highest_stream_id: max(collection.highest_stream_id, stream_id)}
 
   # Dialyzer insists on the atom() here even though it doesn't make sense
   @spec delete(t(), pid()) :: t() | atom()

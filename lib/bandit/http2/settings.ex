@@ -4,10 +4,10 @@ defmodule Bandit.HTTP2.Settings do
   """
 
   defstruct header_table_size: 4_096,
-            max_concurrent_streams: :infinity,
+            max_concurrent_streams: 500,
             initial_window_size: 65_535,
             max_frame_size: 16_384,
-            max_header_list_size: :infinity
+            max_header_list_size: 262_144
 
   @typedoc "A collection of settings as defined in RFC9113§6.5"
   @type t :: %__MODULE__{

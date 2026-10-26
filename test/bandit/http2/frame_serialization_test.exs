@@ -128,7 +128,13 @@ defmodule HTTP2FrameSerializationTest do
 
   describe "SETTINGS frames" do
     test "serializes non-ack frames when there are no non-default settings" do
-      frame = %Frame.Settings{ack: false, settings: Map.from_struct(%Settings{})}
+      settings =
+        Map.from_struct(%Settings{
+          max_concurrent_streams: :infinity,
+          max_header_list_size: :infinity
+        })
+
+      frame = %Frame.Settings{ack: false, settings: settings}
 
       assert Frame.serialize(frame, 16_384) == [
                [<<0, 0, 0, 4, 0, 0, 0, 0, 0>>, [<<>>, <<>>, <<>>, <<>>, <<>>]]

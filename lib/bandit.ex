@@ -188,7 +188,8 @@ defmodule Bandit do
   * `sendfile_chunk_size`: The maximum number of bytes read per sendfile chunk when streaming
     HTTP/2 responses. Defaults to 1_048_576 (1 MiB)
   * `default_local_settings`: Options to override the default values for local HTTP/2
-    settings. Values provided here will override the defaults specified in RFC9113§6.5.2
+    settings. The defaults are those in RFC9113§6.5.2, except for `max_concurrent_streams`
+    (500) and `max_header_list_size` (262_144), which the RFC leaves unlimited
   """
   @type http_2_options :: [
           {:enabled, boolean()}

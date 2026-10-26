@@ -5,13 +5,15 @@ defmodule Bandit.HTTP2.Frame.Data do
 
   defstruct stream_id: nil,
             end_stream: false,
-            data: nil
+            data: nil,
+            padding: 0
 
   @typedoc "An HTTP/2 DATA frame"
   @type t :: %__MODULE__{
           stream_id: Bandit.HTTP2.Stream.stream_id(),
           end_stream: boolean(),
-          data: iodata()
+          data: iodata(),
+          padding: non_neg_integer()
         }
 
   @end_stream_bit 0
@@ -29,7 +31,9 @@ defmodule Bandit.HTTP2.Frame.Data do
      %__MODULE__{
        stream_id: stream_id,
        end_stream: set?(flags, @end_stream_bit),
-       data: binary_part(rest, 0, byte_size(rest) - padding_length)
+       data: binary_part(rest, 0, byte_size(rest) - padding_length),
+       # The Pad Length field and the padding both count toward flow control (RFC9113§6.1)
+       padding: padding_length + 1
      }}
   end
 

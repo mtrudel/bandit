@@ -846,7 +846,16 @@ defmodule HTTP2PlugTest do
     test "drains a large number of queued DATA frames", context do
       socket = SimpleH2Client.setup_connection(context)
 
-      send_unread_request(context, socket, "queued=50", [{"content-length", "50"}])
+      # The connection has at most 16 messages (here the HEADERS and 15 DATA) outstanding to a
+      # stream which is not reading, and buffers the rest of the DATA until the stream catches up
+      send_unread_request(
+        context,
+        socket,
+        "queued=15",
+        [{"content-length", "50"}],
+        "/unread_body_settled"
+      )
+
       for _ <- 1..49, do: SimpleH2Client.send_body(socket, 1, false, "A")
       SimpleH2Client.send_body(socket, 1, true, "A")
 
@@ -972,6 +981,14 @@ defmodule HTTP2PlugTest do
 
     def unread_body(conn) do
       wait_for_queued_messages(queued_count(conn.query_string))
+      send_resp(conn, 200, "OK")
+    end
+
+    def unread_body_settled(conn) do
+      wait_for_queued_messages(queued_count(conn.query_string))
+      # Give the connection time to handle (and so buffer) the rest of the DATA frames
+      # (well within the test server's 100ms read timeout)
+      Process.sleep(20)
       send_resp(conn, 200, "OK")
     end
 

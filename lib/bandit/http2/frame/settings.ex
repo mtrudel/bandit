@@ -110,6 +110,8 @@ defmodule Bandit.HTTP2.Frame.Settings do
           {:max_header_list_size, :infinity} -> <<>>
           {:max_header_list_size, value} -> <<0x06::16, value::32>>
         end)
+        # Map ordering is not stable, so sort the settings by identifier to give a stable frame
+        |> Enum.sort()
 
       [{0x4, 0x0, 0, payload}]
     end

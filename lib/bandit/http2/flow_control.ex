@@ -4,34 +4,39 @@ defmodule Bandit.HTTP2.FlowControl do
 
   import Bitwise
 
-  @max_window_increment (1 <<< 31) - 1
   @max_window_size (1 <<< 31) - 1
-  @min_window_size 1 <<< 30
 
   # The slowest rate (in bytes per second) at which a peer may drain a blocked send before we stop
   # waiting on it. See `extend_send_deadline/4`
   @min_send_rate 1_024
 
-  @spec compute_recv_window(non_neg_integer(), non_neg_integer()) ::
-          {non_neg_integer(), non_neg_integer()}
-  def compute_recv_window(recv_window_size, data_size) do
-    # This is what our window size will be after receiving data_size bytes
+  # Stream receive windows are kept to a bound much smaller than the connection's. A stream only
+  # returns window to the peer once it has consumed data, so this bound is the most data which can
+  # sit unread in a stream's mailbox (for example, while the stream is blocked waiting on a send
+  # window). The connection window, by contrast, is returned as data arrives
+  @stream_recv_window_target 1_048_576
+
+  @doc """
+  The window a stream with the given initial receive window refills to as it consumes data
+  """
+  @spec stream_recv_window_target(non_neg_integer()) :: pos_integer()
+  def stream_recv_window_target(initial_window_size),
+    do: max(initial_window_size, @stream_recv_window_target)
+
+  @doc """
+  Computes a new receive window and the increment to send to the peer (if any) after `data_size`
+  bytes have been received (for the connection) or consumed (for a stream). The window is topped
+  back up to `target` once it falls below half of it
+  """
+  @spec compute_recv_window(integer(), non_neg_integer(), pos_integer()) ::
+          {integer(), non_neg_integer()}
+  def compute_recv_window(recv_window_size, data_size, target) do
     recv_window_size = recv_window_size - data_size
 
-    if recv_window_size > @min_window_size do
-      # We have room to go before we need to update our window
+    if recv_window_size > div(target, 2) do
       {recv_window_size, 0}
     else
-      # We want our new window to be as large as possible, but are limited by both the maximum size
-      # of the window (2^31-1) and the maximum size of the increment we can send to the client, both
-      # per RFC9113§6.9. Be careful about handling cases where we have a negative window due to
-      # misbehaving clients or network races
-      new_recv_window_size = min(recv_window_size + @max_window_increment, @max_window_size)
-
-      # Finally, determine what increment to send to the client
-      increment = new_recv_window_size - recv_window_size
-
-      {new_recv_window_size, increment}
+      {target, target - recv_window_size}
     end
   end
 
