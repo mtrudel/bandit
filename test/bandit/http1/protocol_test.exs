@@ -37,6 +37,65 @@ defmodule HTTP1ProtocolTest do
       assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
     end
 
+    # decode_packet reads the version numbers into C integers, which wrap, and it accepts more
+    # than the RFC9112§2.3 grammar (HTTP-version = "HTTP/" DIGIT "." DIGIT) allows. Each of these
+    # read as HTTP/1.1 or HTTP/1.0
+    for version <- [
+          "HTTP/4294967297.1",
+          "HTTP/1.4294967297",
+          "HTTP/1.18446744073709551617",
+          "HTTP/4294967297.0",
+          "HTTP/01.01",
+          "HTTP/1.1.1",
+          "HTTP/1.1x",
+          "HTTP/1.1\r"
+        ] do
+      @version version
+
+      @tag :capture_log
+      test "returns a 400 for the HTTP version #{inspect(@version)}", context do
+        client = SimpleHTTP1Client.tcp_client(context)
+        Transport.send(client, "GET /echo_components #{@version}\r\nhost: localhost\r\n\r\n")
+        assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTPError) Invalid HTTP version: #{inspect(@version)} (RFC9112§2.3)"
+      end
+    end
+
+    # decode_packet ignores any words after the version, so the version it reads need not be
+    # the last word of the line
+    @tag :capture_log
+    test "returns a 400 for a request line with more than three words", context do
+      for request_line <- [
+            "GET /echo_components HTTP/4294967297.1 HTTP/1.1",
+            "GET /echo_components HTTP/1.1 junk HTTP/1.1",
+            "GET /echo_components HTTP/1.1 HTTP/1.1",
+            "GET http://localhost/echo_components HTTP/1.1 junk HTTP/1.1"
+          ] do
+        client = SimpleHTTP1Client.tcp_client(context)
+        Transport.send(client, request_line <> "\r\nhost: localhost\r\n\r\n")
+
+        assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client),
+               "expected #{inspect(request_line)} to be rejected"
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTPError) Request line does not have exactly three words (RFC9112§3)"
+      end
+    end
+
+    test "tolerates whitespace and a bare LF after the HTTP version", context do
+      for line_end <- [" \r\n", "\t\r\n", "\n"] do
+        client = SimpleHTTP1Client.tcp_client(context)
+        Transport.send(client, "GET /echo_components HTTP/1.1#{line_end}host: localhost\r\n\r\n")
+        assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+      end
+    end
+
     test "tolerates a single leading empty line before the request line", context do
       client = SimpleHTTP1Client.tcp_client(context)
       Transport.send(client, "\r\nGET /echo_components HTTP/1.1\r\nhost: localhost\r\n\r\n")
@@ -287,6 +346,51 @@ defmodule HTTP1ProtocolTest do
       assert Jason.decode!(body)["port"] == 8080
     end
 
+    test "derives the port from an absolute-form IP literal authority", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://[::1]:0080/echo_components", [
+        "host: banana"
+      ])
+
+      assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+      assert Jason.decode!(body)["host"] == "[::1]"
+      assert Jason.decode!(body)["port"] == 80
+    end
+
+    # decode_packet ends the authority only at ':' or '/', so it took the '/echo_components'
+    # in each of these queries or fragments as the path. RFC3986§3 ends the authority at the
+    # first '/', '?' or '#', so the path of each of these targets is empty. Since parsers
+    # disagree about these targets, they are rejected
+    for target <- [
+          "http://banana:8080?q=/echo_components",
+          "http://banana:8080#/echo_components",
+          "http://[::1]?q=/echo_components",
+          "http://banana?/echo_components?x=1",
+          "http://banana:8080?a=b"
+        ] do
+      @target target
+
+      @tag :capture_log
+      test "returns 400 for #{@target}, since parsers disagree about its path", context do
+        client = SimpleHTTP1Client.tcp_client(context)
+        SimpleHTTP1Client.send(client, "GET", @target, ["host: banana"])
+        assert {:ok, "400 Bad Request", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTPError) Request target has an ambiguous path (RFC9112§3.2.2)"
+      end
+    end
+
+    test "derives the port and path from an absolute-form target with no path", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "GET", "http://banana:8080", ["host: banana"])
+      assert {:ok, "200 OK", _headers, _body} = SimpleHTTP1Client.recv_reply(client)
+    end
+
     # The authority of an absolute-form target takes precedence over the Host header, so it must be
     # held to the same grammar (RFC3986§3.2.2) as that header, which rejects each of these
     for {name, authority} <- [
@@ -298,7 +402,18 @@ defmodule HTTP1ProtocolTest do
           {"a high byte", "ex\xFFam.com"},
           {"a backslash", "ex\\am.com"},
           {"an invalid IP literal", "[zz::1]"},
-          {"an out of range port", "ex.com:99999"}
+          {"an out of range port", "ex.com:99999"},
+          {"a port that wraps a 32-bit integer", "ex.com:4294967376"},
+          {"a port that wraps a 64-bit integer", "ex.com:18446744073709551696"},
+          {"an IP literal with a port that wraps a 32-bit integer", "[::1]:4294967376"},
+          {"a port with many digits", "ex.com:" <> String.duplicate("9", 5_000)},
+          {"a negative port", "ex.com:-1"},
+          {"a port with a non-digit", "ex.com:8a"},
+          {"a second port", "ex.com:80:80"},
+          {"a bare CR after the port", "ex.com:8080\r"},
+          {"a bare CR after an empty port", "ex.com:\r"},
+          {"userinfo with a colon", "a:b@ex.com:85"},
+          {"a port before userinfo", "ex.com:80@evil.example"}
         ] do
       @authority authority
 
@@ -927,6 +1042,45 @@ defmodule HTTP1ProtocolTest do
                "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
     end
 
+    # GHSA-29cr-8477-rg6r: building a long run of digits into an integer one digit at a time
+    # takes quadratic time. A value with more digits than any usable length is rejected without
+    # being converted, before the request reaches Plug.
+    @tag :capture_log
+    test "rejects a content-length with more digits than any usable length", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_body", [
+        "host: localhost",
+        "content-length: " <> String.duplicate("9", 9_000)
+      ])
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTPError) Content length unknown error: \"invalid content-length header (RFC9112§6.3.5)\""
+    end
+
+    # Leading zeros do not add to the size of the value, so they do not count toward that limit
+    test "accepts a content-length with many leading zeros", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_body", [
+        "host: localhost",
+        "content-length: " <> String.duplicate("0", 1_000) <> "3"
+      ])
+
+      Transport.send(client, "123")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+    end
+
+    def expect_tiny_body(conn) do
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == "123"
+      send_resp(conn, 200, "OK")
+    end
+
     @tag :capture_log
     test "rejects a request containing both content-length and transfer-encoding", context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -1504,6 +1658,62 @@ defmodule HTTP1ProtocolTest do
       send_resp(conn, 200, "OK")
     end
 
+    # GHSA-jwh3-j29h-qfmw: `:length` caps the bytes in a chunked body read, but the memory used
+    # to collect them must not also grow with the number of chunks they were sent in. The
+    # handler gets a heap limit well below what collecting each one-byte chunk as its own term
+    # uses, and is killed if the chunks are collected that way.
+    @tiny_chunk_count 250_000
+
+    test "reads a body sent as many tiny chunks in bounded memory", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_body_with_limited_heap", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, String.duplicate("1\r\nA\r\n", @tiny_chunk_count) <> "0\r\n\r\n")
+
+      assert SimpleHTTP1Client.recv_reply(client)
+             ~> {:ok, "200 OK", list(), to_string(@tiny_chunk_count)}
+    end
+
+    def expect_body_with_limited_heap(conn) do
+      limit_heap_size()
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("A", @tiny_chunk_count)
+      send_resp(conn, 200, to_string(byte_size(body)))
+    end
+
+    # An unread body is drained through the same path before the next request on a keep-alive
+    # connection is read, so a plug that never reads the body is exposed in the same way
+    test "drains an unread body sent as many tiny chunks in bounded memory", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/ignore_body_with_limited_heap", [
+        "host: localhost",
+        "transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, String.duplicate("1\r\nA\r\n", @tiny_chunk_count) <> "0\r\n\r\n")
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
+
+      SimpleHTTP1Client.send(client, "GET", "/echo_method", ["host: localhost"])
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "GET"}
+    end
+
+    def ignore_body_with_limited_heap(conn) do
+      limit_heap_size()
+      send_resp(conn, 200, "OK")
+    end
+
+    # 1M words (8 MB on a 64-bit VM). Collecting #{@tiny_chunk_count} one-byte chunks as separate
+    # terms takes several times this; collecting them into one binary takes a small part of it,
+    # since large binaries are stored off the process heap
+    defp limit_heap_size do
+      Process.flag(:max_heap_size, %{size: 1_000_000, kill: true, error_logger: false})
+    end
+
     test "reads a chunked body with a non-lowercase transfer-encoding value", context do
       client = SimpleHTTP1Client.tcp_client(context)
 
@@ -1725,6 +1935,37 @@ defmodule HTTP1ProtocolTest do
       assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"}
     end
 
+    # A proxy that ends trailer lines only at CRLF reads the bytes after a bare LF as more of the
+    # trailer section, and so does not see where the body ends. If the bare LF is taken as the
+    # end of the section instead, the GET here is served as a second request
+    @tag :capture_log
+    test "rejects a trailer section line that ends in a bare LF", context do
+      for trailers <- ["\n", "Trailer: trailer\n\r\n", "Trailer: trailer\r\n\n"] do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+          "Host: localhost",
+          "Transfer-encoding: chunked"
+        ])
+
+        Transport.send(
+          client,
+          "3\r\n123\r\n0\r\n" <>
+            trailers <> "GET /echo_method HTTP/1.1\r\nHost: localhost\r\n\r\n"
+        )
+
+        assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""},
+               "expected #{inspect(trailers)} to be rejected"
+
+        assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTPError) Trailer section line does not end in CRLF (RFC9112§7.1.2)"
+      end
+    end
+
     @tag :capture_log
     test "handles a timing out chunk read in the middle of a chunk", context do
       context =
@@ -1858,6 +2099,107 @@ defmodule HTTP1ProtocolTest do
       Transport.send(client, "3\r\nabc\r\n0\r\n\r\n")
       assert {:ok, status, _headers, _body} = SimpleHTTP1Client.recv_reply(client)
       assert status == "400 Bad Request"
+    end
+
+    # GHSA-w5wc-g2hc-g7m2: a proxy which ends the chunk-size line at a bare LF reads this body
+    # as a 2-byte chunk followed by a 0x40-byte chunk which holds the GET request. If the chunk
+    # extension is discarded without being checked, the size line instead ends at the later
+    # CRLF, the embedded last chunk ends the body, and the GET is served as a second request.
+    @tag :capture_log
+    test "rejects a bare LF in a chunk extension rather than serving a smuggled request",
+         context do
+      test_pid = self()
+
+      context =
+        context
+        |> http_server(
+          plug: fn conn, _opts ->
+            {:ok, body, conn} = Plug.Conn.read_body(conn)
+            send(test_pid, {:request, conn.method, conn.request_path, body})
+            send_resp(conn, 200, conn.request_path)
+          end
+        )
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      Transport.send(
+        client,
+        "POST /public HTTP/1.1\r\nHost: localhost\r\nTransfer-Encoding: chunked\r\n\r\n" <>
+          "2;\nxx\r\n40\r\n0\r\n\r\n" <>
+          "GET /admin HTTP/1.1\r\nHost: localhost\r\nContent-Length: 7\r\n\r\n" <>
+          "\r\n0\r\n\r\n"
+      )
+
+      assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""}
+      assert SimpleHTTP1Client.connection_closed_for_reading?(client)
+      refute_receive {:request, _method, _path, _body}
+    end
+
+    # RFC9112§7.1.1: chunk-ext = *( BWS ";" BWS chunk-ext-name [ BWS "=" BWS chunk-ext-val ] ),
+    # where chunk-ext-name is a token and chunk-ext-val is a token or a quoted-string
+    @tag :capture_log
+    test "rejects chunk extensions outside the RFC9112§7.1.1 grammar", context do
+      for size_line <- [
+            "3;a\rb",
+            "3;a\nb",
+            "3;a\0",
+            "3;a=\x01",
+            "3;\x7F",
+            "3;a=\"\nb\"",
+            "3;a=\"b\0\"",
+            "3;",
+            "3;;a",
+            "3;a=",
+            "3;a=b c",
+            "3;a b",
+            "3;a=\"b",
+            "3;a@b",
+            "3 ",
+            "3 a"
+          ] do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+          "host: localhost",
+          "transfer-encoding: chunked"
+        ])
+
+        Transport.send(client, size_line <> "\r\n123\r\n0\r\n\r\n")
+
+        assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "400 Bad Request", list(), ""},
+               "expected #{inspect(size_line)} to be rejected"
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+        assert msg == "** (Bandit.HTTPError) Invalid chunk extension (RFC9112§7.1.1)"
+      end
+    end
+
+    test "accepts chunk extensions within the RFC9112§7.1.1 grammar", context do
+      for size_line <- [
+            "3;a",
+            "3;a=b",
+            "3;a;b=c",
+            "3 ;a",
+            "3\t; a = b",
+            "3;a=\"b c\"",
+            "3;a=\"\\\"\"",
+            "3;a=\"\x80\"",
+            "3;!#$%&'*+",
+            "3;-.^_`|~"
+          ] do
+        client = SimpleHTTP1Client.tcp_client(context)
+
+        SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+          "host: localhost",
+          "transfer-encoding: chunked"
+        ])
+
+        Transport.send(client, size_line <> "\r\n123\r\n0;a=b\r\n\r\n")
+
+        assert SimpleHTTP1Client.recv_reply(client) ~> {:ok, "200 OK", list(), "OK"},
+               "expected #{inspect(size_line)} to be accepted"
+      end
     end
 
     test "ignores unrecognized chunk extensions", context do

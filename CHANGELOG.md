@@ -17,6 +17,14 @@
   END_STREAM
 * Send PROTOCOL_ERROR for DATA, WINDOW_UPDATE and RST_STREAM on an idle HTTP/2 stream, and report
   the last stream that the server started in the GOAWAY frame
+* Reject an HTTP/1 absolute-form request target whose path `:erlang.decode_packet/3` reads
+  differently from RFC 3986. As a result, a target with an empty path followed by a query (for
+  example `http://host:80?a=b`) now gets 400. Before, its query was silently discarded
+* Require the HTTP/1 request line to have exactly three words, and the version to be exactly
+  `HTTP/1.1` or `HTTP/1.0`
+* Accept optional whitespace before the `;` of a chunk extension, as RFC 9112 §7.1.1 permits
+* Report port 0 in an absolute-form request target as `conn.port == 0`, the same as for a `Host`
+  header. Before, it was reported as the scheme's default port
 
 ### Fixes
 
@@ -35,6 +43,17 @@
 * Keep the HTTP/2 connection state and HPACK decoder state when a stream error occurs in the
   middle of a read, so that per-connection limits still apply (CVE-2026-111103, thanks
   @PJUllrich!, GHSA-q48c-59mm-jx3c, thanks @neilberkman!)
+* Collect chunked HTTP/1 request bodies into one binary, so that a body sent as many tiny chunks
+  no longer uses many times its size in memory (CVE-2026-111101, thanks @PJUllrich!)
+* Validate HTTP/1 chunk extensions against the RFC 9112 §7.1.1 grammar, and require CRLF at the
+  end of each trailer line, to prevent request smuggling (CVE-2026-114216, thanks @PJUllrich!)
+* Limit the digits parsed in `content-length` and port values, to prevent quadratic parsing time
+  (CVE-2026-113436, thanks @PJUllrich!)
+* Take the port of an HTTP/1 absolute-form request target from the request line. Before,
+  `:erlang.decode_packet/3` wrapped a large port (`host:4294967376` was read as port 80), and
+  ignored a port that it could not parse
+* Reject HTTP/1 versions that `:erlang.decode_packet/3` wraps or reads loosely (for example
+  `HTTP/4294967297.1`, `HTTP/01.01` or `HTTP/1.1x`)
 
 ## 1.13.1 (15 Oct 2026)
 

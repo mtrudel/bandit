@@ -5,7 +5,8 @@ defmodule Bandit.Pipeline do
 
   @type plug_def :: {function() | module(), Plug.opts()}
   @type conn_data :: {boolean(), :inet.ip_address()}
-  # The port of an authority-form (CONNECT) target is the unparsed text following the first colon
+  # The port of an absolute-form or authority-form (CONNECT) target is the unparsed text following
+  # the first colon
   @type request_target ::
           {scheme(), nil | Plug.Conn.host(), nil | Plug.Conn.port_number() | binary(), path()}
   @type scheme :: String.t() | nil
@@ -125,10 +126,9 @@ defmodule Bandit.Pipeline do
     {host, port || URI.default_port(scheme)}
   end
 
-  # The request target's authority arrives from :erlang.decode_packet/3 already split into a host
-  # and a port (an integer for absolute-form targets, or the unparsed text following the first
-  # colon for authority-form ones), and it is not validated at all by decode_packet. Join it back
-  # up and hold it to the same grammar as the Host header
+  # The request target's authority arrives already split into a host and a port (the unparsed
+  # text following the first colon), and it is not validated at all by :erlang.decode_packet/3.
+  # Join it back up and hold it to the same grammar as the Host header
   @spec parse_target_authority!(binary(), nil | Plug.Conn.port_number() | binary()) ::
           {Plug.Conn.host(), nil | Plug.Conn.port_number()}
   defp parse_target_authority!(host, port) do

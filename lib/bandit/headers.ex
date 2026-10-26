@@ -5,6 +5,11 @@ defmodule Bandit.Headers do
   @spec is_port_number(integer()) :: Macro.t()
   defguardp is_port_number(port) when Bitwise.band(port, 0xFFFF) === port
 
+  # The most significant digits accepted in a port or a content-length. These are above the
+  # largest value either can usefully hold, and they keep conversion cheap (see parse_integer/2)
+  @max_port_digits 5
+  @max_content_length_digits 19
+
   # RFC9110§5.5 defines field values in terms of VCHAR (0x21-0x7e), obs-text
   # (0x80-0xff), and internal SP / HTAB. All other control bytes and DEL are
   # outside the field-value grammar. HTTP/2 applies the additional edge-whitespace
@@ -133,7 +138,7 @@ defmodule Bandit.Headers do
   defp parse_port!(""), do: nil
 
   defp parse_port!(port) do
-    case parse_integer(port) do
+    case parse_integer(port, @max_port_digits) do
       {port, ""} when is_port_number(port) -> port
       _ -> raise Bandit.HTTPError, "Header contains invalid port"
     end
@@ -210,7 +215,7 @@ defmodule Bandit.Headers do
 
   @spec parse_content_length(binary()) :: {:ok, non_neg_integer()} | {:error, String.t()}
   defp parse_content_length(value) do
-    case parse_integer(value) do
+    case parse_integer(value, @max_content_length_digits) do
       {length, ""} ->
         {:ok, length}
 
@@ -224,21 +229,34 @@ defmodule Bandit.Headers do
     end
   end
 
-  # Parses non-negative integers from strings. Return the valid portion of an
-  # integer and the remaining string as a tuple like `{123, ""}` or `:error`.
-  @spec parse_integer(String.t()) :: {non_neg_integer(), rest :: String.t()} | :error
-  defp parse_integer(<<digit::8, rest::binary>>) when digit >= ?0 and digit <= ?9 do
-    parse_integer(rest, digit - ?0)
+  # Parses a non-negative integer from the start of a string. Returns the parsed value and the
+  # remaining string as a tuple like `{123, ""}`, or `:error`. Leading zeros are skipped, and a
+  # value with more than `max_digits` significant digits is an error: building an integer one
+  # digit at a time allocates a new bignum at each step, so an unbounded run of digits takes
+  # quadratic time to convert (GHSA-29cr-8477-rg6r)
+  @spec parse_integer(String.t(), pos_integer()) ::
+          {non_neg_integer(), rest :: String.t()} | :error
+  defp parse_integer(<<digit::8, _rest::binary>> = value, max_digits)
+       when digit >= ?0 and digit <= ?9 do
+    value |> skip_leading_zeros() |> parse_digits(0, max_digits)
   end
 
-  defp parse_integer(_), do: :error
+  defp parse_integer(_, _max_digits), do: :error
 
-  @spec parse_integer(String.t(), non_neg_integer()) :: {non_neg_integer(), String.t()}
-  defp parse_integer(<<digit::8, rest::binary>>, total) when digit >= ?0 and digit <= ?9 do
-    parse_integer(rest, total * 10 + digit - ?0)
+  defp skip_leading_zeros(<<?0, rest::binary>>), do: skip_leading_zeros(rest)
+  defp skip_leading_zeros(rest), do: rest
+
+  @spec parse_digits(String.t(), non_neg_integer(), non_neg_integer()) ::
+          {non_neg_integer(), String.t()} | :error
+  defp parse_digits(<<digit::8, _rest::binary>>, _total, 0) when digit >= ?0 and digit <= ?9,
+    do: :error
+
+  defp parse_digits(<<digit::8, rest::binary>>, total, digits_left)
+       when digit >= ?0 and digit <= ?9 do
+    parse_digits(rest, total * 10 + digit - ?0, digits_left - 1)
   end
 
-  defp parse_integer(rest, total), do: {total, rest}
+  defp parse_digits(rest, total, _digits_left), do: {total, rest}
 
   @spec add_content_length(
           headers :: Plug.Conn.headers(),

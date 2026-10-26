@@ -50,6 +50,12 @@ defmodule Bandit.HTTP1.Socket do
 
     @max_chunk_size_byte_count 16
 
+    # RFC9110§5.6.2: tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+    # "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+    defguardp is_tchar(char)
+              when char in ?a..?z or char in ?A..?Z or char in ?0..?9 or
+                     char in ~c"!#$%&'*+-.^_`|~"
+
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 
     def sock_data(%@for{} = socket), do: Bandit.SocketHelpers.sock_data(socket.socket)
@@ -102,10 +108,11 @@ defmodule Bandit.HTTP1.Socket do
           do_read_request_line!(%{socket | buffer: socket.buffer <> chunk}, request_target)
 
         {:ok, {:http_request, method, request_target, version}, rest} ->
-          version = get_version!(version)
+          request_line = binary_part(socket.buffer, 0, byte_size(socket.buffer) - byte_size(rest))
+          version = get_version!(version, request_line)
           # decode_packet is inconsistent about atom/string method returns
           method = to_string(method)
-          request_target = resolve_request_target!(request_target, method)
+          request_target = resolve_request_target!(request_target, method, request_line)
           validate_request_line!(method, request_target)
           socket = %{socket | buffer: rest, version: version}
           {method, request_target, socket}
@@ -148,53 +155,158 @@ defmodule Bandit.HTTP1.Socket do
     # Request line components which are not binaries (ports, the :* path) cannot contain bytes
     defp request_line_component_valid?(_component), do: true
 
-    defp get_version!({1, 1}), do: :"HTTP/1.1"
-    defp get_version!({1, 0}), do: :"HTTP/1.0"
-    defp get_version!(other), do: request_error!("Invalid HTTP version: #{inspect(other)}")
+    # decode_packet reads the version numbers into C integers, which wrap (so 'HTTP/4294967297.1'
+    # reads as HTTP/1.1), and it accepts more than the RFC9112§2.3 grammar allows ('HTTP/01.01',
+    # 'HTTP/1.1.1', 'HTTP/1.1x'). It also ignores any words after the version. A front end that
+    # reads such a request line differently can disagree with us about the target, or about how
+    # the message is framed. Thus require the line to be exactly three words, the last of which
+    # is the version text
+    defp get_version!(version, request_line) when version in [{1, 1}, {1, 0}] do
+      case {version, request_line_words(request_line)} do
+        {{1, 1}, [_method, _target, "HTTP/1.1"]} ->
+          :"HTTP/1.1"
 
-    # Unwrap different request_targets returned by :erlang.decode_packet/3
-    defp resolve_request_target!({:abs_path, path}, _), do: {nil, nil, nil, path}
+        {{1, 0}, [_method, _target, "HTTP/1.0"]} ->
+          :"HTTP/1.0"
 
-    defp resolve_request_target!({:absoluteURI, scheme, host, :undefined, path}, _),
-      do: {to_string(scheme), host, nil, path}
+        {_, [_method, _target, raw]} ->
+          request_error!("Invalid HTTP version: #{inspect(raw)} (RFC9112§2.3)")
 
-    defp resolve_request_target!({:absoluteURI, scheme, host, port, path}, _),
-      do: {to_string(scheme), host, port, path}
-
-    defp resolve_request_target!(:*, "OPTIONS"), do: {nil, nil, nil, :*}
-
-    defp resolve_request_target!({:scheme, scheme, port}, "CONNECT"),
-      do: {nil, scheme, port, nil}
-
-    defp resolve_request_target!(_request_target, _method),
-      do: request_error!("Unsupported request target (RFC9112§3.2)")
-
-    defp do_read_headers!(%@for{} = socket) do
-      packet_size = Keyword.get(socket.opts.http_1, :max_header_length, 10_000)
-      max_header_count = Keyword.get(socket.opts.http_1, :max_header_count, 50)
-      do_read_headers!(socket, packet_size, max_header_count, [], 0)
+        _ ->
+          request_error!("Request line does not have exactly three words (RFC9112§3)")
+      end
     end
 
-    defp do_read_headers!(socket, packet_size, max_header_count, headers, header_count) do
+    defp get_version!(other, _request_line),
+      do: request_error!("Invalid HTTP version: #{inspect(other)}")
+
+    # The words of a request line, without its CRLF or (per RFC9112§2.2) bare LF line ending
+    defp request_line_words(request_line) do
+      request_line
+      |> String.replace_suffix("\n", "")
+      |> String.replace_suffix("\r", "")
+      |> :binary.split([" ", "\t"], [:global, :trim_all])
+    end
+
+    # Unwrap different request_targets returned by :erlang.decode_packet/3
+    defp resolve_request_target!({:abs_path, path}, _, _), do: {nil, nil, nil, path}
+
+    # decode_packet parses an absolute-form target loosely. It reads the port into a C integer,
+    # which wraps (so 'host:4294967376' reads as port 80), and it silently drops a port that it
+    # cannot parse (so 'host:-1' reads as no port). It also ends the authority only at ':' or
+    # '/', so in 'http://host:80?q=/admin' it takes '/admin' as the path, where RFC3986§3 takes
+    # an empty path and the query 'q=/admin'. Split the target from the request line as
+    # RFC3986§3 does. The pipeline then holds the host and port to the same grammar as a Host
+    # header. If the two parsers disagree about the path, other parsers can disagree too, so
+    # reject the request
+    defp resolve_request_target!({:absoluteURI, scheme, _host, _port, path}, _, request_line) do
+      case parse_absolute_form(request_line) do
+        {host, port, ^path} -> {to_string(scheme), host, port, path}
+        _ -> request_error!("Request target has an ambiguous path (RFC9112§3.2.2)")
+      end
+    end
+
+    defp resolve_request_target!(:*, "OPTIONS", _), do: {nil, nil, nil, :*}
+
+    defp resolve_request_target!({:scheme, scheme, port}, "CONNECT", _),
+      do: {nil, scheme, port, nil}
+
+    defp resolve_request_target!(_request_target, _method, _),
+      do: request_error!("Unsupported request target (RFC9112§3.2)")
+
+    # The authority of an absolute-form target starts after the first '://' in the request line
+    # (a method cannot contain ':' or '/'), and ends at the start of the path, query or fragment.
+    # The target ends at the whitespace before the version. Control bytes are left in place, for
+    # validate_request_line!/2 to reject
+    defp parse_absolute_form(request_line) do
+      [_method_and_scheme, rest] = :binary.split(request_line, "://")
+      [target | _] = :binary.split(rest, [" ", "\t"])
+      [authority | _] = :binary.split(target, ["/", "?", "#"])
+
+      path_and_query =
+        binary_part(target, byte_size(authority), byte_size(target) - byte_size(authority))
+
+      {host, port} = split_authority(authority)
+      {host, port, absolute_form_path(path_and_query)}
+    end
+
+    # RFC9110§4.2.1: an empty path is the same as '/'
+    defp absolute_form_path(""), do: "/"
+    defp absolute_form_path("/" <> _ = path), do: path
+    defp absolute_form_path(query_or_fragment), do: "/" <> query_or_fragment
+
+    # Leaves anything malformed in place, for the pipeline to reject
+    defp split_authority("[" <> _ = authority) do
+      case :binary.split(authority, "]") do
+        [literal, ""] -> {literal <> "]", nil}
+        [literal, ":" <> port] -> {literal <> "]", port}
+        [literal, suffix] -> {literal <> "]", suffix}
+        [_unterminated] -> {authority, nil}
+      end
+    end
+
+    defp split_authority(authority) do
+      case :binary.split(authority, ":") do
+        [host, port] -> {host, port}
+        [host] -> {host, nil}
+      end
+    end
+
+    # RFC9112§2.2 lets a recipient take a bare LF as the end of a line, and :erlang.decode_packet/3
+    # does so. That is kept for the header section. Within a chunked body (the trailer section)
+    # every line must end in CRLF instead, as the chunk-size and chunk-data lines must: a proxy
+    # that ends trailer lines only at CRLF reads a different end of body than one that also ends
+    # them at a bare LF, which lets a client smuggle a request (see GHSA-w5wc-g2hc-g7m2)
+    defp do_read_headers!(%@for{} = socket, line_ending \\ :lf) do
+      packet_size = Keyword.get(socket.opts.http_1, :max_header_length, 10_000)
+      max_header_count = Keyword.get(socket.opts.http_1, :max_header_count, 50)
+      do_read_headers!(socket, line_ending, packet_size, max_header_count, [], 0)
+    end
+
+    defp do_read_headers!(
+           socket,
+           line_ending,
+           packet_size,
+           max_header_count,
+           headers,
+           header_count
+         ) do
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
           chunk = read_available!(socket.socket, socket.socket.read_timeout)
           socket = %{socket | buffer: socket.buffer <> chunk}
-          do_read_headers!(socket, packet_size, max_header_count, headers, header_count)
+
+          do_read_headers!(
+            socket,
+            line_ending,
+            packet_size,
+            max_header_count,
+            headers,
+            header_count
+          )
 
         {:ok, {:http_header, _, header, _, value}, rest} ->
+          validate_line_ending!(line_ending, socket.buffer, rest)
           validate_field_value!(value)
           socket = %{socket | buffer: rest}
           headers = [{header |> to_string() |> String.downcase(:ascii), value} | headers]
           header_count = header_count + 1
 
           if header_count <= max_header_count do
-            do_read_headers!(socket, packet_size, max_header_count, headers, header_count)
+            do_read_headers!(
+              socket,
+              line_ending,
+              packet_size,
+              max_header_count,
+              headers,
+              header_count
+            )
           else
             request_error!("Too many headers", :request_header_fields_too_large)
           end
 
         {:ok, :http_eoh, rest} ->
+          validate_line_ending!(line_ending, socket.buffer, rest)
           socket = %{socket | read_state: :headers_read, buffer: rest}
           {Enum.reverse(headers), socket}
 
@@ -206,6 +318,19 @@ defmodule Bandit.HTTP1.Socket do
 
         {:error, reason} ->
           request_error!("Header read unknown error: #{inspect(reason)}")
+      end
+    end
+
+    # decode_packet consumed the line from buffer, leaving rest
+    defp validate_line_ending!(:lf, _buffer, _rest), do: :ok
+
+    defp validate_line_ending!(:crlf, buffer, rest) do
+      line_length = byte_size(buffer) - byte_size(rest)
+
+      if line_length >= 2 and binary_part(buffer, line_length - 2, 2) == "\r\n" do
+        :ok
+      else
+        request_error!("Trailer section line does not end in CRLF (RFC9112§7.1.2)")
       end
     end
 
@@ -279,10 +404,10 @@ defmodule Bandit.HTTP1.Socket do
     def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
       case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, 0, opts) do
         {:ok, body, buffer} ->
-          {:ok, IO.iodata_to_binary(body), %{socket | read_state: :read, buffer: buffer}}
+          {:ok, body, %{socket | read_state: :read, buffer: buffer}}
 
         {:more, body, buffer} ->
-          {:more, IO.iodata_to_binary(body), %{socket | buffer: buffer}}
+          {:more, body, %{socket | buffer: buffer}}
       end
     end
 
@@ -301,11 +426,17 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     # do_read_chunked_data! reads up to the configured length, reading multiple
-    # chunks to do so. It accumulates data in the 'body' list, adding to it
+    # chunks to do so. It accumulates data in the 'body' binary, appending to it
     # chunk by (possibly partial) chunk until either the end of the body is reached
     # or the configured length is exceeded. Note that an exhausted read budget must
     # be checked before attempting to read a chunk, since a zero-byte chunk read is
-    # otherwise indistinguishable from the terminal chunk
+    # otherwise indistinguishable from the terminal chunk.
+    #
+    # The body is a binary and not an iolist because the configured length limits the bytes
+    # in the body, not the number of chunks they arrive in. An iolist uses a list cell and a
+    # binary term for each chunk, so a body sent as one-byte chunks uses many times its own
+    # size in memory (GHSA-jwh3-j29h-qfmw). Appending to a binary uses memory in proportion to
+    # the bytes only
     defp do_read_chunked_data!(socket, buffer, body, body_length, opts) do
       max_to_read = Keyword.get(opts, :length, 8_000_000) - body_length
 
@@ -316,7 +447,6 @@ defmodule Bandit.HTTP1.Socket do
       end
     end
 
-    @dialyzer {:no_improper_lists, do_read_next_chunk!: 6}
     defp do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, opts) do
       case do_read_chunk!(socket, buffer, max_to_read, opts) do
         {:done, rest} ->
@@ -324,14 +454,29 @@ defmodule Bandit.HTTP1.Socket do
 
         {:chunk, chunk, rest} ->
           length = IO.iodata_length(chunk)
+          # A chunk at least as large as the body so far is joined to it with one copy of both,
+          # which costs no more than appending, and avoids growing body several times over
+          body =
+            if length >= byte_size(body),
+              do: IO.iodata_to_binary([body | chunk]),
+              else: append_iodata(body, chunk)
 
           if length < max_to_read do
-            do_read_chunked_data!(socket, rest, [body | chunk], body_length + length, opts)
+            do_read_chunked_data!(socket, rest, body, body_length + length, opts)
           else
-            {:more, [body | chunk], rest}
+            {:more, body, rest}
           end
       end
     end
+
+    # Appends each binary in an (possibly improper) iolist to body, so that the data is copied
+    # once. IO.iodata_to_binary/1 followed by an append would copy it twice
+    @dialyzer {:no_improper_lists, append_iodata: 2}
+    defp append_iodata(body, data) when is_binary(data), do: <<body::binary, data::binary>>
+    defp append_iodata(body, []), do: body
+
+    defp append_iodata(body, [head | tail]),
+      do: body |> append_iodata(head) |> append_iodata(tail)
 
     # do_read_chunk will read a single chunk, including the header length and
     # trailing \r\n marker. In the case of chunks which are longer than max_to_read,
@@ -347,7 +492,7 @@ defmodule Bandit.HTTP1.Socket do
       case do_read_chunk_size!(socket, buffer, opts) do
         {0, rest} ->
           {trailers, fake_socket} =
-            do_read_headers!(%@for{socket: socket, buffer: rest, opts: %{http_1: []}})
+            do_read_headers!(%@for{socket: socket, buffer: rest, opts: %{http_1: []}}, :crlf)
 
           if trailers != [],
             do: Logger.warning("Encountered trailers in chunked request; ignoring")
@@ -407,35 +552,89 @@ defmodule Bandit.HTTP1.Socket do
 
     defp do_parse_chunk_size(buffer, chunk_size_size) do
       <<chunk_size_line::binary-size(^chunk_size_size), "\r\n", rest::binary>> = buffer
+      {chunk_size, chunk_ext} = split_chunk_size_line(chunk_size_line, 0)
+      chunk_size = parse_chunk_size!(chunk_size)
 
-      # Chunk extensions (anything from a ';' onward) are ignored per RFC9112§7.1.1
-      [chunk_size | _chunk_ext] = :binary.split(chunk_size_line, ";")
+      # Chunk extensions are ignored per RFC9112§7.1.1, but they must still match its grammar.
+      # Without this check, a bare CR or LF in an extension is discarded as part of it. A
+      # proxy which ends the size line at the bare LF then disagrees with us about where the
+      # chunk data starts, and so where the body ends (GHSA-w5wc-g2hc-g7m2)
+      if not valid_chunk_ext?(chunk_ext),
+        do: request_error!("Invalid chunk extension (RFC9112§7.1.1)")
 
-      {parse_chunk_size!(chunk_size), rest}
+      {chunk_size, rest}
     end
 
-    # RFC9112§7.1 defines chunk-size as 1*HEXDIG. Integer.parse/2 is close to that grammar but
-    # not equal to it: the only extra thing it will consume is a single leading '+' or '-'.
-    # Without ruling that out, '+10' reads as a sixteen byte chunk, and '-0' parses as zero and
-    # is taken for the terminating chunk, ending the body at a position no conforming parser
-    # would end it at. A negative size reaches read_exactly!/5, which is guarded on a
-    # non-negative length and so raises FunctionClauseError rather than returning a 400.
-    #
-    # A sign can only ever appear as the first byte, so anchoring the guard there closes the
-    # gap: once the first byte is a hex digit, the only remaining way Integer.parse/2 can
-    # disagree with the grammar is trailing junk (e.g. "5g"), which the {chunk_size, ""} match
-    # already rules out by requiring the parse to consume every byte. The empty string can't
-    # match the leading-byte pattern either, so it falls through to the catch-all clause.
-    @spec parse_chunk_size!(binary()) :: non_neg_integer()
-    defp parse_chunk_size!(<<digit, _::binary>> = chunk_size)
-         when digit in ?0..?9 or digit in ?a..?f or digit in ?A..?F do
-      case Integer.parse(chunk_size, 16) do
-        {chunk_size, ""} -> chunk_size
-        _ -> request_error!("Unable to parse chunk size")
+    # Splits a chunk size line into its leading run of hex digits and everything after them
+    defp split_chunk_size_line(line, count) do
+      case line do
+        <<_::binary-size(^count), digit, _::binary>>
+        when digit in ?0..?9 or digit in ?a..?f or digit in ?A..?F ->
+          split_chunk_size_line(line, count + 1)
+
+        <<chunk_size::binary-size(^count), chunk_ext::binary>> ->
+          {chunk_size, chunk_ext}
       end
     end
 
-    defp parse_chunk_size!(_chunk_size), do: request_error!("Unable to parse chunk size")
+    # RFC9112§7.1 defines chunk-size as 1*HEXDIG
+    @spec parse_chunk_size!(binary()) :: non_neg_integer()
+    defp parse_chunk_size!(<<>>), do: request_error!("Unable to parse chunk size")
+    defp parse_chunk_size!(chunk_size), do: String.to_integer(chunk_size, 16)
+
+    # RFC9112§7.1.1:
+    #
+    #   chunk-ext      = *( BWS ";" BWS chunk-ext-name [ BWS "=" BWS chunk-ext-val ] )
+    #   chunk-ext-name = token
+    #   chunk-ext-val  = token / quoted-string
+    defp valid_chunk_ext?(<<>>), do: true
+
+    defp valid_chunk_ext?(chunk_ext) do
+      case skip_bws(chunk_ext) do
+        ";" <> rest -> rest |> skip_bws() |> valid_chunk_ext_name?()
+        _ -> false
+      end
+    end
+
+    defp valid_chunk_ext_name?(<<char, _::binary>> = chunk_ext) when is_tchar(char) do
+      rest = skip_token(chunk_ext)
+
+      case skip_bws(rest) do
+        "=" <> value -> value |> skip_bws() |> valid_chunk_ext_val?()
+        _ -> valid_chunk_ext?(rest)
+      end
+    end
+
+    defp valid_chunk_ext_name?(_chunk_ext), do: false
+
+    defp valid_chunk_ext_val?(<<?", rest::binary>>), do: valid_quoted_string_rest?(rest)
+
+    defp valid_chunk_ext_val?(<<char, _::binary>> = chunk_ext) when is_tchar(char),
+      do: chunk_ext |> skip_token() |> valid_chunk_ext?()
+
+    defp valid_chunk_ext_val?(_chunk_ext), do: false
+
+    # RFC9110§5.6.4: quoted-string = DQUOTE *( qdtext / quoted-pair ) DQUOTE, where
+    # qdtext = HTAB / SP / %x21 / %x23-5B / %x5D-7E / obs-text and
+    # quoted-pair = "\" ( HTAB / SP / VCHAR / obs-text )
+    defp valid_quoted_string_rest?(<<?", rest::binary>>), do: valid_chunk_ext?(rest)
+
+    defp valid_quoted_string_rest?(<<?\\, char, rest::binary>>)
+         when char == ?\t or char in 0x20..0x7E or char in 0x80..0xFF,
+         do: valid_quoted_string_rest?(rest)
+
+    defp valid_quoted_string_rest?(<<char, rest::binary>>)
+         when char == ?\t or char in 0x20..0x21 or char in 0x23..0x5B or char in 0x5D..0x7E or
+                char in 0x80..0xFF,
+         do: valid_quoted_string_rest?(rest)
+
+    defp valid_quoted_string_rest?(_chunk_ext), do: false
+
+    defp skip_bws(<<char, rest::binary>>) when char in [?\s, ?\t], do: skip_bws(rest)
+    defp skip_bws(rest), do: rest
+
+    defp skip_token(<<char, rest::binary>>) when is_tchar(char), do: skip_token(rest)
+    defp skip_token(rest), do: rest
 
     ##################
     # Internal Reading

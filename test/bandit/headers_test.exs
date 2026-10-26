@@ -62,6 +62,32 @@ defmodule Bandit.HeadersTest do
       end
     end
 
+    test "parses ports with leading zeros" do
+      assert {"banana", 80} = Headers.parse_hostlike_header!("banana:00080")
+
+      assert {"banana", 80} =
+               Headers.parse_hostlike_header!("banana:" <> String.duplicate("0", 10_000) <> "80")
+    end
+
+    # GHSA-29cr-8477-rg6r: building a long run of digits into an integer one digit at a time
+    # takes quadratic time (several seconds for this value). It must be rejected without that
+    test "rejects a port with many digits without converting it" do
+      port = String.duplicate("9", 200_000)
+
+      {elapsed_us, _} =
+        :timer.tc(fn ->
+          assert_raise(Bandit.HTTPError, @error_msg, fn ->
+            Headers.parse_hostlike_header!("banana:" <> port)
+          end)
+
+          assert_raise(Bandit.HTTPError, @error_msg, fn ->
+            Headers.parse_hostlike_header!("[::1]:" <> port)
+          end)
+        end)
+
+      assert elapsed_us < 100_000
+    end
+
     test "returns error for ipv6 invalid ports" do
       for port <- @invalid_ports do
         assert_raise(Bandit.HTTPError, @error_msg, fn ->
@@ -121,6 +147,36 @@ defmodule Bandit.HeadersTest do
       for integer <- @neg_ints do
         header = [{"content-length", integer}]
         assert {:error, _} = Headers.get_content_length(header)
+      end
+    end
+
+    test "parses the largest values it accepts" do
+      header = [{"content-length", "9999999999999999999"}]
+      assert Headers.get_content_length(header) == {:ok, 9_999_999_999_999_999_999}
+    end
+
+    test "parses values with many leading zeros" do
+      header = [{"content-length", String.duplicate("0", 10_000) <> "123"}]
+      assert Headers.get_content_length(header) == {:ok, 123}
+
+      header = [{"content-length", String.duplicate("0", 10_000)}]
+      assert Headers.get_content_length(header) == {:ok, 0}
+    end
+
+    # GHSA-29cr-8477-rg6r: building a long run of digits into an integer one digit at a time
+    # takes quadratic time (several seconds for the longest value here). Values with more
+    # digits than any usable length must be rejected without that
+    test "errors on values with more digits than any usable length, without converting them" do
+      for value <- [
+            "10000000000000000000",
+            String.duplicate("9", 200_000),
+            String.duplicate("9", 200_000) <> ", 1",
+            "1, " <> String.duplicate("9", 200_000)
+          ] do
+        header = [{"content-length", value}]
+        {elapsed_us, result} = :timer.tc(fn -> Headers.get_content_length(header) end)
+        assert {:error, _} = result
+        assert elapsed_us < 100_000
       end
     end
 
