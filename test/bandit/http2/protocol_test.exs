@@ -2936,6 +2936,104 @@ defmodule HTTP2ProtocolTest do
       assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected at most 1 :authority headers"
     end
 
+    test "accepts a host header matching :authority", context do
+      for {authority, host} <- [
+            {"a.example", "a.example"},
+            {"A.Example", "a.EXAMPLE"},
+            {"a.example:443", "A.EXAMPLE:00443"}
+          ] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "HEAD"},
+          {":path", "/no_body_response"},
+          {":scheme", "https"},
+          {":authority", authority},
+          {"host", host}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.successful_response?(socket, 1, true)
+      end
+    end
+
+    @tag :capture_log
+    test "returns a stream error if host and :authority disagree", context do
+      for {authority, host} <- [
+            {"a.example", "b.example"},
+            {"a.example:443", "a.example:444"},
+            {"a.example", "a.example:443"},
+            {"a.example:443", "a.example"}
+          ] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "HEAD"},
+          {":path", "/no_body_response"},
+          {":scheme", "https"},
+          {":authority", authority},
+          {"host", host}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTP2.Errors.StreamError) Host header differs from :authority (RFC9113§8.3.1)"
+      end
+    end
+
+    @tag :capture_log
+    test "returns a stream error if multiple host headers are received", context do
+      for authority <- [[], [{":authority", "a.example"}]],
+          second_host <- ["a.example", "b.example"] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers =
+          [
+            {":method", "HEAD"},
+            {":path", "/no_body_response"},
+            {":scheme", "https"}
+          ] ++ authority ++ [{"host", "a.example"}, {"host", second_host}]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+        assert msg == "** (Bandit.HTTP2.Errors.StreamError) Expected at most 1 host headers"
+      end
+    end
+
+    @tag :capture_log
+    test "returns a stream error for invalid host syntax when :authority is present", context do
+      for host <- ["user@a.example", "a.example:invalid", "a.example:65536", "[::1"] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "HEAD"},
+          {":path", "/no_body_response"},
+          {":scheme", "https"},
+          {":authority", "a.example"},
+          {"host", host}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+        assert msg == "** (Bandit.HTTP2.Errors.StreamError) Received invalid host header"
+      end
+    end
+
     @tag :capture_log
     test "returns a stream error if a header value contains a bare CR (RFC9113§8.2.1)", context do
       socket = SimpleH2Client.setup_connection(context)
@@ -4317,7 +4415,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["scheme"] == "https"
     end
 
-    test "derives host from :authority header, even if it differs from host header", context do
+    test "derives host from :authority header when host header agrees", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -4325,7 +4423,7 @@ defmodule HTTP2ProtocolTest do
         {":path", "/echo_components"},
         {":scheme", "https"},
         {":authority", "banana:#{context.port}"},
-        {"host", "orange:#{context.port}"}
+        {"host", "BANANA:#{context.port}"}
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
@@ -4335,7 +4433,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["host"] == "banana"
     end
 
-    test "derives ipv6 host from the URI, even if it differs from host header", context do
+    test "derives ipv6 host from :authority header when host header agrees", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -4343,7 +4441,7 @@ defmodule HTTP2ProtocolTest do
         {":path", "/echo_components"},
         {":scheme", "https"},
         {":authority", "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]:#{context.port}"},
-        {"host", "orange"}
+        {"host", "[fedc:ba98:7654:3210:fedc:ba98:7654:3210]:#{context.port}"}
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)
@@ -4353,7 +4451,7 @@ defmodule HTTP2ProtocolTest do
       assert Jason.decode!(body)["host"] == "[FEDC:BA98:7654:3210:FEDC:BA98:7654:3210]"
     end
 
-    test "derives port from host header, even if it differs from host header", context do
+    test "derives port from :authority header when host header agrees", context do
       socket = SimpleH2Client.setup_connection(context)
 
       headers = [
@@ -4361,7 +4459,7 @@ defmodule HTTP2ProtocolTest do
         {":path", "/echo_components"},
         {":scheme", "https"},
         {":authority", "banana:1234"},
-        {"host", "banana:2345"}
+        {"host", "banana:01234"}
       ]
 
       SimpleH2Client.send_headers(socket, 1, true, headers)

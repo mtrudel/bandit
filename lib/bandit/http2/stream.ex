@@ -147,6 +147,8 @@ defmodule Bandit.HTTP2.Stream do
           exactly_one_instance_of!(pseudo_headers, ":method", stream)
           exactly_one_instance_of!(pseudo_headers, ":path", stream)
           at_most_one_instance_of!(pseudo_headers, ":authority", stream)
+          at_most_one_instance_of!(headers, "host", stream)
+          host_matches_authority!(headers, request_target, stream)
           no_connection_headers!(headers, stream)
           valid_te_header!(headers, stream)
           content_length = get_content_length!(headers, stream)
@@ -177,6 +179,30 @@ defmodule Bandit.HTTP2.Stream do
       end
     rescue
       _error in Bandit.HTTPError -> stream_error!("Received invalid :authority", stream)
+    end
+
+    # RFC9113§8.3.1 - host and :authority must agree. An absent port only matches
+    # another absent port; do not substitute the scheme's default.
+    defp host_matches_authority!(_headers, {_scheme, nil, _port, _path}, _stream), do: :ok
+
+    defp host_matches_authority!(
+           headers,
+           {_scheme, authority_host, authority_port, _path},
+           stream
+         ) do
+      case Bandit.Headers.get_header(headers, "host") do
+        nil ->
+          :ok
+
+        host_header ->
+          {host, port} = Bandit.Headers.parse_hostlike_header!(host_header)
+
+          if String.downcase(host, :ascii) != String.downcase(authority_host, :ascii) or
+               port != authority_port,
+             do: stream_error!("Host header differs from :authority (RFC9113§8.3.1)", stream)
+      end
+    rescue
+      _error in Bandit.HTTPError -> stream_error!("Received invalid host header", stream)
     end
 
     # RFC9113§8.3.1 - path should be non-empty and absolute
@@ -215,8 +241,8 @@ defmodule Bandit.HTTP2.Stream do
         do: stream_error!("Expected 1 #{header} headers", stream)
     end
 
-    # RFC9113§8.3 - a pseudo header field name (such as :authority, which is optional
-    # and so cannot use exactly_one_instance_of!/3) must not appear more than once
+    # RFC9113§8.3 / RFC9110§7.2 - :authority and host are optional, but must not
+    # appear more than once
     defp at_most_one_instance_of!(headers, header, stream) do
       if Enum.count(headers, fn {key, _value} -> key == header end) > 1,
         do: stream_error!("Expected at most 1 #{header} headers", stream)
