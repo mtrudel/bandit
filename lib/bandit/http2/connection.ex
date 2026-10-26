@@ -235,19 +235,7 @@ defmodule Bandit.HTTP2.Connection do
         # We need to preserve HPAX's internal state even if we reject this stream's header list
         connection = %{connection | recv_hpack_state: recv_hpack_state}
 
-        # Erlang term ordering does the right thing with :infinity here
-        if header_list_size(headers) > connection.local_settings.max_header_list_size do
-          send_rst_stream(
-            frame.stream_id,
-            Bandit.HTTP2.Errors.enhance_your_calm(),
-            socket,
-            connection
-          )
-
-          connection
-        else
-          deliver_headers(connection, frame, headers, socket)
-        end
+        deliver_headers(connection, frame, headers, socket)
 
       _ ->
         connection_error!("Header decode error", Bandit.HTTP2.Errors.compression_error())
@@ -504,6 +492,24 @@ defmodule Bandit.HTTP2.Connection do
   # advanced by decoding this header block; if it did, our decoder would no longer match the
   # peer's encoder for the rest of the connection
   defp deliver_headers(connection, frame, headers, socket) do
+    case Bandit.HTTP2.StreamCollection.get_pid(connection.streams, frame.stream_id) do
+      :invalid ->
+        connection_error!("Received invalid stream identifier")
+
+      :closed ->
+        :ok
+
+      _stream ->
+        # Erlang term ordering does the right thing with :infinity here
+        if header_list_size(headers) > connection.local_settings.max_header_list_size do
+          stream_error!(
+            "Decoded header list exceeds max_header_list_size (RFC9113§6.5.2)",
+            frame.stream_id,
+            Bandit.HTTP2.Errors.enhance_your_calm()
+          )
+        end
+    end
+
     case Map.fetch(connection.stream_data_buffers, frame.stream_id) do
       _ when is_map_key(connection.remote_ended_streams, frame.stream_id) ->
         pid = Bandit.HTTP2.StreamCollection.get_pid(connection.streams, frame.stream_id)
@@ -528,13 +534,19 @@ defmodule Bandit.HTTP2.Connection do
     end
   rescue
     error in Bandit.HTTP2.Errors.StreamError ->
-      send_rst_stream(error.stream_id, error.error_code, socket, connection)
+      case Bandit.HTTP2.StreamCollection.get_pid(connection.streams, error.stream_id) do
+        pid when is_pid(pid) ->
+          reset_stream(connection, error.stream_id, pid, error.error_code, socket)
 
-      # Record the refused stream as seen, so that the peer cannot open it again later
-      %{
-        connection
-        | streams: Bandit.HTTP2.StreamCollection.refuse(connection.streams, error.stream_id)
-      }
+        _stream ->
+          send_rst_stream(error.stream_id, error.error_code, socket, connection)
+
+          # Record the refused stream as seen, so that the peer cannot open it again later
+          %{
+            connection
+            | streams: Bandit.HTTP2.StreamCollection.refuse(connection.streams, error.stream_id)
+          }
+      end
   end
 
   # Per RFC9113§5.1, an idle stream can receive only HEADERS and PRIORITY frames
