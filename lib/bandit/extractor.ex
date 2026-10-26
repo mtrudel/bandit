@@ -14,6 +14,8 @@ defmodule Bandit.Extractor do
   @type t :: %__MODULE__{
           header: binary(),
           payload: iodata(),
+          payload_pending: iodata(),
+          payload_pending_count: non_neg_integer(),
           payload_length: non_neg_integer(),
           required_length: non_neg_integer(),
           mode: :header_parsing | :payload_parsing,
@@ -24,12 +26,20 @@ defmodule Bandit.Extractor do
 
   defstruct header: <<>>,
             payload: [],
+            payload_pending: [],
+            payload_pending_count: 0,
             payload_length: 0,
             required_length: 0,
             mode: :header_parsing,
             max_frame_size: 0,
             frame_parser: nil,
             primitive_ops_module: nil
+
+  # The maximum number of received packets that are kept as separate binaries before they are
+  # copied into one binary. A peer that sends a large frame as many 1 byte packets could otherwise
+  # make us keep about 40 bytes of memory for each byte of payload. Each batch is copied one time
+  # only, so the frame is put together in linear time
+  @max_pending_packets 1024
 
   @spec new(module(), module(), Keyword.t()) :: t()
   def new(frame_parser, primitive_ops_module, opts) do
@@ -48,10 +58,24 @@ defmodule Bandit.Extractor do
       %{mode: :header_parsing} ->
         %{state | header: state.header <> data}
 
-      %{mode: :payload_parsing, payload: payload, payload_length: length} ->
-        %{state | payload: [payload, data], payload_length: length + byte_size(data)}
+      %{mode: :payload_parsing} ->
+        %{
+          state
+          | payload_pending: [state.payload_pending, data],
+            payload_pending_count: state.payload_pending_count + 1,
+            payload_length: state.payload_length + byte_size(data)
+        }
+        |> maybe_coalesce_payload()
     end
   end
+
+  defp maybe_coalesce_payload(%{payload_pending_count: count} = state)
+       when count >= @max_pending_packets do
+    chunk = IO.iodata_to_binary(state.payload_pending)
+    %{state | payload: [state.payload, chunk], payload_pending: [], payload_pending_count: 0}
+  end
+
+  defp maybe_coalesce_payload(state), do: state
 
   @spec pop_frame(t()) :: {t(), :more | deserialize_result()}
   def pop_frame(state)
@@ -79,8 +103,16 @@ defmodule Bandit.Extractor do
         } = state
       ) do
     if payload_length >= required_length do
-      <<payload::binary-size(^required_length), rest::binary>> =
-        IO.iodata_to_binary(state.payload)
+      # When nothing is pending, state.payload can be the binary from the packet that held the
+      # header. Do not wrap it in a list, because IO.iodata_to_binary/1 returns a binary as is but
+      # copies a list. A copy for each frame would make a packet of many small frames quadratic
+      buffer =
+        case state.payload_pending do
+          [] -> IO.iodata_to_binary(state.payload)
+          pending -> IO.iodata_to_binary([state.payload, pending])
+        end
+
+      <<payload::binary-size(^required_length), rest::binary>> = buffer
 
       frame = state.frame_parser.deserialize(state.header <> payload, state.primitive_ops_module)
       state = transition_to_header_parsing(state, rest)
@@ -106,6 +138,8 @@ defmodule Bandit.Extractor do
     state
     |> Map.put(:header, rest)
     |> Map.put(:payload, [])
+    |> Map.put(:payload_pending, [])
+    |> Map.put(:payload_pending_count, 0)
     |> Map.put(:payload_length, 0)
     |> Map.put(:required_length, 0)
     |> Map.put(:mode, :header_parsing)

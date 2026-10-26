@@ -10,7 +10,19 @@ defmodule WebSocketProtocolTest do
     conn = Plug.Conn.fetch_query_params(conn)
     websock = conn.query_params["websock"] |> String.to_atom()
     compress = conn.query_params["compress"]
-    Plug.Conn.upgrade_adapter(conn, :websocket, {websock, conn.params, compress: compress})
+
+    timeout =
+      case conn.query_params["timeout"] do
+        nil -> []
+        "infinity" -> [timeout: :infinity]
+        timeout -> [timeout: String.to_integer(timeout)]
+      end
+
+    Plug.Conn.upgrade_adapter(
+      conn,
+      :websocket,
+      {websock, conn.params, [compress: compress] ++ timeout}
+    )
   end
 
   # These websocks are used throughout these tests, so declare them top-level
@@ -175,8 +187,92 @@ defmodule WebSocketProtocolTest do
 
       frame = %Bandit.WebSocket.Frame.Continuation{fin: false, data: <<>>}
 
-      assert {:continue, %{fragment_frame: %{data: ["AB"]}, fragment_size: 2}} =
-               Bandit.WebSocket.Connection.handle_frame(frame, nil, connection)
+      assert {:continue,
+              %{
+                fragment_frame: %{data: ["AB"]},
+                fragment_size: 2,
+                fragment_pending: [],
+                fragment_pending_count: 0
+              }} = Bandit.WebSocket.Connection.handle_frame(frame, nil, connection)
+    end
+
+    defmodule PidReportingEchoWebSock do
+      use NoopWebSock
+
+      def init(state) do
+        WebSocketProtocolTest.send({:websock_pid, self()})
+        {:ok, state}
+      end
+
+      def handle_in({data, opcode: opcode}, state), do: {:push, {opcode, data}, state}
+    end
+
+    # A masked frame with a zero mask, so that the payload goes on the wire as is
+    defp zero_masked_frame(fin, opcode, payload) when byte_size(payload) <= 125,
+      do: <<fin::1, 0::3, opcode::4, 1::1, byte_size(payload)::7, 0::32, payload::binary>>
+
+    test "many 1 byte continuation frames do not hold memory far above the message size",
+         context do
+      # Regression test for GHSA-cpx7-qf6w-jc63: each non-final 1 byte continuation frame was
+      # kept as a separate binary, which cost ~150 bytes of memory per byte of payload
+      client = SimpleWebSocketClient.tcp_client(context)
+
+      # Use a long timeout, so that a slow test machine does not close the connection between
+      # batches of fragments
+      SimpleWebSocketClient.http1_handshake(client, PidReportingEchoWebSock, timeout: "5000")
+      assert_receive {:websock_pid, pid}, 500
+
+      fragments = 200_000
+      SimpleWebSocketClient.send_binary_frame(client, <<0>>, 0x0)
+
+      expected =
+        for chunk <- Enum.chunk_every(1..fragments, 10_000), into: <<0>> do
+          payload = for i <- chunk, into: <<>>, do: <<rem(i, 256)>>
+          Transport.send(client, for(<<b <- payload>>, do: zero_masked_frame(0, 0x0, <<b>>)))
+          payload
+        end
+
+      # A ping round trip tells us that the server has processed all the fragments
+      SimpleWebSocketClient.send_ping_frame(client, "sync")
+      assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "sync"}
+
+      :erlang.garbage_collect(pid)
+      {:memory, heap_bytes} = Process.info(pid, :memory)
+      {:binary, binaries} = Process.info(pid, :binary)
+      binary_bytes = binaries |> Enum.map(&elem(&1, 1)) |> Enum.sum()
+
+      # Before the fix this was ~30 MB for 200 KB of payload
+      assert heap_bytes + binary_bytes < 2_000_000
+
+      # The message must still be correct when the coalesced fragments are put together
+      SimpleWebSocketClient.send_continuation_frame(client, "end")
+      assert SimpleWebSocketClient.recv_binary_frame(client) == {:ok, expected <> "end"}
+    end
+
+    test "max_fragmented_message_size counts 1 byte continuation frames correctly", context do
+      output =
+        capture_log(fn ->
+          context = http_server(context, websocket_options: [max_fragmented_message_size: 5_000])
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, TerminateWebSock, timeout: "5000")
+
+          SimpleWebSocketClient.send_binary_frame(client, "A", 0x0)
+          Transport.send(client, :binary.copy(zero_masked_frame(0, 0x0, "B"), 4_999))
+
+          # We should still be alive here, with exactly 5000 bytes received
+          SimpleWebSocketClient.send_ping_frame(client, "sync")
+          assert SimpleWebSocketClient.recv_pong_frame(client) == {:ok, "sync"}
+          refute_receive {:error, "Received oversize fragmented message"}, 50
+
+          # This should send us over the edge
+          Transport.send(client, zero_masked_frame(0, 0x0, "B"))
+          assert_receive {:error, "Received oversize fragmented message"}, 500
+          assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1009::16>>}
+          assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+          Process.sleep(500)
+        end)
+
+      assert output =~ "Received oversize fragmented message"
     end
 
     test "zero byte non-fin continuation frames are accepted", context do
@@ -530,6 +626,272 @@ defmodule WebSocketProtocolTest do
 
       # Verify that the server didn't send any extraneous frames
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+    end
+  end
+
+  describe "frames and messages after a server-side close" do
+    # Regression tests for GHSA-2v5v-8f9v-xh85: after the WebSock stops the connection, the
+    # peer's frames and the process's messages must not get to the WebSock
+
+    defmodule RefuseInInitWebSock do
+      use NoopWebSock
+
+      def init(state) do
+        WebSocketProtocolTest.send({:websock_pid, self()})
+        {:stop, :normal, {4401, "unauthorized"}, state}
+      end
+
+      def handle_in(data, state) do
+        WebSocketProtocolTest.send({:handle_in, data})
+        {:ok, state}
+      end
+
+      def handle_info(msg, state) do
+        WebSocketProtocolTest.send({:handle_info, msg})
+        {:ok, state}
+      end
+
+      def handle_control(data, state) do
+        WebSocketProtocolTest.send({:handle_control, data})
+        {:ok, state}
+      end
+
+      def terminate(reason, _state), do: WebSocketProtocolTest.send({:terminate, reason})
+    end
+
+    test "frames are not sent to the WebSock after init/1 refuses the connection", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      # Use a long timeout, so that the close timer cannot close the connection before the frames
+      # below get to the server
+      SimpleWebSocketClient.http1_handshake(client, RefuseInInitWebSock, timeout: "2000")
+      assert_receive {:websock_pid, pid}, 500
+      assert_receive {:terminate, :normal}, 500
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+               {:ok, <<4401::16, "unauthorized">>}
+
+      # Ignore the Close frame, and try to use the connection anyway
+      SimpleWebSocketClient.send_text_frame(client, "delete_all_users")
+      SimpleWebSocketClient.send_binary_frame(client, "delete_all_users")
+      SimpleWebSocketClient.send_text_frame(client, "delete_", 0x0)
+      SimpleWebSocketClient.send_continuation_frame(client, "all_users")
+      SimpleWebSocketClient.send_ping_frame(client, "ping")
+      SimpleWebSocketClient.send_pong_frame(client, "pong")
+      send(pid, :some_message)
+
+      refute_receive {:handle_in, _}, 100
+      refute_receive {:handle_info, _}
+      refute_receive {:handle_control, _}
+      refute_receive {:terminate, _}
+
+      # The server must not send anything more (such as a pong) after its Close frame
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      Process.sleep(50)
+      refute Process.alive?(pid)
+    end
+
+    defmodule StopOnRequestWebSock do
+      use NoopWebSock
+
+      def init(state) do
+        WebSocketProtocolTest.send({:websock_pid, self()})
+        {:ok, state}
+      end
+
+      def handle_in({"stop:" <> variant, opcode: :text}, state) do
+        case variant do
+          "normal" -> {:stop, :normal, state}
+          "normal_code" -> {:stop, :normal, 4000, state}
+          "normal_code_msg" -> {:stop, :normal, 4000, {:text, "bye"}, state}
+          "disconnected" -> {:stop, {:shutdown, :disconnected}, state}
+          "restart" -> {:stop, {:shutdown, :restart}, state}
+        end
+      end
+
+      def handle_in(data, state) do
+        WebSocketProtocolTest.send({:handle_in, data})
+        {:push, {:text, "ack"}, state}
+      end
+
+      def handle_info(msg, state) do
+        WebSocketProtocolTest.send({:handle_info, msg})
+        {:ok, state}
+      end
+
+      def terminate(reason, _state), do: WebSocketProtocolTest.send({:terminate, reason})
+    end
+
+    for {variant, close_payload} <- [
+          {"normal", <<1000::16>>},
+          {"normal_code", <<4000::16>>},
+          {"normal_code_msg", <<4000::16>>},
+          {"disconnected", <<1000::16>>},
+          {"restart", <<1012::16>>}
+        ] do
+      test "frames are not sent to the WebSock after a #{variant} stop", context do
+        client = SimpleWebSocketClient.tcp_client(context)
+        SimpleWebSocketClient.http1_handshake(client, StopOnRequestWebSock, timeout: "2000")
+        assert_receive {:websock_pid, pid}, 500
+
+        SimpleWebSocketClient.send_text_frame(client, "before")
+        assert_receive {:handle_in, {"before", opcode: :text}}, 500
+        assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ack"}
+
+        # Send the stop request and one more frame in the same packet, so that the server
+        # reads them both in one handle_data/3 call
+        Transport.send(client, [
+          zero_masked_frame(1, 0x1, "stop:" <> unquote(variant)),
+          zero_masked_frame(1, 0x1, "same packet")
+        ])
+
+        assert_receive {:terminate, _reason}, 500
+
+        if unquote(variant) == "normal_code_msg" do
+          assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "bye"}
+        end
+
+        assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+                 {:ok, unquote(close_payload)}
+
+        SimpleWebSocketClient.send_text_frame(client, "after close")
+        send(pid, :some_message)
+
+        refute_receive {:handle_in, _}, 100
+        refute_receive {:handle_info, _}
+        refute_receive {:terminate, _}
+
+        SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+        assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      end
+    end
+
+    defmodule StopFromInfoWebSock do
+      use NoopWebSock
+
+      def init(state) do
+        WebSocketProtocolTest.send({:websock_pid, self()})
+        {:ok, state}
+      end
+
+      def handle_info(:kick, state), do: {:stop, :normal, state}
+
+      def handle_info(msg, state) do
+        WebSocketProtocolTest.send({:handle_info, msg})
+        {:ok, state}
+      end
+
+      def handle_in(data, state) do
+        WebSocketProtocolTest.send({:handle_in, data})
+        {:ok, state}
+      end
+    end
+
+    test "messages are not sent to the WebSock after a stop from handle_info/2", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, StopFromInfoWebSock, timeout: "2000")
+      assert_receive {:websock_pid, pid}, 500
+
+      send(pid, :kick)
+      send(pid, :after_kick)
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      SimpleWebSocketClient.send_text_frame(client, "post as banned user")
+
+      refute_receive {:handle_info, _}, 100
+      refute_receive {:handle_in, _}
+    end
+
+    defmodule InfinityTimeoutWebSock do
+      use NoopWebSock
+
+      def init(state) do
+        WebSocketProtocolTest.send({:websock_pid, self()})
+        {:ok, state}
+      end
+
+      def handle_in({"stop", opcode: :text}, state), do: {:stop, :normal, state}
+      def handle_in(_data, state), do: {:ok, state}
+
+      def terminate(reason, _state), do: WebSocketProtocolTest.send({:terminate, reason})
+    end
+
+    test "a server close with a WebSock timeout of :infinity runs terminate/2 once", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InfinityTimeoutWebSock, timeout: "infinity")
+      assert_receive {:websock_pid, pid}, 500
+
+      SimpleWebSocketClient.send_text_frame(client, "stop")
+      assert_receive {:terminate, :normal}, 500
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      Process.sleep(50)
+      assert Process.alive?(pid)
+
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      refute_receive {:terminate, _}, 100
+    end
+
+    test "a client close with a WebSock timeout of :infinity runs terminate/2 once", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InfinityTimeoutWebSock, timeout: "infinity")
+      assert_receive {:websock_pid, _pid}, 500
+
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      assert_receive {:terminate, :remote}, 500
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      refute_receive {:terminate, _}, 100
+    end
+
+    test "a close with a read_timeout of :infinity runs terminate/2 once", context do
+      context = http_server(context, thousand_island_options: [read_timeout: :infinity])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, InfinityTimeoutWebSock)
+      assert_receive {:websock_pid, _pid}, 500
+
+      SimpleWebSocketClient.send_text_frame(client, "stop")
+      assert_receive {:terminate, :normal}, 500
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      SimpleWebSocketClient.send_connection_close_frame(client, 1000)
+      assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+      refute_receive {:terminate, _}, 100
+    end
+
+    test "a forged close timeout message does not close an open connection", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, StopOnRequestWebSock, timeout: "2000")
+      assert_receive {:websock_pid, pid}, 500
+
+      send(pid, :bandit_websocket_close_timeout)
+      send(pid, {:bandit_websocket_close_timeout, make_ref()})
+
+      # The WebSock gets both messages, and the connection stays open
+      assert_receive {:handle_info, :bandit_websocket_close_timeout}, 500
+      assert_receive {:handle_info, {:bandit_websocket_close_timeout, _ref}}, 500
+      SimpleWebSocketClient.send_text_frame(client, "still open")
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, "ack"}
+      refute_receive {:terminate, _}
+    end
+
+    test "a peer cannot keep a closing connection open with a trickle of frames", context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, StopOnRequestWebSock)
+      assert_receive {:websock_pid, pid}, 500
+
+      SimpleWebSocketClient.send_text_frame(client, "stop:normal")
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1000::16>>}
+
+      # Each frame arrives before the 100 ms read timeout, but the connection must still close
+      # when the close timeout (equal to the read timeout) has passed. Pong frames are used
+      # because they cause no write from the server
+      Enum.each(1..10, fn _ ->
+        SimpleWebSocketClient.send_pong_frame(client, "keepalive")
+        Process.sleep(40)
+      end)
+
+      refute Process.alive?(pid)
     end
   end
 

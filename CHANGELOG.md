@@ -25,6 +25,9 @@
 * Accept optional whitespace before the `;` of a chunk extension, as RFC 9112 §7.1.1 permits
 * Report port 0 in an absolute-form request target as `conn.port == 0`, the same as for a `Host`
   header. Before, it was reported as the scheme's default port
+* After a server-initiated WebSocket close, close the connection when the close timeout passes,
+  even if the peer keeps sending frames or sends nothing. The close timeout is the WebSock
+  `timeout` option, else the `read_timeout`, else 60 seconds when the timeout is `:infinity`
 
 ### Fixes
 
@@ -54,6 +57,13 @@
   ignored a port that it could not parse
 * Reject HTTP/1 versions that `:erlang.decode_packet/3` wraps or reads loosely (for example
   `HTTP/4294967297.1`, `HTTP/01.01` or `HTTP/1.1x`)
+* Coalesce small WebSocket continuation frames as they arrive, so that a fragmented message of
+  1 byte fragments cannot hold far more memory than `max_fragmented_message_size`
+  (CVE-2026-114213, thanks @PJUllrich!)
+* Do not send WebSocket frames or process messages to the WebSock after a server-initiated close
+  (CVE-2026-110314, thanks @PJUllrich!)
+* Coalesce the TCP packets of a WebSocket frame as they arrive, so that a frame sent as many
+  1 byte packets cannot hold far more memory than `max_frame_size`
 
 ## 1.13.1 (15 Oct 2026)
 

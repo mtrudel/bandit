@@ -11,6 +11,10 @@ defmodule Bandit.WebSocket.Connection do
             opts: [],
             fragment_frame: nil,
             fragment_size: 0,
+            fragment_pending: [],
+            fragment_pending_count: 0,
+            close_timeout: nil,
+            close_timer_ref: nil,
             span: nil,
             metrics: %{}
 
@@ -26,9 +30,24 @@ defmodule Bandit.WebSocket.Connection do
           opts: keyword(),
           fragment_frame: Frame.Text.t() | Frame.Binary.t() | nil,
           fragment_size: non_neg_integer(),
+          fragment_pending: iodata(),
+          fragment_pending_count: non_neg_integer(),
+          close_timeout: non_neg_integer() | nil,
+          close_timer_ref: reference() | nil,
           span: Bandit.Telemetry.t(),
           metrics: map()
         }
+
+  # The maximum number of non-final continuation frames that are kept as separate binaries before
+  # they are copied into one binary. Each kept frame costs about 150 bytes of memory, whatever the
+  # size of its payload, so a peer that sends 1 byte fragments could otherwise keep about 150x
+  # max_fragmented_message_size in memory (GHSA-cpx7-qf6w-jc63). Each batch is copied one time
+  # only, so reassembly stays linear in the size of the message (GHSA-vg8x-66vg-5pxh)
+  @max_pending_fragments 1024
+
+  # The close timeout to use when the connection has no finite timeout. A closing connection must
+  # have a limit, or a silent peer (or one that sends a trickle of frames) could keep it open forever
+  @default_close_timeout 60_000
 
   def init(websock, websock_state, connection_opts, socket) do
     compress = Keyword.get(connection_opts, :compress)
@@ -47,17 +66,32 @@ defmodule Bandit.WebSocket.Connection do
       websock_state: websock_state,
       compress: compress,
       opts: connection_opts,
+      close_timeout: close_timeout(Keyword.get(connection_opts, :timeout) || socket.read_timeout),
       span: span
     }
 
     websock.init(websock_state) |> handle_continuation(socket, instance)
   end
 
+  # Process.send_after/3 accepts timeouts up to 2^32 - 1 ms only
+  defp close_timeout(timeout) when is_integer(timeout) and timeout in 0..4_294_967_295,
+    do: timeout
+
+  defp close_timeout(_timeout), do: @default_close_timeout
+
   # Recv metrics are recorded here and only here: dispatch_frame/3 re-enters itself with
   # synthesized frames (inflated payloads, reassembled fragmented messages) which never
   # arrived on the wire and so must not be counted a second time
-  def handle_frame(frame, socket, connection),
+  def handle_frame(frame, socket, %{state: :open} = connection),
     do: dispatch_frame(frame, socket, do_recv_metrics(frame, connection))
+
+  # After we send a Close frame (RFC6455§7.1.2) the WebSock is terminated. Only the Close frame of
+  # the peer is of interest now. Discard all other frames, so that they never get to the WebSock
+  # (GHSA-2v5v-8f9v-xh85)
+  def handle_frame(%Frame.ConnectionClose{} = frame, socket, connection),
+    do: handle_control_frame(frame, socket, connection)
+
+  def handle_frame(_frame, _socket, connection), do: {:continue, connection}
 
   defp dispatch_frame(frame, socket, %{fragment_frame: nil} = connection) do
     case frame do
@@ -104,9 +138,14 @@ defmodule Bandit.WebSocket.Connection do
         if oversize_message?(fragment_size, connection.opts) do
           do_error(1009, "Received oversize fragmented message", socket, connection)
         else
-          data = IO.iodata_to_binary([connection.fragment_frame.data | frame.data])
+          data =
+            IO.iodata_to_binary([
+              connection.fragment_frame.data,
+              connection.fragment_pending | frame.data
+            ])
+
           frame = %{connection.fragment_frame | fin: true, data: data}
-          dispatch_frame(frame, socket, %{connection | fragment_frame: nil, fragment_size: 0})
+          dispatch_frame(frame, socket, clear_fragments(connection))
         end
 
       %Frame.Continuation{fin: false} = frame ->
@@ -125,14 +164,14 @@ defmodule Bandit.WebSocket.Connection do
           if oversize_message?(fragment_size, connection.opts) do
             do_error(1009, "Received oversize fragmented message", socket, connection)
           else
-            data = [connection.fragment_frame.data | frame.data]
+            connection = %{
+              connection
+              | fragment_pending: [connection.fragment_pending | frame.data],
+                fragment_pending_count: connection.fragment_pending_count + 1,
+                fragment_size: fragment_size
+            }
 
-            {:continue,
-             %{
-               connection
-               | fragment_frame: %{connection.fragment_frame | data: data},
-                 fragment_size: fragment_size
-             }}
+            {:continue, maybe_coalesce_fragments(connection)}
           end
         end
 
@@ -145,6 +184,31 @@ defmodule Bandit.WebSocket.Connection do
       frame ->
         handle_control_frame(frame, socket, connection)
     end
+  end
+
+  defp maybe_coalesce_fragments(%{fragment_pending_count: count} = connection)
+       when count >= @max_pending_fragments do
+    chunk = IO.iodata_to_binary(connection.fragment_pending)
+    data = [connection.fragment_frame.data, chunk]
+
+    %{
+      connection
+      | fragment_frame: %{connection.fragment_frame | data: data},
+        fragment_pending: [],
+        fragment_pending_count: 0
+    }
+  end
+
+  defp maybe_coalesce_fragments(connection), do: connection
+
+  defp clear_fragments(connection) do
+    %{
+      connection
+      | fragment_frame: nil,
+        fragment_size: 0,
+        fragment_pending: [],
+        fragment_pending_count: 0
+    }
   end
 
   defp oversize_message?(size, opts) do
@@ -224,10 +288,13 @@ defmodule Bandit.WebSocket.Connection do
 
   def handle_timeout(socket, connection), do: do_error(1002, :timeout, socket, connection)
 
-  def handle_info(msg, socket, connection) do
+  def handle_info(msg, socket, %{state: :open} = connection) do
     connection.websock.handle_info(msg, connection.websock_state)
     |> handle_continuation(socket, connection)
   end
+
+  # The WebSock is terminated, so it must not see any more messages (GHSA-2v5v-8f9v-xh85)
+  def handle_info(_msg, _socket, connection), do: {:continue, connection}
 
   defp handle_continuation(continuation, socket, connection) do
     case continuation do
@@ -273,17 +340,33 @@ defmodule Bandit.WebSocket.Connection do
   end
 
   defp do_stop(code, reason, socket, connection) do
-    if connection.state == :open do
-      if function_exported?(connection.websock, :terminate, 2) do
-        connection.websock.terminate(reason, connection.websock_state)
+    connection =
+      if connection.state == :open do
+        if function_exported?(connection.websock, :terminate, 2) do
+          connection.websock.terminate(reason, connection.websock_state)
+        end
+
+        Socket.close(socket, code)
+        if connection.compress, do: PerMessageDeflate.close(connection.compress)
+        Bandit.Telemetry.stop_span(connection.span, connection.metrics)
+        %{connection | close_timer_ref: start_close_timer(connection.close_timeout)}
+      else
+        connection
       end
 
-      Socket.close(socket, code)
-      if connection.compress, do: PerMessageDeflate.close(connection.compress)
-      Bandit.Telemetry.stop_span(connection.span, connection.metrics)
-    end
+    {:continue, %{clear_fragments(connection) | state: :closing, compress: nil}}
+  end
 
-    {:continue, %{connection | state: :closing, compress: nil}}
+  # A peer that does not send its Close frame could keep a closing connection open with a trickle
+  # of frames (each frame resets the read timeout), or forever if the read timeout is :infinity.
+  # This timer gives a fixed limit. Bandit.WebSocket.Handler handles its message. The message holds
+  # a new reference, so that no other process can send a message that closes the connection
+  defp start_close_timer(nil), do: nil
+
+  defp start_close_timer(close_timeout) do
+    ref = make_ref()
+    Process.send_after(self(), {:bandit_websocket_close_timeout, ref}, close_timeout)
+    ref
   end
 
   defp do_error(code, reason, socket, connection) do

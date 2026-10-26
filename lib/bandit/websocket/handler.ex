@@ -87,6 +87,14 @@ defmodule Bandit.WebSocket.Handler do
 
   def handle_info({:plug_conn, :sent}, {socket, state}), do: {:noreply, {socket, state}}
 
+  # Sent by Bandit.WebSocket.Connection when the peer did not complete the close handshake in time
+  def handle_info(
+        {:bandit_websocket_close_timeout, ref},
+        {socket, %{connection: %{close_timer_ref: ref}} = state}
+      )
+      when is_reference(ref),
+      do: {:stop, {:shutdown, :local_closed}, {socket, state}}
+
   def handle_info(msg, {socket, state}) do
     case Connection.handle_info(msg, socket, state.connection) do
       {:continue, connection_state} ->
