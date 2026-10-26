@@ -1,4 +1,4 @@
-## Unreleased
+## 1.14.0 (26 Oct 2026)
 
 ### Changes
 
