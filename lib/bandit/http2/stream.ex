@@ -571,7 +571,7 @@ defmodule Bandit.HTTP2.Stream do
     # send_data flush them with the first DATA frame in a single write (cf. HTTP/1 send_buffer).
     def send_headers(%@for{state: state} = stream, status, headers, :raw)
         when state in [:open, :remote_closed] do
-      headers = [{":status", to_string(status)} | split_cookies(headers)]
+      headers = [{":status", to_string(status)} | prepare_headers(headers)]
       %{stream | pending_headers: headers}
     end
 
@@ -583,17 +583,26 @@ defmodule Bandit.HTTP2.Stream do
       # will possibly walk us to a different state per RFC9113§5.1, as determined by the tail call
       # to set_state_on_send_end_stream/2
       end_stream = body_disposition == :no_body
-      headers = [{":status", to_string(status)} | split_cookies(headers)]
+      headers = [{":status", to_string(status)} | prepare_headers(headers)]
       do_send(stream, {:send_headers, headers, end_stream})
       set_state_on_send_end_stream(stream, end_stream)
     end
 
+    # RFC9113§8.2.2 - connection-specific header fields must not be sent in an HTTP/2 message, and
+    # a peer MUST treat a message that contains one as malformed. The Plug API is protocol-agnostic,
+    # so a plug may well set one of these for the benefit of HTTP/1 clients without knowing that it
+    # is answering over HTTP/2; drop them here rather than let the client reset the stream
+    @connection_specific_headers ~w[connection keep-alive proxy-connection transfer-encoding upgrade]
+
     # RFC9113§8.2.3 - cookie headers may be split during transmission
-    defp split_cookies(headers) do
+    defp prepare_headers(headers) do
       headers
       |> Enum.flat_map(fn
         {"cookie", cookie} ->
           cookie |> String.split("; ") |> Enum.map(fn crumb -> {"cookie", crumb} end)
+
+        {header, _value} when header in @connection_specific_headers ->
+          []
 
         {header, value} ->
           [{header, value}]

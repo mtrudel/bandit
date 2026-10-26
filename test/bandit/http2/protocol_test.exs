@@ -3171,6 +3171,78 @@ defmodule HTTP2ProtocolTest do
       conn |> put_resp_header("cookie", "a=b; c=d; e=f") |> send_resp(200, "OK")
     end
 
+    test "omits connection-specific response headers per RFC9113§8.2.2", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(
+        socket,
+        1,
+        :get,
+        "/connection_specific_headers",
+        context.port
+      )
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"content-length", "2"},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"x-before", "kept"},
+                {"x-after", "kept"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+    end
+
+    def connection_specific_headers(conn) do
+      conn
+      |> put_resp_header("x-before", "kept")
+      |> put_resp_header("connection", "close")
+      |> put_resp_header("keep-alive", "timeout=5, max=100")
+      |> put_resp_header("proxy-connection", "keep-alive")
+      |> put_resp_header("transfer-encoding", "chunked")
+      |> put_resp_header("upgrade", "h2c")
+      |> put_resp_header("x-after", "kept")
+      |> send_resp(200, "OK")
+    end
+
+    test "omits connection-specific response headers on chunked responses per RFC9113§8.2.2",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(
+        socket,
+        1,
+        :get,
+        "/chunked_connection_specific_headers",
+        context.port
+      )
+
+      assert {:ok, 1, false,
+              [
+                {":status", "200"},
+                {"date", _date},
+                {"vary", "accept-encoding"},
+                {"cache-control", "max-age=0, private, must-revalidate"},
+                {"x-after", "kept"}
+              ], _ctx} = SimpleH2Client.recv_headers(socket)
+
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, false, "OK"}
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    end
+
+    def chunked_connection_specific_headers(conn) do
+      conn
+      |> put_resp_header("connection", "keep-alive")
+      |> put_resp_header("transfer-encoding", "chunked")
+      |> put_resp_header("x-after", "kept")
+      |> send_chunked(200)
+      |> chunk("OK")
+      |> elem(1)
+    end
+
     test "handles changes to client's header table size", context do
       socket = SimpleH2Client.setup_connection(context)
 
