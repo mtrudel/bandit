@@ -235,12 +235,12 @@ defmodule Bandit.HTTP1.Socket do
     defp absolute_form_path("/" <> _ = path), do: path
     defp absolute_form_path(query_or_fragment), do: "/" <> query_or_fragment
 
-    # Leaves anything malformed in place, for the pipeline to reject
+    # Leaves malformed authorities intact for the pipeline to reject (RFC3986§3.2)
     defp split_authority("[" <> _ = authority) do
       case :binary.split(authority, "]") do
         [literal, ""] -> {literal <> "]", nil}
         [literal, ":" <> port] -> {literal <> "]", port}
-        [literal, suffix] -> {literal <> "]", suffix}
+        [_literal, _suffix] -> {authority, nil}
         [_unterminated] -> {authority, nil}
       end
     end
