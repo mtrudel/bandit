@@ -347,15 +347,37 @@ defmodule HTTP1ProtocolTest do
     end
 
     test "derives the port from an absolute-form IP literal authority", context do
-      client = SimpleHTTP1Client.tcp_client(context)
+      for port <- ["80", "0080"] do
+        client = SimpleHTTP1Client.tcp_client(context)
 
-      SimpleHTTP1Client.send(client, "GET", "http://[::1]:0080/echo_components", [
-        "host: banana"
-      ])
+        SimpleHTTP1Client.send(client, "GET", "http://[::1]:#{port}/echo_components", [
+          "host: banana"
+        ])
+
+        assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
+        assert Jason.decode!(body)["host"] == "[::1]"
+        assert Jason.decode!(body)["port"] == 80
+      end
+    end
+
+    test "derives the default port from an absolute-form IP literal authority", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://[::1]/echo_components", ["host: banana"])
 
       assert {:ok, "200 OK", _headers, body} = SimpleHTTP1Client.recv_reply(client)
       assert Jason.decode!(body)["host"] == "[::1]"
       assert Jason.decode!(body)["port"] == 80
+    end
+
+    @tag :capture_log
+    test "returns 400 for an IP literal followed by a port without a colon (RFC3986§3.2)",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "http://[::1]80/echo_components", ["host: banana"])
+      assert {:ok, "400 Bad Request", _headers, <<>>} = SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Request target contains invalid host"
     end
 
     # decode_packet ends the authority only at ':' or '/', so it took the '/echo_components'
