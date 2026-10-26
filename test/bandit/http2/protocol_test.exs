@@ -3353,6 +3353,69 @@ defmodule HTTP2ProtocolTest do
       assert {:ok, 3, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
     end
 
+    @tag :capture_log
+    test "rejects an oversized decoded header list on an even stream as a connection error",
+         context do
+      context =
+        https_server(context,
+          http_2_options: [default_local_settings: [max_header_list_size: 1000]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      headers = for i <- 1..50, do: {"x-header-#{i}", String.duplicate("a", 50)}
+      SimpleH2Client.send_headers(socket, 2, true, headers)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTP2.Errors.ConnectionError) Received invalid stream identifier"
+    end
+
+    test "a stream refused for an oversized decoded header list cannot be opened again",
+         context do
+      context =
+        https_server(context,
+          http_2_options: [default_local_settings: [max_header_list_size: 1000]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      headers = for i <- 1..50, do: {"x-header-#{i}", String.duplicate("a", 50)}
+      SimpleH2Client.send_headers(socket, 3, true, headers)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 3, 11}
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", context[:port])
+      SimpleH2Client.send_simple_headers(socket, 5, :get, "/body_response", context[:port])
+
+      assert {:ok, 5, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 5, true, "OK"}
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
+    @tag :capture_log
+    test "an oversized decoded trailer list resets the stream process without a response",
+         context do
+      context =
+        https_server(context,
+          thousand_island_options: [read_timeout: 2_000],
+          http_2_options: [default_local_settings: [max_header_list_size: 1000]]
+        )
+
+      socket = SimpleH2Client.setup_connection(context)
+      {:ok, ctx} = SimpleH2Client.send_simple_headers(socket, 1, :post, "/echo", context[:port])
+
+      assert_receive {:telemetry, [:bandit, :request, :start], _, _}, 1_000
+
+      trailers = for i <- 1..50, do: {"x-trailer-#{i}", String.duplicate("a", 50)}
+      SimpleH2Client.send_headers(socket, 1, true, trailers, ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 11}
+
+      assert_receive {:telemetry, [:bandit, :request, :stop], _, %{error: error}}, 1_000
+      assert error == "Received RST_STREAM from client: enhance_your_calm (11)"
+      assert SimpleH2Client.connection_alive?(socket)
+    end
+
     test "does not enforce a limit on decoded header list size when max_header_list_size is overridden to :infinity",
          context do
       context =
