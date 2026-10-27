@@ -57,23 +57,34 @@ defmodule Bandit.Compression do
   @spec normalize_coding(binary()) :: binary()
   defp normalize_coding(coding), do: coding |> String.trim() |> String.downcase(:ascii)
 
-  # Per RFC9110§12.4.2. Malformed q values are leniently read as 1.0 rather than refusing the
-  # coding, since a client that bothered to list a coding presumably accepts it
+  # RFC9110§12.4.2: qvalue = ( "0" [ "." 0*3DIGIT ] ) / ( "1" [ "." 0*3("0") ] ), so a well-formed
+  # q value is at most five characters long. Anything longer is malformed, and malformed q values
+  # are leniently read as 1.0 rather than refusing the coding, since a client that bothered to list
+  # a coding presumably accepts it
+  @max_qvalue_length 5
+
   @spec quality_value([binary()]) :: float()
   defp quality_value(params) do
     Enum.find_value(params, 1.0, fn param ->
       case param |> String.trim() |> String.downcase(:ascii) |> String.split("=") do
-        ["q", value] ->
-          case Float.parse(value) do
-            {q, _rest} -> q
-            :error -> 1.0
-          end
-
-        _ ->
-          nil
+        ["q", value] -> parse_qvalue(value)
+        _ -> nil
       end
     end)
   end
+
+  # Only a value within the grammar's length is handed to Float.parse/1. Besides being the lenient
+  # reading above, this keeps overlong digit strings away from Float.parse/1, which raises rather
+  # than returning :error once the integer part no longer fits in a float (309 digits and up).
+  # Without the check, such a value in an Accept-Encoding header turned the request into a 500
+  defp parse_qvalue(value) when byte_size(value) <= @max_qvalue_length do
+    case Float.parse(value) do
+      {q, _rest} -> q
+      :error -> 1.0
+    end
+  end
+
+  defp parse_qvalue(_value), do: 1.0
 
   def new(adapter, status, headers, empty_body?, streamable \\ false) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
