@@ -14,7 +14,9 @@ defmodule Bandit.HTTP1.Socket do
             write_state: :unsent,
             unread_content_length: nil,
             body_encoding: nil,
-            version: :"HTTP/1.0",
+            # The version of the request, once its request line has been parsed. Until then, error
+            # responses go out as HTTP/1.1, the highest version that we support (RFC9110§6.2)
+            version: :"HTTP/1.1",
             send_buffer: nil,
             request_connection_header: nil,
             close_after_response: false,

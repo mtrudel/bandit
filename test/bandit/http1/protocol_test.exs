@@ -30,6 +30,25 @@ defmodule HTTP1ProtocolTest do
       assert msg == "** (Bandit.HTTPError) Invalid HTTP version: {0, 9}"
     end
 
+    # RFC9110§6.2 - a server SHOULD answer with the highest version it supports with the same major
+    # version as the request. An error raised while a request is read or its conn is built is
+    # answered with the transport as it was before the request line was parsed, so the version on
+    # the status line is the struct default, which must be HTTP/1.1 rather than HTTP/1.0
+    @tag :capture_log
+    test "answers an unparseable request with an HTTP/1.1 status line", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      Transport.send(client, "GET / HTTP/1.1\r\nGARBAGE\r\n\r\n")
+      assert {:ok, "HTTP/1.1 400 Bad Request\r\n" <> _} = Transport.recv(client, 0)
+    end
+
+    @tag :capture_log
+    test "answers an HTTP/1.1 request rejected after parsing with an HTTP/1.1 status line",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "GET", "/echo_components", ["host: banana", "host: orange"])
+      assert {:ok, "HTTP/1.1 400 Bad Request\r\n" <> _} = Transport.recv(client, 0)
+    end
+
     @tag :capture_log
     test "rejects a lowercase HTTP-version token", context do
       client = SimpleHTTP1Client.tcp_client(context)
