@@ -2680,6 +2680,36 @@ defmodule HTTP1ProtocolTest do
       assert response.headers["vary"] == ["accept-encoding"]
     end
 
+    test "reads an overlong q-value in accept-encoding leniently as acceptance", context do
+      # Float.parse/1 raises on a run of digits too long to represent as a float; the q-value
+      # grammar (RFC9110§12.4.2) allows at most five characters, so anything longer is simply
+      # malformed and must not be given the chance to raise
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "gzip;q=1" <> String.duplicate("0", 400)}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-length"] == ["46"]
+      assert response.headers["content-encoding"] == ["gzip"]
+      assert response.headers["vary"] == ["accept-encoding"]
+      refute_receive {:log, %{level: :error}}
+    end
+
+    test "treats a q-value longer than the RFC9110§12.4.2 grammar allows as malformed", context do
+      # Four decimal places is one more than the grammar permits, so this is not a q=0 refusal
+      # but a malformed value, read leniently as acceptance like any other malformed q-value
+      response =
+        Req.get!(context.req,
+          url: "/send_big_body",
+          headers: [{"accept-encoding", "gzip;q=0.0000"}]
+        )
+
+      assert response.status == 200
+      assert response.headers["content-encoding"] == ["gzip"]
+    end
+
     test "does not duplicate an existing vary: accept-encoding header", context do
       response =
         Req.get!(context.req,
