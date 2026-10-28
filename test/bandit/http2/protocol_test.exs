@@ -1699,6 +1699,73 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OKOK"}
     end
 
+    # `:length` caps the bytes in a body read, but the memory used to collect them must not also
+    # grow with the number of DATA frames they were sent in. Each stream gets a heap limit well
+    # below what collecting each one-byte frame as its own term uses, and is killed if the frames
+    # are collected that way. The frames are interleaved across streams, one per stream per round,
+    # so that no stream falls far enough behind for the connection to buffer its DATA for it.
+    @tiny_frame_stream_count 16
+    @tiny_frame_count 20_000
+
+    test "reads bodies sent as many tiny DATA frames in bounded memory", context do
+      socket = SimpleH2Client.setup_connection(context)
+      stream_ids = Enum.map(1..@tiny_frame_stream_count, &(2 * &1 - 1))
+
+      headers = [
+        {":method", "POST"},
+        {":path", "/read_tiny_frames_with_limited_heap"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"}
+      ]
+
+      Enum.reduce(stream_ids, HPAX.new(4096), fn stream_id, ctx ->
+        {:ok, ctx} = SimpleH2Client.send_headers(socket, stream_id, false, headers, ctx)
+        ctx
+      end)
+
+      round = fn flags ->
+        for stream_id <- stream_ids, do: <<1::24, 0::8, flags::8, 0::1, stream_id::31, ?x>>
+      end
+
+      for _ <- 1..(@tiny_frame_count - 1), do: Transport.send(socket, round.(0x00))
+      Transport.send(socket, round.(0x01))
+
+      assert recv_response_bodies(socket, MapSet.new(stream_ids), %{}) ==
+               Map.new(stream_ids, &{&1, to_string(@tiny_frame_count)})
+    end
+
+    defp recv_response_bodies(socket, pending, bodies) do
+      if MapSet.size(pending) == 0 do
+        bodies
+      else
+        case SimpleH2Client.recv_frame(socket) do
+          {:ok, :data, flags, stream_id, body} when (flags &&& 0x01) == 0x01 ->
+            recv_response_bodies(
+              socket,
+              MapSet.delete(pending, stream_id),
+              Map.put(bodies, stream_id, body)
+            )
+
+          {:ok, type, _flags, _stream_id, _body}
+          when type in [:headers, :data, :window_update, :ping, :settings] ->
+            recv_response_bodies(socket, pending, bodies)
+
+          other ->
+            SimpleH2Client.unexpected_frame!(other)
+        end
+      end
+    end
+
+    def read_tiny_frames_with_limited_heap(conn) do
+      # 50k words (400 KB on a 64-bit VM). Collecting #{@tiny_frame_count} one-byte frames as
+      # separate terms takes more than twice this; collecting them into one binary takes a small
+      # part of it, since large binaries are stored off the process heap
+      Process.flag(:max_heap_size, %{size: 50_000, kill: true, error_logger: false})
+      {:ok, body, conn} = Plug.Conn.read_body(conn)
+      assert body == String.duplicate("x", @tiny_frame_count)
+      send_resp(conn, 200, to_string(byte_size(body)))
+    end
+
     # Success case for content-length as defined in https://www.rfc-editor.org/rfc/rfc9112.html#section-6.3-2.5
     test "reads a content-length with multiple content-lengths encoded body properly", context do
       socket = SimpleH2Client.setup_connection(context)

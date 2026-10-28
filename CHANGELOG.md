@@ -1,3 +1,10 @@
+## Unreleased
+
+### Fixes
+
+* Collect HTTP/2 request bodies into one binary, so that a body sent as many tiny DATA frames no
+  longer uses many times its size in memory (GHSA-pxjf-g536-7r93, thanks @neilberkman!)
+
 ## 1.14.0 (26 Oct 2026)
 
 ### Changes

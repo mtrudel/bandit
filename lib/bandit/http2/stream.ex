@@ -345,7 +345,7 @@ defmodule Bandit.HTTP2.Stream do
       deadline =
         if timeout == :infinity, do: :infinity, else: now() + timeout
 
-      do_read_data(stream, max_bytes, timeout, deadline, [])
+      do_read_data(stream, max_bytes, timeout, deadline, <<>>)
     end
 
     # `deadline` bounds this whole read. Like the send-side deadlines, it is only pushed back in
@@ -360,7 +360,17 @@ defmodule Bandit.HTTP2.Stream do
           do_read_data(stream, max_bytes, timeout, deadline, acc)
 
         {:data, data, stream} ->
-          acc = [data | acc]
+          # Append the payload to a binary rather than keeping each DATA frame as its own list
+          # cell. The `:length` option bounds the bytes in a body, not the frames they arrive in; an
+          # iolist uses a list cell and a binary term per frame, so a body sent as one-byte DATA
+          # frames would use many times its own size. A frame at least as large as the body so far
+          # is joined to it with one copy of both, which costs no more than appending, and avoids
+          # growing the body several times over (as `do_read_next_chunk!` does for HTTP/1).
+          acc =
+            if byte_size(data) >= byte_size(acc),
+              do: IO.iodata_to_binary([acc, data]),
+              else: <<acc::binary, data::binary>>
+
           max_bytes = max_bytes - byte_size(data)
 
           deadline =
@@ -388,11 +398,11 @@ defmodule Bandit.HTTP2.Stream do
                (max_bytes == 0 and (stream.state == :remote_closed or stream.bytes_remaining == 0)) do
             do_read_data(stream, max_bytes, timeout, deadline, acc)
           else
-            {:more, Enum.reverse(acc), stream}
+            {:more, acc, stream}
           end
 
         :timeout ->
-          {:more, Enum.reverse(acc), stream}
+          {:more, acc, stream}
 
         %@for{} = stream ->
           do_read_data(stream, max_bytes, timeout, deadline, acc)
@@ -400,7 +410,7 @@ defmodule Bandit.HTTP2.Stream do
     end
 
     defp do_read_data(%@for{state: :remote_closed} = stream, _max_bytes, _timeout, _deadline, acc) do
-      {:ok, Enum.reverse(acc), stream}
+      {:ok, acc, stream}
     end
 
     defp now, do: :erlang.monotonic_time(:millisecond)
