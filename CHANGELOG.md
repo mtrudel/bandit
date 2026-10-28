@@ -1,9 +1,27 @@
-## Unreleased
+## 1.14.1 (28 Oct 2026)
+
+### Changes
+
+* Close an HTTP/1 connection after a 2xx response to CONNECT, as RFC 9110 §9.3.6 requires. Before,
+  the connection stayed open and could serve a later request (#729, thanks @neilberkman!)
+* Reject an HTTP/2 request whose `host` header does not match `:authority`, or that has more than
+  one `host` header, with a stream PROTOCOL_ERROR (RFC 9113 §8.3.1) (#725, thanks @neilberkman!)
+* Remove connection-specific header fields (`connection`, `keep-alive`, `proxy-connection`,
+  `transfer-encoding` and `upgrade`) from HTTP/2 responses, as RFC 9113 §8.2.2 requires. Before,
+  clients such as curl and Firefox reset the stream (#728, thanks @mpettibone!)
 
 ### Fixes
 
 * Collect HTTP/2 request bodies into one binary, so that a body sent as many tiny DATA frames no
   longer uses many times its size in memory (GHSA-pxjf-g536-7r93, thanks @neilberkman!)
+* Read `Accept-Encoding` q-values with the RFC 9110 §12.4.2 grammar. Before, a q-value with a very
+  long integer part caused a 500 on every request (#733, thanks @mpettibone!)
+* Remove trailing whitespace from HTTP/1 header values (RFC 9110 §5.5). Before, a `Host` header
+  with a trailing space got a 400 (#731, thanks @mpettibone!)
+* Reject an IPv6 literal authority with no colon before the port (for example `[::1]80`) (RFC 3986
+  §3.2) (#730, thanks @neilberkman!)
+* Send RST_STREAM for an oversized HTTP/2 header block as a stream error, and keep the HPACK
+  decoder state (RFC 9113 §5.4.2) (#726, thanks @neilberkman!)
 
 ## 1.14.0 (26 Oct 2026)
 
