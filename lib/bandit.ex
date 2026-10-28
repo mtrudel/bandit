@@ -160,6 +160,10 @@ defmodule Bandit do
     every 5 requests). This option is currently experimental, and may change at any time
   * `log_unknown_messages`: Whether or not to log unknown messages sent to the handler process.
     Defaults to `false`
+  * `fast_path_header_read`: Whether to read common request heads with a single-pass binary
+    parser, falling back to `:erlang.decode_packet/3` for anything outside its fast path. If
+    `false`, every request head is read with `:erlang.decode_packet/3`. Defaults to `true` on
+    64-bit VMs and `false` on 32-bit VMs, where the single-pass parser would allocate bignums
   """
   @type http_1_options :: [
           {:enabled, boolean()}
@@ -170,6 +174,7 @@ defmodule Bandit do
           | {:clear_process_dict, boolean()}
           | {:gc_every_n_keepalive_requests, pos_integer()}
           | {:log_unknown_messages, boolean()}
+          | {:fast_path_header_read, boolean()}
         ]
 
   @typedoc """
@@ -270,7 +275,7 @@ defmodule Bandit do
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
   @http_keys ~w(compress response_encodings compress_chunked deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
-  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
+  @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages fast_path_header_read)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size max_fragmented_message_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module log_protocol_errors)a
   @thousand_island_keys ThousandIsland.ServerConfig.__struct__()
@@ -298,6 +303,9 @@ defmodule Bandit do
     http_1_options =
       Keyword.get(arg, :http_1_options, [])
       |> validate_options(@http_1_keys, :http_1_options)
+      |> Keyword.put_new_lazy(:fast_path_header_read, fn ->
+        :erlang.system_info(:wordsize) == 8
+      end)
 
     http_2_options =
       Keyword.get(arg, :http_2_options, [])

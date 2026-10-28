@@ -65,8 +65,7 @@ defmodule Bandit.HTTP1.Socket do
     def version(%@for{} = socket), do: socket.version
 
     def read_headers(%@for{read_state: :unread} = socket) do
-      {method, request_target, socket} = do_read_request_line!(socket)
-      {headers, socket} = do_read_headers!(socket)
+      {method, request_target, headers, socket} = read_head!(socket)
       content_length = get_content_length!(headers)
       body_encoding = headers |> get_transfer_encoding!() |> validate_transfer_encoding!()
       request_connection_header = safe_downcase(Bandit.Headers.get_header(headers, "connection"))
@@ -97,6 +96,82 @@ defmodule Bandit.HTTP1.Socket do
             "Request cannot contain both 'content-length' and 'transfer-encoding' (RFC9112§6.3.3)"
           )
       end
+    end
+
+    # Bandit.HTTP1.HeadParser reads the common shape of request head in one
+    # pass; anything else goes through the decode_packet loop below, which
+    # makes every decision about it and raises every error. Setting
+    # fast_path_header_read to false sends every head through that loop.
+    # Bandit.init/1 defaults it from the VM's word size; the true here only
+    # applies to opts built without it.
+    @doc false
+    def read_head!(socket) do
+      http_1 = socket.opts.http_1
+
+      if Keyword.get(http_1, :fast_path_header_read, true) do
+        limits =
+          {Keyword.get(http_1, :max_request_line_length, 10_000),
+           Keyword.get(http_1, :max_header_length, 10_000),
+           Keyword.get(http_1, :max_header_count, 50)}
+
+        read_head!(socket, limits)
+      else
+        read_head_decode_packet!(socket)
+      end
+    end
+
+    defp read_head!(socket, limits) do
+      case Bandit.HTTP1.HeadParser.parse(socket.buffer, limits) do
+        {:ok, {method, request_target, version}, headers, rest} ->
+          socket = %{socket | buffer: rest, version: version, read_state: :headers_read}
+          {method, request_target, headers, socket}
+
+        :more ->
+          read_head_line!(socket, limits, line_start(socket.buffer, 0))
+
+        :fallback ->
+          read_head_decode_packet!(socket)
+      end
+    end
+
+    # HeadParser parses from the start of the buffer. If we parsed again after
+    # each read, a head sent a few bytes at a time would cost time in
+    # proportion to the square of its size. Thus parse again only when a read
+    # completes a line. The fast path takes at most max_header_count + 2
+    # lines, so this limits the parses for each head. Until a line is
+    # complete, only make sure that the partial line stays inside the fast
+    # path's limit, as HeadParser does.
+    defp read_head_line!(socket, limits, line_start) do
+      chunk = read_available!(socket.socket, socket.socket.read_timeout)
+      socket = %{socket | buffer: socket.buffer <> chunk}
+      line = if line_start == 0, do: :request_line, else: :header
+      length = byte_size(socket.buffer) - line_start
+
+      cond do
+        :binary.match(chunk, "\n") != :nomatch ->
+          read_head!(socket, limits)
+
+        Bandit.HTTP1.HeadParser.partial_line?(line, length, limits) ->
+          read_head_line!(socket, limits, line_start)
+
+        true ->
+          read_head_decode_packet!(socket)
+      end
+    end
+
+    # Where the last line in buffer starts, searching from the from offset
+    defp line_start(buffer, from) do
+      case :binary.match(buffer, "\n", scope: {from, byte_size(buffer) - from}) do
+        {pos, 1} -> line_start(buffer, pos + 1)
+        :nomatch -> from
+      end
+    end
+
+    @doc false
+    def read_head_decode_packet!(socket) do
+      {method, request_target, socket} = do_read_request_line!(socket)
+      {headers, socket} = do_read_headers!(socket)
+      {method, request_target, headers, socket}
     end
 
     defp do_read_request_line!(socket, request_target \\ nil) do

@@ -921,6 +921,23 @@ defmodule HTTP1ProtocolTest do
       assert response.body == "OK"
     end
 
+    test "reads headers properly with the fast path header read disabled", context do
+      context =
+        context
+        |> http_server(http_1_options: [fast_path_header_read: false])
+        |> Enum.into(context)
+
+      response =
+        Req.get!(context.req,
+          base_url: context.base,
+          url: "/expect_headers/a//b/c?abc=def",
+          headers: [{"x-fruit", "banana"}, {"x-fruit", "mango"}]
+        )
+
+      assert response.status == 200
+      assert response.body == "OK"
+    end
+
     def expect_headers(conn) do
       assert conn.request_path == "/expect_headers/a//b/c"
       assert conn.path_info == ["expect_headers", "a", "b", "c"]
