@@ -419,7 +419,7 @@ defmodule Bandit.HTTP1.Socket do
     end
 
     def read_data(%@for{read_state: :headers_read, body_encoding: "chunked"} = socket, opts) do
-      case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, 0, opts) do
+      case do_read_chunked_data!(socket.socket, socket.buffer, <<>>, 0, socket.opts, opts) do
         {:ok, body, buffer} ->
           {:ok, body, %{socket | read_state: :read, buffer: buffer}}
 
@@ -454,18 +454,18 @@ defmodule Bandit.HTTP1.Socket do
     # binary term for each chunk, so a body sent as one-byte chunks uses many times its own
     # size in memory (GHSA-jwh3-j29h-qfmw). Appending to a binary uses memory in proportion to
     # the bytes only
-    defp do_read_chunked_data!(socket, buffer, body, body_length, opts) do
+    defp do_read_chunked_data!(socket, buffer, body, body_length, http_opts, opts) do
       max_to_read = Keyword.get(opts, :length, 8_000_000) - body_length
 
       if max_to_read <= 0 do
         {:more, body, buffer}
       else
-        do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, opts)
+        do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, http_opts, opts)
       end
     end
 
-    defp do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, opts) do
-      case do_read_chunk!(socket, buffer, max_to_read, opts) do
+    defp do_read_next_chunk!(socket, buffer, body, body_length, max_to_read, http_opts, opts) do
+      case do_read_chunk!(socket, buffer, max_to_read, http_opts, opts) do
         {:done, rest} ->
           {:ok, body, rest}
 
@@ -479,7 +479,7 @@ defmodule Bandit.HTTP1.Socket do
               else: append_iodata(body, chunk)
 
           if length < max_to_read do
-            do_read_chunked_data!(socket, rest, body, body_length + length, opts)
+            do_read_chunked_data!(socket, rest, body, body_length + length, http_opts, opts)
           else
             {:more, body, rest}
           end
@@ -499,8 +499,8 @@ defmodule Bandit.HTTP1.Socket do
     # trailing \r\n marker. In the case of chunks which are longer than max_to_read,
     # it will read max_to_read bytes and then push a fake chunk header onto the
     # buffer which subsequent calls will see as a regular chunk header.
-    @dialyzer {:no_improper_lists, do_read_chunk!: 4}
-    defp do_read_chunk!(socket, buffer, max_to_read, opts) do
+    @dialyzer {:no_improper_lists, do_read_chunk!: 5}
+    defp do_read_chunk!(socket, buffer, max_to_read, http_opts, opts) do
       # This is only called at the *start* of a chunk.  As such, the only well formed data here is
       # the start of a chunk (ie: a hex number followed by \r\n followed by data).
       # do_read_chunk_size! will raise an error if it is unable to find a valid chunk start within
@@ -508,8 +508,14 @@ defmodule Bandit.HTTP1.Socket do
 
       case do_read_chunk_size!(socket, buffer, opts) do
         {0, rest} ->
+          # The trailer section is part of the body, so it is read on the body's read_timeout like
+          # the chunks before it, rather than on the socket's own (much longer) timeout, and within
+          # the max_header_length and max_header_count configured for the server (http_opts) rather
+          # than their defaults
+          socket = %{socket | read_timeout: Keyword.get(opts, :read_timeout, 15_000)}
+
           {trailers, fake_socket} =
-            do_read_headers!(%@for{socket: socket, buffer: rest, opts: %{http_1: []}}, :crlf)
+            do_read_headers!(%@for{socket: socket, buffer: rest, opts: http_opts}, :crlf)
 
           if trailers != [],
             do: Logger.warning("Encountered trailers in chunked request; ignoring")
