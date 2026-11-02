@@ -110,8 +110,7 @@ defmodule Bandit.WebSocket.Connection do
         end
 
       %Frame.Text{fin: false} = frame ->
-        {:continue,
-         %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
+        start_fragmented_message(frame, socket, connection)
 
       %Frame.Binary{fin: true, compressed: true} = frame ->
         do_inflate(frame, socket, connection)
@@ -121,8 +120,7 @@ defmodule Bandit.WebSocket.Connection do
         |> handle_continuation(socket, connection)
 
       %Frame.Binary{fin: false} = frame ->
-        {:continue,
-         %{connection | fragment_frame: frame, fragment_size: IO.iodata_length(frame.data)}}
+        start_fragmented_message(frame, socket, connection)
 
       frame ->
         handle_control_frame(frame, socket, connection)
@@ -183,6 +181,19 @@ defmodule Bandit.WebSocket.Connection do
 
       frame ->
         handle_control_frame(frame, socket, connection)
+    end
+  end
+
+  # The first fragment of a message counts towards max_fragmented_message_size like the ones that
+  # follow it, so one larger than the limit is rejected as it arrives rather than being held until
+  # the next frame arrives and the limit is checked
+  defp start_fragmented_message(frame, socket, connection) do
+    fragment_size = IO.iodata_length(frame.data)
+
+    if oversize_message?(fragment_size, connection.opts) do
+      do_error(1009, "Received oversize fragmented message", socket, connection)
+    else
+      {:continue, %{connection | fragment_frame: frame, fragment_size: fragment_size}}
     end
   end
 
