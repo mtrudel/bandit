@@ -16,6 +16,26 @@ defmodule Bandit.Compression do
     @accepted_encodings ~w(zstd) ++ @accepted_encodings
   end
 
+  # Bodies shorter than this are sent as they are. The gzip container alone is 18 bytes and even
+  # text only starts to shrink at a few hundred bytes, so below this a compressed body is larger
+  # than the plain one and every response has paid to set up and tear down a zlib stream for it.
+  # The same default as Cowboy's compress_threshold
+  @default_compress_threshold 300
+
+  # Media types whose payloads are already compressed (or encoded in a way that does not compress),
+  # so that compressing them again only costs CPU and bytes. Compressible image types such as
+  # image/svg+xml are deliberately absent. application/octet-stream is included as an unknown
+  # binary is far more often a file of one of these kinds than text
+  @incompressible_content_types ~w(
+    application/gzip application/octet-stream application/vnd.rar application/x-7z-compressed
+    application/x-bzip2 application/x-gzip application/x-rar-compressed application/x-xz
+    application/zip application/zstd
+    audio/aac audio/flac audio/mp4 audio/mpeg audio/ogg audio/opus audio/webm
+    font/woff font/woff2
+    image/avif image/gif image/heic image/heif image/jpeg image/png image/webp
+    video/mp4 video/mpeg video/ogg video/quicktime video/webm
+  )
+
   # Compressing chunked responses with zstd relies on :zstd.flush/1, which was added in OTP 29
   @zstd_streaming? Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1)
 
@@ -86,7 +106,9 @@ defmodule Bandit.Compression do
 
   defp parse_qvalue(_value), do: 1.0
 
-  def new(adapter, status, headers, empty_body?, streamable \\ false) do
+  # `body_length` is the length of the body to be sent, or nil for a streamed response whose length
+  # is not yet known. Streamed responses are compressed whatever their eventual length
+  def new(adapter, status, headers, body_length, streamable \\ false) do
     response_content_encoding_header = Bandit.Headers.get_header(headers, "content-encoding")
 
     headers = maybe_add_vary_header(adapter, status, headers)
@@ -97,7 +119,8 @@ defmodule Bandit.Compression do
     if status not in [204, 206, 304] && adapter.content_encodings != [] &&
          is_nil(response_content_encoding_header) &&
          !response_has_strong_etag(headers) && !response_indicates_no_transform(headers) &&
-         !empty_body? do
+         body_worth_compressing?(body_length, adapter.opts.http) &&
+         compressible_content_type?(headers, adapter.opts.http) do
       # Not every encoding can be used for every response (zstd can't compress chunked responses
       # before OTP 29), so use the first acceptable encoding that can
       identity = {headers, %__MODULE__{method: :identity}}
@@ -128,6 +151,34 @@ defmodule Bandit.Compression do
          !Bandit.Headers.header_contains_token?(headers, "vary", "accept-encoding"),
        do: [{"vary", "accept-encoding"} | headers],
        else: headers
+  end
+
+  defp body_worth_compressing?(nil, _http_opts), do: true
+  defp body_worth_compressing?(0, _http_opts), do: false
+
+  defp body_worth_compressing?(body_length, http_opts),
+    do: body_length >= Keyword.get(http_opts, :compress_threshold, @default_compress_threshold)
+
+  # The media type is compared without its parameters (`text/html; charset=utf-8` is `text/html`)
+  # and without regard to case (RFC9110§8.3.1). A response with no content-type is compressed
+  defp compressible_content_type?(headers, http_opts) do
+    case Bandit.Headers.get_header(headers, "content-type") do
+      nil ->
+        true
+
+      content_type ->
+        media_type =
+          content_type
+          |> :binary.split(";")
+          |> hd()
+          |> String.trim()
+          |> String.downcase(:ascii)
+
+        incompressible =
+          Keyword.get(http_opts, :incompressible_content_types, @incompressible_content_types)
+
+        media_type not in incompressible
+    end
   end
 
   defp response_has_strong_etag(headers) do

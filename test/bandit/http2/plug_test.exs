@@ -1287,6 +1287,12 @@ defmodule HTTP2PlugTest do
       send_resp(conn, 200, "OK")
     end
 
+    # A body long enough to be compressed (see the compress_threshold option)
+    def do_read_body_and_send_big_body(conn) do
+      {:ok, _body, conn} = Plug.Conn.read_body(conn)
+      send_resp(conn, 200, String.duplicate("a", 10_000))
+    end
+
     test "it should add req metrics to `stop` events for requests with request body", context do
       Req.post!(context.req, url: "/do_read_body", body: String.duplicate("a", 80))
 
@@ -1317,7 +1323,7 @@ defmodule HTTP2PlugTest do
     test "it should add req metrics to `stop` events for requests with content encoding",
          context do
       Req.post!(context.req,
-        url: "/do_read_body",
+        url: "/do_read_body_and_send_big_body",
         body: String.duplicate("a", 80),
         headers: [{"accept-encoding", "gzip"}]
       )
@@ -1332,8 +1338,8 @@ defmodule HTTP2PlugTest do
                req_body_start_time: integer(roughly: System.monotonic_time()),
                req_body_end_time: integer(roughly: System.monotonic_time()),
                req_body_bytes: 80,
-               resp_uncompressed_body_bytes: 2,
-               resp_body_bytes: 22,
+               resp_uncompressed_body_bytes: 10_000,
+               resp_body_bytes: 46,
                resp_compression_method: "gzip",
                resp_start_time: integer(roughly: System.monotonic_time()),
                resp_end_time: integer(roughly: System.monotonic_time())
@@ -1343,7 +1349,7 @@ defmodule HTTP2PlugTest do
              ~> %{
                connection_telemetry_span_context: reference(),
                telemetry_span_context: reference(),
-               conn: struct_like(Plug.Conn, path_info: ["do_read_body"]),
+               conn: struct_like(Plug.Conn, path_info: ["do_read_body_and_send_big_body"]),
                plug: {__MODULE__, []}
              }
     end
