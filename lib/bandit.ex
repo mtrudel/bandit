@@ -66,7 +66,12 @@ defmodule Bandit do
   * `thousand_island_options`: A list of options to pass to Thousand Island. Bandit sets some
     default values in this list based on your top-level configuration; these values will be
     overridden by values appearing here. A complete list can be found at
-    `t:ThousandIsland.options/0`
+    `t:ThousandIsland.options/0`. One default worth knowing about: Bandit sets
+    `genserver_options: [hibernate_after: 15_000]`, so that a connection process which has been
+    idle for 15 seconds is hibernated, which collects and compacts its heap and so releases the
+    memory left over from its last request until the connection is next used. Pass your own
+    `hibernate_after` within `genserver_options` to change the delay, or `:infinity` to never
+    hibernate
   * `http_options`: A list of options to configure the shared aspects of Bandit's HTTP stack. A
     complete list can be found at `t:http_options/0`
   * `http_1_options`: A list of options to configure Bandit's HTTP/1 stack. A complete list can
@@ -289,6 +294,14 @@ defmodule Bandit do
                         |> Map.keys()
                         |> Enum.sort()
 
+  # How long a connection process may sit idle before it is hibernated. An idle keepalive or
+  # HTTP/2 connection otherwise holds whatever garbage its last request left (tens of KB for a
+  # small request, hundreds for a templated page) until the next request or collection;
+  # hibernating collects and compacts the heap down to a couple of KB. Fifteen seconds is long
+  # enough that a connection in active use never hibernates between requests, and short enough
+  # that a connection parked by a browser or between WebSocket heartbeats does
+  @hibernate_after 15_000
+
   @doc """
   Starts a Bandit server using the provided arguments. See `t:options/0` for specific options to
   pass to this function.
@@ -376,6 +389,13 @@ defmodule Bandit do
     |> Keyword.put(:transport_options, transport_options)
     |> Keyword.put_new(:handler_module, Bandit.DelegatingHandler)
     |> Keyword.put_new(:handler_options, handler_options)
+    |> Keyword.update(
+      :genserver_options,
+      [hibernate_after: @hibernate_after],
+      fn genserver_options ->
+        Keyword.put_new(genserver_options, :hibernate_after, @hibernate_after)
+      end
+    )
     |> ThousandIsland.start_link()
     |> case do
       {:ok, pid} ->
