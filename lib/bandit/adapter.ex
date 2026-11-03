@@ -119,11 +119,16 @@ defmodule Bandit.Adapter do
     validate_calling_process!(adapter)
     start_time = Bandit.Telemetry.monotonic_time()
 
-    # Save an extra iodata_length by checking common cases
-    empty_body? = Bandit.SocketHelpers.iodata_empty?(body)
-    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, empty_body?)
+    body_length = IO.iodata_length(body)
+    {headers, compression_context} = Bandit.Compression.new(adapter, status, headers, body_length)
     {encoded_body, compression_metrics} = Bandit.Compression.close(compression_context, body)
-    encoded_length = IO.iodata_length(encoded_body)
+
+    # An uncompressed body is the one we already measured, so do not walk it a second time
+    encoded_length =
+      if compression_context.method == :identity,
+        do: body_length,
+        else: IO.iodata_length(encoded_body)
+
     headers = Bandit.Headers.add_content_length(headers, encoded_length, status, adapter.method)
 
     metrics =
@@ -196,7 +201,7 @@ defmodule Bandit.Adapter do
     # precisely `content-length` of them via chunk/2.
     {headers, compression_context} =
       if is_nil(Bandit.Headers.get_header(headers, "content-length")) do
-        Bandit.Compression.new(adapter, status, headers, false, true)
+        Bandit.Compression.new(adapter, status, headers, nil, true)
       else
         {headers, %Bandit.Compression{method: :identity}}
       end

@@ -105,6 +105,15 @@ defmodule Bandit do
   * `response_encodings`: A list of compression encodings, expressed in order of preference.
     Defaults to `~w(zstd gzip x-gzip deflate)`, with `zstd` only being present on platforms which
     have the zstd library compiled in
+  * `compress_threshold`: The smallest response body, in bytes, that will be compressed. Bodies
+    shorter than this are sent as they are, since compressing them would make them larger and
+    cost a compressor set up for nothing. Does not apply to chunked responses, whose length is
+    not known in advance. Defaults to 300
+  * `incompressible_content_types`: A list of media types whose responses are never compressed,
+    because their payloads are already compressed (images, video, audio, archives, woff fonts) or
+    are of unknown form (`application/octet-stream`). The response's `content-type` is compared
+    to this list without its parameters and without regard to case. Defaults to a list of common
+    such types; set it to `[]` to compress every content type
   * `compress_chunked`: Whether chunked responses (those sent via `Plug.Conn.send_chunked/2`) may
     be compressed with any of the `response_encodings`. When false, chunked responses are only
     compressed if `deflate` is the preferred encoding. Prior to OTP 29, chunked responses use the
@@ -132,6 +141,8 @@ defmodule Bandit do
   @type http_options :: [
           {:compress, boolean()}
           | {:response_encodings, list()}
+          | {:compress_threshold, non_neg_integer()}
+          | {:incompressible_content_types, [String.t()]}
           | {:compress_chunked, boolean()}
           | {:deflate_options, deflate_options()}
           | {:zstd_options, zstd_options()}
@@ -269,7 +280,7 @@ defmodule Bandit do
   end
 
   @top_level_keys ~w(plug scheme port ip keyfile certfile otp_app cipher_suite display_plug startup_log thousand_island_options http_options http_1_options http_2_options websocket_options)a
-  @http_keys ~w(compress response_encodings compress_chunked deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
+  @http_keys ~w(compress response_encodings compress_threshold incompressible_content_types compress_chunked deflate_options zstd_options log_exceptions_with_status_codes log_protocol_errors log_client_closures)a
   @http_1_keys ~w(enabled max_request_line_length max_header_length max_header_count max_requests clear_process_dict gc_every_n_keepalive_requests log_unknown_messages)a
   @http_2_keys ~w(enabled max_header_block_size max_requests max_reset_stream_rate sendfile_chunk_size default_local_settings)a
   @websocket_keys ~w(enabled max_frame_size max_fragmented_message_size validate_text_frames compress deflate_options max_inflate_ratio primitive_ops_module log_protocol_errors)a
