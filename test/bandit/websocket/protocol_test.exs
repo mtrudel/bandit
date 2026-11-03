@@ -354,6 +354,36 @@ defmodule WebSocketProtocolTest do
 
       assert output =~ "Received oversize fragmented message"
     end
+
+    # The first fragment is subject to the limit as well. It used to be stored unchecked, and the
+    # limit only applied once a continuation frame arrived
+    for {opcode, send_frame} <- [text: :send_text_frame, binary: :send_binary_frame] do
+      test "max_fragmented_message_size enforced for an opening #{opcode} fragment", context do
+        output =
+          capture_log(fn ->
+            context =
+              http_server(context, websocket_options: [max_fragmented_message_size: 1_000])
+
+            client = SimpleWebSocketClient.tcp_client(context)
+            SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
+
+            payload = String.duplicate("0123456789", 101)
+            apply(SimpleWebSocketClient, unquote(send_frame), [client, payload, 0x0])
+
+            # Get the error that terminate saw, to ensure we're closing for the expected reason
+            assert_receive {:error, "Received oversize fragmented message"}, 500
+
+            assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+                     {:ok, <<1009::16>>}
+
+            # Verify that the server didn't send any extraneous frames
+            assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+            Process.sleep(500)
+          end)
+
+        assert output =~ "Received oversize fragmented message"
+      end
+    end
   end
 
   describe "compressed frames" do
