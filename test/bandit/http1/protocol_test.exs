@@ -2142,6 +2142,84 @@ defmodule HTTP1ProtocolTest do
       Plug.Conn.read_body(conn, read_timeout: 100)
       raise "Shouldn't get here"
     end
+
+    # The trailer section is read on the read_timeout given to Plug.Conn.read_body/2, as the
+    # chunks before it are, and not on the socket's own read_timeout (60 seconds by default)
+    @tag :capture_log
+    test "handles a timing out chunk read in the trailer section", context do
+      context =
+        context
+        |> http_server(thousand_island_options: [read_timeout: 60_000])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/incomplete_chunk_body_trailers", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      Transport.send(client, "3\r\n123\r\n0\r\n")
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Read timeout"
+      assert {:ok, "408 Request Timeout", _, ""} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    def incomplete_chunk_body_trailers(conn) do
+      Plug.Conn.read_body(conn, read_timeout: 100)
+      raise "Shouldn't get here"
+    end
+
+    # The trailer section is read within the max_header_count and max_header_length configured for
+    # the server, like the header section is, rather than within their defaults
+    @tag :capture_log
+    test "returns 431 for a trailer section with too many lines", context do
+      context =
+        context
+        |> http_server(http_1_options: [max_header_count: 3])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      trailers = for i <- 1..4, do: "trailer#{i}: foo\r\n"
+      Transport.send(client, ["3\r\n123\r\n0\r\n", trailers, "\r\n"])
+
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Too many headers"
+    end
+
+    @tag :capture_log
+    test "returns 431 for a trailer line that is too long", context do
+      context =
+        context
+        |> http_server(http_1_options: [max_header_length: 100])
+        |> Enum.into(context)
+
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "POST", "/expect_tiny_chunked_body", [
+        "Host: localhost",
+        "Transfer-encoding: chunked"
+      ])
+
+      trailer = "trailer: " <> String.duplicate("a", 200) <> "\r\n"
+      Transport.send(client, ["3\r\n123\r\n0\r\n", trailer, "\r\n"])
+
+      assert {:ok, "431 Request Header Fields Too Large", _headers, <<>>} =
+               SimpleHTTP1Client.recv_reply(client)
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+      assert msg == "** (Bandit.HTTPError) Header too long"
+    end
   end
 
   describe "transfer-encoding edge cases (RFC9112§6.1, §7.1.1)" do
