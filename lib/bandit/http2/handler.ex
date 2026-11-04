@@ -212,9 +212,13 @@ defmodule Bandit.HTTP2.Handler do
     {:close, state}
   end
 
+  # The connection has been closed on our side (do_rescue_error sends the GOAWAY), so stop for the
+  # same reason Thousand Island uses when handle_data returns {:close, state}. GenServer callbacks
+  # must stop with a three element tuple; a bare {:stop, reason} is a bad return value, which
+  # terminates the process with a crash report that dumps the whole connection state into the log
   defp rescue_error_handle_info(error, stacktrace, socket, state) do
     do_rescue_error(error, stacktrace, socket, state)
-    {:stop, :normal}
+    {:stop, {:shutdown, :local_closed}, {socket, state}}
   end
 
   defp do_rescue_error(error, stacktrace, socket, state) do
