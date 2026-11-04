@@ -39,27 +39,58 @@ defmodule Bandit.Compression do
   # Compressing chunked responses with zstd relies on :zstd.flush/1, which was added in OTP 29
   @zstd_streaming? Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1)
 
+  # Nearly every request carries one of a handful of Accept-Encoding values: browsers send the
+  # first two over https (Chrome, Edge and Firefox the first, Safari the second) and the third
+  # over plain http, curl sends the fourth, and Go's and the JVM's HTTP clients a bare gzip. Each
+  # value is paired with the codings it accepts, and its negotiation result against the default
+  # response encodings is worked out at compile time below, so these requests cost a pattern
+  # match rather than a parse. Anything else, including these same values with different spacing
+  # or case, and any configured response_encodings, goes through the general parser, which stays
+  # the one definition of the negotiation rules. The tests check that the two agree
+  @common_accept_encodings [
+    {"gzip, deflate, br, zstd", ~w(gzip deflate zstd)},
+    {"gzip, deflate, br", ~w(gzip deflate)},
+    {"gzip, deflate", ~w(gzip deflate)},
+    {"deflate, gzip, br, zstd", ~w(gzip deflate zstd)},
+    {"gzip", ~w(gzip)}
+  ]
+
   @spec negotiate_content_encodings(nil | binary(), keyword()) :: [String.t()]
   def negotiate_content_encodings(nil, _), do: []
 
   def negotiate_content_encodings(accept_encoding, http_opts) do
     if Keyword.get(http_opts, :compress, true) do
-      # Parse Accept-Encoding per RFC9110§12.5.3, honoring q-values (a value of q=0 means 'not
-      # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Returns the
-      # codings the client is willing to accept, in our own preference order
-      accepted = parse_accept_encoding(accept_encoding)
-      wildcard_q = Enum.find_value(accepted, fn {coding, q} -> if coding == "*", do: q end)
+      response_encodings = Keyword.get(http_opts, :response_encodings, @accepted_encodings)
 
-      Keyword.get(http_opts, :response_encodings, @accepted_encodings)
-      |> Enum.filter(fn encoding ->
-        case List.keyfind(accepted, encoding, 0) do
-          {_coding, q} -> q > 0
-          nil -> wildcard_q != nil and wildcard_q > 0
-        end
-      end)
+      case common_negotiation(accept_encoding, response_encodings) do
+        nil -> parse_and_negotiate(accept_encoding, response_encodings)
+        encodings -> encodings
+      end
     else
       []
     end
+  end
+
+  for {accept_encoding, client_codings} <- @common_accept_encodings do
+    defp common_negotiation(unquote(accept_encoding), @accepted_encodings),
+      do: unquote(Enum.filter(@accepted_encodings, &(&1 in client_codings)))
+  end
+
+  defp common_negotiation(_accept_encoding, _response_encodings), do: nil
+
+  defp parse_and_negotiate(accept_encoding, response_encodings) do
+    # Parse Accept-Encoding per RFC9110§12.5.3, honoring q-values (a value of q=0 means 'not
+    # acceptable') and the '*' wildcard, and comparing codings case-insensitively. Returns the
+    # codings the client is willing to accept, in our own preference order
+    accepted = parse_accept_encoding(accept_encoding)
+    wildcard_q = Enum.find_value(accepted, fn {coding, q} -> if coding == "*", do: q end)
+
+    Enum.filter(response_encodings, fn encoding ->
+      case List.keyfind(accepted, encoding, 0) do
+        {_coding, q} -> q > 0
+        nil -> wildcard_q != nil and wildcard_q > 0
+      end
+    end)
   end
 
   @spec parse_accept_encoding(binary()) :: [{binary(), float()}]
