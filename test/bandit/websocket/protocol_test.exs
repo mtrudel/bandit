@@ -18,10 +18,16 @@ defmodule WebSocketProtocolTest do
         timeout -> [timeout: String.to_integer(timeout)]
       end
 
+    validate_utf8 =
+      case conn.query_params["validate_utf8"] do
+        nil -> []
+        validate_utf8 -> [validate_utf8: validate_utf8 == "true"]
+      end
+
     Plug.Conn.upgrade_adapter(
       conn,
       :websocket,
-      {websock, conn.params, [compress: compress] ++ timeout}
+      {websock, conn.params, [compress: compress] ++ timeout ++ validate_utf8}
     )
   end
 
@@ -1164,6 +1170,28 @@ defmodule WebSocketProtocolTest do
       SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
 
       assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<0xE2::8, 0x82::8, 0x28::8>>}
+    end
+
+    test "server does NOT send a 1007 on a non UTF-8 text frame when validate_utf8 is false",
+         context do
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, validate_utf8: false)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      assert SimpleWebSocketClient.recv_text_frame(client) == {:ok, <<0xE2::8, 0x82::8, 0x28::8>>}
+    end
+
+    @tag :capture_log
+    test "server sends a 1007 on a non UTF-8 text frame when validate_utf8 overrides the server",
+         context do
+      context = http_server(context, websocket_options: [validate_text_frames: false])
+      client = SimpleWebSocketClient.tcp_client(context)
+      SimpleWebSocketClient.http1_handshake(client, EchoWebSock, validate_utf8: true)
+
+      SimpleWebSocketClient.send_text_frame(client, <<0xE2::8, 0x82::8, 0x28::8>>)
+
+      assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1007::16>>}
     end
   end
 
