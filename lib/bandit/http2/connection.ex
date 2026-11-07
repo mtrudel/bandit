@@ -43,6 +43,10 @@ defmodule Bandit.HTTP2.Connection do
   # instead of the protocol maximum, so that we never advertise more than we will accept
   @recv_window_target 16_777_216
 
+  # The largest possible stream identifier (RFC9113§5.1.1), which a GOAWAY frame uses to say that
+  # every stream the peer has opened so far may still be processed (RFC9113§6.8)
+  @max_stream_id 2_147_483_647
+
   defstruct local_settings: %Bandit.HTTP2.Settings{},
             remote_settings: %Bandit.HTTP2.Settings{},
             fragment_frame: nil,
@@ -63,7 +67,8 @@ defmodule Bandit.HTTP2.Connection do
             plug: nil,
             opts: %{},
             reset_stream_timestamps: [],
-            settings_timestamps: []
+            settings_timestamps: [],
+            closing: false
 
   @typedoc "Encapsulates the state of an HTTP/2 connection"
   @type t :: %__MODULE__{
@@ -94,7 +99,8 @@ defmodule Bandit.HTTP2.Connection do
             required(:http_2) => Bandit.http_2_options()
           },
           reset_stream_timestamps: [integer()],
-          settings_timestamps: [integer()]
+          settings_timestamps: [integer()],
+          closing: boolean()
         }
 
   @spec init(ThousandIsland.Socket.t(), Bandit.Pipeline.plug_def(), map()) :: t()
@@ -645,6 +651,12 @@ defmodule Bandit.HTTP2.Connection do
   end
 
   defp new_stream!(connection, stream_id) do
+    # RFC9113§6.8 - we have sent a GOAWAY and are only finishing the streams already in flight. A
+    # stream the client opened before it saw the GOAWAY is refused rather than started, which
+    # RFC9113§8.7 lets the client retry safely elsewhere
+    if connection.closing,
+      do: stream_error!("Connection is closing", stream_id, Bandit.HTTP2.Errors.refused_stream())
+
     max_requests = Keyword.get(connection.opts.http_2, :max_requests, 0)
 
     if max_requests != 0 and
@@ -1024,6 +1036,26 @@ defmodule Bandit.HTTP2.Connection do
   #
   # Helper functions
   #
+
+  @spec open_stream_count(t()) :: non_neg_integer()
+  def open_stream_count(connection),
+    do: Bandit.HTTP2.StreamCollection.open_stream_count(connection.streams)
+
+  # RFC9113§6.8 - the first step of a graceful shutdown. A GOAWAY whose last stream identifier is
+  # 2^31-1 tells the client that the connection is going away and that it must not open any more
+  # streams, without yet saying which of the streams it has already opened will be processed. We
+  # keep servicing the streams in flight and refuse any new ones (see `new_stream!/2`) until
+  # `close_connection/4` sends the final GOAWAY with the last stream that we actually started
+  @spec begin_shutdown(ThousandIsland.Socket.t(), t()) :: t()
+  def begin_shutdown(socket, connection) do
+    %Bandit.HTTP2.Frame.Goaway{
+      last_stream_id: @max_stream_id,
+      error_code: Bandit.HTTP2.Errors.no_error()
+    }
+    |> send_frame(socket, connection)
+
+    %{connection | closing: true}
+  end
 
   @spec close_connection(Bandit.HTTP2.Errors.error_code(), term(), ThousandIsland.Socket.t(), t()) ::
           {:close, t()} | {:error, term(), t()}

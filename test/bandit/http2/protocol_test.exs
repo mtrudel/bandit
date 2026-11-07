@@ -3851,6 +3851,74 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "graceful shutdown (RFC9113§6.8)" do
+    setup do
+      Process.register(self(), __MODULE__)
+      :ok
+    end
+
+    def shutdown_test(conn) do
+      send(__MODULE__, {:plug_ready, self()})
+      receive do: (:go -> :ok)
+      send_resp(conn, 200, "OK")
+    end
+
+    test "finishes in-flight streams and refuses new ones while shutting down", context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      {:ok, ctx} =
+        SimpleH2Client.send_simple_headers(socket, 1, :get, "/shutdown_test", context[:port])
+
+      assert_receive {:plug_ready, plug_pid}, 1_000
+
+      stop_task = Task.async(fn -> ThousandIsland.stop(context[:server_pid]) end)
+
+      # The shutdown is announced with a GOAWAY naming the largest possible stream, so the client
+      # knows that any stream it has already opened may yet complete
+      assert {:ok, :goaway, 0, 0, <<2_147_483_647::32, 0::32>>} =
+               SimpleH2Client.recv_frame(socket)
+
+      # A stream opened after that is refused, which the client may safely retry elsewhere
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/shutdown_test", context[:port], ctx)
+
+      assert SimpleH2Client.recv_rst_stream(socket) ==
+               {:ok, 3, Bandit.HTTP2.Errors.refused_stream()}
+
+      # The stream that was in flight is served to completion
+      send(plug_pid, :go)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      # Only then does the connection close, with a GOAWAY naming the last stream it processed
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+      assert Task.await(stop_task) == :ok
+    end
+
+    test "keeps servicing the connection while shutting down", context do
+      context = https_server(context, thousand_island_options: [read_timeout: 2_000])
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/shutdown_test", context[:port])
+      assert_receive {:plug_ready, plug_pid}, 1_000
+
+      stop_task = Task.async(fn -> ThousandIsland.stop(context[:server_pid]) end)
+
+      assert {:ok, :goaway, 0, 0, <<2_147_483_647::32, 0::32>>} =
+               SimpleH2Client.recv_frame(socket)
+
+      # Connection-level frames from the client are still answered during the drain
+      SimpleH2Client.send_frame(socket, 6, 0, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>)
+      assert SimpleH2Client.recv_frame(socket) == {:ok, :ping, 1, 0, <<1, 2, 3, 4, 5, 6, 7, 8>>}
+
+      send(plug_pid, :go)
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 1, 0}
+      assert Task.await(stop_task) == :ok
+    end
+  end
+
   describe "WINDOW_UPDATE frames (upload direction)" do
     test "tops the connection receive window up to its target on first uploaded DATA frame",
          context do
