@@ -15,6 +15,17 @@ defmodule Bandit.WebSocket.Handler do
     |> Keyword.take([:fullsweep_after, :max_heap_size])
     |> Enum.each(fn {key, value} -> :erlang.process_flag(key, value) end)
 
+    # Accept `validate_utf8` (the name that WebSockAdapter documents) as an alias of
+    # `validate_text_frames`
+    connection_opts =
+      case Keyword.pop(connection_opts, :validate_utf8) do
+        {nil, connection_opts} ->
+          connection_opts
+
+        {validate, connection_opts} ->
+          Keyword.put(connection_opts, :validate_text_frames, validate)
+      end
+
     connection_opts = Keyword.merge(state.opts.websocket, connection_opts)
 
     primitive_ops_module =

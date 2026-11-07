@@ -227,7 +227,9 @@ defmodule Bandit do
     handling of single-frame messages. Use a value of 0 for no limit. Defaults to 8_000_000
   * `validate_text_frames`: Whether or not to validate text frames as being UTF-8. Strictly
     speaking this is required per RFC6455§5.6, however it can be an expensive operation and one
-    that may be safely skipped in some situations. Defaults to true
+    that may be safely skipped in some situations. Upgrade requests can set this value on a
+    per-upgrade basis in `connection_opts`, as `validate_text_frames` or as its alias
+    `validate_utf8`. Defaults to true
   * `compress`: Whether or not to allow per-message deflate compression globally. Note that
     upgrade requests still need to set the `compress: true` option in `connection_opts` on
     a per-upgrade basis for compression to be negotiated (see 'WebSocket Support' section below
