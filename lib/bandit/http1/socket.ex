@@ -49,14 +49,9 @@ defmodule Bandit.HTTP1.Socket do
 
   defimpl Bandit.HTTPTransport do
     require Logger
+    import Bandit.Headers, only: [is_tchar: 1]
 
     @max_chunk_size_byte_count 16
-
-    # RFC9110§5.6.2: tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
-    # "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
-    defguardp is_tchar(char)
-              when char in ?a..?z or char in ?A..?Z or char in ?0..?9 or
-                     char in ~c"!#$%&'*+-.^_`|~"
 
     def peer_data(%@for{} = socket), do: Bandit.SocketHelpers.peer_data(socket.socket)
 
@@ -139,23 +134,13 @@ defmodule Bandit.HTTP1.Socket do
     # and every component of the request-target, since all of them reach the Plug.Conn
     defp validate_request_line!(method, {scheme, host, port, path}) do
       [method, scheme, host, port, path]
-      |> Enum.all?(&request_line_component_valid?/1)
+      |> Enum.all?(&Bandit.Headers.request_line_component_valid?/1)
       |> if do
         :ok
       else
         request_error!("Request line contains invalid characters (RFC9112§3.2)")
       end
     end
-
-    defp request_line_component_valid?(<<>>), do: true
-
-    defp request_line_component_valid?(<<char, rest::binary>>) when char > 0x20 and char != 0x7F,
-      do: request_line_component_valid?(rest)
-
-    defp request_line_component_valid?(<<_char, _rest::binary>>), do: false
-
-    # Request line components which are not binaries (ports, the :* path) cannot contain bytes
-    defp request_line_component_valid?(_component), do: true
 
     # decode_packet reads the version numbers into C integers, which wrap (so 'HTTP/4294967297.1'
     # reads as HTTP/1.1), and it accepts more than the RFC9112§2.3 grammar allows ('HTTP/01.01',

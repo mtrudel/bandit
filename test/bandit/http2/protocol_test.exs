@@ -4819,6 +4819,105 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe ":method and :path pseudo headers (RFC9113§8.3.1)" do
+    setup do
+      Process.register(self(), __MODULE__)
+      :ok
+    end
+
+    def echo_method_and_path(conn) do
+      send(__MODULE__, :plug_called)
+      send_resp(conn, 200, "#{conn.method} #{conn.request_path}?#{conn.query_string}")
+    end
+
+    for {description, method} <- [
+          {"contains a space", "GE T"},
+          {"contains a tab", "GE\tT"},
+          {"contains a delimiter", "GET/1"},
+          {"contains a non-ASCII byte", "G\xC3\x89T"},
+          {"is empty", ""}
+        ] do
+      @invalid_method method
+
+      @tag :capture_log
+      test "returns a stream error if :method #{description}", context do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", @invalid_method},
+          {":path", "/echo_method_and_path"},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+        refute_received :plug_called
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTP2.Errors.StreamError) Received invalid :method (RFC9113§8.3.1)"
+      end
+    end
+
+    for {description, path} <- [
+          {"contains a space", "/echo_method_and_path/a b"},
+          {"contains a tab", "/echo_method_and_path/a\tb"}
+        ] do
+      @invalid_path path
+
+      @tag :capture_log
+      test "returns a stream error if :path #{description}", context do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", "GET"},
+          {":path", @invalid_path},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+        refute_received :plug_called
+
+        assert_receive {:log, %{level: :error, msg: {:string, msg}, meta: %{stream_id: 1}}}, 500
+
+        assert msg ==
+                 "** (Bandit.HTTP2.Errors.StreamError) Received invalid :path (RFC9113§8.3.1)"
+      end
+    end
+
+    test "accepts any token as :method, and percent-encoded or non-ASCII bytes in :path",
+         context do
+      for method <- ["GET", "PURGE", "M-SEARCH"],
+          path <- [
+            "/echo_method_and_path/a%20b?a=b%20c",
+            "/echo_method_and_path/caf\xC3\xA9?q=\xC3\xA9"
+          ] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        headers = [
+          {":method", method},
+          {":path", path},
+          {":scheme", "https"},
+          {":authority", "localhost:#{context.port}"}
+        ]
+
+        SimpleH2Client.send_headers(socket, 1, true, headers)
+
+        assert SimpleH2Client.successful_response?(socket, 1, false)
+        assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "#{method} #{path}"}
+        assert_receive :plug_called
+      end
+    end
+  end
+
   describe "max_concurrent_streams flag" do
     test "refuses streams when max_concurrent_streams limit is exceeded", context do
       context =
