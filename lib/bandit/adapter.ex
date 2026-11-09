@@ -280,7 +280,12 @@ defmodule Bandit.Adapter do
 
     adapter = %{adapter | status: status}
 
-    body_disposition = if send_resp_body?(adapter), do: body_disposition, else: :no_body
+    # An informational response never has a body and is always followed by the final response
+    # (RFC9110§15.2), so whether the final response carries a body has no bearing on it
+    body_disposition =
+      if body_disposition == :inform or send_resp_body?(adapter),
+        do: body_disposition,
+        else: :no_body
 
     socket =
       Bandit.HTTPTransport.send_headers(adapter.transport, status, headers, body_disposition)
