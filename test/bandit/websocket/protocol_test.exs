@@ -279,6 +279,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received oversize fragmented message"
+
+      refute output =~ ~s[** (stop) "Received oversize fragmented message"]
     end
 
     test "zero byte non-fin continuation frames are accepted", context do
@@ -326,6 +328,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received oversize fragmented message"
+
+      refute output =~ ~s[** (stop) "Received oversize fragmented message"]
     end
 
     test "max_fragmented_message_size enforced for continuation fin frames", context do
@@ -359,6 +363,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received oversize fragmented message"
+
+      refute output =~ ~s[** (stop) "Received oversize fragmented message"]
     end
 
     # The first fragment is subject to the limit as well. It used to be stored unchecked, and the
@@ -388,6 +394,8 @@ defmodule WebSocketProtocolTest do
           end)
 
         assert output =~ "Received oversize fragmented message"
+
+        refute output =~ ~s[** (stop) "Received oversize fragmented message"]
       end
     end
   end
@@ -514,6 +522,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received compressed frame inflating too much"
+
+      refute output =~ ~s[** (stop) "Received compressed frame inflating too much"]
     end
 
     test "respects max_inflate_ratio for received frames", context do
@@ -555,6 +565,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received compressed frame inflating too much"
+
+      refute output =~ ~s[** (stop) "Received compressed frame inflating too much"]
     end
 
     test "respects deflate_options when deflating frames", context do
@@ -1022,6 +1034,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received unexpected continuation frame (RFC6455§5.4)"
+
+      refute output =~ ~s[** (stop) "Received unexpected continuation frame (RFC6455§5.4)"]
     end
 
     test "server sends a 1002 on a text frame during continuation", context do
@@ -1045,6 +1059,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received unexpected text frame (RFC6455§5.4)"
+
+      refute output =~ ~s[** (stop) "Received unexpected text frame (RFC6455§5.4)"]
     end
 
     test "server sends a 1002 on a binary frame during continuation", context do
@@ -1069,6 +1085,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received unexpected binary frame (RFC6455§5.4)"
+
+      refute output =~ ~s[** (stop) "Received unexpected binary frame (RFC6455§5.4)"]
     end
 
     test "server sends a 1002 on a compressed frame when deflate not negotiated", context do
@@ -1092,6 +1110,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received unexpected compressed frame (RFC6455§5.2)"
+
+      refute output =~ ~s[** (stop) "Received unexpected compressed frame (RFC6455§5.2)"]
     end
 
     test "server sends a 1007 on a malformed compressed frame", context do
@@ -1115,6 +1135,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Inflation error"
+
+      refute output =~ ~s[** (stop) "Inflation error"]
     end
 
     test "server sends a 1007 on a non UTF-8 text frame", context do
@@ -1137,6 +1159,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
+
+      refute output =~ ~s[** (stop) "Received non UTF-8 text frame (RFC6455§8.1)"]
     end
 
     test "server sends a 1007 on fragmented non UTF-8 text frame", context do
@@ -1160,6 +1184,8 @@ defmodule WebSocketProtocolTest do
         end)
 
       assert output =~ "Received non UTF-8 text frame (RFC6455§8.1)"
+
+      refute output =~ ~s[** (stop) "Received non UTF-8 text frame (RFC6455§8.1)"]
     end
 
     test "server does NOT send a 1007 on a non UTF-8 text frame when so configured", context do
@@ -1264,6 +1290,67 @@ defmodule WebSocketProtocolTest do
                      500
 
       refute_receive {:log, %{level: :error}}
+    end
+
+    # Frames that deserialize correctly but break the protocol are handled the same way
+    for {error, close_payload, send_frame, args} <- [
+          {"Received non UTF-8 text frame (RFC6455§8.1)", <<1007::16>>, :send_text_frame,
+           [<<0xE2::8, 0x82::8, 0x28::8>>]},
+          {"Received unexpected continuation frame (RFC6455§5.4)", <<1002::16>>,
+           :send_continuation_frame, [<<1, 2, 3>>]},
+          {"Received unexpected compressed frame (RFC6455§5.2)", <<1002::16>>, :send_text_frame,
+           [<<74, 76, 28, 5, 163, 96, 20, 12, 119, 0, 0>>, 0xC]}
+        ] do
+      for log_protocol_errors <- [:short, :verbose, false] do
+        test "'#{error}' is handled quietly with log_protocol_errors: #{inspect(log_protocol_errors)}",
+             context do
+          context =
+            http_server(context,
+              websocket_options: [log_protocol_errors: unquote(log_protocol_errors)]
+            )
+
+          ref = make_ref() |> inspect() |> String.to_atom()
+
+          :logger.add_handler(ref, LoggerHelpers, %{
+            config: %{pid: self(), websock: MonitoredWebSock}
+          })
+
+          client = SimpleWebSocketClient.tcp_client(context)
+          SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
+          assert_receive connection_pid when is_pid(connection_pid), 500
+          monitor_ref = Process.monitor(connection_pid)
+
+          {exit_reason, output} =
+            with_log(fn ->
+              apply(SimpleWebSocketClient, unquote(send_frame), [client | unquote(args)])
+
+              # Get the error that terminate saw, to ensure we're closing for the expected reason
+              assert_receive {:error, unquote(error)}, 500
+
+              # Validate that the server has started the shutdown handshake from RFC6455§7.1.2
+              assert SimpleWebSocketClient.recv_connection_close_frame(client) ==
+                       {:ok, unquote(close_payload)}
+
+              # Verify that the server didn't send any extraneous frames
+              assert SimpleWebSocketClient.connection_closed_for_reading?(client)
+
+              assert_receive {:DOWN, ^monitor_ref, :process, ^connection_pid, exit_reason}, 500
+              exit_reason
+            end)
+
+          # Verify that the connection process exits quietly, without a crash report
+          refute output =~ "#{inspect(connection_pid)} terminating"
+          assert exit_reason == {:shutdown, unquote(error)}
+
+          # Verify that the error is logged in a controlled manner, if at all
+          if unquote(log_protocol_errors) do
+            assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+            assert msg == "** (exit) #{inspect(unquote(error))}"
+          else
+            refute_receive {:log, %{level: :error}}
+          end
+        end
+      end
     end
   end
 

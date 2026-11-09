@@ -96,7 +96,12 @@ defmodule Bandit.WebSocket.Connection do
   defp dispatch_frame(frame, socket, %{fragment_frame: nil} = connection) do
     case frame do
       %Frame.Continuation{} ->
-        do_error(1002, "Received unexpected continuation frame (RFC6455§5.4)", socket, connection)
+        do_protocol_error(
+          1002,
+          "Received unexpected continuation frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       %Frame.Text{fin: true, compressed: true} = frame ->
         do_inflate(frame, socket, connection)
@@ -106,7 +111,12 @@ defmodule Bandit.WebSocket.Connection do
           connection.websock.handle_in({frame.data, opcode: :text}, connection.websock_state)
           |> handle_continuation(socket, connection)
         else
-          do_error(1007, "Received non UTF-8 text frame (RFC6455§8.1)", socket, connection)
+          do_protocol_error(
+            1007,
+            "Received non UTF-8 text frame (RFC6455§8.1)",
+            socket,
+            connection
+          )
         end
 
       %Frame.Text{fin: false} = frame ->
@@ -134,7 +144,7 @@ defmodule Bandit.WebSocket.Connection do
         fragment_size = connection.fragment_size + IO.iodata_length(frame.data)
 
         if oversize_message?(fragment_size, connection.opts) do
-          do_error(1009, "Received oversize fragmented message", socket, connection)
+          do_protocol_error(1009, "Received oversize fragmented message", socket, connection)
         else
           data =
             IO.iodata_to_binary([
@@ -160,7 +170,7 @@ defmodule Bandit.WebSocket.Connection do
           fragment_size = connection.fragment_size + frame_size
 
           if oversize_message?(fragment_size, connection.opts) do
-            do_error(1009, "Received oversize fragmented message", socket, connection)
+            do_protocol_error(1009, "Received oversize fragmented message", socket, connection)
           else
             connection = %{
               connection
@@ -174,10 +184,20 @@ defmodule Bandit.WebSocket.Connection do
         end
 
       %Frame.Text{} ->
-        do_error(1002, "Received unexpected text frame (RFC6455§5.4)", socket, connection)
+        do_protocol_error(
+          1002,
+          "Received unexpected text frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       %Frame.Binary{} ->
-        do_error(1002, "Received unexpected binary frame (RFC6455§5.4)", socket, connection)
+        do_protocol_error(
+          1002,
+          "Received unexpected binary frame (RFC6455§5.4)",
+          socket,
+          connection
+        )
 
       frame ->
         handle_control_frame(frame, socket, connection)
@@ -191,7 +211,7 @@ defmodule Bandit.WebSocket.Connection do
     fragment_size = IO.iodata_length(frame.data)
 
     if oversize_message?(fragment_size, connection.opts) do
-      do_error(1009, "Received oversize fragmented message", socket, connection)
+      do_protocol_error(1009, "Received oversize fragmented message", socket, connection)
     else
       {:continue, %{connection | fragment_frame: frame, fragment_size: fragment_size}}
     end
@@ -397,6 +417,16 @@ defmodule Bandit.WebSocket.Connection do
   defp maybe_wrap_reason(:timeout), do: :timeout
   defp maybe_wrap_reason(reason), do: {:error, reason}
 
+  # Errors caused by a peer that does not follow the protocol. They are handled like any other
+  # error, but are logged as governed by the log_protocol_errors option and stop the connection
+  # with a {:shutdown, ...} reason, so that no crash report is emitted for a condition entirely
+  # outside the server's control
+  defp do_protocol_error(code, reason, socket, connection) do
+    {:error, reason, connection} = do_error(code, reason, socket, connection)
+    Bandit.Logger.maybe_log_websocket_protocol_error(reason, connection)
+    {:error, {:shutdown, reason}, connection}
+  end
+
   defp do_deflate(msgs, socket, connection) when is_list(msgs) do
     Enum.reduce(msgs, {:continue, connection}, fn
       msg, {:continue, connection} -> do_deflate(msg, socket, connection)
@@ -441,13 +471,23 @@ defmodule Bandit.WebSocket.Connection do
         dispatch_frame(frame, socket, connection)
 
       {:error, :no_compress} ->
-        do_error(1002, "Received unexpected compressed frame (RFC6455§5.2)", socket, connection)
+        do_protocol_error(
+          1002,
+          "Received unexpected compressed frame (RFC6455§5.2)",
+          socket,
+          connection
+        )
 
       {:error, :too_much_inflation} ->
-        do_error(1009, "Received compressed frame inflating too much", socket, connection)
+        do_protocol_error(
+          1009,
+          "Received compressed frame inflating too much",
+          socket,
+          connection
+        )
 
       {:error, _reason} ->
-        do_error(1007, "Inflation error", socket, connection)
+        do_protocol_error(1007, "Inflation error", socket, connection)
     end
   end
 end
