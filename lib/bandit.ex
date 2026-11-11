@@ -241,7 +241,7 @@ defmodule Bandit do
     messages. Intended to prevent 'inflate bomb' attacks where a tiny deflated messages inflates to
     a massive one. Defaults to `25` representing a 25:1 allowable inflation ratio.
   * `log_protocol_errors`: How to log protocol errors such as malformed frames. `:short` and
-    `:verbose` will log a single-line summary (frame deserialization errors carry no stack
+    `:verbose` will log a single-line summary (WebSocket protocol errors carry no stack
     trace, so both values behave identically). The value of `false` will disable protocol error
     logging entirely. Defaults to `:short`
   """
