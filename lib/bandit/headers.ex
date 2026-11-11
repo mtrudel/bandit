@@ -23,6 +23,32 @@ defmodule Bandit.Headers do
 
   def field_value_valid?(_value), do: false
 
+  # RFC9110§5.6.2: tchar = "!" / "#" / "$" / "%" / "&" / "'" / "*" / "+" / "-" / "." /
+  # "^" / "_" / "`" / "|" / "~" / DIGIT / ALPHA
+  @spec is_tchar(integer()) :: Macro.t()
+  defguard is_tchar(char)
+           when char in ?a..?z or char in ?A..?Z or char in ?0..?9 or
+                  char in ~c"!#$%&'*+-.^_`|~"
+
+  # RFC9110§5.6.2: token = 1*tchar
+  @spec token?(binary()) :: boolean()
+  def token?(<<char>>) when is_tchar(char), do: true
+  def token?(<<char, rest::binary>>) when is_tchar(char), do: token?(rest)
+  def token?(_value), do: false
+
+  # RFC9112§3.2 - the request-target may not contain CTLs or whitespace. Shared by the HTTP/1
+  # request line and the HTTP/2 :path pseudo header. Non-ASCII bytes are accepted
+  @spec request_line_component_valid?(term()) :: boolean()
+  def request_line_component_valid?(<<>>), do: true
+
+  def request_line_component_valid?(<<char, rest::binary>>) when char > 0x20 and char != 0x7F,
+    do: request_line_component_valid?(rest)
+
+  def request_line_component_valid?(<<_char, _rest::binary>>), do: false
+
+  # Request line components which are not binaries (ports, the :* path) cannot contain bytes
+  def request_line_component_valid?(_component), do: true
+
   @spec get_header(Plug.Conn.headers(), header :: binary()) :: binary() | nil
   def get_header(headers, header) do
     case List.keyfind(headers, header, 0) do

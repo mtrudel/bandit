@@ -145,6 +145,7 @@ defmodule Bandit.HTTP2.Stream do
           request_target = build_request_target!(pseudo_headers, stream)
           exactly_one_instance_of!(pseudo_headers, ":scheme", stream)
           exactly_one_instance_of!(pseudo_headers, ":method", stream)
+          valid_method!(method, stream)
           exactly_one_instance_of!(pseudo_headers, ":path", stream)
           at_most_one_instance_of!(pseudo_headers, ":authority", stream)
           at_most_one_instance_of!(headers, "host", stream)
@@ -212,9 +213,23 @@ defmodule Bandit.HTTP2.Stream do
       |> case do
         nil -> stream_error!("Received empty :path", stream)
         "*" -> :*
-        "/" <> _ = path -> path
+        "/" <> _ = path -> valid_path!(path, stream)
         _ -> stream_error!("Path does not start with /", stream)
       end
+    end
+
+    # RFC9113§8.3.1 - path must be valid, so it may not contain the CTLs or whitespace that
+    # HTTP/1 rejects in a request-target (RFC9112§3.2)
+    defp valid_path!(path, stream) do
+      if Bandit.Headers.request_line_component_valid?(path),
+        do: path,
+        else: stream_error!("Received invalid :path (RFC9113§8.3.1)", stream)
+    end
+
+    # RFC9113§8.3.1 - method must be valid, and RFC9110§9.1 defines a method as a token
+    defp valid_method!(method, stream) do
+      if not Bandit.Headers.token?(method),
+        do: stream_error!("Received invalid :method (RFC9113§8.3.1)", stream)
     end
 
     # RFC9113§8.3 - pseudo headers must appear first
