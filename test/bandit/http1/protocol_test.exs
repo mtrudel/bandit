@@ -1662,6 +1662,18 @@ defmodule HTTP1ProtocolTest do
                SimpleHTTP1Client.parse_response(client, rest)
     end
 
+    test "sending informational responses to HEAD requests", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+      SimpleHTTP1Client.send(client, "HEAD", "/send_inform", ["host: localhost"])
+
+      Process.sleep(10)
+      assert {:ok, "100 Continue", headers, rest} = SimpleHTTP1Client.recv_reply(client)
+      assert Bandit.Headers.get_header(headers, :"x-from") == "inform"
+
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.parse_response(client, rest, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "8"
+    end
+
     test "does not send informational responses to HTTP/1.0 clients", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "GET", "/send_inform", ["host: localhost"], "1.0")
@@ -1694,6 +1706,23 @@ defmodule HTTP1ProtocolTest do
 
       Transport.send(client, "123")
       assert {:ok, "200 OK", _headers, "123"} = SimpleHTTP1Client.recv_reply(client)
+    end
+
+    test "sends a 100 Continue interim response before reading the request body of a HEAD request",
+         context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      SimpleHTTP1Client.send(client, "HEAD", "/expect_continue_body", [
+        "host: localhost",
+        "content-length: 3",
+        "expect: 100-continue"
+      ])
+
+      assert {:ok, "100 Continue", _headers, ""} = SimpleHTTP1Client.recv_reply(client)
+
+      Transport.send(client, "123")
+      assert {:ok, "200 OK", headers, ""} = SimpleHTTP1Client.recv_reply(client, true)
+      assert Bandit.Headers.get_header(headers, :"content-length") == "3"
     end
 
     test "does not send a 100 Continue interim response if the plug never reads the body",

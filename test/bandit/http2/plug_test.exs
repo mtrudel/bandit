@@ -1067,6 +1067,22 @@ defmodule HTTP2PlugTest do
     assert SimpleH2Client.connection_alive?(socket)
   end
 
+  test "sending informational responses to HEAD requests", context do
+    socket = SimpleH2Client.setup_connection(context)
+
+    SimpleH2Client.send_simple_headers(socket, 1, :head, "/send_inform", context.port)
+
+    assert {:ok, 1, false, [{":status", "100"}, {"date", _date}, {"x-from", "inform"}], ctx} =
+             SimpleH2Client.recv_headers(socket)
+
+    assert {:ok, 1, true, [{":status", "200"} | headers], _ctx} =
+             SimpleH2Client.recv_headers(socket, ctx)
+
+    assert {"content-length", "8"} in headers
+
+    assert SimpleH2Client.connection_alive?(socket)
+  end
+
   def send_inform(conn) do
     conn = conn |> inform(100, [{:"x-from", "inform"}])
     conn |> send_resp(200, "Informer")
@@ -1178,6 +1194,39 @@ defmodule HTTP2PlugTest do
     def expect_continue_body(conn) do
       {:ok, body, conn} = read_body(conn, read_timeout: 200)
       send_resp(conn, 200, body)
+    end
+
+    test "sends a 100 Continue interim response before reading the request body of a HEAD request",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_headers(socket, 1, false, [
+        {":method", "HEAD"},
+        {":path", "/expect_continue_body"},
+        {":scheme", "https"},
+        {":authority", "localhost:#{context.port}"},
+        {"expect", "100-continue"}
+      ])
+
+      assert {:ok, 1, false, [{":status", "100"} | _], ctx} = SimpleH2Client.recv_headers(socket)
+
+      SimpleH2Client.send_body(socket, 1, true, "123")
+
+      frames = [SimpleH2Client.recv_frame(socket), SimpleH2Client.recv_frame(socket)]
+
+      assert frames
+             ~> in_any_order([
+               {:ok, :window_update, term(), 0, term()},
+               {:ok, :headers, 0x05, 1, term()}
+             ])
+
+      {:ok, :headers, _flags, 1, headers_block} =
+        Enum.find(frames, &match?({:ok, :headers, _, 1, _}, &1))
+
+      assert {:ok, [{":status", "200"} | headers], _ctx} = HPAX.decode(headers_block, ctx)
+      assert {"content-length", "3"} in headers
+
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     test "does not send a 100 Continue interim response if the plug never reads the body",
