@@ -142,11 +142,9 @@ defmodule Bandit.HTTP2.Stream do
           pseudo_headers_all_request!(pseudo_headers, stream)
           headers_all_lowercase!(headers, stream)
           valid_field_values!(pseudo_headers ++ headers, stream)
-          request_target = build_request_target!(pseudo_headers, stream)
-          exactly_one_instance_of!(pseudo_headers, ":scheme", stream)
+          request_target = build_request_target!(method, pseudo_headers, stream)
           exactly_one_instance_of!(pseudo_headers, ":method", stream)
           valid_method!(method, stream)
-          exactly_one_instance_of!(pseudo_headers, ":path", stream)
           at_most_one_instance_of!(pseudo_headers, ":authority", stream)
           at_most_one_instance_of!(headers, "host", stream)
           host_matches_authority!(headers, request_target, stream)
@@ -166,10 +164,25 @@ defmodule Bandit.HTTP2.Stream do
       end
     end
 
-    defp build_request_target!(headers, stream) do
+    # RFC9113§8.5 - a CONNECT request has no :scheme or :path, and its :authority is the host and
+    # port to connect to. This is the authority-form target of an HTTP/1 CONNECT (RFC9112§3.2.3)
+    defp build_request_target!("CONNECT", headers, stream) do
+      if Enum.any?(headers, fn {key, _value} -> key in ~w[:scheme :path] end),
+        do: stream_error!("Received CONNECT with :scheme or :path (RFC9113§8.5)", stream)
+
+      case get_host_and_port!(headers, stream) do
+        {host, port} when is_integer(port) -> {nil, host, port, nil}
+        _ -> stream_error!("Received CONNECT without a host and port (RFC9113§8.5)", stream)
+      end
+    end
+
+    # RFC9113§8.3.1 - every other request has exactly one :scheme and one :path
+    defp build_request_target!(_method, headers, stream) do
       scheme = Bandit.Headers.get_header(headers, ":scheme")
       {host, port} = get_host_and_port!(headers, stream)
       path = get_path!(headers, stream)
+      exactly_one_instance_of!(headers, ":scheme", stream)
+      exactly_one_instance_of!(headers, ":path", stream)
       {scheme, host, port, path}
     end
 
