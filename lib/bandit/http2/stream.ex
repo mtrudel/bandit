@@ -660,8 +660,14 @@ defmodule Bandit.HTTP2.Stream do
       end)
     end
 
+    # The body crosses a process boundary here: the connection process does the sending, and the
+    # call in do_send_data/4 copies the whole term onto its heap. A rendered template is a deep
+    # iolist of many small binaries, and that copy is paid per element, so flatten it first. A
+    # binary over 64 bytes lives off-heap and crosses the boundary by reference, making the copy a
+    # constant cost whatever the body's size or shape. Bodies larger than the send window were
+    # already flattened in split_data/2, so this only changes the smaller ones
     def send_data(%@for{} = stream, data, end_stream),
-      do: do_send_data(stream, data, end_stream, nil)
+      do: do_send_data(stream, IO.iodata_to_binary(data), end_stream, nil)
 
     # `deadline` bounds how long we will wait on the stream send window; it is nil until we first
     # have to wait, and is then extended only as the peer actually lets us send data (see
