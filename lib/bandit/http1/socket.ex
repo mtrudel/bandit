@@ -893,6 +893,10 @@ defmodule Bandit.HTTP1.Socket do
           headers = [{"connection", "close"}]
           headers = if status in 400..599, do: [{"content-length", "0"} | headers], else: headers
 
+          # These responses do not pass through the adapter, which is where every other
+          # response gets its date header (RFC9110§6.6.1)
+          headers = [Bandit.Clock.date_header() | headers]
+
           try do
             send_headers(socket, status, headers, :no_body)
           rescue
