@@ -2,7 +2,12 @@ defmodule HibernationTest do
   use ExUnit.Case, async: true
   use ServerHelpers
 
-  @hibernating {:current_function, {:erlang, :hibernate, 3}}
+  # A hibernating gen_server sits in :erlang.hibernate/3 up to OTP 27, and in
+  # :gen_server.loop_hibernate/4 from OTP 28 on
+  @hibernating [
+    {:current_function, {:erlang, :hibernate, 3}},
+    {:current_function, {:gen_server, :loop_hibernate, 4}}
+  ]
 
   def call(conn, _opts) do
     conn = fetch_query_params(conn)
@@ -37,7 +42,7 @@ defmodule HibernationTest do
 
       Process.sleep(300)
       assert [pid] = connection_pids(context)
-      assert Process.info(pid, :current_function) == @hibernating
+      assert Process.info(pid, :current_function) in @hibernating
 
       SimpleHTTP1Client.send(client, "GET", "/", ["host: localhost"])
       assert {:ok, "200 OK", _headers, "OK"} = SimpleHTTP1Client.recv_reply(client)
@@ -56,7 +61,7 @@ defmodule HibernationTest do
 
       Process.sleep(300)
       assert [pid] = connection_pids(context)
-      assert Process.info(pid, :current_function) == @hibernating
+      assert Process.info(pid, :current_function) in @hibernating
 
       SimpleH2Client.send_simple_headers(socket, 3, :get, "/", context.port, send_ctx)
       assert {:ok, 3, false, _headers, _ctx} = SimpleH2Client.recv_headers(socket, recv_ctx)
@@ -74,7 +79,7 @@ defmodule HibernationTest do
 
       Process.sleep(300)
       assert [pid] = connection_pids(context)
-      assert Process.info(pid, :current_function) == @hibernating
+      assert Process.info(pid, :current_function) in @hibernating
 
       SimpleWebSocketClient.send_text_frame(client, "still here")
       assert {:ok, "still here"} = SimpleWebSocketClient.recv_text_frame(client)
@@ -92,7 +97,7 @@ defmodule HibernationTest do
 
       Process.sleep(300)
       assert [pid] = connection_pids(context)
-      refute Process.info(pid, :current_function) == @hibernating
+      refute Process.info(pid, :current_function) in @hibernating
     end
 
     @tag :slow
@@ -109,10 +114,10 @@ defmodule HibernationTest do
 
       Process.sleep(14_000)
       assert [pid] = connection_pids(context)
-      refute Process.info(pid, :current_function) == @hibernating
+      refute Process.info(pid, :current_function) in @hibernating
 
       Process.sleep(4_000)
-      assert Process.info(pid, :current_function) == @hibernating
+      assert Process.info(pid, :current_function) in @hibernating
     end
   end
 end
