@@ -15,9 +15,11 @@ defmodule Bandit.HTTP2.StreamCollection do
   require Integer
 
   # `last_stream_id` is the highest stream we have started processing (as reported in GOAWAY), and
-  # `highest_stream_id` is the highest stream the peer has opened, including any we refused
+  # `highest_stream_id` is the highest stream the peer has opened, including any we refused.
+  # `skipped` holds the ranges of stream ids below that which the peer passed over without opening
   defstruct last_stream_id: 0,
             highest_stream_id: 0,
+            skipped: [],
             stream_count: 0,
             id_to_pid: %{},
             pid_to_id: %{}
@@ -26,6 +28,7 @@ defmodule Bandit.HTTP2.StreamCollection do
   @type t :: %__MODULE__{
           last_stream_id: Bandit.HTTP2.Stream.stream_id(),
           highest_stream_id: Bandit.HTTP2.Stream.stream_id(),
+          skipped: [Range.t()],
           stream_count: non_neg_integer(),
           id_to_pid: %{Bandit.HTTP2.Stream.stream_id() => pid()},
           pid_to_id: %{pid() => Bandit.HTTP2.Stream.stream_id()}
@@ -48,11 +51,17 @@ defmodule Bandit.HTTP2.StreamCollection do
   @spec get_stream_id(t(), pid()) :: Bandit.HTTP2.Stream.stream_id() | nil
   def get_stream_id(collection, pid), do: Map.get(collection.pid_to_id, pid)
 
+  # Whether the peer passed over this stream id when it opened a later one. Such a stream is
+  # closed without ever having been open, so the peer can have nothing in flight for it
+  @spec skipped?(t(), Bandit.HTTP2.Stream.stream_id()) :: boolean()
+  def skipped?(collection, stream_id), do: Enum.any?(collection.skipped, &(stream_id in &1))
+
   @spec insert(t(), Bandit.HTTP2.Stream.stream_id(), pid()) :: t()
   def insert(collection, stream_id, pid) do
     %__MODULE__{
       last_stream_id: stream_id,
       highest_stream_id: stream_id,
+      skipped: skip_to(collection, stream_id),
       stream_count: collection.stream_count + 1,
       id_to_pid: Map.put(collection.id_to_pid, stream_id, pid),
       pid_to_id: Map.put(collection.pid_to_id, pid, stream_id)
@@ -61,8 +70,24 @@ defmodule Bandit.HTTP2.StreamCollection do
 
   # Records a stream which we refused to open, so that it counts as closed from now on
   @spec refuse(t(), Bandit.HTTP2.Stream.stream_id()) :: t()
-  def refuse(collection, stream_id),
-    do: %{collection | highest_stream_id: max(collection.highest_stream_id, stream_id)}
+  def refuse(collection, stream_id) do
+    %{
+      collection
+      | highest_stream_id: max(collection.highest_stream_id, stream_id),
+        skipped: skip_to(collection, stream_id)
+    }
+  end
+
+  # Peers seldom skip stream ids, so we keep only the most recent ranges. That bounds what a peer
+  # can make us remember; a stream in a forgotten range is treated like any other closed stream
+  @max_skipped_ranges 100
+
+  defp skip_to(collection, stream_id) when stream_id - collection.highest_stream_id > 2 do
+    range = (collection.highest_stream_id + 1)..(stream_id - 1)
+    Enum.take([range | collection.skipped], @max_skipped_ranges)
+  end
+
+  defp skip_to(collection, _stream_id), do: collection.skipped
 
   # Dialyzer insists on the atom() here even though it doesn't make sense
   @spec delete(t(), pid()) :: t() | atom()

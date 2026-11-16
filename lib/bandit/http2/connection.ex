@@ -496,8 +496,12 @@ defmodule Bandit.HTTP2.Connection do
       :invalid ->
         connection_error!("Received invalid stream identifier")
 
+      # Frames can still be in flight for a stream which was open before it closed, and we discard
+      # those below. A stream which the peer passed over was never open, so this is the peer
+      # opening streams out of order (RFC9113§5.1.1)
       :closed ->
-        :ok
+        if Bandit.HTTP2.StreamCollection.skipped?(connection.streams, frame.stream_id),
+          do: connection_error!("Received unexpected stream identifier (RFC9113§5.1.1)")
 
       _stream ->
         # Erlang term ordering does the right thing with :infinity here

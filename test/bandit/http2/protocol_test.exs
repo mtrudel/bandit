@@ -2634,6 +2634,25 @@ defmodule HTTP2ProtocolTest do
     end
 
     @tag :capture_log
+    test "closes with an error when opening a stream with a lower ID than an earlier one",
+         context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 3, :get, "/body_response", context.port)
+      assert SimpleH2Client.successful_response?(socket, 3, false)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/body_response", context.port)
+
+      assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 3, 1}
+
+      assert_receive {:log, %{level: :error, msg: {:string, msg}}}, 500
+
+      assert msg ==
+               "** (Bandit.HTTP2.Errors.ConnectionError) Received unexpected stream identifier (RFC9113§5.1.1)"
+    end
+
+    @tag :capture_log
     test "closes with an error on a header frame with undecompressable header block", context do
       socket = SimpleH2Client.setup_connection(context)
 
