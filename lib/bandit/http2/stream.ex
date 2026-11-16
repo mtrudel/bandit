@@ -902,7 +902,10 @@ defmodule Bandit.HTTP2.Stream do
       after
         0 ->
           status = error |> Plug.Exception.status() |> Plug.Conn.Status.code()
-          send_headers(stream, status, [], :no_body)
+
+          # These responses do not pass through the adapter, which is where every other
+          # response gets its date header (RFC9110§6.6.1)
+          send_headers(stream, status, [Bandit.Clock.date_header()], :no_body)
       end
     end
 

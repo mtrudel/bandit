@@ -1555,6 +1555,18 @@ defmodule HTTP1ProtocolTest do
       end
     end
 
+    @tag :capture_log
+    test "an error response which Bandit generates has a date header (RFC9110§6.6.1)", context do
+      client = SimpleHTTP1Client.tcp_client(context)
+
+      # With no host header, Bandit answers with a 400 before any plug runs
+      SimpleHTTP1Client.send(client, "GET", "/echo_components")
+
+      assert {:ok, "400 Bad Request", headers, ""} = SimpleHTTP1Client.recv_reply(client)
+      assert [date] = Keyword.get_values(headers, :date)
+      assert DateHelpers.valid_date_header?(date)
+    end
+
     for status <- [103, 204, 304] do
       @status status
       @tag :capture_log

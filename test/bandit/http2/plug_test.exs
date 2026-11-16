@@ -68,6 +68,20 @@ defmodule HTTP2PlugTest do
     def known_crasher(_conn) do
       raise SafeError, "boom"
     end
+
+    @tag :capture_log
+    test "an error response which Bandit generates has a date header (RFC9110§6.6.1)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # With no :authority or host header, Bandit answers with a 400 before any plug runs
+      headers = [{":method", "GET"}, {":path", "/hello_world"}, {":scheme", "https"}]
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert {:ok, 1, true, [{":status", "400"}, {"date", date}], _} =
+               SimpleH2Client.recv_headers(socket)
+
+      assert DateHelpers.valid_date_header?(date)
+    end
   end
 
   test "reading request headers", context do
