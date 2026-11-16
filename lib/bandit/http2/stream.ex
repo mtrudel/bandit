@@ -384,7 +384,10 @@ defmodule Bandit.HTTP2.Stream do
          when state in [:open, :local_closed] do
       case do_recv(stream, remaining(deadline)) do
         {:headers, trailers, stream} ->
-          Logger.warning("Ignoring trailers #{inspect(trailers)}", domain: [:bandit])
+          # Log the count only. The fields are client-controlled and HPACK lets a few bytes on the
+          # wire stand for a very large field section, so inspecting them costs far more than
+          # the request that carries them (GHSA-j9wq-h5xx-5qx5)
+          Logger.warning("Ignoring #{length(trailers)} trailer field(s)", domain: [:bandit])
           do_read_data(stream, max_bytes, timeout, deadline, acc)
 
         {:data, data, stream} ->
