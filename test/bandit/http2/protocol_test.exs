@@ -4819,6 +4819,44 @@ defmodule HTTP2ProtocolTest do
     end
   end
 
+  describe "CONNECT requests (RFC9113§8.5)" do
+    def no_path_provided(conn) do
+      echo_components(conn)
+    end
+
+    test "accepts CONNECT requests with only :method and :authority", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # The server isn't implementing proper CONNECT support, but the plug gets to see the request
+      headers = [{":method", "CONNECT"}, {":authority", "www.example.com:80"}]
+      SimpleH2Client.send_headers(socket, 1, true, headers)
+
+      assert SimpleH2Client.successful_response?(socket, 1, false)
+      {:ok, 1, true, body} = SimpleH2Client.recv_body(socket)
+      assert Jason.decode!(body)["host"] == "www.example.com"
+      assert Jason.decode!(body)["port"] == 80
+      assert Jason.decode!(body)["path_info"] == []
+    end
+
+    @tag :capture_log
+    test "rejects CONNECT requests which are not in that form", context do
+      for extra_headers <- [
+            [{":scheme", "https"}, {":path", "/"}, {":authority", "www.example.com:80"}],
+            [{":scheme", "https"}, {":authority", "www.example.com:80"}],
+            [{":path", "/"}, {":authority", "www.example.com:80"}],
+            [{":authority", "www.example.com"}],
+            []
+          ] do
+        socket = SimpleH2Client.setup_connection(context)
+
+        SimpleH2Client.send_headers(socket, 1, true, [{":method", "CONNECT"} | extra_headers])
+
+        assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 1}
+        assert SimpleH2Client.connection_alive?(socket)
+      end
+    end
+  end
+
   describe ":method and :path pseudo headers (RFC9113§8.3.1)" do
     setup do
       Process.register(self(), __MODULE__)
