@@ -123,6 +123,60 @@ defmodule CompressionTest do
     end
   end
 
+  describe "deflate_options" do
+    # Varied enough that zlib compresses it differently from one level to the next
+    @body Enum.map_join(1..400, ",", fn id ->
+            ~s({"id":#{id * 37},"name":"user #{rem(id * id, 89)}","total":#{rem(id * 7919, 9973)}})
+          end)
+
+    # What Bandit sends for @body to a client which accepts only the given encoding
+    defp compress(encoding, http_opts) do
+      {_headers, context} =
+        Compression.new(adapter(http_opts, [encoding]), 200, [], byte_size(@body))
+
+      {compressed, _metrics} = Compression.close(context, @body)
+      IO.iodata_to_binary(compressed)
+    end
+
+    # @body compressed by zlib itself. Adding 16 to window_bits selects the gzip container
+    defp zlib(level, window_bits) do
+      context = :zlib.open()
+      :ok = :zlib.deflateInit(context, level, :deflated, window_bits, 8, :default)
+      compressed = :zlib.deflate(context, @body, :finish)
+      :zlib.close(context)
+      IO.iodata_to_binary(compressed)
+    end
+
+    test "compresses gzip and deflate at level 4 by default" do
+      assert compress("gzip", []) == zlib(4, 16 + 15)
+      assert compress("deflate", []) == zlib(4, 15)
+      # A zlib header records the level it was written at, so this is not zlib's default of 6
+      refute compress("deflate", []) == zlib(6, 15)
+    end
+
+    test "honours a configured level for gzip as well as deflate" do
+      http_opts = [deflate_options: [level: 1]]
+
+      assert compress("gzip", http_opts) == zlib(1, 16 + 15)
+      assert compress("deflate", http_opts) == zlib(1, 15)
+      refute zlib(1, 16 + 15) == zlib(4, 16 + 15)
+    end
+
+    test "compresses exactly as zlib's default does when the level is set to 6" do
+      http_opts = [deflate_options: [level: 6]]
+
+      assert compress("gzip", http_opts) == :zlib.gzip(@body)
+      assert compress("deflate", http_opts) == :zlib.compress(@body)
+    end
+
+    test "keeps gzip in a gzip container whatever window_bits is configured" do
+      http_opts = [deflate_options: [window_bits: 9]]
+
+      assert compress("gzip", http_opts) == zlib(4, 16 + 15)
+      assert :zlib.gunzip(compress("gzip", http_opts)) == @body
+    end
+  end
+
   describe "over HTTP/1" do
     setup :http_server
     setup :req_http1_client

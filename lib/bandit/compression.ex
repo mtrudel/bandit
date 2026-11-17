@@ -36,6 +36,13 @@ defmodule Bandit.Compression do
     video/mp4 video/mpeg video/ogg video/quicktime video/webm
   )
 
+  # The zlib level for gzip and deflate. zlib's own default is 6. Levels 4, 5 and 6 share the same
+  # lazy matcher and differ in how far they search for each match (chains of 16, 32 and 128
+  # candidates). Level 4 comes back with a body a few percent larger than level 6 does, for around
+  # 30% less CPU on every compressed response. It is also the lowest level that matches lazily,
+  # and the levels below it give up far more in size
+  @default_deflate_level 4
+
   # Compressing chunked responses with zstd relies on :zstd.flush/1, which was added in OTP 29
   @zstd_streaming? Code.ensure_loaded?(:zstd) and function_exported?(:zstd, :flush, 1)
 
@@ -229,9 +236,13 @@ defmodule Bandit.Compression do
     {:ok, %__MODULE__{method: :deflate, lib_context: deflate_init(opts)}}
   end
 
-  # Adding 16 to window_bits makes zlib write a gzip header and trailer instead of zlib ones
-  defp start_stream(encoding, _opts, _streamable) when encoding in ~w(gzip x-gzip),
-    do: {:ok, %__MODULE__{method: :gzip, lib_context: deflate_init(window_bits: 16 + 15)}}
+  # gzip is a deflate stream in a different wrapper, so it takes the same options as deflate. The
+  # exception is window_bits: adding 16 to it is what makes zlib write a gzip header and trailer
+  # instead of zlib ones, so gzip always uses the full window
+  defp start_stream(encoding, http_opts, _streamable) when encoding in ~w(gzip x-gzip) do
+    opts = http_opts |> Keyword.get(:deflate_options, []) |> Keyword.put(:window_bits, 16 + 15)
+    {:ok, %__MODULE__{method: :gzip, lib_context: deflate_init(opts)}}
+  end
 
   if Code.ensure_loaded?(:zstd) do
     defp start_stream("zstd", http_opts, streamable) when not streamable or @zstd_streaming? do
@@ -249,7 +260,7 @@ defmodule Bandit.Compression do
 
     :zlib.deflateInit(
       deflate_context,
-      Keyword.get(opts, :level, :default),
+      Keyword.get(opts, :level, @default_deflate_level),
       :deflated,
       Keyword.get(opts, :window_bits, 15),
       Keyword.get(opts, :mem_level, 8),
