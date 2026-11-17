@@ -49,7 +49,7 @@ defmodule Bandit.HTTP1.Socket do
 
   defimpl Bandit.HTTPTransport do
     require Logger
-    import Bandit.Headers, only: [is_tchar: 1]
+    import Bandit.Headers, only: [is_field_value_char: 1, is_tchar: 1]
 
     @max_chunk_size_byte_count 16
 
@@ -258,12 +258,25 @@ defmodule Bandit.HTTP1.Socket do
            headers,
            header_count
          ) do
+      {headers, header_count, buffer} =
+        read_plain_headers(socket.buffer, packet_size, headers, header_count)
+
+      if header_count > max_header_count,
+        do: request_error!("Too many headers", :request_header_fields_too_large)
+
+      socket = %{socket | buffer: buffer}
+      read_header!(socket, line_ending, packet_size, max_header_count, headers, header_count)
+    end
+
+    # Reads the line which read_plain_headers/4 left at the front of the buffer. A line which needs
+    # another read is retried here and not above, so that it is not scanned a second time
+    defp read_header!(socket, line_ending, packet_size, max_header_count, headers, header_count) do
       case :erlang.decode_packet(:httph_bin, socket.buffer, packet_size: packet_size) do
         {:more, _len} ->
           chunk = read_available!(socket.socket, socket.socket.read_timeout)
           socket = %{socket | buffer: socket.buffer <> chunk}
 
-          do_read_headers!(
+          read_header!(
             socket,
             line_ending,
             packet_size,
@@ -308,6 +321,73 @@ defmodule Bandit.HTTP1.Socket do
           request_error!("Header read unknown error: #{inspect(reason)}")
       end
     end
+
+    # Nearly every header line is plain: a token for a name, a colon, a value made of valid bytes
+    # and a CRLF, with the whole line already in the buffer. Such lines are read here in one pass,
+    # stopping at the first line which is anything else (the empty line which ends the headers, or
+    # a line split across reads, folded, ending in a bare LF, too long, or invalid in some way).
+    # That line is left in the buffer for :erlang.decode_packet/3, so that read_header!/6 remains
+    # the only place which decides what is an error. The usual spellings of common names are
+    # matched whole, and a name with no capitals is used as it is, so few names need lowercasing
+    @common_header_names ~w[accept accept-encoding accept-language authorization cache-control
+                            connection content-length content-type cookie host if-modified-since
+                            if-none-match origin pragma priority referer sec-fetch-dest
+                            sec-fetch-mode sec-fetch-site sec-fetch-user transfer-encoding upgrade
+                            upgrade-insecure-requests user-agent x-forwarded-for x-forwarded-host
+                            x-forwarded-port x-forwarded-proto x-request-id]
+
+    for name <- @common_header_names do
+      spelling = name |> String.split("-") |> Enum.map_join("-", &String.capitalize/1)
+
+      defp read_plain_headers(<<unquote(spelling), ?:, rest::binary>> = line, max, acc, count),
+        do: plain_ows(rest, unquote(name), line, max, acc, count)
+    end
+
+    defp read_plain_headers(line, max, acc, count),
+      do: plain_name(line, 0, true, line, max, acc, count)
+
+    defp plain_name(<<?:, rest::binary>>, size, lower?, line, max, acc, count)
+         when size > 0 do
+      name = binary_part(line, 0, size)
+      name = if lower?, do: name, else: String.downcase(name, :ascii)
+      plain_ows(rest, name, line, max, acc, count)
+    end
+
+    defp plain_name(<<char, rest::binary>>, size, _lower?, line, max, acc, count)
+         when char in ?A..?Z,
+         do: plain_name(rest, size + 1, false, line, max, acc, count)
+
+    defp plain_name(<<char, rest::binary>>, size, lower?, line, max, acc, count)
+         when is_tchar(char),
+         do: plain_name(rest, size + 1, lower?, line, max, acc, count)
+
+    defp plain_name(_rest, _size, _lower?, line, _max, acc, count), do: {acc, count, line}
+
+    defp plain_ows(<<char, rest::binary>>, name, line, max, acc, count) when char in [?\s, ?\t],
+      do: plain_ows(rest, name, line, max, acc, count)
+
+    defp plain_ows(value, name, line, max, acc, count),
+      do: plain_value(value, 0, value, name, line, max, acc, count)
+
+    defp plain_value(<<"\r\n", rest::binary>>, size, value, name, line, max, acc, count) do
+      case rest do
+        # As decode_packet does, see the byte after the line to know that the line is not folded
+        <<next, _::binary>>
+        when next not in [?\s, ?\t] and byte_size(line) - byte_size(rest) <= max ->
+          value = trim_trailing_ows(binary_part(value, 0, size))
+          read_plain_headers(rest, max, [{name, value} | acc], count + 1)
+
+        _ ->
+          {acc, count, line}
+      end
+    end
+
+    defp plain_value(<<char, rest::binary>>, size, value, name, line, max, acc, count)
+         when is_field_value_char(char),
+         do: plain_value(rest, size + 1, value, name, line, max, acc, count)
+
+    defp plain_value(_rest, _size, _value, _name, line, _max, acc, count),
+      do: {acc, count, line}
 
     # decode_packet consumed the line from buffer, leaving rest
     defp validate_line_ending!(:lf, _buffer, _rest), do: :ok
