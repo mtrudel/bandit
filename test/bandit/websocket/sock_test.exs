@@ -14,6 +14,18 @@ defmodule WebSocketWebSockTest do
     Plug.Conn.upgrade_adapter(conn, :websocket, {websock, [], compress: compress})
   end
 
+  # A connection process which stops abnormally writes its crash report as it exits, and on a busy
+  # machine that can take a while. This waits for the exit, so that a log capture which ends
+  # afterwards has the report
+  defp await_connection_exit(context) do
+    {:ok, connection_pids} = ThousandIsland.connection_pids(context.server_pid)
+
+    for pid <- connection_pids do
+      ref = Process.monitor(pid)
+      assert_receive {:DOWN, ^ref, :process, ^pid, _reason}, 5_000
+    end
+  end
+
   describe "init" do
     defmodule InitOKStateWebSock do
       use NoopWebSock
@@ -153,7 +165,7 @@ defmodule WebSocketWebSockTest do
 
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :abnormal"
@@ -444,7 +456,7 @@ defmodule WebSocketWebSockTest do
 
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :abnormal"
@@ -785,7 +797,7 @@ defmodule WebSocketWebSockTest do
 
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :abnormal"
@@ -1091,7 +1103,7 @@ defmodule WebSocketWebSockTest do
 
           assert SimpleWebSocketClient.recv_connection_close_frame(client) == {:ok, <<1011::16>>}
           assert SimpleWebSocketClient.connection_closed_for_reading?(client)
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :abnormal"
@@ -1307,7 +1319,7 @@ defmodule WebSocketWebSockTest do
           SimpleWebSocketClient.send_text_frame(client, "boom")
 
           assert_receive {:error, :boom}, 500
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :boom"
@@ -1341,6 +1353,7 @@ defmodule WebSocketWebSockTest do
       assert_receive {:error, :closed}, 500
     end
 
+    @tag read_timeout: 100
     test "is called with :timeout on a timeout", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -1582,7 +1595,7 @@ defmodule WebSocketWebSockTest do
                    error: :nope
                  }
 
-          Process.sleep(100)
+          await_connection_exit(context)
         end)
 
       assert output =~ "(stop) :nope"

@@ -317,6 +317,7 @@ defmodule HTTP1TelemetryTest do
              }
     end
 
+    @tag read_timeout: 100
     @tag :capture_log
     test "it should send `stop` events for timed out requests", context do
       client = SimpleHTTP1Client.tcp_client(context)
