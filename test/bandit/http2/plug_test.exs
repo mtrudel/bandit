@@ -321,19 +321,17 @@ defmodule HTTP2PlugTest do
     ]
 
     SimpleH2Client.send_headers(socket, 1, false, headers)
+
+    # Send the body only after the stream closes. If the client sends it earlier, it races with
+    # the response, and the server can send RST_STREAM(NO_ERROR) before the DATA arrives
+    assert {:ok, 1, false, [{":status", "200"} | _], _ctx} = SimpleH2Client.recv_headers(socket)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
+
     SimpleH2Client.send_body(socket, 1, true, "ABC")
 
-    # Ordering of window update frames can be racy due to h2's internal message passing
-    assert [
-             SimpleH2Client.recv_frame(socket),
-             SimpleH2Client.recv_frame(socket),
-             SimpleH2Client.recv_frame(socket)
-           ]
-           ~> in_any_order([
-             {:ok, :window_update, term(), 0, term()},
-             {:ok, :headers, term(), 1, term()},
-             {:ok, :data, term(), 1, term()}
-           ])
+    assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
+    assert SimpleH2Client.connection_alive?(socket)
   end
 
   def no_body_read(conn) do
@@ -810,19 +808,17 @@ defmodule HTTP2PlugTest do
     socket = SimpleH2Client.setup_connection(context)
 
     SimpleH2Client.send_simple_headers(socket, 1, :post, "/no_read", context.port)
+
+    # Send the body only after the stream closes. If the client sends it earlier, it races with
+    # the response, and the server can send RST_STREAM(NO_ERROR) before the DATA arrives
+    assert {:ok, 1, false, [{":status", "200"} | _], _ctx} = SimpleH2Client.recv_headers(socket)
+    assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+    assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
+
     SimpleH2Client.send_body(socket, 1, true, "ABCDEF")
 
-    assert [
-             SimpleH2Client.recv_frame(socket),
-             SimpleH2Client.recv_frame(socket),
-             SimpleH2Client.recv_frame(socket)
-           ]
-           ~> in_any_order([
-             {:ok, :window_update, term(), 0, term()},
-             {:ok, :headers, term(), 1, term()},
-             {:ok, :data, term(), 1, term()}
-           ])
-
+    # Only the connection window is replenished; the next frame must be the PING ACK
+    assert {:ok, 0, _} = SimpleH2Client.recv_window_update(socket)
     assert SimpleH2Client.connection_alive?(socket)
   end
 
@@ -1255,18 +1251,12 @@ defmodule HTTP2PlugTest do
         {"expect", "100-continue"}
       ])
 
-      SimpleH2Client.send_body(socket, 1, true, "123")
-
-      assert [
-               SimpleH2Client.recv_frame(socket),
-               SimpleH2Client.recv_frame(socket),
-               SimpleH2Client.recv_frame(socket)
-             ]
-             ~> in_any_order([
-               {:ok, :window_update, term(), 0, term()},
-               {:ok, :headers, term(), 1, term()},
-               {:ok, :data, term(), 1, term()}
-             ])
+      # Do not send the body. If the client sends it, the frames race with the response, and the
+      # server can send RST_STREAM(NO_ERROR) before the DATA arrives (RFC9113§8.1)
+      assert {:ok, 1, false, [{":status", "200"} | _], _ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, ""}
+      assert SimpleH2Client.recv_rst_stream(socket) == {:ok, 1, 0}
+      assert SimpleH2Client.connection_alive?(socket)
     end
 
     def expect_continue_body_unread(conn), do: send_resp(conn, 200, "")
