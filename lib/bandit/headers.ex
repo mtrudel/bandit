@@ -14,12 +14,15 @@ defmodule Bandit.Headers do
   # (0x80-0xff), and internal SP / HTAB. All other control bytes and DEL are
   # outside the field-value grammar. HTTP/2 applies the additional edge-whitespace
   # prohibition from RFC9113§8.2.1 in its field-section validator.
+  @spec is_field_value_char(integer()) :: Macro.t()
+  defguard is_field_value_char(char)
+           when char == 0x09 or char in 0x20..0x7E or char in 0x80..0xFF
+
   @spec field_value_valid?(binary()) :: boolean()
   def field_value_valid?(<<>>), do: true
 
-  def field_value_valid?(<<char, rest::binary>>)
-      when char == 0x09 or char in 0x20..0x7E or char in 0x80..0xFF,
-      do: field_value_valid?(rest)
+  def field_value_valid?(<<char, rest::binary>>) when is_field_value_char(char),
+    do: field_value_valid?(rest)
 
   def field_value_valid?(_value), do: false
 
