@@ -881,8 +881,21 @@ defmodule Bandit.HTTP2.Connection do
     finish_data(stream_id, rest, end_stream, on_unblock, expires_at, bytes_sent, connection)
   end
 
+  # Response headers whose value is rarely the same from one response to the next. Adding every
+  # new value to the HPACK dynamic table would fill it with entries that are never referenced
+  # again and evict the ones that are, so we send these values as literals and index at most the
+  # header's name (RFC7541§6.2.2). nghttp2 and the Rust h2 crate leave the same response headers
+  # unindexed; x-request-id is here as well since Plug.RequestId adds a unique one to every
+  # response
+  @unindexed_headers ~w[age content-length etag location set-cookie x-request-id]
+
   defp encode_headers(stream_id, headers, end_stream, connection) do
-    enc_headers = Enum.map(headers, fn {key, value} -> {:store, key, value} end)
+    enc_headers =
+      Enum.map(headers, fn
+        {key, value} when key in @unindexed_headers -> {:store_name, key, value}
+        {key, value} -> {:store, key, value}
+      end)
+
     {block, send_hpack_state} = HPAX.encode(enc_headers, connection.send_hpack_state)
 
     iodata =
