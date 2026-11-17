@@ -129,9 +129,10 @@ defmodule Bandit do
     more susceptible to compression side-channel attacks such as
     [BREACH](https://www.breachattack.com). Defaults to false
   * `deflate_options`: A keyword list of options to set on the deflate library. A complete list can
-    be found at `t:deflate_options/0`. Note that these options only affect the behaviour of the
-    'deflate' content encoding; 'gzip' does not have any configurable options (this is a
-    limitation of the underlying `:zlib` library)
+    be found at `t:deflate_options/0`. These options apply to both the 'gzip' and 'deflate'
+    content encodings, apart from `window_bits`, which only applies to 'deflate'. `level` defaults
+    to 4, which produces bodies a few percent larger than zlib's own default of 6 for around 30%
+    less CPU; set it to 6 to compress exactly as zlib's default does
   * `zstd_options`: A map of options passed verbatim to :zstd, review the options [here](https://www.erlang.org/doc/apps/stdlib/zstd.html#t:compress_parameters/0)
   * `log_exceptions_with_status_codes`: Which exceptions to log. Bandit will log only those
     exceptions whose status codes (as determined by `Plug.Exception.status/1`) match the specified
