@@ -3482,6 +3482,84 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_body(socket) == {:ok, 3, true, "OK"}
     end
 
+    test "does not index response headers whose values rarely repeat (RFC7541§6.2.2)", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/volatile_headers", context.port)
+      assert {:ok, 1, false, headers, ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+
+      volatile_headers = [
+        {"age", "12"},
+        {"content-length", "2"},
+        {"etag", ~s("33a64df5")},
+        {"location", "/elsewhere"},
+        {"set-cookie", "session=abc123; path=/"}
+      ]
+
+      # They all reach the client intact, but none of them were added to its HPACK table
+      for {name, value} <- volatile_headers do
+        assert {name, value} in headers
+        refute in_hpack_table?(ctx, name, value)
+      end
+
+      # Headers whose values do repeat are still indexed
+      assert in_hpack_table?(ctx, "cache-control", "max-age=0, private, must-revalidate")
+      assert in_hpack_table?(ctx, "x-frame-options", "DENY")
+    end
+
+    def volatile_headers(conn) do
+      conn
+      |> put_resp_header("age", "12")
+      |> put_resp_header("etag", ~s("33a64df5"))
+      |> put_resp_header("location", "/elsewhere")
+      |> put_resp_header("set-cookie", "session=abc123; path=/")
+      |> put_resp_header("x-frame-options", "DENY")
+      |> send_resp(200, "OK")
+    end
+
+    test "indexes the name of x-request-id but not each of its values", context do
+      socket = SimpleH2Client.setup_connection(context)
+
+      # The first response adds the header to the table, which is how its name gets indexed
+      SimpleH2Client.send_simple_headers(socket, 1, :get, "/request_id/first", context.port)
+      assert {:ok, 1, false, headers, ctx} = SimpleH2Client.recv_headers(socket)
+      assert SimpleH2Client.recv_body(socket) == {:ok, 1, true, "OK"}
+      assert {"x-request-id", "first"} in headers
+
+      # Later responses refer to that name instead of spelling it out, and add nothing more
+      ctx =
+        for {stream_id, id} <- [{3, "second"}, {5, "third"}], reduce: ctx do
+          ctx ->
+            path = "/request_id/#{id}"
+            SimpleH2Client.send_simple_headers(socket, stream_id, :get, path, context.port)
+            assert {:ok, :headers, _flags, ^stream_id, block} = SimpleH2Client.recv_frame(socket)
+            assert SimpleH2Client.recv_body(socket) == {:ok, stream_id, true, "OK"}
+
+            assert :binary.match(block, "x-request-id") == :nomatch
+            assert {:ok, headers, ctx} = HPAX.decode(block, ctx)
+            assert {"x-request-id", id} in headers
+            ctx
+        end
+
+      assert in_hpack_table?(ctx, "x-request-id", "first")
+      refute in_hpack_table?(ctx, "x-request-id", "second")
+      refute in_hpack_table?(ctx, "x-request-id", "third")
+    end
+
+    def request_id(conn) do
+      conn
+      |> put_resp_header("x-request-id", List.last(conn.path_info))
+      |> send_resp(200, "OK")
+    end
+
+    # Whether the given header is in the HPACK table that `ctx` holds. A header which is in the
+    # table encodes as a single index byte (RFC7541§6.1); one which is not needs a literal
+    defp in_hpack_table?(ctx, name, value) do
+      {block, _ctx} = HPAX.encode([{:no_store, name, value}], ctx)
+      IO.iodata_length(block) == 1
+    end
+
     @tag :capture_log
     test "returns a stream error if sent header block is too large", context do
       context = https_server(context, http_2_options: [max_header_block_size: 40])
