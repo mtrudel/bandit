@@ -1329,6 +1329,7 @@ defmodule HTTP2ProtocolTest do
       send_resp(conn, 304, "abcde")
     end
 
+    @tag read_timeout: 100
     test "sends headers but no body for a HEAD request to a file", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1350,6 +1351,7 @@ defmodule HTTP2ProtocolTest do
       |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
+    @tag read_timeout: 100
     test "sends no content-length header or body for a 204 request to a file", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1370,6 +1372,7 @@ defmodule HTTP2ProtocolTest do
       |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
+    @tag read_timeout: 100
     test "writes out headers but no body for a 304 request to a file", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1557,6 +1560,7 @@ defmodule HTTP2ProtocolTest do
       end
     end
 
+    @tag read_timeout: 100
     test "does not write out a body for a chunked response to a HEAD request", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1582,6 +1586,7 @@ defmodule HTTP2ProtocolTest do
       |> elem(1)
     end
 
+    @tag read_timeout: 100
     test "does not write out a body for a chunked 204 response", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -1604,6 +1609,7 @@ defmodule HTTP2ProtocolTest do
       |> elem(1)
     end
 
+    @tag read_timeout: 100
     test "does not write out a body for a chunked 304 response", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -3645,6 +3651,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.connection_alive?(socket)
     end
 
+    @tag read_timeout: 100
     test "does not send an RST_FRAME if stream task ends with a closed client", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -3781,6 +3788,7 @@ defmodule HTTP2ProtocolTest do
       assert msg =~ "Stream resets rate exceeded"
     end
 
+    @tag read_timeout: 100
     @tag :capture_log
     test "allows RST_STREAM frames within rate limit", context do
       context = https_server(context, http_2_options: [max_reset_stream_rate: {5, 1000}])
@@ -3870,6 +3878,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
 
+    @tag read_timeout: 100
     test "the server should close the connection upon receipt of a GOAWAY frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -3878,6 +3887,7 @@ defmodule HTTP2ProtocolTest do
       assert SimpleH2Client.recv_goaway_and_close(socket) == {:ok, 0, 0}
     end
 
+    @tag read_timeout: 100
     test "the server should return the last received stream id in the GOAWAY frame", context do
       socket = SimpleH2Client.setup_connection(context)
 
@@ -4996,6 +5006,7 @@ defmodule HTTP2ProtocolTest do
   end
 
   describe "max_concurrent_streams flag" do
+    @tag read_timeout: 100
     test "refuses streams when max_concurrent_streams limit is exceeded", context do
       context =
         context
@@ -5038,6 +5049,7 @@ defmodule HTTP2ProtocolTest do
       assert Transport.recv(socket, 0) == {:error, :closed}
     end
 
+    @tag read_timeout: 100
     test "allows new streams after previous streams complete", context do
       context =
         context

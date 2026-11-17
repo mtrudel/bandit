@@ -923,6 +923,7 @@ defmodule WebSocketProtocolTest do
       refute_receive {:terminate, _}
     end
 
+    @tag read_timeout: 100
     test "a peer cannot keep a closing connection open with a trickle of frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, StopOnRequestWebSock)
@@ -1233,16 +1234,23 @@ defmodule WebSocketProtocolTest do
       def terminate(reason, _state), do: WebSocketProtocolTest.send(reason)
     end
 
+    # Process.monitor/1 can return before the monitor has reached the connection process, and a
+    # monitor which arrives after that process has gone reports :noproc in place of the exit
+    # reason. A reply from the process shows that the monitor is in place
+    defp monitor_connection(connection_pid) do
+      monitor_ref = Process.monitor(connection_pid)
+      _ = :sys.get_state(connection_pid)
+      monitor_ref
+    end
+
     @tag :capture_log
     test "frame deserialization errors are short logged by default", context do
-      ref = make_ref() |> inspect() |> String.to_atom()
-
-      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+      LoggerHelpers.receive_all_log_events(MonitoredWebSock)
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
       assert_receive connection_pid when is_pid(connection_pid), 500
-      monitor_ref = Process.monitor(connection_pid)
+      monitor_ref = monitor_connection(connection_pid)
 
       # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
       SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
@@ -1270,14 +1278,12 @@ defmodule WebSocketProtocolTest do
     test "frame deserialization errors are not logged if so configured", context do
       context = http_server(context, websocket_options: [log_protocol_errors: false])
 
-      ref = make_ref() |> inspect() |> String.to_atom()
-
-      :logger.add_handler(ref, LoggerHelpers, %{config: %{pid: self(), websock: MonitoredWebSock}})
+      LoggerHelpers.receive_all_log_events(MonitoredWebSock)
 
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
       assert_receive connection_pid when is_pid(connection_pid), 500
-      monitor_ref = Process.monitor(connection_pid)
+      monitor_ref = monitor_connection(connection_pid)
 
       # Send a text frame with the RSV2 flag set, which is not allowed by RFC6455§5.2
       SimpleWebSocketClient.send_text_frame(client, "OK", 0xA)
@@ -1309,16 +1315,12 @@ defmodule WebSocketProtocolTest do
               websocket_options: [log_protocol_errors: unquote(log_protocol_errors)]
             )
 
-          ref = make_ref() |> inspect() |> String.to_atom()
-
-          :logger.add_handler(ref, LoggerHelpers, %{
-            config: %{pid: self(), websock: MonitoredWebSock}
-          })
+          LoggerHelpers.receive_all_log_events(MonitoredWebSock)
 
           client = SimpleWebSocketClient.tcp_client(context)
           SimpleWebSocketClient.http1_handshake(client, MonitoredWebSock)
           assert_receive connection_pid when is_pid(connection_pid), 500
-          monitor_ref = Process.monitor(connection_pid)
+          monitor_ref = monitor_connection(connection_pid)
 
           {exit_reason, output} =
             with_log(fn ->
@@ -1355,6 +1357,7 @@ defmodule WebSocketProtocolTest do
   end
 
   describe "timeout conditions" do
+    @tag read_timeout: 100
     test "server sends a 1002 if no frames sent at all", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -1369,6 +1372,7 @@ defmodule WebSocketProtocolTest do
       assert SimpleWebSocketClient.connection_closed_for_reading?(client)
     end
 
+    @tag read_timeout: 100
     test "server sends a 1002 on timeout between frames", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TerminateWebSock)
@@ -1391,6 +1395,7 @@ defmodule WebSocketProtocolTest do
       def handle_in(_data, state), do: {:push, {:text, :erlang.pid_to_list(self())}, state}
     end
 
+    @tag read_timeout: 100
     test "server times out waiting for client connection close", context do
       client = SimpleWebSocketClient.tcp_client(context)
       SimpleWebSocketClient.http1_handshake(client, TimeoutCloseWebSock)

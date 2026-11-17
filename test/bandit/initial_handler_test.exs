@@ -91,6 +91,7 @@ defmodule InitialHandlerTest do
   describe "idle connections" do
     setup :http_server
 
+    @tag read_timeout: 100
     test "closes silently when no data is sent before the read timeout", context do
       client = SimpleHTTP1Client.tcp_client(context)
 

@@ -3,10 +3,15 @@ defmodule SimpleHTTP1Client do
 
   defdelegate tcp_client(context), to: Transport
 
+  # The head goes out in a single write. A server which rejects the request line answers and
+  # closes without reading the headers, so a head sent in several writes can have its later
+  # writes fail, after which the socket reports itself closed and the response is lost
   def send(socket, verb, request_target, headers \\ [], version \\ "1.1") do
-    Transport.send(socket, "#{verb} #{request_target} HTTP/#{version}\r\n")
-    Enum.each(headers, &Transport.send(socket, &1 <> "\r\n"))
-    Transport.send(socket, "\r\n")
+    Transport.send(socket, [
+      "#{verb} #{request_target} HTTP/#{version}\r\n",
+      Enum.map(headers, &[&1, "\r\n"]),
+      "\r\n"
+    ])
   end
 
   def recv_reply(socket, head? \\ false) do
@@ -15,6 +20,7 @@ defmodule SimpleHTTP1Client do
   end
 
   def parse_response(socket, response, head? \\ false) do
+    response = recv_head(socket, response)
     [status_line | headers] = String.split(response, "\r\n")
     <<_version::binary-size(8), " ", status::binary>> = status_line
     {headers, rest} = Enum.split_while(headers, &(&1 != ""))
@@ -54,6 +60,17 @@ defmodule SimpleHTTP1Client do
       end
 
     {:ok, status, headers, body}
+  end
+
+  # A response head can arrive over several reads, and a response which follows another one may
+  # not have arrived at all when the first one is read
+  defp recv_head(socket, response) do
+    if String.contains?(response, "\r\n\r\n") do
+      response
+    else
+      {:ok, more} = Transport.recv(socket, 0)
+      recv_head(socket, response <> more)
+    end
   end
 
   def connection_closed_for_reading?(client) do

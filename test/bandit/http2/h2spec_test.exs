@@ -5,9 +5,18 @@ defmodule H2SpecTest do
   @moduletag :slow
   @moduletag timeout: 600_000
 
+  # Several h2spec cases wait for the server to close an idle connection, which it must do
+  # inside h2spec's own timeout of two seconds
+  @moduletag read_timeout: 100
+
   setup :https_server
 
+  # The request body is read before the response is sent. h2spec case 6.9.1/3 opens a stream,
+  # leaves its request body open, and then sends WINDOW_UPDATE frames which overflow the stream's
+  # window. If the response had already gone out the stream would be closed, and the server would
+  # be right to ignore those frames (RFC9113§5.1), which h2spec counts as a failure
   def hello_world(conn) do
+    {:ok, _body, conn} = read_body(conn)
     conn |> send_resp(200, "OK")
   end
 

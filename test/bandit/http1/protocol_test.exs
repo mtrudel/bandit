@@ -1597,6 +1597,7 @@ defmodule HTTP1ProtocolTest do
       assert response.headers["content-length"] == ["6"]
     end
 
+    @tag read_timeout: 100
     test "writes out headers but not body for files requested via HEAD request", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "HEAD", "/send_full_file", ["host: localhost"])
@@ -1611,6 +1612,7 @@ defmodule HTTP1ProtocolTest do
       |> send_file(200, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
+    @tag read_timeout: 100
     test "does not write out a content-length header or body for files on a 204",
          context do
       client = SimpleHTTP1Client.tcp_client(context)
@@ -1626,6 +1628,7 @@ defmodule HTTP1ProtocolTest do
       |> send_file(204, Path.join([__DIR__, "../../support/sendfile"]), 0, :all)
     end
 
+    @tag read_timeout: 100
     test "write out a content-length header but no body for files on a 304", context do
       client = SimpleHTTP1Client.tcp_client(context)
       SimpleHTTP1Client.send(client, "HEAD", "/send_full_file_304", ["host: localhost"])
