@@ -1,3 +1,52 @@
+## 1.15.0 (16 Nov 2026)
+
+### Enhancements
+
+* Hibernate a connection process to release the memory that its last request
+  left. Set `hibernate_after` in `thousand_island_options[:genserver_options]` to
+  change the delay; default is 15s (#743, thanks @mpettibone!)
+* Do not compress response bodies smaller than 300 bytes, or responses with an
+  already-compressed content type. Use the new `compress_threshold` and
+  `incompressible_content_types` options to change this (#740, thanks
+  @mpettibone!)
+* Resolve common `Accept-Encoding` values without parsing them (#741, thanks @mpettibone!)
+* Flatten HTTP/2 response bodies before they go to the connection process. Before, a large iolist
+  body cost much more over HTTP/2 than over HTTP/1 (#753, thanks @mpettibone!)
+* Accept `validate_utf8` as an alias of the `validate_text_frames` WebSocket option, as
+  WebSockAdapter documents it (#744)
+
+### Changes
+
+* Pass a valid HTTP/2 CONNECT request (only `:method` and `:authority`) to the plug, as HTTP/1
+  does. Reject a CONNECT request that has `:scheme` or `:path` (RFC 9113 §8.5) (#750, thanks
+  @mpettibone!)
+* Close the HTTP/2 connection with PROTOCOL_ERROR when a client opens a stream with an identifier
+  lower than one it opened before (RFC 9113 §5.1.1). Before, the request was silently dropped
+  (#749, thanks @mpettibone!)
+* Reject an HTTP/2 `:method` that is not a token, or a `:path` that contains SP or HTAB, with a
+  stream PROTOCOL_ERROR, as HTTP/1 does (#747, thanks @neilberkman!)
+* Send a `date` header on Bandit's own error responses (RFC 9110 §6.6.1) (#752, thanks
+  @mpettibone!)
+* Apply `log_protocol_errors` to WebSocket protocol errors found after a frame is deserialized,
+  such as a text frame that is not valid UTF-8. Before, these stopped the handler with a crash
+  report (#746, thanks @neilberkman!)
+
+### Fixes
+
+* Log the count of HTTP/2 trailers instead of their contents. Before, a small HPACK-compressed
+  trailer section could cause large CPU use and log volume (GHSA-j9wq-h5xx-5qx5, thanks
+  @lupodevelop!)
+* Apply `max_fragmented_message_size` to the first frame of a fragmented WebSocket message. Before,
+  the limit was checked only when a continuation frame arrived (#739, thanks @mpettibone!)
+* Read HTTP/1 chunked trailers with the body `read_timeout` and the configured header limits.
+  Before, the trailer read used the socket's `read_timeout` (#738, thanks @mpettibone!)
+* Send the final response to a HEAD request after an informational response. Before, the client
+  got a 500 over HTTP/1 and a malformed response over HTTP/2 (#748, thanks @neilberkman!)
+* Send HTTP/1.1 as the version of an error response to an HTTP/1.1 request that fails before the
+  plug runs. Before, these went out as HTTP/1.0 (#734, thanks @mpettibone!)
+* Stop the HTTP/2 handler with a valid GenServer stop tuple after it rescues an error. Before, the
+  process exited with `bad_return_value` (#742, thanks @mpettibone!)
+
 ## 1.14.1 (28 Oct 2026)
 
 ### Changes
