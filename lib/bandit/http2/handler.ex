@@ -77,14 +77,87 @@ defmodule Bandit.HTTP2.Handler do
       {:error, error, __STACKTRACE__}
   end
 
+  # An HTTP/1 connection runs its request inside handle_data, so it only sees the :shutdown exit
+  # from its supervisor once that request is complete; in-flight HTTP/1 requests get up to
+  # shutdown_timeout to finish. This connection process is idle in its GenServer loop while its
+  # streams run in their own processes, so it sees the exit right away and lands here with streams
+  # still in flight. Returning now would exit this process and so kill every linked stream process
+  # mid-request. Instead, announce the shutdown (RFC9113§6.8) and keep servicing the streams until
+  # they finish, so that shutdown_timeout means the same thing for HTTP/2 as it does for HTTP/1.
+  # The supervisor still bounds us: if shutdown_timeout expires first we are killed, which is no
+  # worse than what happened before
   @impl ThousandIsland.Handler
   def handle_shutdown(socket, state) do
+    state = drain_streams(socket, state)
+
     Bandit.HTTP2.Connection.close_connection(
       Bandit.HTTP2.Errors.no_error(),
       "Server shutdown",
       socket,
       state.connection
     )
+  end
+
+  defp drain_streams(socket, state) do
+    if Bandit.HTTP2.Connection.open_stream_count(state.connection) == 0 do
+      state
+    else
+      connection = Bandit.HTTP2.Connection.begin_shutdown(socket, state.connection)
+      do_drain_streams(socket, %{state | connection: connection})
+    end
+  end
+
+  # We are inside terminate/2, so the GenServer loop is no longer running on our behalf. Run a
+  # minimal one of our own that dispatches to the same callbacks it would have, until every stream
+  # has terminated or the connection is lost. The read timer is left alone: a client that is quiet
+  # while we finish its requests is not a client that has gone away
+  defp do_drain_streams(socket, state) do
+    if Bandit.HTTP2.Connection.open_stream_count(state.connection) == 0 do
+      state
+    else
+      receive do
+        {:"$gen_call", from, request} ->
+          case handle_call(request, from, {socket, state}) do
+            {:reply, reply, {_socket, state}} ->
+              GenServer.reply(from, reply)
+              do_drain_streams(socket, state)
+
+            {:noreply, {_socket, state}} ->
+              do_drain_streams(socket, state)
+
+            _stop ->
+              state
+          end
+
+        {msg, raw_socket, data}
+        when msg in [:tcp, :ssl] and raw_socket == socket.socket ->
+          case handle_data(data, socket, state) do
+            {:continue, state} ->
+              _ = ThousandIsland.Socket.setopts(socket, active: :once)
+              do_drain_streams(socket, state)
+
+            {:close, state} ->
+              state
+          end
+
+        {msg, raw_socket}
+        when msg in [:tcp_closed, :ssl_closed] and raw_socket == socket.socket ->
+          state
+
+        {msg, raw_socket, _reason}
+        when msg in [:tcp_error, :ssl_error] and raw_socket == socket.socket ->
+          state
+
+        :read_timeout ->
+          do_drain_streams(socket, state)
+
+        msg ->
+          case handle_info(msg, {socket, state}) do
+            {:noreply, {_socket, state}} -> do_drain_streams(socket, state)
+            _stop -> state
+          end
+      end
+    end
   end
 
   @impl ThousandIsland.Handler
